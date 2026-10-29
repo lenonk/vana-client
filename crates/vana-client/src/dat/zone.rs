@@ -82,7 +82,7 @@ pub fn decode_mmb(keys: &Keys, p: &mut [u8]) {
     }
 }
 
-/// Inverts runs of 16..23 bytes chosen by the key; placement ids are additionally XORed with 0x55.
+/// Inverts runs of 16..23 bytes chosen by the key (versions >= 0x1b; parse_mzb XORs their names with 0x55).
 pub fn decode_mzb(keys: &Keys, p: &mut [u8]) -> Result<()> {
     if p[3] < 0x1B {
         return Ok(());
@@ -322,8 +322,11 @@ pub fn parse_mzb(p: &mut [u8]) -> Result<Vec<Placement>> {
     let mut out = Vec::with_capacity(count);
     for i in 0..count {
         let r = 32 + i * stride;
-        for b in &mut p[r..r + 16] {
-            *b ^= 0x55;
+        // FUN_10179430: names are XORed only in the encrypted versions (> 0x1a; e.g. Lower Jeuno's 464 is 0x1a, plain).
+        if version > 0x1a {
+            for b in &mut p[r..r + 16] {
+                *b ^= 0x55;
+            }
         }
         let mut lights = [0u32; 4];
         if stride == 100 && version >= 0x12 {

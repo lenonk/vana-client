@@ -1419,6 +1419,9 @@ fn main() -> Result<()> {
                 println!("zone line {:<8} at ({:.2}, {:.2}, {:.2}) rot {:.2} size {:?}", r.name, r.pos[0], r.pos[1], r.pos[2], r.rot[1], r.scale);
             }
             println!("{} RID regions", scene.regions.len());
+            for r in scene.regions.iter().filter(|r| r.is_sub_area()) {
+                println!("sub-area trigger {:<8} class {} param {} at ({:.2}, {:.2}, {:.2}) rot {:.2} size {:?}", r.name, r.class, r.param, r.pos[0], r.pos[1], r.pos[2], r.rot[1], r.scale);
+            }
             let mut areas: std::collections::BTreeMap<String, (usize, glam::Vec3)> = Default::default();
             for p in scene.placements.iter().filter(|p| p.area != 0) {
                 let e = areas.entry(String::from_utf8_lossy(&p.area.to_le_bytes()).into_owned()).or_insert((0, glam::Vec3::from(p.translate)));

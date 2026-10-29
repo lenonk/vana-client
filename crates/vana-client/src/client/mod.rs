@@ -7735,14 +7735,15 @@ impl App {
         }
     }
 
-    /// FUN_10178a20 / FUN_101787c0 each frame: the sub-area trigger under the player (or one asked for) loads its
+    /// FUN_10178a20 / FUN_101787c0 each frame: the sub-area trigger under our actor (or one asked for) loads its
     /// interior in the background, or 0 unloads it.
     fn update_sub_area(&mut self) {
         let Phase::World(w) = &mut self.phase else { return };
         if w.zone != Some(w.pos_zone) || w.loading.is_some() || w.area.shown.is_some() || w.ground.is_none() {
             return;
         }
-        match w.sub.next(w.pos.to_array()) {
+        // Our actor's model position (vtable +0x1bc, +0x404): an event that moves us there moves the trigger point too.
+        match w.sub.next(event::own_pose(w).unwrap_or(w.pos).to_array()) {
             Some(subarea::Step::Unload) => {
                 log::info!("sub-area {:?} unloads", w.sub.current);
                 if let Some(r) = w.renderer.as_mut() {

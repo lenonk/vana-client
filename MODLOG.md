@@ -11710,3 +11710,23 @@ since "Ship voyages: the moving world" listed them as not done.
   waits 0x32's own wait: the targets come one loop body apart (15 ticks for the songs).
 - Ours took 0x32's wait on every record. Now the jump takes it back (fx/tasks.rs op 0x32; test record_loop_waits).
   Not seen live. Melee rounds are split per record (combat::on_action), so their timing is unchanged.
+
+## MZB names are XORed only in the encrypted versions (Jeuno interiors, 2026-10-29)
+
+- User report: inside Lower Jeuno's Chamber of Commerce only the sky, the sea and some rails showed. The user's log:
+  sub-area 464 loaded. Its file (564) has an MZB of version 0x1a, not encrypted, with plain placement names
+  (`r3ju11_ligjt2`, the MMB's own spelling). We XORed every name with 0x55, so none of its 23 placements found a mesh,
+  while the zone's stand-in for it was hidden.
+- FUN_10179430: `bVar5 = mzb[3]`; the 0x55 XOR of each record's 16-byte name runs only when 0x1a < bVar5, the same
+  bound as the decryption (decode_mzb, versions >= 0x1b). Ours now does the same (dat/zone.rs parse_mzb).
+- Files with an MZB of version <= 0x1a in 30261006_0: zone 0 (0x17), sub-areas 326, 407, 464..466, 468..470,
+  472..477 (0x1a). All of them drew nothing before. Checked offscreen (zone-shot 245 --sub 464) and live (Lnxcsfix
+  inside the Chamber of Commerce, modern UI).
+- The trigger point: FUN_10014390 passes our actor model's position (vtable +0x1bc, the +0x404 the doll moves; the
+  second call is the same getter) to FUN_10181540 -> FUN_101760f0, so an event that moves our model moves it too.
+  Ours took the network position. Event 20089 in Lower Jeuno (`!cs 20089`, Mumor) puts us at (-84.27, -6.0,
+  -167.49), inside m6td (param 466, Mumor's room): before, the stand-in box showed; now 466 loads (seen live). Its
+  own op 0x75 request is skipped with params 0, as LSB's `!cs` sends.
+- That event ends on fdo1 with no fade-in (the server warps the player to Batallia Downs after it), so with `!cs`
+  the screen stays black until the next zone change; the fade outlives the event, as retail's does.
+- zone-info lists the sub-area triggers ('m' / 'M' records: class, param, box).
