@@ -871,6 +871,7 @@ enum Line<'a> {
 }
 
 /// The place for the window: x, the top (Left / Top) or the foot (Right), and the most height it may take.
+#[derive(Clone, Copy, Debug)]
 pub struct Place {
     pub dock: Dock,
     pub x: f32,

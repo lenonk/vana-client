@@ -931,6 +931,7 @@ fn track_cast(w: &mut World, a: &Action) {
 /// work = [cmd_arg, value, proc value, react value, bit]; melee waits for the attacker's hit.
 fn one_action(w: &mut World, a: &Action) {
     track_cast(w, a);
+    super::skillchain::on_action(w, a);
     // Our cast finished (category 4, magic file 0xaf0): the spell's recast (asm 0x100a900d).
     if a.actor == w.my_id && a.category == category::MAGIC_FINISH {
         super::magic::set_recast(w, a.arg as u16, a.info);
@@ -1212,6 +1213,7 @@ pub(super) fn apply_status(w: &mut World, id: u32, status: u8) {
 
 /// Fires pending hits whose time has come, and applies statuses whose swing hold has ended.
 pub(super) fn tick(w: &mut World) {
+    super::skillchain::tick(w);
     let now = Instant::now();
     // The next swing of a round whose last swing has ended.
     let due: Vec<u32> = w.rounds.iter().filter(|(_, (at, _))| *at <= now).map(|(id, _)| *id).collect();

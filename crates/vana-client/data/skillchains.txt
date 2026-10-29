@@ -1,0 +1,674 @@
+# vana-client skillchain-gen from LandSandBoat sql/: weapon_skills, mob_skills, pet_skills, blue_spell_list, mob_skill_lists
+# w id p1 p2 p3 type skilllevel name / m id p1 p2 p3 name / b spell p1 p2 p3 / t trust skill...
+w 1 8 0 0 1 5 combo
+w 2 5 8 0 1 40 shoulder_tackle
+w 3 2 0 0 1 75 one_inch_punch
+w 4 6 0 0 1 100 backhand_blow
+w 5 8 0 0 1 125 raging_fists
+w 6 3 8 0 1 150 spinning_attack
+w 7 1 8 0 1 200 howling_fist
+w 8 12 0 0 1 225 dragon_kick
+w 9 9 3 0 1 250 asuran_fists
+w 10 13 11 0 1 0 final_heaven
+w 11 11 1 0 1 0 ascetics_fury
+w 12 9 3 0 1 0 stringing_pummel
+w 13 7 8 6 1 300 tornado_kick
+w 14 13 12 0 1 0 victory_smite
+w 15 11 5 0 1 357 shijin_spiral
+w 16 4 0 0 2 5 wasp_sting
+w 17 4 0 0 2 100 viper_bite
+w 18 5 0 0 2 70 shadowstitch
+w 19 6 0 0 2 40 gust_slash
+w 20 6 8 0 2 125 cyclone
+w 21 0 0 0 2 150 energy_steal
+w 22 0 0 0 2 175 energy_drain
+w 23 4 6 0 2 200 dancing_edge
+w 24 12 0 0 2 225 shark_bite
+w 25 9 1 0 2 230 evisceration
+w 26 14 9 0 2 0 mercy_stroke
+w 27 11 2 0 2 0 mandalic_stab
+w 28 12 10 0 2 0 mordant_rime
+w 29 10 4 0 2 0 pyrrhic_kleos
+w 30 4 6 8 2 290 aeolian_edge
+w 31 14 10 0 2 0 rudras_storm
+w 32 4 0 0 3 5 fast_blade
+w 33 3 0 0 3 30 burning_blade
+w 34 3 6 0 3 50 red_lotus_blade
+w 35 8 0 0 3 75 flat_blade
+w 36 4 0 0 3 100 shining_blade
+w 37 4 0 0 3 125 seraph_blade
+w 38 5 8 0 3 150 circle_blade
+w 39 0 0 0 3 175 spirits_within
+w 40 4 8 0 3 200 vorpal_blade
+w 41 9 0 0 3 225 swift_blade
+w 42 12 4 0 3 240 savage_blade
+w 43 13 11 0 3 0 knights_of_round
+w 44 12 10 0 3 0 death_blossom
+w 45 11 5 0 3 0 atonement
+w 46 10 4 0 3 0 expiacion
+w 47 0 0 0 3 300 sanguine_blade
+w 48 4 0 0 4 5 hard_slash
+w 49 1 0 0 4 30 power_slash
+w 50 7 0 0 4 70 frostbite
+w 51 7 6 0 4 100 freezebite
+w 52 5 0 0 4 150 shockwave
+w 53 4 0 0 4 175 crescent_moon
+w 54 4 8 0 4 200 sickle_moon
+w 55 12 0 0 4 225 spinning_slash
+w 56 12 10 0 4 250 ground_strike
+w 57 13 11 0 4 0 scourge
+w 58 7 8 6 4 290 herculean_slash
+w 59 13 10 0 4 0 torcleaver
+w 60 12 4 0 4 357 resolution
+w 61 13 12 0 4 0 dimidiation
+w 64 6 8 0 5 5 raging_axe
+w 65 7 5 0 5 40 smash_axe
+w 66 6 0 0 5 70 gale_axe
+w 67 4 8 0 5 100 avalanche_axe
+w 68 3 4 8 5 150 spinning_axe
+w 69 4 0 0 5 175 rampage
+w 70 4 8 0 5 200 calamity
+w 71 11 0 0 5 225 mistral_axe
+w 72 11 5 0 5 240 decimation
+w 73 14 9 0 5 0 onslaught
+w 74 9 5 0 5 0 primal_rend
+w 75 4 6 0 5 290 bora_axe
+w 76 14 12 0 5 0 cloudsplitter
+w 77 10 6 0 5 357 ruinator
+w 80 8 0 0 6 5 shield_break
+w 81 4 0 0 6 40 iron_tempest
+w 82 5 4 0 6 70 sturmwind
+w 83 8 0 0 6 100 armor_break
+w 84 2 0 0 6 150 keen_edge
+w 85 8 0 0 6 175 weapon_break
+w 86 7 5 0 6 200 raging_rush
+w 87 10 0 0 6 225 full_break
+w 88 10 6 0 6 240 steel_cyclone
+w 89 13 11 0 6 0 metatron_torment
+w 90 12 4 0 6 0 kings_justice
+w 91 4 6 8 6 300 fell_cleave
+w 92 13 12 0 6 0 ukkos_fury
+w 93 11 2 0 6 357 upheaval
+w 96 4 0 0 7 5 slice
+w 97 5 0 0 7 30 dark_harvest
+w 98 7 5 0 7 70 shadow_of_death
+w 99 2 4 0 7 100 nightmare_scythe
+w 100 5 4 0 7 125 spinning_scythe
+w 101 1 4 0 7 150 vorpal_scythe
+w 102 7 0 0 7 200 guillotine
+w 103 10 0 0 7 225 cross_reaper
+w 104 10 4 0 7 240 spiral_hell
+w 105 14 9 0 7 0 catastrophe
+w 106 11 2 0 7 0 insurgency
+w 107 2 5 0 7 300 infernal_scythe
+w 108 14 10 0 7 0 quietus
+w 109 9 5 0 7 357 entropy
+w 112 1 0 0 8 5 double_thrust
+w 113 1 8 0 8 30 thunder_thrust
+w 114 1 8 0 8 70 raiden_thrust
+w 115 8 0 0 8 100 leg_sweep
+w 116 2 0 0 8 150 penta_thrust
+w 117 5 1 0 8 175 vorpal_thrust
+w 118 1 8 0 8 200 skewer
+w 119 11 0 0 8 225 wheeling_thrust
+w 120 9 7 0 8 240 impulse_drive
+w 121 13 10 0 8 0 geirskogul
+w 122 11 1 0 8 0 drakesbane
+w 123 1 4 0 8 300 sonic_thrust
+w 124 13 12 0 8 0 camlanns_torment
+w 125 9 1 0 8 357 stardiver
+w 128 1 0 0 9 5 blade_rin
+w 129 4 0 0 9 30 blade_retsu
+w 130 5 0 0 9 70 blade_teki
+w 131 7 6 0 9 100 blade_to
+w 132 1 8 0 9 150 blade_chi
+w 133 2 0 0 9 175 blade_ei
+w 134 6 8 0 9 200 blade_jin
+w 135 9 0 0 9 225 blade_ten
+w 136 9 1 0 9 250 blade_ku
+w 137 14 12 0 9 0 blade_metsu
+w 138 12 2 0 9 0 blade_kamu
+w 139 5 4 0 9 290 blade_yu
+w 140 14 9 0 9 0 blade_hi
+w 141 11 8 0 9 357 blade_shun
+w 144 1 4 0 10 5 tachi_enpi
+w 145 7 0 0 10 30 tachi_hobaku
+w 146 1 8 0 10 70 tachi_goten
+w 147 3 0 0 10 100 tachi_kagero
+w 148 4 6 0 10 150 tachi_jinpu
+w 149 5 8 0 10 175 tachi_koki
+w 150 7 6 0 10 200 tachi_yukikaze
+w 151 10 5 0 10 225 tachi_gekko
+w 152 11 2 0 10 250 tachi_kasha
+w 153 13 12 0 10 0 tachi_kaiten
+w 154 9 7 0 10 0 tachi_rana
+w 155 2 4 0 10 300 tachi_ageha
+w 156 13 10 0 10 0 tachi_fudo
+w 157 12 2 0 10 357 tachi_shoha
+w 158 11 0 0 10 0 tachi_suikawari
+w 160 8 0 0 11 5 shining_strike
+w 161 8 0 0 11 40 seraph_strike
+w 162 5 0 0 11 70 brainshaker
+w 163 0 0 0 11 100 starlight
+w 164 0 0 0 11 125 moonlight
+w 165 7 5 0 11 150 skullbreaker
+w 166 8 6 0 11 175 true_strike
+w 167 8 0 0 11 200 judgment
+w 168 11 0 0 11 220 hexa_strike
+w 169 12 2 0 11 230 black_halo
+w 170 13 12 0 11 0 randgrith
+w 171 0 0 0 11 0 mystic_boon
+w 172 7 5 0 11 290 flash_nova
+w 173 0 0 0 11 0 dagan
+w 174 11 8 0 11 357 realmrazer
+w 176 8 0 0 12 5 heavy_swing
+w 177 8 0 0 12 40 rock_crusher
+w 178 6 8 0 12 70 earth_crusher
+w 179 2 5 0 12 100 starburst
+w 180 2 5 0 12 150 sunburst
+w 181 6 0 0 12 175 shell_crusher
+w 182 3 8 0 12 200 full_swing
+w 183 0 0 0 12 215 spirit_taker
+w 184 9 5 0 12 230 retribution
+w 185 14 10 0 12 0 gate_of_tartarus
+w 186 12 10 0 12 0 vidohunir
+w 187 11 5 0 12 0 garland_of_bliss
+w 188 9 1 0 12 0 omniscience
+w 189 2 5 0 12 290 cataclysm
+w 190 0 0 0 12 0 myrkr
+w 191 9 7 0 12 357 shattersoul
+w 192 3 1 0 25 5 flaming_arrow
+w 193 5 1 0 25 40 piercing_arrow
+w 194 3 1 0 25 80 dulling_arrow
+w 196 5 1 6 25 175 sidewinder
+w 197 7 1 0 25 200 blast_arrow
+w 198 11 0 0 25 225 arching_arrow
+w 199 11 1 0 25 250 empyreal_arrow
+w 200 13 10 0 25 0 namas_arrow
+w 201 5 1 0 25 290 refulgent_arrow
+w 202 13 11 0 25 0 jishnus_radiance
+w 203 12 1 0 25 357 apex_arrow
+w 208 3 1 0 26 5 hot_shot
+w 209 5 1 0 26 40 split_shot
+w 210 3 1 0 26 80 sniper_shot
+w 212 5 1 6 26 175 slug_shot
+w 213 7 1 0 26 200 blast_shot
+w 214 11 0 0 26 225 heavy_shot
+w 215 11 1 0 26 250 detonator
+w 216 14 12 0 26 0 coronach
+w 217 12 4 0 26 0 trueflight
+w 218 9 1 0 26 0 leaden_salute
+w 219 7 6 8 26 290 numbing_shot
+w 220 14 9 0 26 0 wildfire
+w 221 11 5 0 26 357 last_stand
+w 224 12 4 0 2 357 exenterator
+w 225 13 10 0 3 0 chant_du_cygne
+w 226 9 4 0 3 357 requiescat
+w 227 13 0 0 3 0 knights_of_rotund
+w 228 13 0 0 1 0 final_paradise
+w 238 13 12 0 3 0 uriel_blade
+w 239 13 11 0 3 0 glory_slash
+w 240 0 0 0 12 0 tartarus_torpor
+m 1 8 0 0 combo
+m 2 5 8 0 shoulder_tackle
+m 3 2 0 0 one_inch_punch
+m 4 6 0 0 backhand_blow
+m 5 8 0 0 raging_fists
+m 6 3 8 0 spinning_attack
+m 7 1 8 0 howling_fist
+m 8 12 0 0 dragon_kick
+m 9 9 3 0 asuran_fists
+m 10 13 11 0 final_heaven
+m 11 11 1 0 ascetics_fury
+m 12 9 3 0 stringing_pummel
+m 13 7 8 6 tornado_kick
+m 14 13 12 0 victory_smite
+m 15 11 5 0 shijin_spiral
+m 16 4 0 0 wasp_sting
+m 17 4 0 0 viper_bite
+m 18 5 0 0 shadowstitch
+m 19 6 0 0 gust_slash
+m 20 6 8 0 cyclone
+m 23 4 6 0 dancing_edge
+m 24 12 0 0 shark_bite
+m 25 9 1 0 evisceration
+m 26 14 9 0 mercy_stroke
+m 27 11 2 0 mandalic_stab
+m 28 12 10 0 mordant_rime
+m 29 10 4 0 pyrrhic_kleos
+m 30 4 6 8 aeolian_edge
+m 31 14 10 0 rudras_storm
+m 32 4 0 0 fast_blade
+m 33 3 0 0 burning_blade
+m 34 3 6 0 red_lotus_blade
+m 35 8 0 0 flat_blade
+m 36 4 0 0 shining_blade
+m 37 4 0 0 seraph_blade
+m 38 5 8 0 circle_blade
+m 40 5 8 0 vorpal_blade
+m 41 9 0 0 swift_blade
+m 42 12 4 0 savage_blade
+m 43 13 11 0 knights_of_round
+m 44 12 10 0 death_blossom
+m 45 11 5 0 atonement
+m 46 10 4 0 expiacion
+m 48 4 0 0 hard_slash
+m 49 4 0 0 power_slash
+m 50 7 0 0 frostbite
+m 51 7 6 0 freezebite
+m 52 5 0 0 shockwave
+m 53 4 0 0 crescent_moon
+m 54 4 8 0 sickle_moon
+m 55 12 0 0 spinning_slash
+m 56 12 10 0 ground_strike
+m 57 13 11 0 scourge
+m 58 7 8 6 herculean_slash
+m 59 13 10 0 torcleaver
+m 60 12 4 0 resolution
+m 61 13 12 0 dimidiation
+m 62 10 8 6 fimbulvetr
+m 64 6 8 0 raging_axe
+m 65 7 5 0 smash_axe
+m 66 6 0 0 gale_axe
+m 67 4 8 0 avalanche_axe
+m 68 3 4 8 spinning_axe
+m 69 4 0 0 rampage
+m 70 4 8 0 calamity
+m 71 11 0 0 mistral_axe
+m 72 11 5 0 decimation
+m 73 14 9 0 onslaught
+m 74 9 5 0 primal_rend
+m 75 4 6 0 bora_axe
+m 76 14 12 0 cloudsplitter
+m 77 10 6 0 ruinator
+m 78 12 8 3 blitz
+m 80 8 0 0 shield_break
+m 81 4 0 0 iron_tempest
+m 82 5 4 0 sturmwind
+m 83 8 0 0 armor_break
+m 84 2 0 0 keen_edge
+m 85 8 0 0 weapon_break
+m 86 7 5 0 raging_rush
+m 87 10 0 0 full_break
+m 88 10 6 0 steel_cyclone
+m 89 13 11 0 metatron_torment
+m 90 12 4 0 kings_justice
+m 91 4 6 8 fell_cleave
+m 92 13 12 0 ukkos_fury
+m 93 11 2 0 upheaval
+m 94 9 4 1 disaster
+m 96 4 0 0 slice
+m 97 5 0 0 dark_harvest
+m 98 7 5 0 shadow_of_death
+m 99 2 4 0 nightmare_scythe
+m 100 5 4 0 spinning_scythe
+m 101 1 4 0 vorpal_scythe
+m 102 7 0 0 guillotine
+m 103 10 0 0 cross_reaper
+m 104 10 4 0 spiral_hell
+m 105 14 9 0 catastrophe
+m 106 11 2 0 insurgency
+m 107 2 5 0 infernal_scythe
+m 108 14 10 0 quietus
+m 109 9 5 0 entropy
+m 110 11 7 5 origin
+m 112 1 0 0 double_thrust
+m 113 1 8 0 thunder_thrust
+m 114 1 8 0 raiden_thrust
+m 115 8 0 0 leg_sweep
+m 116 2 0 0 penta_thrust
+m 117 5 1 0 vorpal_thrust
+m 118 1 8 0 skewer
+m 119 11 0 0 wheeling_thrust
+m 120 9 7 0 impulse_drive
+m 121 13 10 0 geirskogul
+m 122 11 1 0 drakesbane
+m 123 1 4 0 sonic_thrust
+m 124 13 12 0 camlanns_torment
+m 125 9 1 0 stardiver
+m 126 10 4 1 diarmuid
+m 128 1 0 0 blade_rin
+m 129 4 0 0 blade_retsu
+m 130 5 0 0 blade_teki
+m 131 7 6 0 blade_to
+m 132 1 8 0 blade_chi
+m 133 2 0 0 blade_ei
+m 134 6 8 0 blade_jin
+m 135 9 0 0 blade_ten
+m 136 9 1 0 blade_ku
+m 137 14 12 0 blade_metsu
+m 138 12 2 0 blade_kamu
+m 139 5 4 0 blade_yu
+m 140 14 9 0 blade_hi
+m 141 11 8 0 blade_shun
+m 142 11 7 5 zesho_meppo
+m 144 1 4 0 tachi_enpi
+m 145 7 0 0 tachi_hobaku
+m 146 1 8 0 tachi_goten
+m 147 3 0 0 tachi_kagero
+m 148 4 6 0 tachi_jinpu
+m 149 5 8 0 tachi_koki
+m 150 7 6 0 tachi_yukikaze
+m 151 10 5 0 tachi_gekko
+m 152 11 2 0 tachi_kasha
+m 153 13 12 0 tachi_kaiten
+m 154 9 7 0 tachi_rana
+m 155 2 4 0 tachi_ageha
+m 156 13 10 0 tachi_fudo
+m 157 12 2 0 tachi_shoha
+m 158 11 0 0 tachi_suikawari
+m 159 11 7 5 tachi_mumei
+m 160 8 0 0 shining_strike
+m 161 8 0 0 seraph_strike
+m 162 5 0 0 brainshaker
+m 165 7 5 0 skullbreaker
+m 166 8 6 0 true_strike
+m 167 8 0 0 judgment
+m 168 11 0 0 hexa_strike
+m 169 12 2 0 black_halo
+m 170 13 12 0 randgrith
+m 172 7 5 0 flash_nova
+m 174 11 8 0 realmrazer
+m 176 8 0 0 heavy_swing
+m 177 8 0 0 rock_crusher
+m 178 6 8 0 earth_crusher
+m 179 2 5 0 starburst
+m 180 2 5 0 sunburst
+m 181 6 0 0 shell_crusher
+m 182 3 8 0 full_swing
+m 184 9 5 0 retribution
+m 185 14 10 0 gate_of_tartarus
+m 186 12 10 0 vidohunir
+m 187 11 5 0 garland_of_bliss
+m 188 9 1 0 omniscience
+m 189 2 5 0 cataclysm
+m 191 9 7 0 shattersoul
+m 192 3 1 0 flaming_arrow
+m 193 5 1 0 piercing_arrow
+m 194 3 1 0 dulling_arrow
+m 196 5 1 6 sidewinder
+m 197 7 1 0 blast_arrow
+m 198 11 0 0 arching_arrow
+m 199 11 1 0 empyreal_arrow
+m 200 13 10 0 namas_arrow
+m 201 5 1 0 refulgent_arrow
+m 202 13 11 0 jishnus_radiance
+m 203 12 1 0 apex_arrow
+m 204 9 4 1 sarv
+m 208 3 1 0 hot_shot
+m 209 5 1 0 split_shot
+m 210 3 1 0 sniper_shot
+m 212 5 1 6 slug_shot
+m 213 7 1 0 blast_shot
+m 214 11 0 0 heavy_shot
+m 215 11 1 0 detonator
+m 216 14 12 0 coronach
+m 217 12 4 0 trueflight
+m 218 9 1 0 leaden_salute
+m 219 7 6 8 numbing_shot
+m 220 14 9 0 wildfire
+m 221 11 5 0 last_stand
+m 222 11 7 5 terminus
+m 224 12 4 0 exenterator
+m 225 13 10 0 chant_du_cygne
+m 226 9 4 0 requiescat
+m 227 11 0 0 knights_of_rotund
+m 228 13 0 0 final_paradise
+m 229 11 0 0 fast_blade_ii
+m 230 10 0 0 dragon_blow
+m 231 10 6 2 maru_kala
+m 232 12 8 3 ruthless_stroke
+m 233 10 6 2 imperator
+m 234 9 4 1 dagda
+m 235 11 7 5 oshala
+m 238 13 12 4 uriel_blade
+m 239 13 11 0 glory_slash
+m 674 8 0 0 whirl_claws
+m 831 2 0 0 moonlit_charge
+m 832 1 0 0 crescent_fang
+m 836 9 4 0 eclipse_bite
+m 840 3 0 0 punch
+m 842 8 0 0 burning_strike
+m 843 2 0 0 double_punch
+m 846 11 5 0 flaming_crush
+m 849 4 0 0 rock_throw
+m 851 5 0 0 rock_buster
+m 852 7 0 0 megalith_throw
+m 855 9 7 0 mountain_buster
+m 858 5 0 0 barracuda_dive
+m 860 6 0 0 tail_whip
+m 864 10 6 0 spinning_dive
+m 867 6 0 0 claw
+m 873 12 4 0 predator_claws
+m 876 7 0 0 axe_kick
+m 880 4 0 0 double_slap
+m 882 10 4 0 rush
+m 885 8 0 0 shock_strike
+m 891 12 1 0 chaotic_strike
+m 907 1 0 0 poison_nails
+m 938 5 8 0 circle_blade
+m 939 9 0 0 swift_blade
+m 940 4 0 0 rampage
+m 941 4 8 0 calamity
+m 943 4 8 0 vorpal_blade
+m 944 5 4 0 spinning_scythe
+m 945 7 0 0 guillotine
+m 946 7 6 0 tachi_yukikaze
+m 947 10 5 0 tachi_gekko
+m 948 11 2 0 tachi_kasha
+m 968 3 6 0 red_lotus_blade
+m 969 8 0 0 flat_blade
+m 970 12 4 0 savage_blade
+m 973 3 6 0 red_lotus_blade
+m 975 4 8 0 vorpal_blade
+m 979 1 0 0 power_slash
+m 980 7 6 0 freeze_bite
+m 981 12 10 0 ground_strike
+m 987 7 6 0 shockwave
+m 1027 8 0 0 combo
+m 1028 5 8 0 tackle
+m 1029 2 0 0 one-ilm_punch
+m 1030 6 0 0 backhand_blow
+m 1031 3 8 0 spinning_attack
+m 1032 1 8 0 howling_fist
+m 1033 12 0 0 dragon_kick
+m 1034 9 3 0 asuran_fists
+m 1390 1 4 0 amatsu_torimai
+m 1391 4 6 0 amatsu_kazakiri
+m 1392 7 6 0 amatsu_yukiarashi
+m 1393 10 5 0 amatsu_tsukioboro
+m 1394 11 2 0 amatsu_hanaikusa
+m 1395 12 6 0 amatsu_tsukikage
+m 1737 4 8 0 vorpal_blade
+m 1940 6 7 0 chimera_ripper
+m 1941 4 0 0 string_clipper
+m 1942 3 1 0 arcuballista
+m 1943 5 8 0 slapstick
+m 2065 2 5 0 cannibal_blade
+m 2066 8 1 0 daze
+m 2067 4 6 0 knockout
+m 2092 14 10 0 scouring_bubbles
+m 2299 12 0 0 bone_crusher
+m 2300 9 0 0 armor_piercer
+m 2301 11 3 0 magic_mortar
+m 2448 4 0 0 regal_scratch
+m 2743 10 4 0 string_shredder
+m 2744 11 8 0 armor_shatterer
+m 2891 3 2 0 grapeshot
+m 2892 9 0 0 pirate_pummel
+m 2893 5 1 0 powder_keg
+m 2894 11 0 0 walk_the_plank
+m 3189 12 10 0 king_cobra_clamp
+m 3192 4 8 0 vorpal_blade
+m 3198 3 2 0 grapeshot
+m 3199 9 0 0 pirate_pummel
+m 3200 5 1 0 powder_keg
+m 3201 11 0 0 walk_the_plank
+m 3203 14 10 0 scouring_bubbles
+m 3216 3 6 0 red_lotus_blade
+m 3217 12 4 0 savage_blade
+m 3234 7 6 8 nullifying_dropkick
+m 3235 13 12 0 auroral_uppercut
+m 3236 11 2 8 knuckle_sandwich
+m 3237 13 10 0 victory_beacon
+m 3243 12 10 0 imperial_authority
+m 3256 1 0 0 hane_fubuki
+m 3257 14 9 0 shibaraku
+m 3259 5 8 0 happobarai
+m 3261 3 6 0 bomb_toss
+m 3262 11 8 0 goblin_rush
+m 3314 8 6 0 true_strike
+m 3315 11 0 0 hexa_strike
+m 3413 8 0 0 combo
+m 3414 2 0 0 one-ilm_punch
+m 3415 1 8 0 howling_fist
+m 3416 12 0 0 dragon_kick
+m 3417 9 3 0 asuran_fists
+m 3432 12 4 0 savage_blade
+m 3437 11 2 0 tachi_kasha
+m 3438 13 11 0 dragon_breath
+m 3439 4 6 0 hurricane_wing
+m 3466 7 5 0 paralyzing_microtube
+m 3467 3 6 0 silencing_microtube
+m 3468 9 7 0 binding_microtube
+m 3469 13 11 0 twirling_dervish
+m 3470 12 4 0 great_wheel
+m 3471 13 11 0 light_blade
+m 3472 10 5 0 vortex
+m 3473 14 9 0 stellar_burst
+m 3487 5 1 6 sidewinder
+m 3488 11 0 0 arching_arrow
+m 3489 14 9 0 stellar_arrow
+m 3490 12 10 0 lux_arrow
+m 3491 3 2 0 grapeshot
+m 3492 9 0 0 pirate_pummel
+m 3493 5 1 0 powder_keg
+m 3494 11 0 0 walk_the_plank
+m 3496 13 12 0 hollow_smite
+m 3542 13 10 0 oisoya
+m 3653 2 4 0 tartaric_sigil
+m 3654 11 1 0 null_field
+m 3655 10 6 0 alabaster_burst
+m 3656 9 4 0 noble_frenzy
+m 3657 12 4 0 fulminous_fury
+m 3658 13 10 0 no_quarter
+m 3708 9 0 0 swift_blade
+m 3709 13 10 0 chant_du_cygne
+m 3711 4 8 0 vorpal_blade
+m 3713 13 10 0 chant_du_cygne
+m 3715 4 0 0 rampage
+m 3716 4 8 0 calamity
+m 3718 14 12 0 cloudsplitter
+m 3721 7 0 0 guillotine
+m 3722 7 6 0 tachi_yukikaze
+m 3723 10 5 0 tachi_gekko
+m 3725 11 2 0 tachi_kasha
+m 3726 13 10 0 tachi_fudo
+m 3740 13 11 0 final_exam
+m 3741 14 9 0 doctors_orders
+m 3742 12 1 0 empirical_research
+m 3743 10 4 0 lesson_in_pain
+b 519 1 4 0
+b 527 6 0 0
+b 529 3 0 0
+b 539 2 5 0
+b 540 4 6 0
+b 543 7 0 0
+b 545 2 0 0
+b 551 5 0 0
+b 554 2 5 0
+b 560 7 0 0
+b 564 8 0 0
+b 567 1 0 0
+b 569 8 0 0
+b 577 6 0 0
+b 585 12 0 0
+b 587 4 0 0
+b 589 1 8 0
+b 594 3 8 0
+b 596 3 0 0
+b 597 5 0 0
+b 599 2 0 0
+b 603 1 0 0
+b 611 10 0 0
+b 617 9 0 0
+b 620 8 0 0
+b 622 7 0 0
+b 623 8 0 0
+b 628 8 0 0
+b 631 5 0 0
+b 638 1 0 0
+b 640 5 0 0
+b 641 6 0 0
+b 643 11 0 0
+b 650 7 6 0
+b 652 1 0 0
+b 653 3 8 0
+b 654 12 0 0
+b 665 11 0 0
+b 666 11 8 0
+b 669 4 6 0
+b 670 9 1 0
+b 673 10 4 0
+b 677 2 4 0
+b 682 3 6 0
+b 688 12 1 0
+b 692 6 0 0
+b 693 3 4 8
+b 697 9 0 0
+b 699 10 4 0
+b 740 13 12 0
+b 742 14 9 0
+b 743 14 10 0
+t aaev 3710 3711 3712 3713
+t aagk 3722 3723 3724 3725 3726
+t aahm 3706 3708 3709
+t aamr 3715 3716 3717 3718
+t aatt 3720 3721
+t abquhbah 1 4 3541
+t adelheid 3466 3467 3468 3469
+t amchuchu 61 49 54
+t areuhat 37 40 42 3438 3439
+t august 3653 3654 3655 3656 3657 3658
+t augustmelee 3648 3649 3650 3651
+t ayame 144 145 146 147 148 150 151 152
+t curilla 34 37 41 40
+t excenmille 112 115 116
+t fablinix 3261 3262
+t ferreouscoffin 170
+t gessho 3256 3257 3258 3259 3260
+t ironeater 80 83 88
+t karahabaruha 3336 183 179 180
+t kupipi 163 164
+t lehkohabhoka 3230 3231 3232 3233
+t lion 3198 3199 3200 3201
+t lionii 3491 3492 3493 3494
+t maat 3263 3413 3414 3415 3416 3417
+t maatuc 3496
+t mastuip 128 129 133 134 141 138
+t mihlialiapoh 162 166 168 3203
+t mildaurion 3470 3471 3472 3473
+t mnejing 1940 1941 3245
+t mumor 165
+t najasalaheem 166 168 169 3215
+t naji 33 34 40
+t nanaamihgo 16 23 3189
+t nashmeira 3243
+t nashmeiraii 3243
+t prishe 3234 3235 3236
+t prisheii 3234 3235 3236
+t qultada 33 42 210 215
+t rahal 32 37 42 41
+t rainemard 33 34 40 42
+t rughadjeen 49 54 56 3237
+t semihlafihna 3487 3488 3489 3490
+t shantottoii 3740 3741 3742 3743
+t shantottoiimelee 3739
+t shikareez 114 118 119 120
+t tenzen 1390 1391 1392 1393 1394 1395
+t tenzenii 3542
+t trion 968 970 3193 3194
+t ukatotlihn 167
+t valaineral 38 42 47 238
+t volker 34 39 40 42
+t zeidii 56

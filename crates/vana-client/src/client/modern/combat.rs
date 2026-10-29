@@ -3,7 +3,9 @@
 //! `World::action_click`), the arrow of a command with a Right function (Call for Help / Disengage swap, Magic's
 //! magselec, Chat's chat mode) runs that.
 
-use super::super::{World, combat, magic, monstrosity};
+use super::super::magic::Kind;
+use super::super::suggest::Action;
+use super::super::{World, combat, listsearch, magic, monstrosity, suggest};
 use super::{Panels, Title, paint};
 use crate::audio::Ui as Se;
 use egui::{Align2, Color32, FontFamily, FontId, Sense, pos2, vec2};
@@ -44,17 +46,77 @@ fn has_right(c: u8) -> bool {
 }
 
 pub fn draw(p: &mut Panels, w: &mut World) {
+    suggest::refresh_root(w);
     let Some(menu) = w.action_menu.clone().filter(|_| w.prompt.is_none()) else { return };
     let m = p.m;
+    // Ours: the suggestions above the commands (suggest.rs); the cursor rides them as one ring with the commands.
+    let sugg = w.root_sugg.clone();
+    let on_sugg = w.suggest_sel.filter(|&k| k < sugg.len());
+    let shown: Vec<(String, Option<egui::TextureId>, bool)> = sugg
+        .iter()
+        .map(|s| {
+            let (kind, id) = match s.action {
+                Action::Spell(id) => (Kind::Magic, id),
+                Action::Ability(id) => (Kind::Ability, id),
+            };
+            let name = if kind == Kind::Magic { magic::spell_name(w, id) } else { magic::ability_name(w, id) };
+            let label = match &s.target {
+                Some(t) => format!("{name}  \u{2192} {t}"),
+                None => name,
+            };
+            let icon = p.gu.and_then(|gu| magic::row_icon(w, kind, id).and_then(|(lib, i)| m.sprite_icon(p.ctx, gu, lib, i)));
+            let off = match s.action {
+                Action::Spell(id) => magic::magic_check(w, id).is_some(),
+                Action::Ability(id) => magic::ability_check(w, id).is_some(),
+            };
+            (label, icon, off)
+        })
+        .collect();
+    let (mut s_hover, mut s_click) = (None, None);
     let engaged = w.my_motion.status == 1;
     let target = w.target.and_then(|t| if t == w.my_id { Some(monstrosity::my_name(w).to_string()) } else { w.entities.get(&t).map(|e| monstrosity::name(e).to_string()) });
     let title = if engaged { "Battle" } else { "Commands" };
     let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let (mut hovered, mut clicked, mut arrow) = (None, None, None);
-    p.panel("combat", Some(Title { icon: Some("icons/attack"), text: title, note: target.as_deref() }), 270.0, |ui| {
+    let width = if sugg.is_empty() { 270.0 } else { 360.0 };
+    p.panel("combat", Some(Title { icon: Some("icons/attack"), text: title, note: target.as_deref() }), width, |ui| {
+        if !sugg.is_empty() {
+            ui.label(egui::RichText::new("Suggested").size(m.theme.small).color(m.theme.color("gold")));
+            for (k, (s, (label, icon, off))) in sugg.iter().zip(&shown).enumerate() {
+                let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 46.0), Sense::click());
+                let on = on_sugg == Some(k);
+                let face = if on {
+                    "controls/list_row_selected"
+                } else if resp.hovered() {
+                    "controls/list_row_hover"
+                } else if *off {
+                    "controls/list_row_disabled"
+                } else {
+                    "controls/list_row_normal"
+                };
+                let painter = ui.painter();
+                super::rows::face(painter, m, r, face, Color32::WHITE);
+                if let Some(t) = icon {
+                    painter.image(*t, egui::Rect::from_min_size(pos2(r.min.x + 16.0, r.min.y + 6.0), vec2(24.0, 24.0)), super::FULL_UV, Color32::WHITE);
+                }
+                let room = r.max.x - r.min.x - 58.0;
+                let label = super::one_line(painter, label, FontId::new(m.theme.ui, FontFamily::Name(super::STRONG.into())), super::rows::label_colour(m, on, *off), room);
+                painter.galley(pos2(r.min.x + 50.0, r.min.y + 5.0), label, Color32::WHITE);
+                let reason = super::one_line(painter, &s.reason, FontId::proportional(m.theme.small), m.theme.color("muted"), room);
+                painter.galley(pos2(r.min.x + 50.0, r.min.y + 27.0), reason, Color32::WHITE);
+                if resp.hovered() {
+                    s_hover = Some(k);
+                }
+                if resp.clicked() {
+                    s_click = Some(k);
+                }
+                ui.add_space(2.0);
+            }
+            ui.add_space(8.0);
+        }
         for (k, &c) in menu.items.iter().enumerate() {
             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
-            let on = k == menu.sel;
+            let on = k == menu.sel && on_sugg.is_none();
             // Nothing in it can be used now (status, recasts, MP / TP): greyed, still opens as retail's.
             let off = !magic::command_ready(w, c);
             let face = if on {
@@ -89,9 +151,20 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             ui.add_space(2.0);
         }
     });
+    if let Some(k) = s_click
+        && let Some(s) = sugg.get(k)
+    {
+        listsearch::pick_root(w, s.action, s.target.as_deref());
+        return;
+    }
+    if let Some(k) = s_hover.filter(|&k| moved && on_sugg != Some(k)) {
+        w.suggest_sel = Some(k);
+        w.sounds.push(Se::Cursor as u32);
+    }
     let Some(am) = w.action_menu.as_mut() else { return };
-    if let Some(k) = hovered.filter(|&k| moved && k != am.sel) {
+    if let Some(k) = hovered.filter(|&k| moved && (k != am.sel || on_sugg.is_some())) {
         am.sel = k;
+        w.suggest_sel = None;
         w.sounds.push(Se::Cursor as u32);
     }
     if let Some(k) = arrow {

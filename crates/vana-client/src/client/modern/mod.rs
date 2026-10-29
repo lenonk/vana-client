@@ -453,6 +453,8 @@ fn default_place(id: &str) -> Place {
         "timers" => at(0.0, 0.2187),
         // The training regime lower on the same edge.
         "regime" => at(0.0, 0.6),
+        // The skillchain helper on the right edge, under the minimap.
+        "skillchains" => at(-0.001, 0.25),
         "minimap" => at(-0.001, 0.0353),
         // The command window: every window the command menu opens shows here. The item info rides the log as retail's
         // (mode 0, flag 0x1000).
@@ -1066,4 +1068,11 @@ fn title_row_in(ui: &mut Ui, m: &Modern, t: &Title, colour: egui::Color32) {
     if let Some(n) = t.note {
         p.text(pos2(r.max.x, r.center().y), egui::Align2::RIGHT_CENTER, n, FontId::proportional(m.theme.small), m.theme.color("muted"));
     }
+}
+
+/// `text` on one line of at most `width`, cut with an ellipsis.
+pub(super) fn one_line(painter: &egui::Painter, text: &str, font: egui::FontId, colour: egui::Color32, width: f32) -> std::sync::Arc<egui::Galley> {
+    let mut job = egui::text::LayoutJob::simple_singleline(text.to_string(), font, colour);
+    job.wrap = egui::text::TextWrapping { max_width: width, max_rows: 1, break_anywhere: true, overflow_character: Some('\u{2026}') };
+    painter.layout_job(job)
 }

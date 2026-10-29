@@ -107,6 +107,11 @@ pub struct Tracker {
 }
 
 impl Tracker {
+    /// Last frame's window (the skillchain window stacks on it).
+    pub fn rect(&self) -> Option<[f32; 4]> {
+        self.rect
+    }
+
     pub fn new(out: bool) -> Self {
         Self { state: None, book: None, defeat: None, who: String::new(), r: None, out, slide: out as u8 as f32, dirty: false, last: None, frame: None, rect: None, drawer: None }
     }

@@ -4,39 +4,22 @@
 
 use super::magic::{self, Cat, Kind};
 use super::{World, items, journal, keyitems, missions, quests};
-use super::suggest::{self, Action, Suggestion};
+use super::suggest::Action;
 use crate::audio::Ui as Se;
 
-/// The window a suggestion snapshot was taken for: the category window's menu, the list's kind and type.
-pub type WindowKey = (Option<&'static str>, Option<(u8, u16)>);
-
-fn window_key(w: &World) -> WindowKey {
-    (w.cats.map(|c| c.menu), w.ability.as_ref().or(w.magic.as_ref()).map(|l| (l.kind as u8, l.ty)))
-}
-
-/// Whether a window shows magic (else abilities): the list's kind, else the category window's.
-fn magic_window(w: &World) -> bool {
-    match w.ability.as_ref().or(w.magic.as_ref()) {
-        Some(l) => l.kind == Kind::Magic,
-        None => w.cats.is_some_and(|c| matches!(c.menu, "menu    mgcmenu" | "menu    magselec")),
+/// A suggestion taken from the battle menu (suggest.rs): the menu suspended and Magic or Abilities chosen as their
+/// rows do, then `pick_action` in the window that opened.
+pub fn pick_root(w: &mut World, action: Action, target: Option<&str>) {
+    w.suggest_sel = None;
+    w.sounds.push(Se::Select as u32);
+    let c = if matches!(action, Action::Spell(_)) { 8 } else { 7 };
+    w.held_menu = w.action_menu.take();
+    super::combat::choose(w, c);
+    pick_action(w, action);
+    // The member it names starts under the target prompt's cursor.
+    if let Some(id) = target.and_then(|n| w.party.party().find(|m| m.name == n).map(|m| m.id)) {
+        super::target::prefer(w, id);
     }
-}
-
-/// The open window's suggestions: retaken when the window opens or changes (a safe point), held while it is
-/// navigated; the magic windows show spells, the ability windows abilities.
-pub fn suggestions(w: &mut World) -> Vec<Suggestion> {
-    let key = window_key(w);
-    if key == (None, None) {
-        (w.suggestions, w.suggest_sel) = (None, None);
-        return Vec::new();
-    }
-    if w.suggestions.as_ref().is_none_or(|(k, _)| *k != key) {
-        let magic = magic_window(w);
-        let all = suggest::suggest(&suggest::facts(w));
-        let mine = all.into_iter().filter(|s| matches!(s.action, Action::Spell(_)) == magic).collect();
-        (w.suggestions, w.suggest_sel) = (Some((key, mine)), None);
-    }
-    w.suggestions.as_ref().map_or(Vec::new(), |(_, s)| s.clone())
 }
 
 /// A suggestion taken: its list opened from the category window when need be, the cursor on it, Enter.
@@ -399,15 +382,11 @@ fn key_items(w: &World) -> bool {
     w.keyitems.as_ref().is_some_and(|k| matches!(k.state, 1 | 2) && k.ask.is_none())
 }
 
-/// The search's keys and typed text this frame, and Tab's suggestions. True when it took them (the game then sees
-/// none).
+/// The search's keys and typed text this frame. True when it took them (the game then sees none).
 pub fn events(w: &mut World, events: &[egui::Event]) -> bool {
     if !can_run(w) {
-        (w.list_search, w.suggest_sel) = (None, None);
+        w.list_search = None;
         return false;
-    }
-    if w.list_search.is_none() && suggest_keys(w, events) {
-        return true;
     }
     let starts = events.iter().any(|e| matches!(e, egui::Event::Text(t) if t.chars().next().is_some_and(|c| c.is_alphanumeric())));
     if w.list_search.is_none() && !starts {
@@ -428,32 +407,6 @@ pub fn events(w: &mut World, events: &[egui::Event]) -> bool {
         }
     }
     true
-}
-
-/// Tab into the suggestions (and back); while there, Up / Down move, Enter takes one, Escape leaves. True when used.
-fn suggest_keys(w: &mut World, events: &[egui::Event]) -> bool {
-    let list = suggestions(w);
-    let mut used = false;
-    for e in events {
-        let egui::Event::Key { key, pressed: true, .. } = e else { continue };
-        let n = list.len();
-        match (w.suggest_sel, key) {
-            (None, egui::Key::Tab) if n > 0 => w.suggest_sel = Some(0),
-            (Some(_), egui::Key::Tab | egui::Key::Escape) => w.suggest_sel = None,
-            (Some(k), egui::Key::ArrowDown) => w.suggest_sel = Some((k + 1) % n.max(1)),
-            (Some(k), egui::Key::ArrowUp) => w.suggest_sel = Some((k + n.max(1) - 1) % n.max(1)),
-            (Some(k), egui::Key::Enter) => {
-                if let Some(s) = list.get(k) {
-                    pick_action(w, s.action);
-                }
-            }
-            (Some(_), _) => {}
-            _ => continue,
-        }
-        w.sounds.push(Se::Cursor as u32);
-        used = true;
-    }
-    used || w.suggest_sel.is_some()
 }
 
 /// Up / Down move among the hits, Enter picks, Backspace deletes a letter, Escape ends the search.

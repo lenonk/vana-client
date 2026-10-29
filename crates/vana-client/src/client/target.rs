@@ -354,6 +354,14 @@ pub fn open_sub(w: &mut World, flags: u32, then: SubThen, range: Option<f32>, ti
     true
 }
 
+/// Ours (the suggestions): the open prompt's cursor on `id` when the prompt takes it.
+pub fn prefer(w: &mut World, id: u32) {
+    if w.prompt.as_ref().is_some_and(|s| s.takes(sub_kind(w, id))) {
+        w.target = Some(id);
+        w.target_since = std::time::Instant::now();
+    }
+}
+
 /// FUN_10158db0(0): runs the callback on the pick, SE "0009", the saved target and lock come back.
 pub fn confirm_sub(w: &mut World) {
     let (Some(s), Some(t)) = (w.prompt.take(), w.target) else { return };

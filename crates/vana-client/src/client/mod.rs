@@ -60,6 +60,7 @@ mod doors;
 mod lifts;
 mod ships;
 mod dps;
+mod skillchain;
 mod mousecur;
 mod party;
 mod macros;
@@ -2058,16 +2059,42 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     if world.action_menu.is_some() && world.prompt.is_none() && world.menu.is_none() && !world.log_active =>
                 {
                     let engaged = world.my_motion.status == 1;
+                    // Ours (the modern UI): the suggestions above the commands are rows of the same ring.
+                    let sugg = if world.modern { world.root_sugg.len() } else { 0 };
+                    let on_sugg = world.suggest_sel.filter(|&k| k < sugg);
                     let m = world.action_menu.as_mut().unwrap();
                     let n = m.items.len().max(1);
                     let row = m.items.get(m.sel).copied();
                     match key {
                         egui::Key::ArrowDown | egui::Key::ArrowUp => {
-                            m.sel = if *key == egui::Key::ArrowDown { (m.sel + 1) % n } else { (m.sel + n - 1) % n };
+                            let down = *key == egui::Key::ArrowDown;
+                            world.suggest_sel = match (on_sugg, down) {
+                                (Some(k), true) if k + 1 < sugg => Some(k + 1),
+                                (Some(_), true) => {
+                                    m.sel = 0;
+                                    None
+                                }
+                                (Some(0), false) => {
+                                    m.sel = n - 1;
+                                    None
+                                }
+                                (Some(k), false) => Some(k - 1),
+                                (None, true) if sugg > 0 && m.sel + 1 == n => Some(0),
+                                (None, false) if sugg > 0 && m.sel == 0 => Some(sugg - 1),
+                                (None, _) => {
+                                    m.sel = if down { (m.sel + 1) % n } else { (m.sel + n - 1) % n };
+                                    None
+                                }
+                            };
                             world.sounds.push(crate::audio::Ui::Cursor as u32);
                         }
-                        egui::Key::ArrowRight => {
+                        egui::Key::ArrowRight if on_sugg.is_none() => {
                             combat::right(world);
+                        }
+                        egui::Key::Enter if on_sugg.is_some() => {
+                            if let Some(sg) = on_sugg.and_then(|k| world.root_sugg.get(k)).cloned() {
+                                listsearch::pick_root(world, sg.action, sg.target.as_deref());
+                            }
                         }
                         egui::Key::Enter => act = row,
                         egui::Key::Escape if engaged => {
@@ -2633,6 +2660,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         timers::prepare(gu, world, sw, sh, foot);
         let base = timers::base_place(gu, world, sw, sh, foot);
         regime::prepare(gu, world, base);
+        skillchain::prepare(world, base);
     }
     // FUN_100e8b80 (from the name colours, every frame): record 0 is ours, so a solo 0x0DF lands.
     world.party.refresh_self(world.my_id, world.my_index, &world.name, world.pos_zone);
@@ -2811,6 +2839,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     timers::draw(gu, &mut world.timers, sw);
     regime::draw(gu, &mut world.regime, sw);
+    skillchain::draw(gu, &mut world.skillchain, sw);
     let slots = gu.hud(sw, sh, &st);
 
     // Target cursor (FUN_10149900): anc_l at the target's point, 6 frames of 4 ticks, tint 0xe0808080;
@@ -3651,6 +3680,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // The Timers window under every other window: its clicks only where none is over it.
     blockers.extend(timers::pointer(world, gu, input.pointer, input.clicked, &blockers));
     blockers.extend(regime::pointer(world, gu, input.pointer, input.clicked, &blockers));
+    blockers.extend(skillchain::pointer(world, gu, input.pointer, input.clicked, &blockers));
 
     blockers
 }
@@ -5584,6 +5614,8 @@ struct World {
     stamp_all_lines: bool,
     /// The /dps tally (client/dps.rs).
     dps: dps::Dps,
+    /// The skillchain helper's resonances and seen skills (client/skillchain.rs).
+    skillchain: skillchain::Tracker,
     /// Config `target_distance` / `target_hpp` / `auto_advance` (extras).
     target_distance: bool,
     target_hpp: bool,
@@ -5613,7 +5645,9 @@ struct World {
     /// The search's recent picks (listsearch::key_of), newest first, and whether they changed since the save.
     recent_picks: Vec<String>,
     recent_save: bool,
-    suggestions: Option<(listsearch::WindowKey, Vec<suggest::Suggestion>)>,
+    /// The battle menu's suggestions (suggest.rs::refresh_root), when they were taken, and the one the cursor is on.
+    root_sugg: Vec<suggest::Suggestion>,
+    root_sugg_at: Option<Instant>,
     suggest_sel: Option<usize>,
     /// Party and alliance members' HP as last seen at 100 % (their max; the server sends only HP and HP %).
     party_hp_max: HashMap<u32, u32>,
@@ -5845,6 +5879,8 @@ struct World {
     extra_timers: bool,
     /// Extra: the training regime window (client/regime.rs).
     extra_regime: bool,
+    /// Config `skillchain_helper` (extra).
+    extra_skillchain: bool,
     /// Extra: the minimap (client/minimap.rs), its map, its rect this frame, its config and an unsaved zoom.
     extra_minimap: bool,
     minimap: Option<map::Overlay>,
@@ -6496,6 +6532,7 @@ impl App {
             (w.target_distance, w.target_hpp, w.auto_advance) = (self.cfg.target_distance, self.cfg.target_hpp, self.cfg.auto_advance);
             w.extra_timers = self.cfg.timers;
             w.extra_regime = self.cfg.regime;
+            w.extra_skillchain = self.cfg.skillchain_helper;
             w.timers_dock = self.cfg.timers_dock;
             (w.extra_minimap, w.minimap_dock, w.minimap_size) = (self.cfg.minimap, self.cfg.minimap_dock, self.cfg.minimap_size);
         }
@@ -7124,6 +7161,7 @@ impl App {
                             synth_amount: self.cfg.synth_amount,
                             stamp_all_lines: self.cfg.stamp_all_lines,
                             dps: Default::default(),
+                            skillchain: Default::default(),
                             target_distance: self.cfg.target_distance,
                             target_hpp: self.cfg.target_hpp,
                             auto_advance: self.cfg.auto_advance,
@@ -7310,7 +7348,8 @@ impl App {
                             list_search: None,
                             recent_picks: self.cfg.modern_recent.get(&login.name).cloned().unwrap_or_default(),
                             recent_save: false,
-                            suggestions: None,
+                            root_sugg: Vec::new(),
+                            root_sugg_at: None,
                             suggest_sel: None,
                             party_hp_max: HashMap::new(),
                             modern_pointers: Vec::new(),
@@ -7444,6 +7483,7 @@ impl App {
                             ability_calc: HashMap::new(),
                             extra_timers: self.cfg.timers,
                             extra_regime: self.cfg.regime,
+                            extra_skillchain: self.cfg.skillchain_helper,
                             extra_minimap: self.cfg.minimap,
                             minimap: None,
                             minimap_rect: None,

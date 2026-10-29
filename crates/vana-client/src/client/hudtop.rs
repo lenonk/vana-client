@@ -650,6 +650,10 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, menu_sw
     for spec in window.unwrap_or_default().split(',').filter_map(|w| w.strip_prefix("regime:")) {
         super::regime::shot(&mut gu, spec, sw, sh, mini);
     }
+    // "skillchain:DOCK[:SLIDE]": the skillchain window's sample.
+    for spec in window.unwrap_or_default().split(',').filter_map(|w| w.strip_prefix("skillchain:")) {
+        super::skillchain::shot(&mut gu, spec, sw, sh, mini);
+    }
     let hud = if lobby { Vec::new() } else { gu.hud(sw, sh, &st) };
     for t in hud {
         match t.what {

@@ -11781,3 +11781,66 @@ since "Ship voyages: the moving world" listed them as not done.
 - The navy itself is the data: untextured MMB `rgb = sat(2·D·F)` (model_draw.md 1.3) with D = 0x73 and F =
   (0x19, 0x28, 0x32) gives about (23, 36, 46), then fog. Not compared with a retail screenshot.
 - mmb-dump prints each model's blending word and vertex colour mean / range.
+
+## Skillchain helper and the battle menu's suggestions (ours, 2026-10-29)
+
+- Not retail (the skillchain add-ons; user's spec 2026-10-29: "a flyout ... anytime we're in a party, what skillchains
+  we can make and what their elements are"). The client has no table of skill properties: the server applies them.
+  So the data is LandSandBoat's, bundled as `crates/vana-client/data/skillchains.txt`. It is made by
+  `vana-client skillchain-gen --lsb ~/landsandboat` from sql/ weapon_skills, mob_skills, pet_skills, blue_spell_list
+  and mob_skill_lists (209 weapon skills, 359 mob / pet skills with properties, 52 blue spells, 52 trust lists).
+  dat/skillchains.rs holds the rules, taken from battleutils.cpp:
+  - `skillchain_map`: a closer's property against the resonance's, in the resonance's order (FormSkillchain);
+  - the chain's elements (GetSkillchainMagicElement);
+  - the levels: 1 for Transfixion .. Impaction, 2 for Gravitation .. Fragmentation, 3 for Light / Darkness, 4 for
+    their second level.
+- Timing as LSB applies it (GetSkillChainEffect):
+  - an opener leaves its properties on the monster for 10 s;
+  - a closer counts only when it lands more than 3 s after the last skill;
+  - each chain link takes 1 s off the window;
+  - the magic burst window is open while a chain (tier above 0) stands.
+- The chain made comes from the 0x028 record's proc. ActionProcSkillChain's kind maps to a property: 1 Light,
+  2 Darkness, 3 Gravitation, 4 Fragmentation, 5 Distortion, 6 Fusion, 7 Compression, 8 Liquefaction, 9 Induration,
+  10 Reverberation, 11 Transfixion, 12 Scission, 13 Detonation, 14 Impaction, 15 / 16 the second Light / Darkness.
+- client/skillchain.rs follows each monster the party hits:
+  - a weapon skill (category 3), mob skill (11, 13; trusts and pets) or blue spell with properties opens a resonance
+    on every target it hit;
+  - a proc makes the chain instead;
+  - a monster's last party target is kept from its melee, spells and skills (for the suggestions).
+- Each member's skills:
+  - ours from the weapon skill list;
+  - a trust's from its LSB skill list, by name; one skill under several ids is shown once;
+  - anyone's as seen used.
+  `combos` lists every chain two members can make, strongest first; `closers` lists what closes the open resonance.
+- Modern (modern/extras.rs): an edge window, right edge under the minimap by default, shown in a party of two or more.
+  - On the target (or the latest resonating monster): the properties, or "Skillchain: X" in gold with "Burst
+    <elements> on <monster>: N s"; who used what; a bar for the 3 s wait, then for the window left; up to 6 closers
+    with the chain and element icons.
+  - "Party chains": each chain once with its elements and up to two ways (ours first; an opener with 1000 TP
+    bright), "and N more".
+  - It ends above the next panel under it on its edge (the target and party windows), and long lines end in an
+    ellipsis.
+- Classic (skillchain.rs's window): a game-art window docked with the Timers, under the Timers and training regime
+  windows (above them on the right), 240 wide. Its drawer folds it like theirs. The same content in text lines,
+  elements by name; `topbar-shot --window skillchain:DOCK` draws a sample.
+- Seen live (Lnxcsfix with a Bronze Sword, Naji and Ayame, an immortal Tunnel Worm in South Gustaberg):
+  - Ayame's Tachi: Yukikaze opened Induration / Detonation, and the window showed the wait;
+  - Fast Blade 1 s after it opened a new Scission, as LSB rules it (too early to close);
+  - Fast Blade then Burning Blade 4.5 s later made "Skillchain: Liquefaction", "Burst Fire", and listed Vorpal Blade
+    / Goten to continue it into Fusion.
+- Suggestions (suggest.rs, rewritten): rules over facts taken every half second, at most four, each with its reason.
+  - In order: raise, shadows (Utsusemi with no Copy Image), ailments, healing (Curaga for three, else the Cure tier,
+    a waltz with no cure), burst the chain made with the strongest nuke of its elements, close the open resonance
+    with the strongest closing weapon skill (with the wait left), Provoke / Flash when the monster hits a non-tank,
+    job abilities for the fight (Berserk ... Third Eye when targeted, Sneak Attack before a weapon skill), Yonin
+    while targeted else Innin, a samba, debuffs missing on the monster (Dia / Bio, Slow, Paralyze, Blind, Gravity, the
+    ninjutsu, Elegy, Requiem), open a chain a partner with TP can close, the strongest weapon skill, renew our
+    buffs under 30 s, and Protect / Shell / Reraise between fights.
+  - They head the root battle menu (modern), not each list. Up from the first command walks into them, Enter or a
+    click takes one: the ability or spell list opens on it and Enter, so retail's target prompt follows. A
+    suggestion that names a member starts that prompt on them.
+  - Seen live: "Provoke: the Tunnel Worm is attacking Naji", "Fast Blade: closes the open chain in 2.7 s: Scission
+    (Earth)", "Red Lotus Blade: opens Fusion (Light, Fire) with Naji's ...". Up, Up, Enter, Enter used Provoke; a
+    click on Berserk opened its prompt.
+- Not seen live: bursts (no caster in the test), the classic window in a live party (offscreen only), blue magic as a
+  skill.

@@ -11,6 +11,7 @@ use egui::{Align2, Color32, FontFamily, FontId, Pos2, Rect, Sense, Shape, Stroke
 pub fn draw(p: &mut Panels, w: &mut World) {
     timers_panel(p, w);
     regime_panel(p, w);
+    skillchain_panel(p, w);
     minimap_panel(p, w);
     widescan_panel(p, w);
     overlay(p, w);
@@ -126,6 +127,151 @@ fn regime_panel(p: &mut Panels, w: &mut World) {
         w.sounds.push(crate::audio::Ui::Cursor as u32);
     }
 }
+
+/// The skillchain helper (skillchain.rs) on a screen edge, in a party: on our target the open resonance (its
+/// properties, the wait before a closer counts and the time left, or the chain made and its burst elements) and what in
+/// the party closes it; then every chain two members can make with what they have, the strongest first.
+fn skillchain_panel(p: &mut Panels, w: &mut World) {
+    use super::super::skillchain as sk;
+    use crate::dat::skillchains::{self as sc, Prop};
+    if !w.extra_skillchain || hidden(w) {
+        return;
+    }
+    let members = sk::members(w);
+    if members.len() < 2 {
+        return;
+    }
+    let m = p.m;
+    let focus = sk::focus(w);
+    let res = focus.and_then(|t| w.skillchain.on.get(&t).cloned()).filter(|r| r.left() > 0.0);
+    let mob = focus.and_then(|t| w.entities.get(&t)).map(|e| super::super::monstrosity::name(e).to_string()).unwrap_or_default();
+    let combos = sk::combos(&members);
+    let names: Vec<String> = members.iter().map(|x| if x.me { "You".to_string() } else { x.name.clone() }).collect();
+    let skill_names: std::collections::HashMap<sc::Skill, String> = members.iter().flat_map(|x| x.skills.iter().map(|&s| (s, sk::name(w, s)))).collect();
+    let sname = |s: sc::Skill| skill_names.get(&s).cloned().unwrap_or_else(|| sk::name(w, s));
+    let ready = |k: usize| members[k].tp >= 1000;
+    let level_colour = |c: Prop| match sc::level(c) {
+        3 | 4 => m.theme.color("text"),
+        2 => m.theme.color("gold"),
+        _ => m.theme.color("muted"),
+    };
+    let small = FontId::proportional(m.theme.small);
+    let strong = FontId::new(m.theme.small + 1.0, FontFamily::Name(super::STRONG.into()));
+    // It ends above the first panel under it on its edge (the target and party windows), or at the screen's bottom.
+    let screen = p.ctx.content_rect();
+    let place = p.place("skillchains");
+    let top = screen.height() * place.y;
+    let (x0, x1) = if place.x >= 0.0 { (screen.min.x, screen.min.x + WIDTH_SC) } else { (screen.max.x - WIDTH_SC, screen.max.x) };
+    let limit = m.rects.borrow().iter().filter(|(k, r)| k.as_str() != "skillchains" && r.min.y > top + 40.0 && r.max.x > x0 && r.min.x < x1).map(|(_, r)| r.min.y).fold(screen.max.y, f32::min) - 30.0;
+    let fits = |ui: &Ui, h: f32| ui.cursor().min.y + h <= limit;
+    // The chain's name, then its elements' icons.
+    let chain_line = |ui: &mut Ui, c: Prop, lead: &str| {
+        let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
+        let r = ui.painter().text(pos2(rect.min.x, rect.center().y), Align2::LEFT_CENTER, format!("{lead}{}", sc::NAMES[c as usize]), strong.clone(), if lead.is_empty() { level_colour(c) } else { m.theme.color("gold") });
+        let mut x = r.max.x + 6.0;
+        for e in sc::elements(c) {
+            if let Some(s) = m.art.sprite(super::gametext::ELEMENTS[*e as usize]) {
+                ui.painter().add(super::paint::image(&s, pos2(x, rect.center().y - 7.0), 14.0, Color32::WHITE));
+            }
+            x += 16.0;
+        }
+    };
+    let toggle = edge_window(p, "skillchains", WIDTH_SC, w.skillchain.folded, "Skillchains", |ui, left| {
+        let toggle = flyout_header(ui, m, "Skillchains", left).clicked();
+        if let Some(r) = &res {
+            ui.add_space(4.0);
+            let age = r.age();
+            match r.chain {
+                Some(c) => {
+                    chain_line(ui, c, "Skillchain: ");
+                    let els: Vec<&str> = sc::elements(c).iter().map(|e| e.name()).collect();
+                    ui.label(egui::RichText::new(format!("Burst {} on {mob}: {:.1} s", els.join(" / "), r.left())).size(m.theme.small).color(m.theme.color("text")));
+                }
+                None => {
+                    ui.label(egui::RichText::new(format!("Open on {mob}: {}", sk::props_text(&r.props))).size(m.theme.small + 1.0).color(m.theme.color("text")));
+                }
+            }
+            let by = members.iter().position(|x| x.me && r.by == w.my_id).map(|k| names[k].clone()).or_else(|| w.party.party().find(|x| x.id == r.by).map(|x| x.name.clone())).unwrap_or_default();
+            let by = if by.is_empty() { sname(r.skill) } else { format!("{by}: {}", sname(r.skill)) };
+            ui.label(egui::RichText::new(by).size(m.theme.small).color(m.theme.color("muted")));
+            // The wait (a closer before it does not count), then the window draining.
+            let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 6.0), Sense::hover());
+            ui.painter().rect_filled(bar, 2.0, m.theme.color("charcoal"));
+            let (f, col, note) = if age < sk::WAIT {
+                (age / sk::WAIT, m.theme.color("muted"), format!("wait {:.1} s", sk::WAIT - age))
+            } else {
+                (r.left() / (r.life - sk::WAIT).max(0.1), m.theme.color("gold"), format!("close within {:.1} s", r.left()))
+            };
+            ui.painter().rect_filled(Rect::from_min_max(bar.min, pos2(bar.min.x + bar.width() * f.clamp(0.0, 1.0), bar.max.y)), 2.0, col);
+            ui.label(egui::RichText::new(note).size(m.theme.small).color(m.theme.color("muted")));
+            let close = sk::closers(&members, r);
+            if close.is_empty() {
+                ui.label(egui::RichText::new("Nothing known in the party closes it.").size(m.theme.small).color(m.theme.color("muted")));
+            }
+            for &(k, s, c) in close.iter().take(6) {
+                if !fits(ui, 34.0) {
+                    break;
+                }
+                let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::hover());
+                let colour = if ready(k) { m.theme.color("text") } else { m.theme.color("muted") };
+                let g = super::one_line(ui.painter(), &format!("{}: {}", names[k], sname(s)), small.clone(), colour, rect.width());
+                ui.painter().galley(pos2(rect.min.x, rect.min.y + 1.0), g, Color32::WHITE);
+                let r2 = ui.painter().text(pos2(rect.min.x + 10.0, rect.min.y + 17.0), Align2::LEFT_TOP, format!("\u{2192} {}", sc::NAMES[c as usize]), small.clone(), level_colour(c));
+                let mut x = r2.max.x + 6.0;
+                for e in sc::elements(c) {
+                    if let Some(sp) = m.art.sprite(super::gametext::ELEMENTS[*e as usize]) {
+                        ui.painter().add(super::paint::image(&sp, pos2(x, rect.min.y + 18.0), 13.0, Color32::WHITE));
+                    }
+                    x += 15.0;
+                }
+            }
+            ui.add_space(6.0);
+        }
+        ui.add_space(2.0);
+        if !fits(ui, 60.0) {
+            return toggle;
+        }
+        ui.label(egui::RichText::new("Party chains").size(m.theme.small + 1.0).color(m.theme.color("gold")));
+        if combos.is_empty() {
+            ui.label(egui::RichText::new("None known yet: the party's skills show here as they are used.").size(m.theme.small).color(m.theme.color("muted")));
+        }
+        // Each chain once, its ways under it (ours first, those whose opener has the TP brighter).
+        let mut chains: Vec<Prop> = Vec::new();
+        for cb in &combos {
+            if !chains.contains(&cb.chain) {
+                chains.push(cb.chain);
+            }
+        }
+        for (n, &c) in chains.iter().enumerate() {
+            if !fits(ui, 40.0) {
+                ui.label(egui::RichText::new(format!("and {} more chains", chains.len() - n)).size(m.theme.small - 1.0).color(m.theme.color("muted")));
+                break;
+            }
+            chain_line(ui, c, "");
+            let mut ways: Vec<&sk::Combo> = combos.iter().filter(|cb| cb.chain == c).collect();
+            ways.sort_by_key(|cb| (!(members[cb.opener.0].me || members[cb.closer.0].me), !ready(cb.opener.0)));
+            for cb in ways.iter().take(2) {
+                let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 16.0), Sense::hover());
+                let colour = if ready(cb.opener.0) { m.theme.color("text") } else { m.theme.color("muted") };
+                let text = format!("{}: {}  \u{2192}  {}: {}", names[cb.opener.0], sname(cb.opener.1), names[cb.closer.0], sname(cb.closer.1));
+                let g = super::one_line(ui.painter(), &text, small.clone(), colour, rect.width() - 8.0);
+                ui.painter().galley(pos2(rect.min.x + 8.0, rect.min.y), g, Color32::WHITE);
+            }
+            if ways.len() > 2 {
+                ui.label(egui::RichText::new(format!("    and {} more", ways.len() - 2)).size(m.theme.small - 1.0).color(m.theme.color("muted")));
+            }
+            ui.add_space(3.0);
+        }
+        toggle
+    });
+    if toggle {
+        w.skillchain.folded = !w.skillchain.folded;
+        w.sounds.push(crate::audio::Ui::Cursor as u32);
+    }
+}
+
+/// The skillchain helper's width.
+const WIDTH_SC: f32 = 320.0;
 
 /// A window on the screen's left or right edge (its place: x 0 or above the left, below 0 the right; y its top): its
 /// frame open on that side; folded, a small tab out of the edge with `label` running down it beside a double chevron.

@@ -4,7 +4,6 @@
 //! cursor's row is Enter; the wheel scrolls.
 
 use super::super::listsearch::{self, Hit};
-use super::super::suggest::{Action, Suggestion};
 use super::super::magic::{self, Cat, Cats, Kind, ListWin, VISIBLE};
 use super::super::scrollbar::Msg;
 use super::super::World;
@@ -97,47 +96,8 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     if w.bluset.is_some() {
         return;
     }
-    let s = listsearch::suggestions(w);
-    cats(p, w, &s);
-    list(p, w, &s);
-}
-
-/// The suggestions above a window's rows: icon, name, why; Tab's highlight. The one clicked.
-fn suggested(ui: &mut Ui, p: (&super::Modern, Option<&super::super::game_ui::GameUi>, &egui::Context), w: &World, list: &[Suggestion], moved: bool) -> Mouse {
-    let (m, gu, ctx) = p;
-    let mut mouse = Mouse::default();
-    if list.is_empty() {
-        return mouse;
-    }
-    ui.label(egui::RichText::new("Suggested").size(m.theme.small).color(m.theme.color("gold")));
-    for (k, s) in list.iter().enumerate() {
-        let (kind, id) = match s.action {
-            Action::Spell(id) => (Kind::Magic, id),
-            Action::Ability(id) => (Kind::Ability, id),
-        };
-        let icon = gu.and_then(|gu| magic::row_icon(w, kind, id).and_then(|(lib, i)| m.sprite_icon(ctx, gu, lib, i)));
-        let name = if kind == Kind::Magic { magic::spell_name(w, id) } else { magic::ability_name(w, id) };
-        let label = match &s.target {
-            Some(t) => format!("{name}  \u{2192} {t}"),
-            None => name,
-        };
-        let look = if w.suggest_sel == Some(k) { Look::Cursor } else { Look::Normal };
-        let resp = row(ui, m, icon, None, &label, "", look, off(w, kind, id));
-        ui.label(egui::RichText::new(&s.reason).size(m.theme.small).color(m.theme.color("muted")));
-        mouse.take(k, &resp, moved);
-    }
-    ui.add_space(8.0);
-    mouse
-}
-
-/// The suggestions' mouse: hovering lights one (Tab's focus), a click takes it.
-fn suggested_mouse(w: &mut World, mouse: &Mouse, list: &[Suggestion]) {
-    if let Some(k) = mouse.hover {
-        w.suggest_sel = Some(k);
-    }
-    if let Some(s) = mouse.click.and_then(|k| list.get(k)) {
-        listsearch::pick_action(w, s.action);
-    }
+    cats(p, w);
+    list(p, w);
 }
 
 /// The search field and its hits in place of the window's rows: what was clicked, what the pointer is over.
@@ -222,7 +182,7 @@ pub(super) fn search_mouse(w: &mut World, mouse: &Mouse, hits: &[Hit]) {
 }
 
 /// The category window (mgcmenu, magselec, abimenu, abiselec, commenu, Monstrosity's): its rows by name.
-fn cats(p: &mut Panels, w: &mut World, sugg: &[Suggestion]) {
+fn cats(p: &mut Panels, w: &mut World) {
     let Some(c) = w.cats else { return };
     let m = p.m;
     let rows = magic::cat_rows(c.menu);
@@ -235,30 +195,19 @@ fn cats(p: &mut Panels, w: &mut World, sugg: &[Suggestion]) {
     let mut mouse = Mouse::default();
     let search = if w.magic.is_none() && w.ability.is_none() { search_hits(p, w) } else { None };
     let mut found = Mouse::default();
-    // With a list open the suggestions show over the list instead.
-    let sugg: &[Suggestion] = if w.magic.is_none() && w.ability.is_none() { sugg } else { &[] };
-    let mut took = Mouse::default();
-    let look3 = (m, p.gu, p.ctx);
-    let wide = search.is_some() || !sugg.is_empty();
-    p.panel("cats", Some(Title { icon: None, text: title, note: None }), if wide { 360.0 } else { 260.0 }, |ui| {
+    p.panel("cats", Some(Title { icon: None, text: title, note: None }), if search.is_some() { 360.0 } else { 260.0 }, |ui| {
         if let Some((text, sel, hits, icons)) = &search {
             found = search_rows(ui, m, w, icons, text, *sel, hits, moved);
             return;
         }
-        took = suggested(ui, look3, w, sugg, moved);
         for (k, &(_, cat)) in rows.iter().enumerate() {
-            // The category cursor gives way while Tab has the suggestions.
-            let look = if k == c.sel && w.suggest_sel.is_none() { Look::Cursor } else { Look::Normal };
+            let look = if k == c.sel { Look::Cursor } else { Look::Normal };
             let resp = row(ui, m, None, Some(cat_icon(cat)), magic::cat_label(c.menu, cat), "", look, !magic::cat_ready(w, cat));
             mouse.take(k, &resp, moved);
         }
     });
     if let Some((_, _, hits, _)) = &search {
         search_mouse(w, &found, hits);
-        return;
-    }
-    if took.hover.is_some() || took.click.is_some() {
-        suggested_mouse(w, &took, sugg);
         return;
     }
     if let Some(k) = mouse.hover.filter(|&k| k != c.sel) {
@@ -335,7 +284,7 @@ fn cost_lines(w: &World, win: &ListWin) -> Vec<(&'static str, String)> {
 }
 
 /// The open list: its rows from the scroll, the sort strip (Num+ focuses it), the cost box, the bar.
-fn list(p: &mut Panels, w: &mut World, sugg: &[Suggestion]) {
+fn list(p: &mut Panels, w: &mut World) {
     let Some(win) = w.ability.as_ref().or(w.magic.as_ref()).filter(|x| !x.hidden).cloned() else { return };
     let m = p.m;
     let title = match win.kind {
@@ -350,8 +299,6 @@ fn list(p: &mut Panels, w: &mut World, sugg: &[Suggestion]) {
     let mut mouse = Mouse::default();
     let search = search_hits(p, w);
     let mut found = Mouse::default();
-    let mut took = Mouse::default();
-    let look3 = (m, p.gu, p.ctx);
     let mut sort_click: Option<u16> = None;
     let mut ask_click: Option<bool> = None;
     let mut wheel = 0.0f32;
@@ -406,7 +353,6 @@ fn list(p: &mut Panels, w: &mut World, sugg: &[Suggestion]) {
             found = search_rows(ui, m, w, icons, text, *sel, hits, moved);
             return;
         }
-        took = suggested(ui, look3, w, sugg, moved);
         let top = ui.cursor().min;
         if win.rows.is_empty() {
             let empty = match (win.kind, win.list_mode) {
@@ -467,10 +413,6 @@ fn list(p: &mut Panels, w: &mut World, sugg: &[Suggestion]) {
     let Some(_) = rect else { return };
     if let Some((_, _, hits, _)) = &search {
         search_mouse(w, &found, hits);
-        return;
-    }
-    if took.hover.is_some() || took.click.is_some() {
-        suggested_mouse(w, &took, sugg);
         return;
     }
     // Mouse: the sort strip and its question go through the keys as retail's window does.

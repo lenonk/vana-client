@@ -16,7 +16,7 @@ pub struct Dps {
 }
 
 /// Us, a party member, or the pet of either (its master's ActIndex).
-fn ours(w: &World, actor: u32) -> bool {
+pub(super) fn ours(w: &World, actor: u32) -> bool {
     if actor == w.my_id || w.party.party().any(|m| m.id == actor) {
         return true;
     }

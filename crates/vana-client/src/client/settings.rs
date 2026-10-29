@@ -28,6 +28,7 @@ pub struct Settings {
     pub timers: bool,
     pub timers_dock: u32,
     pub regime: bool,
+    pub skillchain_helper: bool,
     pub minimap: bool,
     pub minimap_dock: u32,
     pub minimap_size: u32,
@@ -65,6 +66,7 @@ impl Settings {
             timers: c.timers,
             timers_dock: c.timers_dock,
             regime: c.regime,
+            skillchain_helper: c.skillchain_helper,
             minimap: c.minimap,
             minimap_dock: c.minimap_dock,
             minimap_size: c.minimap_size,
@@ -101,6 +103,7 @@ impl Settings {
         c.timers = self.timers;
         c.timers_dock = self.timers_dock;
         c.regime = self.regime;
+        c.skillchain_helper = self.skillchain_helper;
         c.minimap = self.minimap;
         c.minimap_dock = self.minimap_dock;
         c.minimap_size = self.minimap_size;
@@ -149,6 +152,7 @@ enum Val {
     AutoAdvance,
     Timers,
     TimersDock,
+    Skillchains,
     Regime,
     Minimap,
     MinimapDock,
@@ -258,12 +262,14 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
     ];
     const TIMERS_ROW: Row = row("Timers", "Recasts, our effects and the ones we put on others and on monsters, in a window that slides in and out (/timers).", Timers, OFF_ON, Now);
     const REGIME_ROW: Row = row("Training Regime", "While a Fields or Grounds of Valor regime is on, its targets and kills in a window beside the timers (from a manual's page, or the kills).", Regime, OFF_ON, Now);
+    const SKILLCHAIN_ROW: Row = row("Skillchain Helper", "In a party: the skillchains it can make and their elements, and on your target the open one, what closes it and when to burst.", Skillchains, OFF_ON, Now);
     const TIMERS: &[Row] = &[
         TIMERS_ROW,
         row("Timers Position", "Where the timers window docks: the left edge, the right edge above the party list, or the top.", TimersDock, &[(0, "Left"), (1, "Right"), (2, "Top")], Now),
         REGIME_ROW,
+        SKILLCHAIN_ROW,
     ];
-    const TIMERS_MODERN: &[Row] = &[TIMERS_ROW, REGIME_ROW];
+    const TIMERS_MODERN: &[Row] = &[TIMERS_ROW, REGIME_ROW, SKILLCHAIN_ROW];
     const EXTRA_MISC: &[Row] = &[
         row("Synthesis Amount", "After Synthesize, ask how many to make and make them one after another.", SynthAmount, OFF_ON, Now),
         row("Timestamps on All Lines", "Every log line gets the time, not only chat (the format of /timestamp; seconds while it is off).", StampAll, OFF_ON, Now),
@@ -407,6 +413,7 @@ impl SettingsUi {
             Val::TargetHpp => self.s.target_hpp as u32,
             Val::AutoAdvance => self.s.auto_advance,
             Val::Timers => self.s.timers as u32,
+            Val::Skillchains => self.s.skillchain_helper as u32,
             Val::TimersDock => self.s.timers_dock,
             Val::Regime => self.s.regime as u32,
             Val::Minimap => self.s.minimap as u32,
@@ -436,6 +443,7 @@ impl SettingsUi {
             Val::TargetHpp => self.s.target_hpp = x != 0,
             Val::AutoAdvance => self.s.auto_advance = x,
             Val::Timers => self.s.timers = x != 0,
+            Val::Skillchains => self.s.skillchain_helper = x != 0,
             Val::TimersDock => self.s.timers_dock = x,
             Val::Regime => self.s.regime = x != 0,
             Val::Minimap => self.s.minimap = x != 0,

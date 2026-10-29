@@ -541,6 +541,13 @@ enum Cmd {
     },
     /// Map LSB text ids of a zone to installed dialogue ids with the bundled table.
     MsgshiftMap { zone: u16, ids: Vec<u32> },
+    /// Regenerate data/skillchains.txt (skill properties, trust skill lists) from LandSandBoat sql/.
+    SkillchainGen {
+        #[arg(long)]
+        lsb: PathBuf,
+        #[arg(long, default_value = "crates/vana-client/data/skillchains.txt")]
+        out: PathBuf,
+    },
     /// Print item records (name, flags, slots, jobs, level, description); --key: key items.
     ItemDump {
         #[arg(long, default_value = "en")]
@@ -1112,6 +1119,7 @@ fn main() -> Result<()> {
             let index = dat::DatIndex::open(&config::Config::load().ffxi_dir())?;
             dat::msgshift::generate(&index, &lsb, &out)
         }
+        Cmd::SkillchainGen { lsb, out } => dat::skillchains::generate(&lsb, &out),
         Cmd::MsgshiftMap { zone, ids } => {
             let index = dat::DatIndex::open(&config::Config::load().ffxi_dir())?;
             let shift = dat::msgshift::MsgShift::bundled().verified(&index);

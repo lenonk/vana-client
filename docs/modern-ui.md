@@ -223,13 +223,17 @@ Milestone 1:
   iteminfo::build wrapped by egui instead of paged, the marks as tags, the compared equipped item above it; it rides
   the combat window (retail's on the log). Seen live (2026-10-26): list, info, Use / Drop, drop, Auto-sort's
   question, hover, wheel, search.
-- Suggestions (suggest.rs, tested; ids checked against LSB's spell list and effect enum): an ailment on a party
-  member or us -> its -na spell; the lowest at 75% HP or under -> the Cure tier fitting the HP missing (three or more:
-  Curaga); our Refresh, Haste, Protect, Shell, Regen, Phalanx, Stoneskin, Blink, Aquaveil or Reraise under 30 s ->
-  renew it; TP 1000 engaged -> a ready weapon skill. Castable ones only, three at most, each with its reason; taken
-  when a magic / ability window opens or changes and held while it is navigated. They head the category window
-  and the list: Tab moves into them (Up / Down, Enter takes one through retail's keys, Tab / Escape back), a click
-  takes one. Seen live as WHM 75: Poisona for our poison, Cure V at 29% HP, the pick cast Poisona.
+- Suggestions (suggest.rs, rewritten 2026-10-29; user: "the suggestions should go at the top of the root battle
+  menu, not in each subcategory", clickable and on the keyboard): up to four, each with its reason, retaken every
+  half second while the cursor is on the commands. Raise, shadows, ailments, healing, bursting the chain made,
+  closing the open resonance, Provoke / Flash for a monster on a non-tank, fight job abilities, Yonin / Innin,
+  sambas, debuffs, opening a chain with a partner, the strongest weapon skill, renewing buffs (MODLOG "Skillchain
+  helper and the battle menu's suggestions"). They head the battle menu: Up from the first command walks into them,
+  Enter or a click opens the list on the action and takes it, into retail's target prompt (on the member a
+  suggestion names). Seen live: Provoke, Berserk, a closing Fast Blade, an opening Red Lotus Blade.
+- The skillchain helper (an Extra, modern/extras.rs edge window; skillchain.rs): in a party, the open resonance on
+  the target with its wait / window bar and closers, the chain made with its burst elements, and every chain the
+  party can make with its elements and ways. Seen live with Naji and Ayame.
 - The party window as retail's ptwN ("Solo" outside a party): us first, then the members; per row the job, the
   leader marks, the name over the HP bar with the HP number in its hpcol colour, the MP bar and number, TP with
   config 0xae bit 0 (never on trusts), a member elsewhere greyed with the zone; the hand on the party cursor's or
