@@ -471,12 +471,13 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
     match &mut w.win {
         None => return false,
         // iuse (FUN_101f33a0): Up / Down between Use and Drop, Enter on a disabled child SE 0004, Escape back to the
-        // list. sortyn (FUN_102228b0): Yes / No, Enter or Escape answers.
+        // list. sortyn (FUN_102228b0): Yes / No, Enter or Escape answers. Modern draws both as rows: Left / Right too.
         Some(Win::Items { sub: sub @ Some(_), .. }) => {
             use crate::audio::Ui;
+            let step = matches!(key, egui::Key::ArrowUp | egui::Key::ArrowDown) || w.modern && matches!(key, egui::Key::ArrowLeft | egui::Key::ArrowRight);
             match sub.unwrap() {
                 Sub::Use { child, index, id } => match key {
-                    egui::Key::ArrowUp | egui::Key::ArrowDown => {
+                    _ if step => {
                         *sub = Some(Sub::Use { child: 3 - child, index, id });
                         w.sounds.push(Ui::Cursor as u32);
                     }
@@ -504,7 +505,7 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
                     _ => {}
                 },
                 Sub::Drop { index, id, yes } => match key {
-                    egui::Key::ArrowUp | egui::Key::ArrowDown => {
+                    _ if step => {
                         *sub = Some(Sub::Drop { index, id, yes: !yes });
                         w.sounds.push(Ui::Cursor as u32);
                     }
