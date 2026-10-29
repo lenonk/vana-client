@@ -12026,3 +12026,12 @@ since "Ship voyages: the moving world" listed them as not done.
 - FFXI_SHINE_TEST puts a striped shine on our own actor (checks; no effect file needed). Seen live with it, wrap on and
   off: the pass draws, no errors; the difference is limited to triangles whose corners' normals differ widely in x / y.
 - fx-shot honours 0040 (it draws no actor models, so it cannot show the shine).
+
+## Our upscale pack: UI sprite textures stay stock (2026-10-29)
+
+- A sprite library's cells (chunk 0x31) address their texture in stock texels, and render/ui.rs divides by the image's
+  own size, so a texture the pack made 4x bigger showed its top-left quarter: 719 images in 639 files, among them the
+  creator portraits (charmake*, files 39631..39758), the event maps (eventmap*), the expansion screens (ex*_data,
+  dl_data), faith*, 20th*, 2habi*.
+- tex-export and tex-pack now leave out the textures a file's own sprite libraries use (texpack.rs `images`); the 639
+  files were rebuilt (one still had other images; the rest are stock again).

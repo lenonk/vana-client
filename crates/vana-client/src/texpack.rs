@@ -19,9 +19,12 @@ const MAX_CHUNK: usize = 0x7FFFF * 16;
 /// Threads for the CPU work (cores 12..15 stay free for the LSB server).
 const THREADS: usize = 12;
 
-/// A file's IMG chunks: (chunk index, the chunk's payload).
+/// A file's IMG chunks: (chunk index, the chunk's payload). Textures of the file's sprite libraries (chunk 0x31) are
+/// left out: their cells address them in stock texels, so a bigger copy would show a quarter of itself.
 fn images(bytes: &[u8]) -> Vec<(usize, &[u8])> {
-    dat::chunks(bytes).map_or(Vec::new(), |c| c.iter().enumerate().filter(|(_, c)| c.kind == 0x20).map(|(k, c)| (k, c.data)).collect())
+    let Ok(chunks) = dat::chunks(bytes) else { return Vec::new() };
+    let sprite_tex: std::collections::HashSet<String> = chunks.iter().filter(|c| c.kind == 0x31).filter_map(|c| dat::ui::parse_sprite_lib(c.data).ok()).flat_map(|l| l.textures).collect();
+    chunks.iter().enumerate().filter(|(_, c)| c.kind == 0x20 && !sprite_tex.contains(&dat::ui::norm_name(c.data.get(1..17).unwrap_or_default()))).map(|(k, c)| (k, c.data)).collect()
 }
 
 fn image_name(p: &[u8]) -> String {
@@ -327,7 +330,8 @@ pub fn pack(manifest_dir: &Path, up: &Path, out: &Path) -> Result<()> {
                     }
                     let Ok(bytes) = std::fs::read(&stock) else { continue };
                     let Ok(chunks) = dat::chunks(&bytes) else { continue };
-                    let keys: HashMap<usize, &String> = wanted.iter().map(|(k, key)| (*k, key)).collect();
+                    let allowed: std::collections::HashSet<usize> = images(&bytes).into_iter().map(|(k, _)| k).collect();
+                    let keys: HashMap<usize, &String> = wanted.iter().filter(|(k, _)| allowed.contains(k)).map(|(k, key)| (*k, key)).collect();
                     let mut outb = Vec::with_capacity(bytes.len() * 8);
                     let mut changed = false;
                     for (k, c) in chunks.iter().enumerate() {
