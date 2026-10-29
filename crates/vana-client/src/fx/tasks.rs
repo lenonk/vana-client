@@ -1052,7 +1052,9 @@ impl Effects {
                 t.loop_at = Some(t.ip);
                 Flow::Next
             }
-            // FUN_10185df0: the next record; its target becomes actor2 and the loop runs again.
+            // FUN_10185df0: the next record; its target becomes actor2 and the loop runs again. The jump takes this op's
+            // wait back (only the last record waits it) and the 0x31's comes instead (asm case 0x32: +0x98 -= this
+            // op's wait x speed, += the 0x31's): a song's targets one `hit1` wait apart, not 0x32's 215.
             0x32 => {
                 let next = t.action.as_ref().and_then(|a| {
                     let mut a = a.borrow_mut();
@@ -1063,6 +1065,7 @@ impl Effects {
                     Some(target) => {
                         t.a2 = Who::Actor(target);
                         t.ip = t.loop_at.unwrap_or(0);
+                        t.countdown -= op.wait as f32 * t.speed;
                         Flow::Jump
                     }
                     None => Flow::Next,
@@ -2588,6 +2591,37 @@ mod tests {
             fx.tick(&f, &Two);
         }
         assert!(!fx.pinned.contains_key(&ORC));
+    }
+
+    /// Op 0x32 (asm case 0x32): the jump back for the next record takes 0x32's wait back, so record k comes up k x the
+    /// body's waits in (a song's `hit1` every 15 ticks) and only the last record waits 0x32's own 215.
+    #[test]
+    fn record_loop_waits() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let mut fx = Effects::new();
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        let rec = |id| ActionTarget { id, results: vec![ActionResult::default()] };
+        let a = Action { actor: HUME, category: 4, arg: 0, info: 0, targets: vec![rec(HUME), rec(ORC), rec(HUME)], seq: 0 };
+        let ctx = Rc::new(RefCell::new(ActionCtx { action: a, cur: 0, swing: None, printed: vec![false; 3], client_swing: false, last: 0 }));
+        let ops = vec![sop(0x31, 0, 0, 0), sop(0x01, 15, 0, 0), sop(0x32, 215, 0, 0), sop(0x00, 0, 0, 0)];
+        fx.tasks.push(Some(Task::new((fx.reg.global.unwrap(), 0), Rc::new(ops), Who::Actor(HUME), Who::Actor(HUME), Some(ctx.clone()), 1.0)));
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::ZERO, draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        let mut came = Vec::new();
+        let mut end = None;
+        for tick in 0..300 {
+            let before = ctx.borrow().cur;
+            fx.tick(&f, &Two);
+            if ctx.borrow().cur != before {
+                came.push(tick);
+            }
+            if end.is_none() && fx.tasks.iter().flatten().next().is_none() {
+                end = Some(tick);
+            }
+        }
+        // The first frame's tick counts too: 15 apart from tick 14, then 0x32's 215 once.
+        assert_eq!(came, [14, 29, 44], "records");
+        assert_eq!(end, Some(259));
     }
 
     /// Op 0x2e (dur 30): the root holds while its counter is not below 0, so the restart comes on the 31st frame;

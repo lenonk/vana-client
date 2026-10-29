@@ -11699,3 +11699,14 @@ since "Ship voyages: the moving world" listed them as not done.
   stamp; not seen on screen (the test camera sat behind the pier).
 - Correction to "0x00E SubKind 5 / 6 and event op 0xb6 0x11": op 0xb6 0x11 swaps the model of a SubKind 4 prop (an
   XiModelActor, state 0x37), not of a SubKind 5 / 6 actor (those are skeleton actors). Not done yet.
+
+## The record loop's jump takes 0x32's wait back (bard songs on every target at once, 2026-10-29)
+
+- User report: a song played its animation and sound on one target after another; retail plays them for everyone
+  together. The user's log: a trust's song (file 3185) ran `hit1` on its targets about 3.8 s apart.
+- File 3185's `main`: op 0x31, op 0x03 `hit1` (wait 15), op 0x32 (wait 215), end. Retail's op 0x32 (base FUN_10057000
+  case 0x32): with a next record it moves actor2 to that record's target, then +0x98 (the countdown) -= this op's
+  wait x speed (FUN_1005d5a0) and += the 0x31's (FUN_1005d5c0), and goes back to the 0x31. So only the last record
+  waits 0x32's own wait: the targets come one loop body apart (15 ticks for the songs).
+- Ours took 0x32's wait on every record. Now the jump takes it back (fx/tasks.rs op 0x32; test record_loop_waits).
+  Not seen live. Melee rounds are split per record (combat::on_action), so their timing is unchanged.
