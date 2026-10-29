@@ -11646,3 +11646,16 @@ ticks forever.
   8216 actor-attached 0x1000 generators, 249 have element life + random below the interval and so end after one
   element, mostly in spell and ability files. Checked offscreen (`fx-shot 235 --file 3154`: nothing from 3154 is left
   once `main` ends; before, `gu00` stayed); the fx tests pass.
+
+## A play start keeps the old motion's other regions (Shantotto II's orbs, 2026-10-28)
+
+- FUN_100cb500: a new motion takes only the regions it has chunks for; the others go on with what they play. Ours
+  moved the playing motion to `prev` when a scheduler or emote play started (actmotion::start / play_op), so the next
+  pose saw no old motion and kept none of its regions. Over idle (Shantotto II's `idl` keys her orbs' bones 102..107
+  in region 1) a region-0 spell motion then left region 1 to the status motion under the play only, and once the play
+  ended into `run` (region 0 only) region 1 had nothing: the orbs stood still until she stood. Ours now takes the old
+  motion from `prev` when the current one was just emptied. Live (Lnxcsfix /wave over `idl`): `wav keeps [None, None,
+  Some("idl")]`, none before.
+- The orbs' permanent freeze in the first report was the slot-keyed clones (see "Clones belong to their task by uid").
+  Her orb generators are unaffected by "Generator clones go with their last element": element life 40 against an
+  interval of 20.

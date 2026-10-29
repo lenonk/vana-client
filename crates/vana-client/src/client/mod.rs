@@ -12106,10 +12106,12 @@ impl App {
                         }
                         // FUN_100cb500: a new motion takes only the regions it has chunks for; the others go on with what
                         // they play, but a finished counted one goes once region 0 is taken (FUN_100cb8e0's tail).
+                        // A play start (actmotion::start / play_op) has moved the old motion to `prev` already.
                         let new = mask(&frames_of(&name, 0.0, false));
-                        let old = if a.motion.is_empty() { 0 } else { mask(&frames_of(&a.motion, 0.0, false)) };
+                        let was = if a.motion.is_empty() { a.prev.clone() } else { Some((a.motion.clone(), a.ticks, a.once)) };
+                        let old = was.as_ref().filter(|w| !w.0.is_empty()).map_or(0, |w| mask(&frames_of(&w.0, 0.0, false)));
                         for r in 0..3u8 {
-                            let cur = if old >> r & 1 != 0 { Some((a.motion.clone(), a.ticks, a.once)) } else { a.keep[r as usize].take() };
+                            let cur = if old >> r & 1 != 0 { was.clone() } else { a.keep[r as usize].take() };
                             let done = |(n, t, o): &(String, f32, bool)| *o && frames_of(n, *t, true).iter().any(|(x, f)| actmotion::region(x) == r && *f >= x.frames.max(1) as f32 - 1.0);
                             a.keep[r as usize] = if new >> r & 1 != 0 || (new & 1 != 0 && cur.as_ref().is_some_and(done)) { None } else { cur };
                         }
