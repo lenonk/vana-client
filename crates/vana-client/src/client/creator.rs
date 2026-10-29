@@ -703,7 +703,7 @@ pub fn screen_shot(shot: &ScreenShot, out: &std::path::Path) -> Result<()> {
         wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
     );
     gpu.queue.submit([enc.finish()]);
-    super::save_capture(&gpu, &buf, [w, h], row, format, out)?;
+    super::save_capture(&gpu, &buf, [w, h], row, format, out, None, None)?;
     println!("wrote {}", out.display());
     Ok(())
 }

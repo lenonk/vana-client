@@ -12958,7 +12958,10 @@ impl App {
             r.occl.after_submit(&gfx.gpu);
         }
         if let (Some(buf), Some(path)) = (capture, script_shot.or_else(|| self.drive.screenshot.clone())) {
-            let saved = save_capture(&gfx.gpu, &buf, size, row, gfx.config.format, &path);
+            // FUN_101d0ea0: a Print Screen shot is always 512 x 382; with 0043 the next state adds one at the screen size
+            // in `<user dir>/ffxiuser/screenshots` (ours: the client's data folder), with no message.
+            let full = (game_shot && self.cfg.tool("0043") != 0).then(|| crate::config::data_dir().join("ffxiuser").join("screenshots"));
+            let saved = save_capture(&gfx.gpu, &buf, size, row, gfx.config.format, &path, game_shot.then_some([512, 382]), full.as_deref());
             match &saved {
                 Err(e) => log::error!("screenshot failed: {e:#}"),
                 Ok(()) => log::info!("screenshot written to {}", path.display()),
@@ -13315,7 +13318,10 @@ fn present_mode(caps: &wgpu::SurfaceCapabilities, limit: u32, window: &Window) -
     [wgpu::PresentMode::Mailbox, wgpu::PresentMode::Immediate].into_iter().find(|m| caps.present_modes.contains(m)).unwrap_or(wgpu::PresentMode::AutoVsync)
 }
 
-fn save_capture(gpu: &Gpu, buf: &wgpu::Buffer, size: [u32; 2], row: u32, format: wgpu::TextureFormat, path: &std::path::Path) -> Result<()> {
+/// Saves a captured frame as PNG: at `shrink` (an area-average resample) when given, and a full-size copy under `full`
+/// (same file name) when given.
+#[allow(clippy::too_many_arguments)]
+fn save_capture(gpu: &Gpu, buf: &wgpu::Buffer, size: [u32; 2], row: u32, format: wgpu::TextureFormat, path: &std::path::Path, shrink: Option<[u32; 2]>, full: Option<&std::path::Path>) -> Result<()> {
     buf.slice(..).map_async(wgpu::MapMode::Read, |_| {});
     gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None })?;
     let data = buf.slice(..).get_mapped_range().map_err(|e| anyhow::anyhow!("{e:?}"))?;
@@ -13326,10 +13332,47 @@ fn save_capture(gpu: &Gpu, buf: &wgpu::Buffer, size: [u32; 2], row: u32, format:
             pixels.extend_from_slice(&if bgra { [px[2], px[1], px[0], 255] } else { [px[0], px[1], px[2], 255] });
         }
     }
-    let mut enc = png::Encoder::new(std::io::BufWriter::new(std::fs::File::create(path)?), size[0], size[1]);
-    enc.set_color(png::ColorType::Rgba);
-    enc.write_header()?.write_image_data(&pixels)?;
-    Ok(())
+    let write = |path: &std::path::Path, w: u32, h: u32, px: &[u8]| -> Result<()> {
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(std::fs::File::create(path)?), w, h);
+        enc.set_color(png::ColorType::Rgba);
+        enc.write_header()?.write_image_data(px)?;
+        Ok(())
+    };
+    if let (Some(dir), Some(name)) = (full, path.file_name()) {
+        std::fs::create_dir_all(dir)?;
+        write(&dir.join(name), size[0], size[1], &pixels)?;
+    }
+    match shrink {
+        Some([w, h]) => write(path, w, h, &area_resample(&pixels, size, [w, h])),
+        None => write(path, size[0], size[1], &pixels),
+    }
+}
+
+/// RGBA `src` of `from` resampled to `to` by the area each output pixel covers.
+fn area_resample(src: &[u8], from: [u32; 2], to: [u32; 2]) -> Vec<u8> {
+    let (sx, sy) = (from[0] as f32 / to[0] as f32, from[1] as f32 / to[1] as f32);
+    let mut out = Vec::with_capacity((to[0] * to[1] * 4) as usize);
+    for y in 0..to[1] {
+        let (y0, y1) = (y as f32 * sy, (y + 1) as f32 * sy);
+        for x in 0..to[0] {
+            let (x0, x1) = (x as f32 * sx, (x + 1) as f32 * sx);
+            let mut acc = [0f32; 4];
+            let mut wsum = 0.0;
+            for py in y0 as u32..(y1.ceil() as u32).min(from[1]) {
+                let wy = (y1.min(py as f32 + 1.0) - y0.max(py as f32)).max(0.0);
+                for px in x0 as u32..(x1.ceil() as u32).min(from[0]) {
+                    let wt = wy * (x1.min(px as f32 + 1.0) - x0.max(px as f32)).max(0.0);
+                    let i = ((py * from[0] + px) * 4) as usize;
+                    for c in 0..4 {
+                        acc[c] += src[i + c] as f32 * wt;
+                    }
+                    wsum += wt;
+                }
+            }
+            out.extend(acc.map(|v| (v / wsum.max(1e-6) + 0.5) as u8));
+        }
+    }
+    out
 }
 
 pub fn run(cfg: Config, drive: Drive) -> Result<()> {

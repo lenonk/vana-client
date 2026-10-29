@@ -259,7 +259,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
         row("Cursor Size", "The drawn cursor's size (Hardware Mouse off); Auto grows it with the window (not retail).", CursorSize, &[(0, "Auto"), (100, "1x"), (150, "1.5x"), (200, "2x"), (300, "3x"), (400, "4x")], Now),
         row("Opening Movie", "0022: play the opening movie on start.", Tool("0022"), OFF_ON, Stored),
         row("Simple Character Creation", "0023: character creation without 3D models.", Tool("0023"), OFF_ON, Stored),
-        row("Screenshot Size", "0043: screenshots at the screen size.", Tool("0043"), OFF_ON, Stored),
+        row("Screenshot Size", "0043: also save each screenshot at the screen size (ffxiuser/screenshots).", Tool("0043"), OFF_ON, Now),
     ];
     const CLIENT: &[Row] = &[
         row("Frame Limit", "Frames drawn a second; game time stays at 60 ticks.", FrameLimit, &[], Now),

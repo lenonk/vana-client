@@ -256,7 +256,7 @@ pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &
         wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
     );
     gpu.queue.submit(extra.into_iter().chain([enc.finish()]));
-    super::super::save_capture(&gpu, &buf, [width, height], row, format, out)?;
+    super::super::save_capture(&gpu, &buf, [width, height], row, format, out, None, None)?;
     println!("wrote {}", out.display());
     Ok(())
 }

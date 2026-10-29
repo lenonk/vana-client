@@ -11975,3 +11975,14 @@ since "Ship voyages: the moving world" listed them as not done.
   FUN_1008e290 gives a door 2 (NPC) | 0x20, so F10 / Alt+F8's NPC-or-monster pick (0x12) takes doors too; ours gave
   doors 0x20 alone. Heads never turn to the Mog House door, as to the others.
 - Seen live (Lnxcsfix in its San d'Oria Mog House, Tab twice, locked on): the arrow sits in the middle of the doorway.
+
+## Config tool 0043 "Screenshot Size" (2026-10-29)
+
+- Spec: `~/ffxi/lab/research/stored_settings_spec.md` section 8 (FUN_101c74c0, cur FUN_101d0ea0).
+- A Print Screen shot (key function 0x55) is now always 512 x 382, an area-average resample of the frame (retail's
+  D3DX resample of the world target), saved as before in the game folder's `screenshots` (our stand-in for the
+  PlayOnline folder 0x21), with the group 9 0x42 line. With 0043 on, a copy at the screen size goes to
+  `<data dir>/ffxiuser/screenshots/<same name>` (retail: `<0042>\ffxiuser/screenshots`, 0042 being the user folder,
+  which we do not have), with no message. PNG, not retail's JPEG (no encoder in the tree; by choice).
+- Script and drive shots stay full size. Settings' row is live (When::Now).
+- Seen live: 512 x 382 in screenshots/, 2560 x 1366 in ffxiuser/screenshots/.
