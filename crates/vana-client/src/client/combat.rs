@@ -770,6 +770,10 @@ pub(super) fn on_battle_message(w: &mut World, m: &BattleMessage) {
     if super::partyreq::sender_blocked(w, m.actor, m.message, 1) {
         return;
     }
+    // Ours (the Trust Speech extra): a trust's party line (LSB's trustPartyMessage) is dropped.
+    if w.hide_trust_speech && m.message == 711 {
+        return;
+    }
     // FUN_100ad660 -> FUN_100c3300: into the queue, which FUN_100c33d0 steps from the next frame.
     let wait = MsgWait::new(m.queued, msg_target_status(w, m));
     w.msg_queue.push(QueuedMsg { m: m.clone(), wait, fresh: true });

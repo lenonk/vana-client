@@ -61,6 +61,7 @@ mod lifts;
 mod ships;
 mod dps;
 mod skillchain;
+mod clock;
 mod mousecur;
 mod party;
 mod macros;
@@ -5620,6 +5621,9 @@ struct World {
     target_distance: bool,
     target_hpp: bool,
     auto_advance: u32,
+    /// Config `earth_clock` (an extra, client/clock.rs) and `hide_trust_speech`.
+    earth_clock: bool,
+    hide_trust_speech: bool,
     key_items: Vec<u32>,
     /// "Downloading data ..." (menu chdummy in mode 2, FUN_1022eca0): when it opened; up from the lobby's
     /// world entry or the server's zone change until the zone has loaded (FUN_100135c0 closes it).
@@ -6530,6 +6534,7 @@ impl App {
             w.synth_amount = self.cfg.synth_amount;
             w.stamp_all_lines = self.cfg.stamp_all_lines;
             (w.target_distance, w.target_hpp, w.auto_advance) = (self.cfg.target_distance, self.cfg.target_hpp, self.cfg.auto_advance);
+            (w.earth_clock, w.hide_trust_speech) = (self.cfg.earth_clock, self.cfg.hide_trust_speech);
             w.extra_timers = self.cfg.timers;
             w.extra_regime = self.cfg.regime;
             w.extra_skillchain = self.cfg.skillchain_helper;
@@ -7165,6 +7170,8 @@ impl App {
                             target_distance: self.cfg.target_distance,
                             target_hpp: self.cfg.target_hpp,
                             auto_advance: self.cfg.auto_advance,
+                            earth_clock: self.cfg.earth_clock,
+                            hide_trust_speech: self.cfg.hide_trust_speech,
                             target_since: Instant::now(),
                             cam_turn: (0.0, 0.0),
                             sounds: Vec::new(),

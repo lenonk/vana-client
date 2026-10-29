@@ -99,6 +99,10 @@ pub struct Config {
     /// classic one (the modern one shows it anyway).
     pub target_distance: bool,
     pub target_hpp: bool,
+    /// Extra (the clock add-ons): Earth time, the moon and the next day beside the Vana'diel clock (client/clock.rs).
+    pub earth_clock: bool,
+    /// Extra (the trust chatter filters): trusts' party lines (battle message 711) are not printed.
+    pub hide_trust_speech: bool,
     /// Extra (the text auto-advance add-ons): an event message waiting for a key goes on by itself after this many
     /// seconds; 0 off.
     pub auto_advance: u32,
@@ -276,6 +280,8 @@ impl Default for Config {
             stamp_all_lines: false,
             target_distance: false,
             target_hpp: false,
+            earth_clock: false,
+            hide_trust_speech: false,
             auto_advance: 0,
             timers: false,
             timers_dock: 0,

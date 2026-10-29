@@ -11844,3 +11844,21 @@ since "Ship voyages: the moving world" listed them as not done.
     click on Berserk opened its prompt.
 - Not seen live: bursts (no caster in the test), the classic window in a live party (offscreen only), blue magic as a
   skill.
+
+## Extras: Clock and Trust Speech (ours, 2026-10-29)
+
+- Clock (config `earth_clock`, the Extras misc list, off by default; client/clock.rs; the clock add-ons):
+  - shows Earth local time in retail's own format (msgfmt::earth_datetime with flag 8, config 0x95 / 0x96 as /clock);
+  - the moon's percent (VanaParts, as /clock; the phase name in the modern tooltip);
+  - the next Vana'diel day and the Earth minutes until it (a day is 3456 s).
+  - Classic: two lines right of the compass clock's time (under it is the log): "Earth 05:23  Moon 60%" over
+    "Firesday in 46 min".
+  - Modern: a line under the location panel's zone, time and compass, "Earth 05:24 · Moon 60% · Firesday in 46
+    min", with a tooltip.
+  - Seen live in both UIs (classic placement fixed after it first drew under the log); the modern-shot sample has it.
+- Trust Speech (config `hide_trust_speech`, Shown / Hidden): a trust's party line is LSB's trustPartyMessage, battle
+  message 711 over s2c 0x02D (MODLOG "Trust party lines"). Hidden drops it at on_battle_message, before the queue.
+  Retail's chat filters (0x32 / 0x33, by caster / target relation) have no row for it. Seen live: summoning Naji
+  printed only "starts casting Naji", without "(Naji) All right! Let me at 'em!".
+- Party TP and party buffs, the other candidates, were already there: config `party_tp` (retail 0xae bit 0, on by
+  default) and the party members' status icons.

@@ -457,7 +457,16 @@ impl HudTop {
                 self.grid_wait = 30.0;
                 self.grid = super::map::grid_text(w, gu.map_regions());
             }
-            gu.shape_text(&format!("{}:{:02}  {}", m / 60, m % 60, self.grid), cx - 50.0, cy + 26.0, tint, false);
+            let end = gu.shape_text(&format!("{}:{:02}  {}", m / 60, m % 60, self.grid), cx - 50.0, cy + 26.0, tint, false);
+            // Ours (the Clock extra): Earth time and the moon over the next day, right of the compass and its time
+            // (under it is the log).
+            if w.earth_clock
+                && let Some(c) = super::clock::parts(w)
+            {
+                let x = end.max(cx + 40.0) + 16.0;
+                gu.shape_text(&format!("Earth {}  Moon {}%", c.earth, c.moon.1), x, cy + 12.0, tint, false);
+                gu.shape_text(&c.next_text(), x, cy + 26.0, tint, false);
+            }
             // Day orb: framesus table 0x10379950 by weekday ((t % 27648) / 3456).
             let secs = t as u64 + at.elapsed().as_secs();
             let day = ((secs % 27648) / 3456) as usize;

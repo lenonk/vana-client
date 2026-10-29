@@ -246,9 +246,11 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   timestamps on every line, timers (recasts, our effects, ours on others and monsters at LSB's lengths, a docked
   drawer; MODLOG "Timers"), the minimap (MODLOG "Minimap"), the training regime window (client/regime.rs, MODLOG
   "Training regime window"), target distance and HP %, text auto-advance, /find, /dps (MODLOG "Extras: target
-  distance ...").
-  - candidates: party buffs / TP, clock; later Battlemod-style filtering, a skillchain helper (no client table of
-    weapon skill properties).
+  distance ..."), the skillchain helper (LSB's properties bundled; client/skillchain.rs, both UIs) and the battle
+  menu's suggestions (suggest.rs; MODLOG "Skillchain helper and the battle menu's suggestions"), the Clock and Trust
+  Speech (MODLOG "Extras: Clock and Trust Speech"); party TP and buffs were already there.
+  - candidates: more Battlemod-style filtering (retail's chat filters already split by caster / target; what is
+    left is its message simplifying and name colours).
 - Chat log (user, 2026-10-23: "needs a lot of love"; audit `~/ffxi/lab/research/chat_audit/`): done the server side
   (treasure pool, MsgShift gaps, 0x017 kinds and echoes, 0x027 / 0x043, 0x009 keys, lines held until the message
   tables load, the server message and /servmes, zone text colours) and /emote, /recast, talk range / mounted, /party

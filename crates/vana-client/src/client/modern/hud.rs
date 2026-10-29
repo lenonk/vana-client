@@ -160,6 +160,8 @@ pub struct WhereView {
     pub weather: Option<u16>,
     /// None where retail has no compass (ships and airships).
     pub compass: Option<CompassView>,
+    /// The Clock extra's Earth time, moon and next day (ours).
+    pub clock: Option<super::super::clock::Parts>,
 }
 
 /// The compass as retail's (hudtop draw_compass): turned so the camera's heading is up, in retail's local units
@@ -479,6 +481,8 @@ pub fn where_panel(p: &mut Panels, v: &WhereView) {
     p.panel("where", None, 430.0, |ui| {
         // The zone over the time and day at the left, the grid over the compass, the weather centred in the rest.
         let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 54.0), Sense::hover());
+        // Ours (the Clock extra): a line under it all.
+        let clock_row = v.clock.as_ref().map(|_| ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover()).0);
         let right = r.max.x - 92.0;
         let dial = pos2(right - 16.0 - DIAL, r.center().y + 6.0);
         let (top, low) = (r.center().y - 12.0, r.center().y + 13.0);
@@ -501,6 +505,12 @@ pub fn where_panel(p: &mut Panels, v: &WhereView) {
         let size = room.width().min(room.height()) - 4.0;
         if let Some(s) = v.weather.and_then(|id| m.art.sprite(&format!("weather/w{id:02}"))) {
             painter.add(paint::image(&s, room.center() - vec2(size, size) / 2.0, size, Color32::WHITE));
+        }
+        if let (Some(c), Some(cr)) = (&v.clock, clock_row) {
+            let text = format!("Earth {} \u{00b7} Moon {}% \u{00b7} {}", c.earth, c.moon.1, c.next_text());
+            let g = super::one_line(painter, &text, FontId::proportional(m.theme.small), m.theme.color("muted"), cr.width());
+            painter.galley(pos2(cr.min.x, cr.center().y - g.size().y / 2.0), g, Color32::WHITE);
+            m.tip_with(ui, cr, || ("Clock".into(), format!("Earth time {}.\nThe moon: {} ({}%).\n{} begins in {} Earth minutes.", c.earth, c.moon.0, c.moon.1, c.next.0, c.next.1.max(1))));
         }
         // Tooltips (ours).
         let element = DAY_ELEMENTS[v.day.0 % 8];
@@ -739,6 +749,7 @@ fn where_view(p: Look, w: &World) -> Option<WhereView> {
         day: (day, name),
         weather: Some(w.weather).filter(|&id| id < 20),
         compass: compass_view(w),
+        clock: w.earth_clock.then(|| super::super::clock::parts(w)).flatten(),
     })
 }
 

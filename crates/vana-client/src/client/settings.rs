@@ -24,6 +24,8 @@ pub struct Settings {
     pub stamp_all_lines: bool,
     pub target_distance: bool,
     pub target_hpp: bool,
+    pub earth_clock: bool,
+    pub hide_trust_speech: bool,
     pub auto_advance: u32,
     pub timers: bool,
     pub timers_dock: u32,
@@ -62,6 +64,8 @@ impl Settings {
             stamp_all_lines: c.stamp_all_lines,
             target_distance: c.target_distance,
             target_hpp: c.target_hpp,
+            earth_clock: c.earth_clock,
+            hide_trust_speech: c.hide_trust_speech,
             auto_advance: c.auto_advance,
             timers: c.timers,
             timers_dock: c.timers_dock,
@@ -99,6 +103,8 @@ impl Settings {
         c.stamp_all_lines = self.stamp_all_lines;
         c.target_distance = self.target_distance;
         c.target_hpp = self.target_hpp;
+        c.earth_clock = self.earth_clock;
+        c.hide_trust_speech = self.hide_trust_speech;
         c.auto_advance = self.auto_advance;
         c.timers = self.timers;
         c.timers_dock = self.timers_dock;
@@ -149,6 +155,8 @@ enum Val {
     StampAll,
     TargetDistance,
     TargetHpp,
+    EarthClock,
+    TrustSpeech,
     AutoAdvance,
     Timers,
     TimersDock,
@@ -275,6 +283,8 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
         row("Timestamps on All Lines", "Every log line gets the time, not only chat (the format of /timestamp; seconds while it is off).", StampAll, OFF_ON, Now),
         row("Target Distance", "How far your target is, centre to centre, in the target window.", TargetDistance, OFF_ON, Now),
         row("Target HP %", "The target's HP percent beside its gauge in the classic target window (the modern one shows it).", TargetHpp, OFF_ON, Now),
+        row("Clock", "Earth time, the moon and the next Vana'diel day beside the game's clock.", EarthClock, OFF_ON, Now),
+        row("Trust Speech", "What your trusts say to the party (on summoning, on a weapon skill, on defeat) in the log, or not.", TrustSpeech, &[(0, "Shown"), (1, "Hidden")], Now),
         row("Text Auto-Advance", "An event's message waiting for a key goes on by itself after this many seconds.", AutoAdvance, &[(0, "OFF"), (3, "3 s"), (5, "5 s"), (8, "8 s")], Now),
     ];
     match kind {
@@ -411,6 +421,8 @@ impl SettingsUi {
             Val::StampAll => self.s.stamp_all_lines as u32,
             Val::TargetDistance => self.s.target_distance as u32,
             Val::TargetHpp => self.s.target_hpp as u32,
+            Val::EarthClock => self.s.earth_clock as u32,
+            Val::TrustSpeech => self.s.hide_trust_speech as u32,
             Val::AutoAdvance => self.s.auto_advance,
             Val::Timers => self.s.timers as u32,
             Val::Skillchains => self.s.skillchain_helper as u32,
@@ -441,6 +453,8 @@ impl SettingsUi {
             Val::StampAll => self.s.stamp_all_lines = x != 0,
             Val::TargetDistance => self.s.target_distance = x != 0,
             Val::TargetHpp => self.s.target_hpp = x != 0,
+            Val::EarthClock => self.s.earth_clock = x != 0,
+            Val::TrustSpeech => self.s.hide_trust_speech = x != 0,
             Val::AutoAdvance => self.s.auto_advance = x,
             Val::Timers => self.s.timers = x != 0,
             Val::Skillchains => self.s.skillchain_helper = x != 0,
