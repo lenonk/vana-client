@@ -141,8 +141,6 @@ pub enum When {
     Now,
     NextZone,
     Restart,
-    /// Kept for the feature we do not have yet.
-    Stored,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -257,7 +255,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
     const MISC: &[Row] = &[
         row("Hardware Mouse", "0021: the game folder's cursor files (.ani) instead of the cursor the game draws.", Tool("0021"), OFF_ON, Now),
         row("Cursor Size", "The drawn cursor's size (Hardware Mouse off); Auto grows it with the window (not retail).", CursorSize, &[(0, "Auto"), (100, "1x"), (150, "1.5x"), (200, "2x"), (300, "3x"), (400, "4x")], Now),
-        row("Opening Movie", "0022: play the opening movie on start.", Tool("0022"), OFF_ON, Stored),
+        row("Opening Movie", "0022: play the opening movie before the title; any key skips it.", Tool("0022"), OFF_ON, Restart),
         row("Simple Character Creation", "0023: character creation with 2-D portraits instead of the 3D models.", Tool("0023"), OFF_ON, Now),
         row("Screenshot Size", "0043: also save each screenshot at the screen size (ffxiuser/screenshots).", Tool("0043"), OFF_ON, Now),
     ];
@@ -879,7 +877,6 @@ impl SettingsUi {
             When::Now => "",
             When::NextZone => " Takes effect at the next zone load.",
             When::Restart => " Takes effect on restart.",
-            When::Stored => " Saved; not used by this client yet.",
         };
         format!("{}{when}", r.help)
     }
@@ -919,7 +916,6 @@ fn when_text(w: When) -> &'static str {
         When::Now => "",
         When::NextZone => " Takes effect at the next zone load.",
         When::Restart => " Takes effect on restart.",
-        When::Stored => " Saved; not used by this client yet.",
     }
 }
 

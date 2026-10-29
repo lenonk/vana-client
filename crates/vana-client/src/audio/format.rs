@@ -317,8 +317,12 @@ fn sound_dirs_in(roots: &[PathBuf]) -> Vec<PathBuf> {
     roots.iter().flat_map(|r| (1..=9).map(move |n| r.join(if n == 1 { "sound".to_string() } else { format!("sound{n}") }).join("win"))).collect()
 }
 
-/// `music%03u.bgw` from the first root that has it (FUN_1023bed0; id & 0x3ff).
+/// `music%03u.bgw` from the first root that has it (FUN_1023bed0; id & 0x3ff); id 0x400 is the opening movie's
+/// `mov/music999.bgw` (FUN_1023bce0 plays it by path).
 pub fn music_path(ffxi_dir: &Path, id: u32) -> Option<PathBuf> {
+    if id == 0x400 {
+        return Some(ffxi_dir.join("mov").join("music999.bgw")).filter(|p| p.exists());
+    }
     sound_dirs(ffxi_dir).into_iter().map(|d| d.join("music/data").join(format!("music{:03}.bgw", id & 0x3ff))).find(|p| p.exists())
 }
 

@@ -3,6 +3,7 @@
 
 mod audio;
 mod cabx;
+mod mpeg1;
 mod client;
 mod combatshot;
 mod config;
@@ -216,6 +217,16 @@ enum Cmd {
         slot: u32,
         #[arg(value_parser = parse_num)]
         ids: Vec<u32>,
+    },
+    /// The opening movie's frames (mov/mov999.pmv, config 0022) as PNGs, by display index, and the decode speed; with
+    /// --size WxH each one drawn through the GPU pass into a window of that size, as the client shows it.
+    MovieShot {
+        #[arg(long, value_delimiter = ',')]
+        frames: Vec<u32>,
+        #[arg(long)]
+        out: PathBuf,
+        #[arg(long)]
+        size: Option<String>,
     },
     /// Save the images (IMG chunks) of the game's own DAT files (never a mod's) as PNGs: every image of the given ids, or
     /// with --random N one image each from N random files that hold any; --file reads any DAT by path (a mod's too).
@@ -1515,6 +1526,7 @@ fn main() -> Result<()> {
         }
         Cmd::UiDump { id, out } => uishot::ui_dump(id, &out),
         Cmd::TexDump { ids, random, file, out } => tex_dump(&ids, random, &file, &out),
+        Cmd::MovieShot { frames, out, size } => movie_shot(&frames, &out, size.as_deref()),
         Cmd::TexExport { out } => texpack::export(&out),
         Cmd::StatusDump { out } => texpack::status_dump(&out),
         Cmd::TexPack { manifest, upscaled, out } => texpack::pack(&manifest, &upscaled, &out),
@@ -2240,6 +2252,75 @@ impl fx::Actors for ShotActors {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// `movie-shot`: decodes the opening movie up to the last frame asked for, writing those frames (BT.601 to RGB).
+fn movie_shot(frames: &[u32], out: &std::path::Path, size: Option<&str>) -> Result<()> {
+    let cfg = config::Config::load();
+    let mut d = mpeg1::open_pmv(&cfg.ffxi_dir().join("mov").join("mov999.pmv")).ok_or_else(|| anyhow::anyhow!("no mov/mov999.pmv"))?;
+    std::fs::create_dir_all(out)?;
+    let window = size.map(|s| s.split_once('x').and_then(|(w, h)| Some([w.parse::<u32>().ok()?, h.parse::<u32>().ok()?])).ok_or_else(|| anyhow::anyhow!("--size WxH"))).transpose()?;
+    let gpu = window.map(|_| render::Gpu::headless()).transpose()?;
+    let mut pass = gpu.as_ref().map(|g| render::movie::Movie::new(g, wgpu::TextureFormat::Rgba8UnormSrgb));
+    let last = frames.iter().copied().max().unwrap_or(0);
+    let t = std::time::Instant::now();
+    for n in 0..=last {
+        let Some(f) = d.next_frame() else {
+            println!("the stream ends after {n} frames");
+            break;
+        };
+        if !frames.contains(&n) {
+            continue;
+        }
+        if let (Some(gpu), Some(pass), Some(size)) = (&gpu, &mut pass, window) {
+            pass.upload(gpu, &f);
+            let tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
+                label: None,
+                size: wgpu::Extent3d { width: size[0], height: size[1], depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+            let row = (size[0] * 4).div_ceil(256) * 256;
+            let buf = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size: (row * size[1]) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
+            let mut enc = gpu.device.create_command_encoder(&Default::default());
+            pass.draw(gpu, &mut enc, &tex.create_view(&Default::default()), size, client::opening::picture_rect(size, d.height), true);
+            enc.copy_texture_to_buffer(
+                tex.as_image_copy(),
+                wgpu::TexelCopyBufferInfo { buffer: &buf, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(size[1]) } },
+                wgpu::Extent3d { width: size[0], height: size[1], depth_or_array_layers: 1 },
+            );
+            gpu.queue.submit([enc.finish()]);
+            buf.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+            gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).map_err(|e| anyhow::anyhow!("{e:?}"))?;
+            let mapped = buf.slice(..).get_mapped_range().map_err(|e| anyhow::anyhow!("{e:?}"))?;
+            let rgba: Vec<u8> = (0..size[1]).flat_map(|y| mapped[(y * row) as usize..(y * row + size[0] * 4) as usize].to_vec()).collect();
+            let path = out.join(format!("window{n:05}.png"));
+            let mut enc = png::Encoder::new(std::io::BufWriter::new(std::fs::File::create(&path)?), size[0], size[1]);
+            enc.set_color(png::ColorType::Rgba);
+            enc.write_header()?.write_image_data(&rgba)?;
+            continue;
+        }
+        let (w, h) = (d.width, d.height);
+        let mut rgb = Vec::with_capacity(w * h * 3);
+        for y in 0..h {
+            for x in 0..w {
+                let yy = (f.y[y * f.width + x] as f32 - 16.0) * 1.164;
+                let ci = (y / 2) * (f.width / 2) + x / 2;
+                let (cb, cr) = (f.cb[ci] as f32 - 128.0, f.cr[ci] as f32 - 128.0);
+                rgb.extend([yy + 1.596 * cr, yy - 0.392 * cb - 0.813 * cr, yy + 2.017 * cb].map(|v| v.clamp(0.0, 255.0) as u8));
+            }
+        }
+        let path = out.join(format!("frame{n:05}.png"));
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(std::fs::File::create(&path)?), w as u32, h as u32);
+        enc.set_color(png::ColorType::Rgb);
+        enc.write_header()?.write_image_data(&rgb)?;
+    }
+    println!("{} frames in {:.2} s ({}x{} at {:.2} fps)", last + 1, t.elapsed().as_secs_f32(), d.width, d.height, d.fps);
+    Ok(())
+}
+
 /// Config 0011's steps: Off 1 (static), Normal 16, Smooth 32 (FUN_10168eb0).
 fn sway_steps(v: u32) -> u32 {
     match v {

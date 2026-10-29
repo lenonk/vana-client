@@ -13,6 +13,7 @@ pub mod mtext;
 pub mod screens;
 pub mod invwin;
 pub mod screenfx;
+pub mod movie;
 pub mod scale;
 pub mod gputime;
 pub mod cull;

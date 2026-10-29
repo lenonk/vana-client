@@ -12115,3 +12115,33 @@ since "Ship voyages: the moving world" listed them as not done.
 - Settings' row takes effect at the next zone load (the meshes are built then; the lighting mode follows at once).
 - Seen: zone-shot 230 (44 Bp, 41 used on 654 draws), on vs off differ over every directly lit face and the bumped
   walls; live East Ronfaure (20 normal maps on 225 draws) with no errors.
+
+## Config tool 0022 "Opening Movie" (2026-10-29)
+
+- Spec: `~/ffxi/lab/research/stored_settings_spec.md` section 6; FUN_10017a90 (CXiOpening update), FUN_102143b0 /
+  FUN_10214470 (texture renderer), FUN_10213810 (the quad) and FUN_102137b0 (stop) read again for this.
+- `mov/mov999.pmv`: "PMUS", then an MPEG-1 video elementary stream XORed by file offset with `c2 ee 9c d9 bd 6c 4d
+  72` (o % 8). Ours decodes it itself (mpeg1.rs: sequence headers and matrices, I / P / B pictures, slice and
+  macroblock VLCs, dequantisation, float IDCT, half-pel motion; display order) on a thread: all 12,620 pictures in about
+  20 s, 21x real time. A slice's macroblocks stop at the next start code, which is then left for the picture loop
+  (reading past it there lost every other picture).
+- Retail, per frame: state 0 opens the movie (DirectShow, polmvf.dll + the system MPEG-1 decoder); failure: done at
+  once. With sound on, `mov/music999.bgw` (plain WAVE, id 0x400 in ours: audio/format.rs music_path) plays at 0x7f.
+  State 1: any input (FUN_10007c70(0)) stops the movie (the object released: nothing drawn), fades the music over
+  0x3c ticks and waits 0xf0 ticks (4 s) on black; the movie's end stops it and the opening is done at once (the
+  music is not stopped). Ours takes any key or mouse-button press *(inf: the three counters FUN_10007c70 reads)*.
+- The picture: the decoder's RGB24 samples are copied row by row into rows 0..335 of a 512 x 512 texture, and the
+  quad (x 0..W, y from (off) k to (512 + off) k, k = H x 0.00214534, off -110 English / -160 subtitled) has v = 1 at
+  its top corners, so the picture is the bottom 336 rows, upright: 0.142 H..0.862 H, the full width (a 1.85:1 band at
+  4:3, stretched wider on wide windows, as retail) *(inf: the samples bottom-up, the decoder's usual RGB24)*.
+  render/movie.rs: Y / Cb / Cr as R8 textures, BT.601 studio range in the shader, bilinear, on black; no gamma (retail
+  sets a 1.0 ramp for it). Colour 0x80808080 taken as 1.0 *(inf)*.
+- Ours (client/opening.rs, App::draw_opening): the movie clock starts with the music (status bgm = 0x401) or a
+  second after the open; late pictures are dropped. The title's data and flyover load behind the movie; the opening
+  ends when it is over and the title can draw. The window shows with the movie. English: no subtitles (the JP
+  sprite file 39531 and the 24 frame windows at 0x10345cc8 not drawn).
+- Settings' row takes effect on restart; default On (FFXiMain's). Test drives skip it unless FFXI_OPENING is set; their
+  script then runs as phase "opening" (a key skips, shot: photographs). `movie-shot --frames N,.. --out DIR [--size
+  WxH]` writes frames (CPU colour) or the window as drawn.
+- Seen: a driven run, the movie with its music, Escape, 4.0 s of black, the title and its music; the GPU frames
+  match the CPU conversion.

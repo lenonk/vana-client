@@ -3,6 +3,7 @@
 pub mod ground;
 pub mod combat;
 mod actmotion;
+pub mod opening;
 mod flyover;
 mod resttick;
 mod creator;
@@ -6289,6 +6290,9 @@ pub struct App {
     /// Config-tool 0023 read as the creator opens: the 2-D portraits (creator::Portrait) instead of the 3D scene.
     creator_simple: bool,
     portrait: creator::Portrait,
+    /// Config 0022: the opening movie while it plays (client/opening.rs) and its GPU pass.
+    opening: Option<opening::Opening>,
+    movie: Option<crate::render::movie::Movie>,
     /// 3D LCD Mode's frame counter 0..3 (DAT_10443dd0 +0x1c).
     lcd_frame: u32,
     creator_step: usize,
@@ -6355,6 +6359,8 @@ pub struct App {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum MusicScene {
     None,
+    /// The opening movie's music999.bgw (client/opening.rs).
+    Opening,
     /// Title music (FUN_1023ae50 on the installed mask).
     Title,
     Creator,
@@ -6422,6 +6428,8 @@ impl App {
         crate::render::SHINE_WRAP.store(cfg.tool("0040") == 0, std::sync::atomic::Ordering::Relaxed);
         let (tasks_tx, tasks) = channel();
         let phase = Phase::login(&cfg);
+        // Config 0022 (FUN_10010d20 state 1): the opening movie before the title; in a test drive only with FFXI_OPENING.
+        let opening = (cfg.tool("0022") != 0 && (!drive.driven() || std::env::var_os("FFXI_OPENING").is_some())).then(|| opening::Opening::open(&cfg.ffxi_dir().join("mov"))).flatten();
         let installed = crate::dat::installed(&cfg.ffxi_dir());
         let monitor = cfg.monitor.clone();
         // The executable's path while it is still the running file (a restart after an update needs it).
@@ -6506,6 +6514,8 @@ impl App {
             dancer_loading: None,
             creator_simple: false,
             portrait: Default::default(),
+            opening,
+            movie: None,
             lcd_frame: 0,
             creator_step: 0,
             creator_yes: false,
@@ -6794,6 +6804,7 @@ impl App {
         }
         let Some(a) = self.audio.as_mut() else { return };
         let scene = match &self.phase {
+            _ if self.opening.is_some() => MusicScene::Opening,
             Phase::Login { .. } => MusicScene::Title,
             // FUN_1022ef00: the race BGM until the nation step (its step 7, where the dancer is also torn down).
             Phase::Characters { screen: LobbyScreen::Create, .. } if self.creator_simple && self.creator_step < 6 => MusicScene::Title,
@@ -6808,6 +6819,7 @@ impl App {
         }
         if scene != self.music_scene {
             match scene {
+                MusicScene::Opening => a.play_music_now(opening::MUSIC),
                 MusicScene::Title => a.title_music(self.cfg.game.global.get(0xaf), self.installed),
                 // LAB_1022fedb: reaching the nation step plays 0x78 through the fade task; back on the dancer steps
                 // the race BGM returns when the performance wraps (FUN_10036a90).
@@ -11644,6 +11656,127 @@ impl App {
         });
     }
 
+    /// The title can draw: its UI data and flyover (or a failure to say so).
+    fn title_ready(&self) -> bool {
+        self.game_ui_state == LoadState::Failed || (self.game_ui.is_some() && (self.flyover.is_some() || self.flyover_state == LoadState::Failed || !self.title_backdrop()))
+    }
+
+    /// Config 0022's frames (FUN_10017a90): the movie on black, its music, a skip's black wait; the title takes over
+    /// once the opening is over and the title can draw.
+    fn draw_opening(&mut self) {
+        let t0 = Instant::now();
+        let dt = self.last_frame.elapsed().as_secs_f32().min(0.1);
+        self.last_frame = t0;
+        self.update_audio(dt);
+        let music = self.audio.as_ref().is_none_or(|a| a.status.bgm.load(std::sync::atomic::Ordering::Relaxed) == opening::MUSIC + 1);
+        let ready = self.title_ready();
+        if self.opening.as_mut().is_some_and(|o| !o.update(music)) && ready {
+            log::info!("opening: over");
+            (self.opening, self.movie) = (None, None);
+            self.next_frame = Some(t0);
+            return;
+        }
+        let Some(mut gfx) = self.gfx.take() else { return };
+        if !self.shown {
+            self.shown = true;
+            gfx.window.set_visible(true);
+            if self.first_run.is_none() {
+                self.refullscreen.set(Some(3));
+            }
+        }
+        self.window_upkeep(&mut gfx);
+        // Input waits for the title: nothing reaches egui meanwhile.
+        let _ = gfx.egui_state.take_egui_input(&gfx.window);
+        // A test drive's script runs here as phase "opening": a key or button skips, a shot photographs the window.
+        let mut shot = None;
+        if let Some(sc) = &mut self.drive.input {
+            let (events, path, _) = sc.next("opening", &[], gfx.egui_ctx.pixels_per_point());
+            if events.iter().any(|e| matches!(e, egui::Event::Key { pressed: true, .. } | egui::Event::PointerButton { pressed: true, .. })) {
+                self.skip_opening();
+            }
+            shot = path;
+        }
+        if self.frame_limit > 0 {
+            self.next_frame = Some(t0 + std::time::Duration::from_secs_f64(1.0 / self.frame_limit as f64));
+        } else {
+            gfx.window.request_redraw();
+        }
+        let size = [gfx.config.width, gfx.config.height];
+        let movie = self.movie.get_or_insert_with(|| crate::render::movie::Movie::new(&gfx.gpu, gfx.config.format));
+        if let Some(o) = self.opening.as_mut()
+            && let wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) = gfx.surface.get_current_texture()
+        {
+            if let Some(f) = o.fresh.take() {
+                movie.upload(&gfx.gpu, &f);
+            }
+            let view = frame.texture.create_view(&Default::default());
+            let mut encoder = gfx.gpu.device.create_command_encoder(&Default::default());
+            movie.draw(&gfx.gpu, &mut encoder, &view, size, opening::picture_rect(size, o.rows), o.showing());
+            let row = (size[0] * 4).div_ceil(256) * 256;
+            let capture = shot.filter(|_| gfx.config.usage.contains(wgpu::TextureUsages::COPY_SRC)).map(|path| {
+                let buf = gfx.gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("screenshot"), size: (row * size[1]) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
+                encoder.copy_texture_to_buffer(
+                    frame.texture.as_image_copy(),
+                    wgpu::TexelCopyBufferInfo { buffer: &buf, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(size[1]) } },
+                    wgpu::Extent3d { width: size[0], height: size[1], depth_or_array_layers: 1 },
+                );
+                (buf, path)
+            });
+            gfx.gpu.queue.submit([encoder.finish()]);
+            if let Some((buf, path)) = capture {
+                match save_capture(&gfx.gpu, &buf, size, row, gfx.config.format, &path, None, None) {
+                    Err(e) => log::error!("screenshot failed: {e:#}"),
+                    Ok(()) => log::info!("screenshot written to {}", path.display()),
+                }
+            }
+            gfx.gpu.queue.present(frame);
+        } else {
+            gfx.surface.configure(&gfx.gpu.device, &gfx.config);
+        }
+        self.gfx = Some(gfx);
+    }
+
+    /// Any input during the opening: the movie stops and its music fades over 60 ticks.
+    fn skip_opening(&mut self) {
+        if self.opening.as_mut().is_some_and(|o| o.skip()) {
+            log::info!("opening: skipped");
+            if let Some(a) = self.audio.as_mut() {
+                a.stop_music(opening::SKIP_FADE);
+            }
+        }
+    }
+
+    /// The window's own upkeep each frame: monitors, mode and size changes, the full-screen re-ask, the present mode.
+    fn window_upkeep(&mut self, gfx: &mut Gfx) {
+        if self.monitors.is_empty() {
+            self.monitors = monitor_list(gfx.window.available_monitors());
+            log::info!("monitors: {:?}", self.monitors.iter().map(|m| &m.1).collect::<Vec<_>>());
+        }
+        if std::mem::take(&mut self.window_dirty) {
+            self.apply_window(&gfx.window);
+        }
+        self.move_window(&gfx.window);
+        self.request_size(gfx);
+        if let Some(n) = self.refullscreen.get() {
+            if n > 0 {
+                self.refullscreen.set(Some(n - 1));
+            } else {
+                self.refullscreen.set(None);
+                let (size, mode) = (self.cfg.window_size(), self.cfg.window_mode());
+                let want = fullscreen(mode, size, pick_monitor(&self.cfg.monitor, gfx.window.current_monitor(), gfx.window.available_monitors(), size));
+                if want.is_some() && !(self.drive.driven() && std::env::var_os("FFXI_TEST_WINDOW").is_none()) {
+                    log::info!("window: full screen again once shown ({want:?})");
+                    gfx.window.set_fullscreen(want);
+                }
+            }
+        }
+        if std::mem::take(&mut self.present_dirty) {
+            gfx.config.present_mode = present_mode(&gfx.surface.get_capabilities(&gfx.gpu.adapter), self.frame_limit, &gfx.window);
+            gfx.surface.configure(&gfx.gpu.device, &gfx.config);
+        }
+        self.perf.limit = format!("limit {}  present {:?}", if self.frame_limit == 0 { "unlimited".to_string() } else { format!("{} fps", self.frame_limit) }, gfx.config.present_mode);
+    }
+
     /// The login screen and title menu play the flyover behind the lobby art.
     fn title_backdrop(&self) -> bool {
         matches!(self.phase, Phase::Login { .. } | Phase::Characters { screen: LobbyScreen::Main, .. })
@@ -11773,10 +11906,14 @@ impl App {
             resttick::update(w);
             servmes::frame(w);
         }
-        // Nothing is shown until the title can draw: its UI data and flyover (or a failure to say so).
+        // Config 0022: the opening movie before the title, which loads behind it.
+        if self.opening.is_some() {
+            self.draw_opening();
+            return;
+        }
+        // Nothing is shown until the title can draw.
         if !self.shown {
-            let ready = self.game_ui_state == LoadState::Failed || (self.game_ui.is_some() && (self.flyover.is_some() || self.flyover_state == LoadState::Failed || !self.title_backdrop()));
-            if !ready {
+            if !self.title_ready() {
                 self.next_frame = Some(Instant::now() + std::time::Duration::from_millis(16));
                 return;
             }
@@ -11808,33 +11945,7 @@ impl App {
         let m_update = Instant::now();
 
         let Some(mut gfx) = self.gfx.take() else { return };
-        if self.monitors.is_empty() {
-            self.monitors = monitor_list(gfx.window.available_monitors());
-            log::info!("monitors: {:?}", self.monitors.iter().map(|m| &m.1).collect::<Vec<_>>());
-        }
-        if std::mem::take(&mut self.window_dirty) {
-            self.apply_window(&gfx.window);
-        }
-        self.move_window(&gfx.window);
-        self.request_size(&mut gfx);
-        if let Some(n) = self.refullscreen.get() {
-            if n > 0 {
-                self.refullscreen.set(Some(n - 1));
-            } else {
-                self.refullscreen.set(None);
-                let (size, mode) = (self.cfg.window_size(), self.cfg.window_mode());
-                let want = fullscreen(mode, size, pick_monitor(&self.cfg.monitor, gfx.window.current_monitor(), gfx.window.available_monitors(), size));
-                if want.is_some() && !(self.drive.driven() && std::env::var_os("FFXI_TEST_WINDOW").is_none()) {
-                    log::info!("window: full screen again once shown ({want:?})");
-                    gfx.window.set_fullscreen(want);
-                }
-            }
-        }
-        if std::mem::take(&mut self.present_dirty) {
-            gfx.config.present_mode = present_mode(&gfx.surface.get_capabilities(&gfx.gpu.adapter), self.frame_limit, &gfx.window);
-            gfx.surface.configure(&gfx.gpu.device, &gfx.config);
-        }
-        self.perf.limit = format!("limit {}  present {:?}", if self.frame_limit == 0 { "unlimited".to_string() } else { format!("{} fps", self.frame_limit) }, gfx.config.present_mode);
+        self.window_upkeep(&mut gfx);
         let size = [gfx.config.width, gfx.config.height];
         let mut raw = gfx.egui_state.take_egui_input(&gfx.window);
         let phase = self.phase_name();
@@ -13210,6 +13321,16 @@ impl ApplicationHandler for App {
                 }
                 if (self.drive.quit && self.drive_done() && !matches!(self.phase, Phase::World(_))) || self.exit_requested {
                     event_loop.exit();
+                }
+            }
+            WindowEvent::KeyboardInput { event, .. } if self.opening.is_some() => {
+                if event.state == ElementState::Pressed && !event.repeat {
+                    self.skip_opening();
+                }
+            }
+            WindowEvent::MouseInput { state, .. } if self.opening.is_some() => {
+                if state == ElementState::Pressed {
+                    self.skip_opening();
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
