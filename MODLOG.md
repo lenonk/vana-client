@@ -11617,3 +11617,6 @@ in "Event VM" listing 0x20 / 0x21 as not done: done.
   not store it: the tabula reopens empty). R01 with the spec's vector in its extdata: iteminfo "Maze Voucher 01
   [3](0)", the view listed the three runes, the hover pulse and texts. The event op: event-run 245 0x4e21 gives item
   28704 and dwords 0x90008001, 0x01b4d415, 0, 0, 0x00011000, 0 (the same vector); LSB never starts these events.
+- Live, classic, M02: the mouse (a click on the voucher row and on rune 021, Num-, a cell hovered, a click placed it)
+  and the glint on Fire's cell (cell 6) under the placed Fire rune; M02's Lightning / Wind / Light marks and blocked
+  cells 4, 12, 20 drawn.
