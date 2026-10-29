@@ -6289,6 +6289,8 @@ pub struct App {
     /// Config-tool 0023 read as the creator opens: the 2-D portraits (creator::Portrait) instead of the 3D scene.
     creator_simple: bool,
     portrait: creator::Portrait,
+    /// 3D LCD Mode's frame counter 0..3 (DAT_10443dd0 +0x1c).
+    lcd_frame: u32,
     creator_step: usize,
     creator_yes: bool,
     /// The creator's menu ok popup and what its OK leads to.
@@ -6361,6 +6363,9 @@ enum MusicScene {
 }
 
 /// Creator BGM per race (FFXiMain 0x1037cec0).
+/// 3D LCD Mode's eye shift: 0.006 in NDC x either way, 0.6 % of the width between the eyes.
+const LCD_SHIFT: f32 = 0.006;
+
 const CREATOR_BGM: [u32; 8] = [0x85, 0xa8, 0x84, 0x83, 0xa7, 0x82, 0xa6, 0xa5];
 
 /// Menu state compared across a UI pass to pick the menu sound.
@@ -6501,6 +6506,7 @@ impl App {
             dancer_loading: None,
             creator_simple: false,
             portrait: Default::default(),
+            lcd_frame: 0,
             creator_step: 0,
             creator_yes: false,
             creator_ok: None,
@@ -11997,6 +12003,14 @@ impl App {
             _ => self.cfg.game.global.get(0xab),
         };
         let aspect = cfgapply::aspect(size, self.cfg.retail_aspect, ratio);
+        // 3D LCD Mode (config 0030): retail draws the 3D world twice through the projection shifted -/+0.006 in NDC x
+        // (FUN_1000c360), a constant offset, so one picture 0.6 % wider holds both eyes; the scaling pass puts them side
+        // by side, and every other frame (counter 0..3, odd) adds the strip (FUN_1000ca70 / FUN_1000afd0).
+        let lcd = self.cfg.tool("0030") != 0;
+        let (bg, aspect) = if lcd { ([(bg[0] as f32 * (1.0 + LCD_SHIFT)).round() as u32, bg[1]], aspect * (1.0 + LCD_SHIFT)) } else { (bg, aspect) };
+        if lcd {
+            self.lcd_frame = (self.lcd_frame + 1) % 4;
+        }
         // Gamma (0028 base + Gameplay R / G / B, FUN_10016400) relative to the defaults, on the scene in the
         // scaling pass *(not retail: retail ramps the whole screen, full screen only)*.
         let gamma = {
@@ -12009,7 +12023,7 @@ impl App {
         };
         // The world always draws offscreen: through the plain view, in gamma space.
         let world_phase = matches!(self.phase, Phase::World(_));
-        let scaled = bg != size || gamma.iter().any(|g| (g - 1.0).abs() > 1e-3) || world_phase;
+        let scaled = bg != size || gamma.iter().any(|g| (g - 1.0).abs() > 1e-3) || world_phase || lcd;
         let (scene_view, scene_depth, scene_tex) = if scaled {
             self.scene_scale.get_or_insert_with(|| crate::render::scale::SceneScale::new(&gfx.gpu, gfx.config.format)).target(&gfx.gpu, bg)
         } else {
@@ -12904,7 +12918,7 @@ impl App {
             && scaled
             && let Some(sc) = &self.scene_scale
         {
-            sc.blit(&gfx.gpu, &mut encoder, &view, size, gamma);
+            sc.blit(&gfx.gpu, &mut encoder, &view, size, gamma, lcd.then_some((LCD_SHIFT, self.lcd_frame % 2 == 1)));
         }
         self.window_size = size;
         self.mouse_kind(size);

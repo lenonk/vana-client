@@ -6,7 +6,7 @@ use super::Gpu;
 use super::Put;
 
 const SHADER: &str = r#"
-struct U { src: vec2<f32>, dst: vec2<f32>, gamma: vec4<f32> };
+struct U { src: vec2<f32>, dst: vec2<f32>, gamma: vec4<f32>, lcd: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var tex: texture_2d<f32>;
 @group(0) @binding(2) var samp: sampler;
@@ -49,7 +49,23 @@ fn up(uv: vec2<f32>) -> vec3<f32> {
     return max(c, vec3<f32>(0.0));
 }
 // Gamma: c^(1 / g) per channel (FUN_10016400's ramp exponent).
+// 3D LCD Mode (lcd.x = 1, config 0030): the scene was drawn 0.6 % wider (lcd.z = its extra share, 0.006); eye 0
+// (projection shifted -0.006 in NDC x) squeezed into the left half, eye 1 (+0.006) into the right, bilinear
+// (FUN_1000b4f0). On the frames lcd.y marks, the bottom 10 rows carry FUN_1000afd0's strip: the 1 x 16 texture's
+// black row 0, then (0x48, 0, 0).
 @fragment fn fs(i: VOut) -> @location(0) vec4<f32> {
+    if (u.lcd.x > 0.5) {
+        let row = i.clip.y - (u.dst.y - 10.0);
+        if (u.lcd.y > 0.5 && row >= 0.0) {
+            if (floor(row / 10.0 * 16.0) < 1.0) { return vec4<f32>(0.0, 0.0, 0.0, 1.0); }
+            return vec4<f32>(72.0 / 255.0, 0.0, 0.0, 1.0);
+        }
+        let left = i.uv.x < 0.5;
+        let x = select(i.uv.x - 0.5, i.uv.x, left) * 2.0;
+        let ux = select(x, x + u.lcd.z, left) / (1.0 + u.lcd.z);
+        let e = tap(vec2<f32>(ux, i.uv.y));
+        return vec4<f32>(pow(clamp(e, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0 / u.gamma.rgb), 1.0);
+    }
     var c: vec3<f32>;
     if (u.src.x > u.dst.x || u.src.y > u.dst.y) {
         c = down(i.uv);
@@ -123,7 +139,7 @@ impl SceneScale {
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             ..Default::default()
         });
-        let uniform = device.create_buffer(&wgpu::BufferDescriptor { label: Some("scene scale"), size: 32, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let uniform = device.create_buffer(&wgpu::BufferDescriptor { label: Some("scene scale"), size: 48, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         Self { pipeline, layout, sampler, uniform, format, target: None }
     }
 
@@ -165,10 +181,12 @@ impl SceneScale {
         Some(t.tex.create_view(&wgpu::TextureViewDescriptor { format: Some(self.format.remove_srgb_suffix()), ..Default::default() }))
     }
 
-    /// Scales the offscreen scene onto `dst` (window size) with a gamma per channel, replacing what is there.
-    pub fn blit(&self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, dst: &wgpu::TextureView, dst_size: [u32; 2], gamma: [f32; 3]) {
+    /// Scales the offscreen scene onto `dst` (window size) with a gamma per channel, replacing what is there. `lcd`:
+    /// 3D LCD Mode's side-by-side eyes (the scene `extra` wider) and whether this frame carries the strip.
+    pub fn blit(&self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, dst: &wgpu::TextureView, dst_size: [u32; 2], gamma: [f32; 3], lcd: Option<(f32, bool)>) {
         let Some(t) = &self.target else { return };
-        let u = [t.size[0] as f32, t.size[1] as f32, dst_size[0].max(1) as f32, dst_size[1].max(1) as f32, gamma[0], gamma[1], gamma[2], 1.0];
+        let (on, strip, extra) = lcd.map_or((0.0, 0.0, 0.0), |(e, s)| (1.0, s as u32 as f32, e));
+        let u = [t.size[0] as f32, t.size[1] as f32, dst_size[0].max(1) as f32, dst_size[1].max(1) as f32, gamma[0], gamma[1], gamma[2], 1.0, on, strip, extra, 0.0];
         gpu.queue.put(&self.uniform, 0, bytemuck::cast_slice(&u));
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("scene scale"),
@@ -233,7 +251,7 @@ mod tests {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             });
-            s.blit(&gpu, &mut enc, &out.create_view(&Default::default()), dst, [1.0; 3]);
+            s.blit(&gpu, &mut enc, &out.create_view(&Default::default()), dst, [1.0; 3], None);
             gpu.queue.submit([enc.finish()]);
             let px = read(&gpu, &out, dst[0], dst[1]);
             for p in px.chunks_exact(4) {
@@ -257,7 +275,7 @@ mod tests {
             view_formats: &[],
         });
         let mut enc = gpu.device.create_command_encoder(&Default::default());
-        s.blit(&gpu, &mut enc, &out.create_view(&Default::default()), [4, 4], [1.0; 3]);
+        s.blit(&gpu, &mut enc, &out.create_view(&Default::default()), [4, 4], [1.0; 3], None);
         gpu.queue.submit([enc.finish()]);
         for p in read(&gpu, &out, 4, 4).chunks_exact(4) {
             assert!((p[0] as i32 - 128).abs() <= 3, "{p:?}");

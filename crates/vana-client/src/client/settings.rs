@@ -244,7 +244,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
         row("Environment Animation", "0011: swaying vegetation (Normal 16 steps, Smooth 32).", Tool("0011"), &[(0, "Off"), (1, "Normal"), (2, "Smooth")], Now),
         row("Bump Mapping", "0017: enhanced shading.", Tool("0017"), OFF_ON, Stored),
         row("Graphics Stabilization", "0040: On interpolates the shine overlay's coordinates plainly (no seam wrap).", Tool("0040"), OFF_ON, Now),
-        row("3D LCD Mode", "0030: interleaved stereo for 3D LCD screens.", Tool("0030"), OFF_ON, Stored),
+        row("3D LCD Mode", "0030: side-by-side stereo for 3D screens.", Tool("0030"), OFF_ON, Now),
     ];
     const SOUND: &[Row] = &[
         row("Sound", "0007: sound on or off.", Tool("0007"), OFF_ON, Now),

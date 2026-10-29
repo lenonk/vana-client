@@ -12073,3 +12073,21 @@ since "Ship voyages: the moving world" listed them as not done.
   the random picks are a hash, not rand(). Sub-areas share the zone's globals and get no deltas (none seen animated).
 - Seen: zone-shot of La Theine (102) by an animated instance: the dandelions' heads move between Off and Smooth;
   live in East Ronfaure (2412 animated instances, 6118 deltas) with no errors.
+
+## Config tool 0030 "3D LCD Mode" (2026-10-29)
+
+- Spec: `~/ffxi/lab/research/stored_settings_spec.md` section 5 (FUN_1000ca70 frame flag and counter, FUN_1000c360
+  eye projections, FUN_1000b4f0 side-by-side blit, FUN_1000afd0 the strip).
+- Retail draws the 3D world twice, eye 0 through projection x Translate(-0.006, 0, 0) and eye 1 through +0.006: a
+  constant NDC shift, no parallax by depth. So each eye is the same picture moved 0.3 % of the width; ours draws it
+  once into a scene target 0.6 % wider (the aspect widened to match, same pixel scale) and crops it twice: eye 0 =
+  the right-hand part, eye 1 = the left-hand part (only the 0.3 % margins beyond the plain frustum differ from a
+  second render, and those are drawn too).
+- render/scale.rs blit: eye 0 squeezed into the window's left half, eye 1 into the right, bilinear (retail then puts
+  its composite to the window with point filtering; ours samples the scene once). The UI draws once over it
+  *(inf, as retail)*.
+- Counter 0..3 per frame (App::lcd_frame); on odd values the bottom 10 window rows get the 1 x 16 strip texture
+  (row 0 black, rows 1..15 (0x48, 0, 0)): one black row, nine dark red, drawn opaque, under our UI *(inf: retail's
+  blend and order for it)*.
+- Not modelled: retail's unused 1024 x 2 magenta / green textures (made, never bound).
+- Seen live: the gate in East Ronfaure side by side, the strip on frames 2 and 4 of four.
