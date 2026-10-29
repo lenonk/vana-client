@@ -1520,10 +1520,12 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
         let ch = |sh: u32, k: usize| (((tint >> sh & 0xff) as f32 * m[k]).round().min(255.0) as u32) << sh;
         tint & 0xff00_0000 | ch(16, 0) | ch(8, 1) | ch(0, 2)
     };
-    // Invisible helpers (no model or a stub one) only show a name while targeted; faded actors none.
+    // Invisible helpers (no model or a stub one) only show a name while targeted; faded actors none. FUN_100819d0
+    // draws a plate only for +0xb2 == 0: a character or door culled this frame (not in `visible`) has none.
     let visible = |id: &u32, e: &Entity| {
         let faded = world.actors.get(id).is_some_and(|a| a.vanished());
-        !faded && (e.kind == EntityKind::Player || world.actors.get(id).is_some_and(|a| a.shown()) || world.target == Some(*id))
+        let culled = (e.door != 0 || world.actors.get(id).is_some_and(|a| a.character.is_some())) && !world.visible.contains(id);
+        !faded && !culled && (e.kind == EntityKind::Player || world.actors.get(id).is_some_and(|a| a.shown()) || world.target == Some(*id))
     };
     // FUN_100d0510: /names off hides every name, /names otherpc other players' only.
     let named = |id: &u32| match world.names_hidden {
@@ -1553,6 +1555,7 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
     }
     if !hidden.contains(&world.my_id)
         && named(&world.my_id)
+        && world.visible.contains(&world.my_id)
         && !world.my_plate.invisible
         && let Some((x, y, scale, z)) = plate_point(world, world.my_id).and_then(project)
     {
@@ -12599,8 +12602,11 @@ impl App {
                 w.visible = visible;
                 r.upload_poses(&gfx.gpu, &mut encoder);
                 mark!("poses");
-                // FUN_100cbde0: a drawn alpha under 0.0001 is not drawn (the near-camera fade, first person).
-                let actors: Vec<&crate::render::ActorGpu> = w.actors.iter().filter(|(id, a)| !a.vanished() && !hidden.contains(id) && !far_out.contains(id)).filter_map(|(_, a)| a.gpu.as_ref()).filter(|g| g.alpha >= 1e-4).collect();
+                // FUN_100cbde0: a drawn alpha under 0.0001 is not drawn (the near-camera fade, first person). A character
+                // with +0xb2 bit 0 set (FUN_100c63d0's tests and the occlusion, not in `visible`) is not drawn either;
+                // ours is never culled by them, nor are actors without a skeleton (props, ships).
+                let culled = |id: &u32, a: &Actor| a.character.is_some() && *id != w.my_id && !w.visible.contains(id);
+                let actors: Vec<&crate::render::ActorGpu> = w.actors.iter().filter(|(id, a)| !a.vanished() && !hidden.contains(id) && !far_out.contains(id) && !culled(id, a)).filter_map(|(_, a)| a.gpu.as_ref()).filter(|g| g.alpha >= 1e-4).collect();
                 counts = perf::Counts { entities: w.entities.len(), actors: w.actors.len(), posed: counts.posed, drawn: actors.len(), zone_draws: r.draw_count(), ui_vertices: 0, fx: [(0, 0); 3] };
                 m_actors = Instant::now();
                 // Mips of new textures (models that came this frame, a zone going up) under the frame budget.
@@ -12616,7 +12622,7 @@ impl App {
                 let mut refracting: Vec<(f32, &crate::render::ActorGpu)> = w
                     .actors
                     .iter()
-                    .filter(|(id, a)| !a.vanished() && !hidden.contains(id))
+                    .filter(|(id, a)| !a.vanished() && !hidden.contains(id) && !culled(id, a))
                     .filter_map(|(id, a)| Some((places.get(id)?.pos.distance(camera.eye), a.gpu.as_ref().filter(|g| g.refract.is_some() && g.alpha >= 1e-4)?)))
                     .collect();
                 if !refracting.is_empty() {

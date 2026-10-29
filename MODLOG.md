@@ -11882,3 +11882,21 @@ since "Ship voyages: the moving world" listed them as not done.
 - `tex-dump --file PATH` reads any DAT by path (a mod's too).
 - Each is byte-identical to the file Remapster also ships at the map's current path (sha1 of all 109 pairs), so nothing
   is missing: the pack carries the old layout beside the current one. They stay unread, as they should.
+
+## Actor culling: every +0xb2 reason hides the model and the plate (2026-10-29)
+
+- Retail (culling_spec.md section 5; MODLOG "Tab candidates"): an actor with +0xb2 bit 0 set is not drawn at all.
+  The update queues no draw entry, the list walk FUN_10082d70 skips vt+0x288, and the queued callback re-checks.
+  The reasons: no skeleton box, wholly behind the near plane, past the draw distance, not faded in, off the viewport,
+  or failing FUN_1006c280's occlusion test.
+- The name plate goes too: FUN_100819d0 (the plate's draw test) returns 1 only when u16 +0xb2 == 0 (and the names
+  flag); our own plate likewise, and none in first person (vt+0x304 with DAT_10475578).
+- Ours before: only the draw distance (far_out) hid the model; the rest only kept Tab off (World::visible).
+- Now:
+  - the actor draw list and the refraction list drop a skinned character not in `visible`;
+  - its plate goes the same way (doors by their 0.6 cube test);
+  - ours is never culled by these tests;
+  - actors without a skeleton (props, ships, furniture) are drawn as before.
+  - The occlusion test keeps running on culled actors (their queries come from tests 1-5), so they come back when
+    the scene depth behind them clears; a result is a frame or two late (retail tests every 4th frame).
+- Seen live in Port Bastok: NPCs in view drawn with their names through a camera turn (Gwinar at a distance), no pop.
