@@ -1249,7 +1249,9 @@ fn main() -> Result<()> {
                     let dayfrac = hour.unwrap_or(12.0) / 24.0;
                     // One renderer for both frames: the zone's meshes and textures upload once.
                     let mut eg_keep: Option<render::effects::EffectsGpu> = None;
-                    let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, (color, color_tex): (&wgpu::TextureView, &wgpu::Texture), depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>, zr: &render::ZoneRenderer| {
+                    let mut lamps = client::Lamps::default();
+                    let ground = Some(client::ground::Ground::build(&scene));
+                    let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, (color, color_tex): (&wgpu::TextureView, &wgpu::Texture), depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>, zr: &mut render::ZoneRenderer| {
                         let eg = eg_keep.get_or_insert_with(|| render::effects::EffectsGpu::new(gpu, wgpu::TextureFormat::Rgba8Unorm));
                         eg.set_lights(&zr.lights);
                         eg.set_light(l.map(|l| (l.dir, l.diffuse, l.ambient)));
@@ -1268,6 +1270,17 @@ fn main() -> Result<()> {
                             eg.after_submit(gpu, &mut fx);
                         }
                         println!("effects: {} live elements after {ticks} ticks", fx.live_count());
+                        let on = std::env::var_os("FFXI_NO_LAMPS").is_none();
+                        // FFXI_LAMPS_DARK: the shells hidden but no lamp lights (to see what the lights add).
+                        if let Some(l) = lamps.update(&mut fx, ground.as_ref(), on).filter(|_| std::env::var_os("FFXI_LAMPS_DARK").is_none()) {
+                            println!("lamps: {:?}", l);
+                            zr.set_lamps(gpu, &l.iter().map(|l| (l.pos, l.slot)).collect::<Vec<_>>());
+                            eg.set_lamps(gpu, &l.iter().map(|l| (l.pos, l.slot, l.template)).collect::<Vec<_>>());
+                            // One more update copies the lamps' slots before the next frame's scenery reads them.
+                            let mut e = gpu.device.create_command_encoder(&Default::default());
+                            eg.update(gpu, &mut e, &mut fx, &f);
+                            gpu.queue.submit([e.finish()]);
+                        }
                         if std::env::var_os("FFXI_FX_LIST").is_some() {
                             for l in fx.describe() {
                                 println!("  {l}");
@@ -2251,7 +2264,7 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
     let list: Vec<(&render::Camera, &std::path::Path, Option<dat::weather::Lighting>)> = paths.iter().map(|p| (&camera, p.as_path(), lighting)).collect();
     let mut eg: Option<render::effects::EffectsGpu> = None;
     let mut started = false;
-    let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, (color, color_tex): (&wgpu::TextureView, &wgpu::Texture), depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>, zr: &render::ZoneRenderer| {
+    let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, (color, color_tex): (&wgpu::TextureView, &wgpu::Texture), depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>, zr: &mut render::ZoneRenderer| {
         let eg = eg.get_or_insert_with(|| render::effects::EffectsGpu::new(gpu, wgpu::TextureFormat::Rgba8Unorm));
         eg.set_lights(&zr.lights);
         fx.reg.light_keys = zr.light_keys.clone();

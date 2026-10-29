@@ -834,6 +834,14 @@ impl Registry {
 }
 
 /// Every running generator and live element.
+/// Effects::lamp_scan's findings: glow positions, data lights (position, table slot), shells found.
+#[derive(Default, Debug)]
+pub struct LampScan {
+    pub glows: Vec<Vec3>,
+    pub lights: Vec<(Vec3, u32)>,
+    pub shells: usize,
+}
+
 pub struct Effects {
     pub reg: Registry,
     pub insts: Vec<Option<Instance>>,
@@ -2435,6 +2443,55 @@ impl Effects {
             ));
         }
         out
+    }
+
+    /// Ours (the Lamp Lights setting): the zone's lamp glows (meshes textured "light..."), its data lights (kind 0x47
+    /// elements with a table slot) by position, and the untextured mesh shells in a glow's folder, which are hidden
+    /// while `hide` (the baked lamplight the real lights stand in for).
+    pub fn lamp_scan(&mut self, hide: bool) -> LampScan {
+        let mut scan = LampScan::default();
+        let mut glow_dirs: HashSet<(usize, usize)> = HashSet::new();
+        let mut shells: Vec<(usize, (usize, usize))> = Vec::new();
+        for (i, c) in self.elems.iter().enumerate() {
+            let Some(c) = c else { continue };
+            let Some(inst) = self.insts.get(c.inst).and_then(|x| x.as_ref()) else { continue };
+            if !matches!(inst.owner, Owner::Zone | Owner::SubArea) {
+                continue;
+            }
+            let Some(pos) = c.back.map(|b| b.world) else { continue };
+            let lib = &self.reg.libs[inst.src.0];
+            let dir = (inst.src.0, lib.tree.nodes[inst.src.1].parent.unwrap_or(usize::MAX));
+            match c.draw {
+                Draw::Mesh(id) => {
+                    let r = self.reg.meshes[id as usize];
+                    let Some(m) = self.reg.libs[r.0].meshes.get(&r.1) else { continue };
+                    let names: Vec<String> = m.groups.iter().filter_map(|g| g.name.as_deref().map(|n| n.trim().to_ascii_lowercase())).filter(|n| !n.is_empty()).collect();
+                    if names.iter().any(|n| n.starts_with("light")) {
+                        scan.glows.push(pos);
+                        glow_dirs.insert(dir);
+                    } else if names.is_empty() && m.mmb {
+                        shells.push((i, dir));
+                    }
+                }
+                Draw::None if inst.streams[1].first().is_some_and(|o| o.code == 0x01 && o.byte(0x21) == 0x47) => {
+                    let key = u32::from_le_bytes(inst.name);
+                    if let Some(s) = self.reg.light_keys.iter().position(|&k| k == key) {
+                        scan.lights.push((pos, s as u32));
+                    }
+                }
+                _ => {}
+            }
+        }
+        for (i, dir) in shells {
+            let shell = glow_dirs.contains(&dir);
+            if let Some(c) = self.elems[i].as_mut() {
+                c.hidden = hide && shell;
+            }
+            if shell {
+                scan.shells += 1;
+            }
+        }
+        scan
     }
 
     /// One line per live element: generator path, what it draws, blend, flags, key, life.

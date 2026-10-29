@@ -62,6 +62,8 @@ mod ships;
 mod dps;
 mod skillchain;
 mod clock;
+mod lamps;
+pub use lamps::Lamps;
 mod mousecur;
 mod party;
 mod macros;
@@ -5624,6 +5626,8 @@ struct World {
     target_distance: bool,
     target_hpp: bool,
     auto_advance: u32,
+    /// The lamps' lights (client/lamps.rs, Settings' Lamp Lights).
+    lamps: lamps::Lamps,
     /// Config `earth_clock` (an extra, client/clock.rs), `hide_trust_speech` and `hide_ready_lines`.
     earth_clock: bool,
     hide_trust_speech: bool,
@@ -7175,6 +7179,7 @@ impl App {
                             target_hpp: self.cfg.target_hpp,
                             auto_advance: self.cfg.auto_advance,
                             earth_clock: self.cfg.earth_clock,
+                            lamps: Default::default(),
                             hide_trust_speech: self.cfg.hide_trust_speech,
                             hide_ready_lines: self.cfg.hide_ready_lines,
                             target_since: Instant::now(),
@@ -7661,6 +7666,7 @@ impl App {
                         world.zone_weather = weather;
                         (world.light_ease, world.light_acc) = (Default::default(), 0.0);
                         world.area_ease.clear();
+                        world.lamps = Default::default();
                         if let Some(l) = fx {
                             world.effects.load_zone(l);
                             world.effects.set_weather(crate::dat::weather::weather_tag(world.weather), 0.0);
@@ -7710,6 +7716,7 @@ impl App {
                             world.effects.load_zone(z);
                             world.effects.set_weather(crate::dat::weather::weather_tag(world.weather), 0.0);
                         }
+                        world.lamps = Default::default();
                         world.zone_lines = scene.regions.iter().filter(|r| r.name.starts_with(['z', 'Z']) && r.name.len() == 8).cloned().collect();
                         world.lifts = lifts::Lifts::load(&scene.regions);
                         world.voyage.set_path(&scene.paths);
@@ -12086,7 +12093,11 @@ impl App {
                 r.set_lines(&gfx.gpu, lines);
                 r.show_link999(&gfx.gpu, ceiling);
             }
+            let new_lamps = if w.renderer.as_ref().is_some_and(|r| r.ready(&gfx.gpu)) { w.lamps.update(&mut w.effects, w.ground.as_ref(), self.cfg.lamp_lights) } else { None };
             if let Some(r) = &mut w.renderer {
+                if let Some(l) = &new_lamps {
+                    r.set_lamps(&gfx.gpu, &l.iter().map(|l| (l.pos, l.slot)).collect::<Vec<_>>());
+                }
                 // This frame's copies: a zone going up (more while its indicator hides the world), then the models
                 // actors are waiting for.
                 use crate::render::upload::{FRAME_MS, LOADING_MS};
@@ -12557,6 +12568,7 @@ impl App {
                     g.flash = if drawn { a.flash.step(w.target == Some(*id), dt * 60.0) } else { flash::NONE };
                     // The floor's lights (retail copies them at the ground probe, every 121 updates).
                     g.lights = w.ground.as_ref().map_or([0; 4], |gr| gr.lights(pos));
+                    lamps::offer(&w.lamps.list, pos, &mut g.lights);
                     g.area = actor_area(w.entities.get(id), w.ground.as_ref().and_then(|gr| gr.area(pos))).unwrap_or(0);
                     if drawn {
                         let files: Vec<_> = extra.iter().map(|(_, f)| f.clone()).collect();
@@ -12637,6 +12649,9 @@ impl App {
                 // Its pipelines are made while the zone still goes up (behind the loading indicator), not on the
                 // first shown frame.
                 let eg = self.effects_gpu.get_or_insert_with(|| crate::render::effects::EffectsGpu::new(&gfx.gpu, scene_fmt));
+                if let Some(l) = &new_lamps {
+                    eg.set_lamps(&gfx.gpu, &l.iter().map(|l| (l.pos, l.slot, l.template)).collect::<Vec<_>>());
+                }
                 if !eg.has_dmgnum()
                     && let Some((lib, image)) = self.game_ui.as_ref().and_then(|g| g.dmgnum())
                 {

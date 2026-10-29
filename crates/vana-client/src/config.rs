@@ -99,6 +99,9 @@ pub struct Config {
     /// classic one (the modern one shows it anyway).
     pub target_distance: bool,
     pub target_hpp: bool,
+    /// Not retail (Settings' Lamp Lights): real point lights at the zones' lamps in place of their baked lamplight
+    /// (client/lamps.rs).
+    pub lamp_lights: bool,
     /// Extra (the clock add-ons): Earth time, the moon and the next day beside the Vana'diel clock (client/clock.rs).
     pub earth_clock: bool,
     /// Extra (the trust chatter filters): trusts' party lines (battle message 711) are not printed.
@@ -283,6 +286,7 @@ impl Default for Config {
             target_distance: false,
             target_hpp: false,
             earth_clock: false,
+            lamp_lights: true,
             hide_trust_speech: false,
             hide_ready_lines: false,
             auto_advance: 0,

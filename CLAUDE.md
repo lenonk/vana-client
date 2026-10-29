@@ -183,8 +183,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     classes, ground projection, specular meshes, shine overlay, camera shake, screen flash / feedback blur / fade,
     pins, the weapon after-image (fx/trail.rs), the view gate, the party roster for the filter, moving-part lights,
     actor refraction (ops 0x48 / 0x49), op 0xac (the death pick), attach modes 0x14 / 0x15 (voyages) done;
-    parked (user's call, 2026-10-22): replace baked lamp shells with real lights plus soft particles (MODLOG
-    "Effect fixes from the San d'Oria gate lamps", "Parked");
+    real lamp lights in place of the baked shells and soft glows done (Settings' Lamp Lights; MODLOG "Lamp
+    Lights"; left: interiors);
   - fishing (client/fishing.rs, fishrod.rs, MODLOG "Fishing"): done and caught live, the +1 rods' glow too; left
     other anglers not seen live;
   - Monstrosity (spec `~/ffxi/lab/research/monstrosity_spec.md`; client/monstrosity.rs, moncustom.rs, MODLOG

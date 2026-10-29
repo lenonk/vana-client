@@ -767,7 +767,8 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
 struct Draw {
     proj: mat4x4<f32>,
     fog_color: vec4<f32>,
-    // fog start, end, linearize (1 = sRGB target: the gamma-space result is converted), 0
+    // fog start, end, linearize (1 = sRGB target: the gamma-space result is converted), soft (1: scene_depth holds
+    // the scene's depth, which glows fade against; ours)
     fog: vec4<f32>,
     // near, far, scene target width, height
     clip: vec4<f32>,
@@ -788,6 +789,7 @@ struct Draw {
 @group(0) @binding(4) var<storage, read> sverts: array<u32>;
 @group(0) @binding(5) var<storage, read> sframes: array<vec2<u32>>;
 @group(0) @binding(6) var<storage, read> mdata: array<u32>;
+@group(0) @binding(7) var scene_depth: texture_depth_2d;
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
 @group(2) @binding(0) var spec2d: texture_2d<f32>;
@@ -1556,5 +1558,13 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
         rgb = mix(fc, rgb, ff);
     }
     if (d.fog.z > 0.5) { rgb = pow(rgb, vec3<f32>(2.2)); }
+    // Ours: a glow or light volume (flag 27) fades out within a yalm of the scenery behind it, so it no longer cuts
+    // straight into walls and pillars. The scene depth is NDC z of the plain projection (near d.clip.x, far d.clip.y).
+    if (d.fog.w > 0.5 && (flags & 0x8000000u) != 0u) {
+        let z = textureLoad(scene_depth, vec2<i32>(i.clip.xy), 0);
+        let k = d.clip.y / (d.clip.x - d.clip.y);
+        let scene = d.clip.x * k / (z + k);
+        a = a * sat(scene - i.depth);
+    }
     return vec4<f32>(rgb, a);
 }

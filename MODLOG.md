@@ -11900,3 +11900,38 @@ since "Ship voyages: the moving world" listed them as not done.
   - The occlusion test keeps running on culled actors (their queries come from tests 1-5), so they come back when
     the scene depth behind them clears; a result is a frame or two late (retail tests every 4th frame).
 - Seen live in Port Bastok: NPCs in view drawn with their names through a camera turn (Gwinar at a distance), no pop.
+
+## Lamp Lights: real point lights in place of baked lamplight; soft glows (ours, 2026-10-29)
+
+- Not retail (the parked plans B and C of "Effect fixes from the San d'Oria gate lamps"; the user asked for them
+  2026-10-29). Settings > Effects > Lamp Lights: Baked (retail) / Real, default Real (config `lamp_lights`).
+- Lamps (client/lamps.rs, Effects::lamp_scan, every second):
+  - lamps are the zone's live glow meshes whose group textures start "light" ('ltla', "light   lanp");
+  - glows within 1.5 yalms merge into one lamp;
+  - a lamp within 4 yalms of a kind-0x47 data light is lit already (San d'Oria's gl01..gl04 by glr / gll);
+  - each other lamp takes the nearest data light as its template;
+  - its light stands 0.7 yalm out from the nearest wall within 2 yalms (Ground::raycast in 8 level directions), else
+    at the glow.
+  - Positions come from the elements' readback (back.world); slots are the free ones after the zone's light keys, up
+    to 254 (an actor's 8-bit light index).
+- The shells: untextured MMB meshes in a glow generator's folder (gin1 'san_') are hidden (element `hidden`: updated,
+  not drawn).
+- The light table (render/effects.rs lamp pass, after the effects update): each lamp slot takes its template's range,
+  colour and intensity at the lamp's position, so dusk, dawn and switching off follow the data.
+- Scenery: ZoneRenderer::set_lamps puts lamp slots into the free light slots of every zone instance whose bounding
+  sphere is within 16 of the lamp, nearest first. Only the light words are written, after a streamed zone is up, and
+  a stand-in coming back keeps them. Actors: lamps::offer fills the floor's free light slots within 16 yalms
+  (actor_lamp picks the strongest, as for data lights).
+- Soft glows: the effects draw copies the scene depth (depth targets now have COPY_SRC) before its passes, when a
+  flag-27 element (glows and light volumes, sort key + 400) draws. It is bound at group 0 binding 7. Such an element's
+  alpha is multiplied by sat(scene depth - its depth) in yalms; the scene depth is linearised with the draw's near
+  and far.
+  - Tried on the glow sprites too (lk01.., glk1.., texture 'light'): their core sits against the lantern model and
+    faded to nothing, so only flag 27.
+  - The halo blotches on the tunnel walls are in the wall textures themselves (they show in every variant).
+- zone-shot runs the lamps after its effect ticks (one extra update so the slots are filled before the next frame):
+  FFXI_NO_LAMPS shows the baked look, FFXI_LAMPS_DARK the shells hidden without lamp lights.
+- Seen: zone 101's gate tunnel (offscreen at 2:00 and 19:30) lost the shell's light triangles on walls and ceiling
+  beams, and gl05..gl11 light the pillars and floor in pools. Live in East Ronfaure: 11 glows, 13 data lights, 1
+  shell, 7 lamp lights on 17 instances.
+- Not done: sub-area (interior) instances get no lamp slots; lamps without any data light in their zone get no light.

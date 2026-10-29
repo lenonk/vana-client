@@ -25,6 +25,7 @@ pub struct Settings {
     pub target_distance: bool,
     pub target_hpp: bool,
     pub earth_clock: bool,
+    pub lamp_lights: bool,
     pub hide_trust_speech: bool,
     pub hide_ready_lines: bool,
     pub auto_advance: u32,
@@ -66,6 +67,7 @@ impl Settings {
             target_distance: c.target_distance,
             target_hpp: c.target_hpp,
             earth_clock: c.earth_clock,
+            lamp_lights: c.lamp_lights,
             hide_trust_speech: c.hide_trust_speech,
             hide_ready_lines: c.hide_ready_lines,
             auto_advance: c.auto_advance,
@@ -106,6 +108,7 @@ impl Settings {
         c.target_distance = self.target_distance;
         c.target_hpp = self.target_hpp;
         c.earth_clock = self.earth_clock;
+        c.lamp_lights = self.lamp_lights;
         c.hide_trust_speech = self.hide_trust_speech;
         c.hide_ready_lines = self.hide_ready_lines;
         c.auto_advance = self.auto_advance;
@@ -159,6 +162,7 @@ enum Val {
     TargetDistance,
     TargetHpp,
     EarthClock,
+    LampLights,
     TrustSpeech,
     ReadyLines,
     AutoAdvance,
@@ -236,6 +240,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
         row("Fonts", "0036: the font texture quality.", Tool("0036"), &[(0, "Compressed"), (1, "Full"), (2, "High")], Restart),
     ];
     const EFFECTS: &[Row] = &[
+        row("Lamp Lights", "Baked: the lamplight painted onto the walls, as retail. Real: point lights at the lamps (not retail).", LampLights, &[(0, "Baked"), (1, "Real")], Now),
         row("Environment Animation", "0011: environment (vegetation) animation.", Tool("0011"), &[(0, "Off"), (1, "Normal"), (2, "Smooth")], Stored),
         row("Bump Mapping", "0017: enhanced shading.", Tool("0017"), OFF_ON, Stored),
         row("Graphics Stabilization", "0040: graphics stabilization for some cards.", Tool("0040"), OFF_ON, Stored),
@@ -427,6 +432,7 @@ impl SettingsUi {
             Val::TargetDistance => self.s.target_distance as u32,
             Val::TargetHpp => self.s.target_hpp as u32,
             Val::EarthClock => self.s.earth_clock as u32,
+            Val::LampLights => self.s.lamp_lights as u32,
             Val::TrustSpeech => self.s.hide_trust_speech as u32,
             Val::ReadyLines => self.s.hide_ready_lines as u32,
             Val::AutoAdvance => self.s.auto_advance,
@@ -460,6 +466,7 @@ impl SettingsUi {
             Val::TargetDistance => self.s.target_distance = x != 0,
             Val::TargetHpp => self.s.target_hpp = x != 0,
             Val::EarthClock => self.s.earth_clock = x != 0,
+            Val::LampLights => self.s.lamp_lights = x != 0,
             Val::TrustSpeech => self.s.hide_trust_speech = x != 0,
             Val::ReadyLines => self.s.hide_ready_lines = x != 0,
             Val::AutoAdvance => self.s.auto_advance = x,

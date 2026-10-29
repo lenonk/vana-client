@@ -343,6 +343,12 @@ pub struct ZoneRenderer {
     cull: Option<cull::Cull>,
     cull_pipes: [wgpu::ComputePipeline; 2],
     cull_layout: wgpu::BindGroupLayout,
+    /// Ours (the Lamp Lights setting): each zone instance's own light slots and world sphere, the light slots
+    /// written over them now (instance -> slots), and lamps waiting for the streamed geometry (set_lamps).
+    inst_lights: Vec<[u32; 4]>,
+    spheres: Vec<[f32; 4]>,
+    lamp_patch: HashMap<u32, [u32; 4]>,
+    lamps_wanted: Option<Vec<(Vec3, u32)>>,
     /// The zone's instances' placements and camera lists (ZoneGeometry), and the list in force (MZB offset, 0 none).
     inst_placement: Vec<u32>,
     camera_lists: HashMap<u32, Vec<u32>>,
@@ -1047,6 +1053,9 @@ impl ZonePipes {
 
 /// Point-light table entries (DAT_105ecae8: 256).
 pub const LIGHTS: usize = 256;
+/// Ours: how far past an instance's bounding sphere a lamp's light is offered to it (set_lamps; the light's own range
+/// cuts it in the shader).
+const LAMP_REACH: f32 = 16.0;
 
 /// A scenery instance: the placement matrix and its four point lights (table slot + 1, 0 = none).
 #[repr(C)]
@@ -1094,6 +1103,8 @@ pub struct ZoneGeometry {
     /// (zone::camera_lists).
     inst_placement: Vec<u32>,
     camera_lists: HashMap<u32, Vec<u32>>,
+    /// Each instance's world bounding sphere (centre, radius), for the lamps' lights (set_lamps).
+    spheres: Vec<[f32; 4]>,
 }
 
 impl ZoneGeometry {
@@ -1177,6 +1188,7 @@ impl ZoneGeometry {
         let mut matrices: Vec<Instance> = Vec::new();
         let mut inst_placement: Vec<u32> = Vec::new();
         let mut bounds: Vec<[f32; 8]> = Vec::new();
+        let mut spheres: Vec<[f32; 4]> = Vec::new();
         let mut links = Vec::new();
         let mut draws = Vec::new();
         let mut all_verts: Vec<GpuVertex> = Vec::new();
@@ -1204,6 +1216,12 @@ impl ZoneGeometry {
             });
             let (c, h) = if lo.x <= hi.x { ((lo + hi) / 2.0, (hi - lo) / 2.0) } else { (Vec3::ZERO, Vec3::ZERO) };
             bounds.extend(reaches.iter().map(|r| [c.x, c.y, c.z, r[0], h.x, h.y, h.z, r[1]]));
+            for inst in &matrices[start as usize..] {
+                let m = Mat4::from_cols_array_2d(&inst.model);
+                let k = m.x_axis.truncate().length().max(m.y_axis.truncate().length()).max(m.z_axis.truncate().length());
+                let at = m.transform_point3(c);
+                spheres.push([at.x, at.y, at.z, h.length() * k]);
+            }
             for model in &mesh.models {
                 let indices = if model.strip { strip_to_list(&model.indices) } else { model.indices.clone() };
                 if indices.is_empty() || model.vertices.is_empty() {
@@ -1242,6 +1260,7 @@ impl ZoneGeometry {
         }
         // A scene with no scenery (the character screen) still needs a non-empty buffer to bind.
         if matrices.is_empty() {
+            spheres.push([0.0; 4]);
             matrices.push(Instance { model: Mat4::IDENTITY.to_cols_array_2d(), lights: [0; 4], area: [0; 4], band: [0.0; 4] });
         }
         if all_verts.is_empty() {
@@ -1250,7 +1269,7 @@ impl ZoneGeometry {
         while all_indices.len() % 2 != 0 || all_indices.is_empty() {
             all_indices.push(0);
         }
-        Self { matrices, links, light_keys, area_keys, door_parts, door_bases, draws, verts: all_verts, indices: all_indices, cull, inst_placement, camera_lists: scene.camera_lists.clone() }
+        Self { matrices, links, light_keys, area_keys, door_parts, door_bases, draws, verts: all_verts, indices: all_indices, cull, inst_placement, camera_lists: scene.camera_lists.clone(), spheres }
     }
 
     fn parts(&self) -> [&[u8]; 3] {
@@ -1348,6 +1367,10 @@ impl ZoneRenderer {
             cull,
             cull_pipes: p.cull,
             cull_layout: p.cull_layout,
+            inst_lights: geo.matrices.iter().map(|m| m.lights).collect(),
+            spheres: geo.spheres.clone(),
+            lamp_patch: HashMap::new(),
+            lamps_wanted: None,
             inst_placement: geo.inst_placement.clone(),
             camera_lists: geo.camera_lists.clone(),
             camera_list: 0,
@@ -1448,6 +1471,53 @@ impl ZoneRenderer {
             }
             None => c.set_mask(gpu, None),
         }
+    }
+
+    /// Ours (the Lamp Lights setting, client/lamps.rs): the lamps' lights (position, table slot) go into the free light
+    /// slots of the zone instances near them, nearest first; an empty list puts the instances' own back. Waits for a
+    /// streamed zone's geometry.
+    pub fn set_lamps(&mut self, gpu: &Gpu, lamps: &[(Vec3, u32)]) {
+        self.lamps_wanted = Some(lamps.to_vec());
+        if self.geo_pending.is_none() {
+            self.apply_lamps(gpu);
+        }
+    }
+
+    fn apply_lamps(&mut self, gpu: &Gpu) {
+        let Some(lamps) = self.lamps_wanted.take() else { return };
+        let mut next: HashMap<u32, [u32; 4]> = HashMap::new();
+        for (i, (own, s)) in self.inst_lights.iter().zip(&self.spheres).enumerate() {
+            let c = Vec3::new(s[0], s[1], s[2]);
+            let mut near: Vec<(f32, u32)> = lamps.iter().map(|(p, slot)| (p.distance(c) - s[3], *slot)).filter(|(d, slot)| *d < LAMP_REACH && !own.contains(&(slot + 1))).collect();
+            if near.is_empty() {
+                continue;
+            }
+            near.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let mut l = *own;
+            let mut more = near.into_iter();
+            for k in l.iter_mut().filter(|k| **k == 0) {
+                if let Some((_, slot)) = more.next() {
+                    *k = slot + 1;
+                }
+            }
+            if l != *own {
+                next.insert(i as u32, l);
+            }
+        }
+        let full = self.inst_lights.iter().zip(&self.spheres).filter(|(own, s)| !own.contains(&0) && lamps.iter().any(|(p, _)| p.distance(Vec3::new(s[0], s[1], s[2])) - s[3] < LAMP_REACH)).count();
+        log::info!("lamps: {} lamp lights on {} instances; {full} near a lamp have no free slot", lamps.len(), next.len());
+        let put = |i: u32, l: &[u32; 4]| gpu.queue.put(&self.instances, i as u64 * INSTANCE_BYTES + 64, bytemuck::cast_slice(l));
+        for (&i, l) in &next {
+            if self.lamp_patch.get(&i) != Some(l) && !self.links.iter().any(|(k, link, _)| *k == i && *link == self.hidden) {
+                put(i, l);
+            }
+        }
+        for &i in self.lamp_patch.keys().filter(|i| !next.contains_key(i)) {
+            if let Some(own) = self.inst_lights.get(i as usize) {
+                put(i, own);
+            }
+        }
+        self.lamp_patch = next;
     }
 
     /// A sub-area's scenery replaces the loaded one (FUN_101787c0 state 2); `light_keys` is the zone's table with
@@ -1678,7 +1748,8 @@ impl ZoneRenderer {
         }
         for (i, l, inst) in &self.links {
             if *l == link || *l == self.hidden {
-                let v = if *l == link { Instance::zeroed() } else { *inst };
+                let lights = self.lamp_patch.get(i).copied().unwrap_or(inst.lights);
+                let v = if *l == link { Instance::zeroed() } else { Instance { lights, ..*inst } };
                 gpu.queue.put(&self.instances, *i as u64 * INSTANCE_BYTES, bytemuck::bytes_of(&v));
             }
         }
@@ -1725,6 +1796,8 @@ impl ZoneRenderer {
             crate::client::perf::note(|| format!("zone geometry {at} / {start} bytes"));
             if at < start {
                 self.geo_pending = Some((geo, at));
+            } else {
+                self.apply_lamps(gpu);
             }
         }
         let had = !self.pending.is_empty();
@@ -2365,7 +2438,8 @@ pub fn depth_view(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Textu
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            // COPY_SRC: the effects copy it to soften glows against the scenery (render/effects.rs).
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         })
         .create_view(&Default::default())
@@ -2406,7 +2480,7 @@ pub fn render_pngs_lit(
 
 /// Draws over the scene in each frame (after the zone pass, same targets): gpu, encoder, colour, depth, camera,
 /// lighting.
-pub type PostDraw<'a> = dyn FnMut(&Gpu, &mut wgpu::CommandEncoder, (&wgpu::TextureView, &wgpu::Texture), &wgpu::TextureView, &Camera, Option<&crate::dat::weather::Lighting>, &ZoneRenderer) + 'a;
+pub type PostDraw<'a> = dyn FnMut(&Gpu, &mut wgpu::CommandEncoder, (&wgpu::TextureView, &wgpu::Texture), &wgpu::TextureView, &Camera, Option<&crate::dat::weather::Lighting>, &mut ZoneRenderer) + 'a;
 
 /// As render_pngs_lit, with `post` drawing over each frame.
 pub fn render_pngs_post(
@@ -2493,7 +2567,7 @@ pub fn render_pngs_post(
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         renderer.render(&gpu, &mut encoder, &view, &depth, camera, width as f32 / height as f32, &actor_refs);
         renderer.render_refraction(&gpu, &mut encoder, &view, Some(&target), &depth, camera, width as f32 / height as f32, &actor_refs);
-        post(&gpu, &mut encoder, (&view, &target), &depth, camera, lighting.as_ref(), &renderer);
+        post(&gpu, &mut encoder, (&view, &target), &depth, camera, lighting.as_ref(), &mut renderer);
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo { texture: &target, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             wgpu::TexelCopyBufferInfo { buffer: &readback, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(height) } },

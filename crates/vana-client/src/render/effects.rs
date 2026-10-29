@@ -218,6 +218,14 @@ struct Staging {
 pub struct EffectsGpu {
     update: wgpu::ComputePipeline,
     update_layout: wgpu::BindGroupLayout,
+    /// Ours (the Lamp Lights setting, client/lamps.rs): each lamp's slot of the light table copied from its template
+    /// light after the update, at the lamp's own position. The lamps (count, then position + slot | template << 16),
+    /// the pass's layout and its bind group (gone when the table changes).
+    lamp_pipe: wgpu::ComputePipeline,
+    lamp_layout: wgpu::BindGroupLayout,
+    lamp_buf: wgpu::Buffer,
+    lamp_group: Option<wgpu::BindGroup>,
+    lamp_count: u32,
     draw_layout: wgpu::BindGroupLayout,
     tex_layout: wgpu::BindGroupLayout,
     mesh_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
@@ -256,6 +264,12 @@ pub struct EffectsGpu {
     /// The same with gamma output off, for the ground projections' images; their bind group.
     draw_u_rt: wgpu::Buffer,
     draw_group_rt: Option<wgpu::BindGroup>,
+    /// Ours (Settings' Lamp Lights): the scene depth copied before the elements draw, which glows (flag 27) fade
+    /// against; a 1 x 1 stand-in until there is one.
+    depth_copy: Option<(wgpu::Texture, wgpu::TextureView)>,
+    depth_dummy: wgpu::TextureView,
+    /// Soften glows against the scenery (the Lamp Lights setting).
+    pub soft: bool,
     gp_rt_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     gp_decal_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     /// The image array (a layer per projection this frame), its layer views and groups (CLAMP), the shared depth.
@@ -297,6 +311,24 @@ pub struct EffectsGpu {
 
 const STAGES: usize = 3;
 
+/// The lamps' copy (EffectsGpu::lamp_pipe): a lamp's slot takes its template's range, colour and intensity at its
+/// own position.
+const LAMP_WGSL: &str = r#"
+@group(0) @binding(0) var<storage, read_write> lights: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read> lamps: array<vec4<f32>>;
+
+@compute @workgroup_size(64)
+fn copy_lamps(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x >= bitcast<u32>(lamps[0].x)) { return; }
+    let l = lamps[1u + gid.x];
+    let w = bitcast<u32>(l.w);
+    let s = w & 0xffffu;
+    let t = w >> 16u;
+    lights[2u * s] = vec4<f32>(l.xyz, lights[2u * t].w);
+    lights[2u * s + 1u] = lights[2u * t + 1u];
+}
+"#;
+
 impl EffectsGpu {
     /// The zone's background light (weather::Lighting dir / diffuse / ambient) for FUN_100467e0; None: unlit.
     pub fn set_light(&mut self, l: Option<(glam::Vec3, glam::Vec3, glam::Vec3)>) {
@@ -335,10 +367,35 @@ impl EffectsGpu {
             compilation_options: Default::default(),
             cache: None,
         });
+        let lamp_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("effects lamps"), entries: &[storage(0, false, cs), storage(1, true, cs)] });
+        let lmod = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("effects lamps"), source: wgpu::ShaderSource::Wgsl(LAMP_WGSL.into()) });
+        let lamp_pipe = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("effects lamps"),
+            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: None, bind_group_layouts: &[Some(&lamp_layout)], immediate_size: 0 })),
+            module: &lmod,
+            entry_point: Some("copy_lamps"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+        let lamp_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("effects lamps"), size: (16 * (crate::render::LIGHTS + 1)) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let vs = wgpu::ShaderStages::VERTEX;
         let draw_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("effects draw"),
-            entries: &[uniform(0, wgpu::ShaderStages::VERTEX_FRAGMENT), storage(1, true, vs), storage(2, true, vs), storage(3, true, vs), storage(4, true, vs), storage(5, true, vs), storage(6, true, vs)],
+            entries: &[
+                uniform(0, wgpu::ShaderStages::VERTEX_FRAGMENT),
+                storage(1, true, vs),
+                storage(2, true, vs),
+                storage(3, true, vs),
+                storage(4, true, vs),
+                storage(5, true, vs),
+                storage(6, true, vs),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false },
+                    count: None,
+                },
+            ],
         });
         let tex_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("effects texture"),
@@ -574,6 +631,20 @@ impl EffectsGpu {
             draw_u,
             draw_u_rt,
             draw_group_rt: None,
+            depth_copy: None,
+            depth_dummy: device
+                .create_texture(&wgpu::TextureDescriptor {
+                    label: Some("effects depth stand-in"),
+                    size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: super::DEPTH_FORMAT,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                })
+                .create_view(&Default::default()),
+            soft: true,
             gp_rt_pipes,
             gp_decal_pipes,
             gp_rt: None,
@@ -594,6 +665,11 @@ impl EffectsGpu {
             sframes: table("effects sprite frames"),
             mdata: table("effects morph data"),
             update_group: None,
+            lamp_pipe,
+            lamp_layout,
+            lamp_buf,
+            lamp_group: None,
+            lamp_count: 0,
             draw_group: None,
             meshes: Vec::new(),
             textures: HashMap::new(),
@@ -728,7 +804,17 @@ impl EffectsGpu {
         if self.lights != *lights {
             self.lights = lights.clone();
             self.update_group = None;
+            self.lamp_group = None;
         }
+    }
+
+    /// The lamps' lights (client/lamps.rs): position, table slot, template slot.
+    pub fn set_lamps(&mut self, gpu: &Gpu, lamps: &[(glam::Vec3, u32, u32)]) {
+        let n = lamps.len().min(crate::render::LIGHTS);
+        let mut words: Vec<[f32; 4]> = vec![[f32::from_bits(n as u32), 0.0, 0.0, 0.0]];
+        words.extend(lamps[..n].iter().map(|(p, slot, t)| [p.x, p.y, p.z, f32::from_bits(slot | t << 16)]));
+        gpu.queue.put(&self.lamp_buf, 0, bytemuck::cast_slice(&words));
+        self.lamp_count = n as u32;
     }
 
     pub fn update(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, fx: &mut Effects, f: &Frame) {
@@ -828,32 +914,7 @@ impl EffectsGpu {
             }));
         }
         if redraw {
-            self.draw_group_rt = Some(gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("effects draw, ground images"),
-                layout: &self.draw_layout,
-                entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: self.draw_u_rt.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: self.outs.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 2, resource: self.elems.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 3, resource: self.parts.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 4, resource: self.sverts.0.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 5, resource: self.sframes.0.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 6, resource: self.mdata.0.as_entire_binding() },
-                ],
-            }));
-            self.draw_group = Some(gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("effects draw"),
-                layout: &self.draw_layout,
-                entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: self.draw_u.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: self.outs.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 2, resource: self.elems.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 3, resource: self.parts.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 4, resource: self.sverts.0.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 5, resource: self.sframes.0.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 6, resource: self.mdata.0.as_entire_binding() },
-                ],
-            }));
+            self.draw_groups(gpu);
         }
         self.count = fx.elems.len() as u32;
         let [b90, d10, d50, c10] = view_set(f.view);
@@ -881,12 +942,75 @@ impl EffectsGpu {
             pass.set_bind_group(0, self.update_group.as_ref().unwrap(), &[]);
             pass.dispatch_workgroups(self.count.div_ceil(64), 1, 1);
         }
+        if self.lamp_count > 0 {
+            let group = self.lamp_group.get_or_insert_with(|| {
+                gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("effects lamps"),
+                    layout: &self.lamp_layout,
+                    entries: &[wgpu::BindGroupEntry { binding: 0, resource: self.lights.as_entire_binding() }, wgpu::BindGroupEntry { binding: 1, resource: self.lamp_buf.as_entire_binding() }],
+                })
+            });
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("effects lamps"), timestamp_writes: None });
+            pass.set_pipeline(&self.lamp_pipe);
+            pass.set_bind_group(0, &*group, &[]);
+            pass.dispatch_workgroups(self.lamp_count.div_ceil(64), 1, 1);
+        }
         if let Some(s) = self.staging.iter_mut().find(|s| s.state == 0) {
             let bytes = (self.count as usize * BACK_WORDS * 4) as u64;
             encoder.copy_buffer_to_buffer(&self.back, 0, &s.buf, 0, bytes);
             s.state = 1;
             s.words = self.count as usize * BACK_WORDS;
         }
+    }
+
+    /// The draw bind groups (group 0): the elements' tables and the scene depth copy (or its stand-in).
+    fn draw_groups(&mut self, gpu: &Gpu) {
+        let depth = self.depth_copy.as_ref().map_or(&self.depth_dummy, |c| &c.1);
+        let group = |label, u: &wgpu::Buffer| {
+            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some(label),
+                layout: &self.draw_layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: u.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 1, resource: self.outs.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 2, resource: self.elems.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 3, resource: self.parts.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 4, resource: self.sverts.0.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 5, resource: self.sframes.0.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 6, resource: self.mdata.0.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::TextureView(depth) },
+                ],
+            })
+        };
+        let (rt, main) = (group("effects draw, ground images", &self.draw_u_rt), group("effects draw", &self.draw_u));
+        (self.draw_group_rt, self.draw_group) = (Some(rt), Some(main));
+    }
+
+    /// Ours: the scene depth copied for the glows' fade, when any glow (flag 27) draws and the target allows it.
+    fn copy_depth(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, depth: &wgpu::TextureView, fx: &Effects, order: &[u32]) -> bool {
+        let t = depth.texture();
+        let glows = order.iter().any(|&e| fx.elems[e as usize].as_ref().is_some_and(|c| c.flags & 0x800_0000 != 0));
+        if !self.soft || !glows || !t.usage().contains(wgpu::TextureUsages::COPY_SRC) {
+            return false;
+        }
+        if self.depth_copy.as_ref().is_none_or(|(c, _)| c.size() != t.size()) {
+            let c = gpu.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("effects scene depth"),
+                size: t.size(),
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: t.format(),
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let v = c.create_view(&Default::default());
+            self.depth_copy = Some((c, v));
+            self.draw_groups(gpu);
+        }
+        let c = &self.depth_copy.as_ref().unwrap().0;
+        encoder.copy_texture_to_texture(t.as_image_copy(), c.as_image_copy(), t.size());
+        true
     }
 
     /// After the frame's submit: starts mapping the readback copied this frame, and hands finished ones to the
@@ -1005,13 +1129,14 @@ impl EffectsGpu {
             let b = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("effects ground decal"), contents: bytemuck::cast_slice(&verts), usage: wgpu::BufferUsages::VERTEX });
             self.gp_vb = Some((b, fx.decal_version, ranges));
         }
+        let soft = self.copy_depth(gpu, encoder, target.1, fx, &order);
         let Some(group) = self.draw_group.as_ref() else { return };
         let (color, depth, size) = target;
         let (proj, view, eye) = cam;
         let u = DrawU {
             proj: proj.to_cols_array_2d(),
             fog_color: [fog_color[0], fog_color[1], fog_color[2], 1.0],
-            fog: [fog[0], fog[1].max(fog[0] + 1.0), self.linearize as u32 as f32, 0.0],
+            fog: [fog[0], fog[1].max(fog[0] + 1.0), self.linearize as u32 as f32, soft as u32 as f32],
             clip: [clip[0], clip[1], size[0] as f32, size[1] as f32],
             glyphs: self.dmgnum.as_ref().map_or([[0.0; 4]; 22], |d| d.1),
             view: view.to_cols_array_2d(),
@@ -1024,6 +1149,7 @@ impl EffectsGpu {
         gpu.queue.put(&self.draw_u, 0, bytemuck::bytes_of(&u));
         let mut u_rt = u;
         u_rt.fog[2] = 0.0;
+        u_rt.fog[3] = 0.0;
         gpu.queue.put(&self.draw_u_rt, 0, bytemuck::bytes_of(&u_rt));
         // FUN_10040e70 steps 2-4: each projection's image, cleared to 0 (depth 1), the mesh as its own mode draws it.
         let mut gp_layer: HashMap<u32, usize> = HashMap::new();
