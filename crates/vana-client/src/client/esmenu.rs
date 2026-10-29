@@ -5,7 +5,7 @@
 
 use super::World;
 use super::game_ui::GameUi;
-use super::macroedit::{Ask, alpha, caret};
+use super::macroedit::{Ask, alpha};
 use crate::audio::Ui;
 
 const LIST: &str = "menu    mcres20";
@@ -17,6 +17,8 @@ const WHITE: u32 = 0x8080_8080;
 pub struct SetList {
     sel: u16,
     rename: Option<Vec<u8>>,
+    /// The name field's caret (a byte index).
+    caret: usize,
     row: usize,
     opt: Option<u16>,
     pub(super) ed: Option<super::esedit::Editor>,
@@ -31,7 +33,7 @@ pub fn open(w: &mut World) {
     let Some(es) = w.equipsets.as_mut() else { return };
     es.load_page(es.page.unwrap_or(0));
     if let Some(m) = w.macroedit.as_mut() {
-        m.sets = Some(SetList { sel: 1, rename: None, row: 0, opt: None, ed: None });
+        m.sets = Some(SetList { sel: 1, rename: None, caret: 0, row: 0, opt: None, ed: None });
     }
 }
 
@@ -48,20 +50,16 @@ fn commit(w: &mut World) {
     }
 }
 
-/// The name field (FUN_101c5be0 mode 4, 15 bytes): printable ASCII, Backspace, Enter / Escape commit.
+/// The name field (FUN_101c5be0 mode 4, 15 bytes): the macro fields' keys, Enter / Escape commit.
 pub fn text_events(w: &mut World, events: &[egui::Event]) {
     use egui::Key as K;
     for ev in events {
-        let Some(name) = list_mut(w).and_then(|s| s.rename.as_mut()) else { return };
+        let Some(s) = list_mut(w) else { return };
+        let Some(name) = s.rename.as_mut() else { return };
+        if super::macroedit::line_edit(name, &mut s.caret, 15, ev) {
+            continue;
+        }
         match ev {
-            egui::Event::Text(t) | egui::Event::Paste(t) => {
-                for c in t.bytes().filter(|c| (b' '..=b'~').contains(c)) {
-                    if name.len() < 15 {
-                        name.push(c);
-                    }
-                }
-            }
-            egui::Event::Key { key: K::Backspace, pressed: true, .. } => _ = name.pop(),
             egui::Event::Key { key: K::Enter | K::Escape, pressed: true, .. } => {
                 commit(w);
                 w.sounds.push(Ui::Select as u32);
@@ -177,6 +175,8 @@ pub(super) struct View {
     pub opt: Option<u16>,
     pub off: Vec<u16>,
     pub rename: Option<String>,
+    /// The name field's caret (a char index into `rename`).
+    pub rename_caret: usize,
     pub focused: bool,
     pub editor: Option<super::esedit::View>,
 }
@@ -191,7 +191,8 @@ pub(super) fn view(w: &World) -> Option<View> {
         row: s.row,
         opt: s.opt,
         off: menu_off(w),
-        rename: s.rename.as_ref().map(|t| String::from_utf8_lossy(t).into_owned()),
+        rename: s.rename.as_ref().map(|t| super::macroedit::shown(w, t)),
+        rename_caret: s.rename.as_ref().map_or(0, |t| super::macroedit::shown(w, &t[..s.caret.min(t.len())]).chars().count()),
         focused: w.confirm.is_none() && s.opt.is_none() && s.rename.is_none() && s.ed.is_none(),
         editor: super::esedit::view(w),
     })
@@ -283,6 +284,7 @@ fn menu_key(w: &mut World, gu: &GameUi, key: egui::Key, o: u16, row: usize) {
                 2 => {
                     let name = es.sets.get(row).map_or(Vec::new(), |s| s.raw_name().to_vec());
                     if let Some(s) = list_mut(w) {
+                        s.caret = name.len();
                         s.rename = Some(name);
                     }
                 }
@@ -361,7 +363,10 @@ pub fn draw(gu: &mut GameUi, w: &World, s: &SetList, sw: f32, sh: f32, free: boo
         for &(id, r) in win.children.iter().filter(|(id, _)| (1..=20).contains(id)) {
             let row = id as usize - 1;
             match &s.rename {
-                Some(t) if row == s.row => gu.text(&format!("{}{}", String::from_utf8_lossy(t), caret(w)), r[0] + 8.0, r[1] + 2.0, 0, WHITE.to_le_bytes()),
+                Some(t) if row == s.row => {
+                    gu.text(&super::macroedit::shown(w, t), r[0] + 8.0, r[1] + 2.0, 0, WHITE.to_le_bytes());
+                    super::macroedit::caret_at(gu, w, t, s.caret, r[0] + 8.0, r[1] + 2.0, f32::MAX);
+                }
                 _ => alpha(gu, es.sets.get(row).map_or(&[][..], |s| s.raw_name()), r[0] + 8.0, r[1] + 2.0, 75.0),
             }
         }

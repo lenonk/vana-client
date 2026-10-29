@@ -159,11 +159,11 @@ fn books(ui: &mut Ui, m: &super::Modern, gu: &GameUi, b: &macroedit::Books, move
                     row_face(ui, m, r, k == b.cur, b.focused, resp.hovered());
                     let font = FontId::proportional(m.theme.small);
                     ui.painter().text(pos2(r.min.x + 40.0, r.center().y), Align2::RIGHT_CENTER, format!("{}", k + 1), font.clone(), m.theme.color("muted"));
-                    let text = match &b.rename {
-                        Some(t) if k == b.cur => format!("{t}{}", if (ui.ctx().input(|i| i.time) * 1.5) as u64 % 2 == 0 { "|" } else { "" }),
-                        _ => name.clone(),
-                    };
-                    ui.painter().text(pos2(r.min.x + 52.0, r.center().y), Align2::LEFT_CENTER, text, font, m.theme.color("text"));
+                    let at = pos2(r.min.x + 52.0, r.center().y);
+                    match &b.rename {
+                        Some(t) if k == b.cur => caret_text(ui, m, at, t, b.rename_caret, font, r.max.x),
+                        _ => _ = ui.painter().text(at, Align2::LEFT_CENTER, name, font, m.theme.color("text")),
+                    }
                     if k == b.active {
                         ui.painter().add(paint::star(pos2(r.max.x - 18.0, r.center().y), 6.5, m.theme.color("gold")));
                     }
@@ -264,16 +264,19 @@ fn editor(ui: &mut Ui, m: &super::Modern, gu: &GameUi, e: &macroedit::EditorView
         }
     });
     ui.add_space(8.0);
-    let caret = if (ui.ctx().input(|i| i.time) * 1.5) as u64 % 2 == 0 { "|" } else { "" };
     for (f, text) in e.fields.iter().enumerate() {
         let child = f as u16 + 3;
         let (r, resp) = ui.allocate_exact_size(vec2(LINE_W, ROW), Sense::click());
         row_face(ui, m, r, e.sel == child, e.focused || e.editing == Some(f), resp.hovered());
         let label = if f == 0 { "Title".to_string() } else { format!("{f}") };
         ui.painter().text(pos2(r.min.x + 50.0, r.center().y), Align2::RIGHT_CENTER, label, FontId::proportional(m.theme.small), m.theme.color("muted"));
-        let shown = if e.editing == Some(f) { format!("{text}{caret}") } else { text.clone() };
-        let clip = Rect::from_min_max(r.min, pos2(r.max.x - 8.0, r.max.y));
-        ui.painter().with_clip_rect(clip).text(pos2(r.min.x + 60.0, r.center().y), Align2::LEFT_CENTER, shown, FontId::monospace(m.theme.small), m.theme.color("text"));
+        let (at, font) = (pos2(r.min.x + 60.0, r.center().y), FontId::monospace(m.theme.small));
+        if e.editing == Some(f) {
+            caret_text(ui, m, at, text, e.caret, font, r.max.x - 8.0);
+        } else {
+            let clip = Rect::from_min_max(r.min, pos2(r.max.x - 8.0, r.max.y));
+            ui.painter().with_clip_rect(clip).text(at, Align2::LEFT_CENTER, text, font, m.theme.color("text"));
+        }
         if e.focused && resp.hovered() && moved {
             mouse.field.0 = Some(child);
         }
@@ -291,6 +294,24 @@ fn editor(ui: &mut Ui, m: &super::Modern, gu: &GameUi, e: &macroedit::EditorView
             }
         }
     });
+}
+
+/// A field being typed in: its text from `at` (left, centred on y), the blinking caret before char `caret`; a line
+/// longer than the room up to `right` is scrolled so the caret stays in view.
+fn caret_text(ui: &Ui, m: &super::Modern, at: egui::Pos2, text: &str, caret: usize, font: FontId, right: f32) {
+    let colour = m.theme.color("text");
+    let width = |s: &str| ui.painter().layout_no_wrap(s.to_string(), font.clone(), colour).size().x;
+    let pre: String = text.chars().take(caret).collect();
+    let dx = width(&pre);
+    let shift = (dx + 4.0 - (right - at.x)).max(0.0);
+    let clip = Rect::from_min_max(pos2(at.x - 2.0, at.y - 20.0), pos2(right, at.y + 20.0));
+    let p = ui.painter().with_clip_rect(clip.intersect(ui.clip_rect()));
+    p.text(pos2(at.x - shift, at.y), Align2::LEFT_CENTER, text, font.clone(), colour);
+    if (ui.ctx().input(|i| i.time) * 1.5) as u64 % 2 == 0 {
+        let x = at.x - shift + dx;
+        let h = font.size * 0.6;
+        p.line_segment([pos2(x, at.y - h), pos2(x, at.y + h)], egui::Stroke::new(1.5, colour));
+    }
 }
 
 /// The palette while Ctrl or Alt is held (FUN_101a3b20): its ten keys over the chat window, the cursor's cell lit.
@@ -465,11 +486,11 @@ fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
                     row_face(ui, m, r, v.cur == Some(k) || (v.opt.is_some() && v.row == k), v.focused, resp.hovered());
                     let font = FontId::proportional(m.theme.small);
                     ui.painter().text(pos2(r.min.x + 40.0, r.center().y), Align2::RIGHT_CENTER, format!("{}", v.page * 20 + k + 1), font.clone(), m.theme.color("muted"));
-                    let text = match &v.rename {
-                        Some(t) if k == v.row => format!("{t}{}", if (ui.ctx().input(|i| i.time) * 1.5) as u64 % 2 == 0 { "|" } else { "" }),
-                        _ => name.clone(),
-                    };
-                    ui.painter().text(pos2(r.min.x + 52.0, r.center().y), Align2::LEFT_CENTER, text, font, m.theme.color("text"));
+                    let at = pos2(r.min.x + 52.0, r.center().y);
+                    match &v.rename {
+                        Some(t) if k == v.row => caret_text(ui, m, at, t, v.rename_caret, font, r.max.x),
+                        _ => _ = ui.painter().text(at, Align2::LEFT_CENTER, name, font, m.theme.color("text")),
+                    }
                     if v.focused && resp.hovered() && moved {
                         row.0 = Some(k);
                     }
