@@ -395,6 +395,8 @@ pub struct Instance {
     pub area_light: Option<Vec3>,
     /// The damage number of the task that started it (gen +0x64 -> task +0xa8 / +0xa4); clones inherit it.
     pub dam: Option<DamValue>,
+    /// Its start in the serial order: the task list runs generators in start order (FUN_10074170 appends).
+    pub started: u32,
 }
 
 /// A word range of an element for the GPU this frame.
@@ -1494,6 +1496,7 @@ impl Effects {
             de |= 0x83;
         }
         let mslot = self.alloc_slot();
+        self.serial = self.serial.wrapping_add(1);
         let inst = Instance {
             src,
             name: g.name,
@@ -1533,6 +1536,7 @@ impl Effects {
             ground: None,
             area_light: None,
             dam: None,
+            started: self.serial,
         };
         let i = match self.insts.iter().position(|x| x.is_none()) {
             Some(i) => {
@@ -2374,29 +2378,37 @@ impl Effects {
         }
     }
 
-    /// The draw order with the after-images among the elements (`TRAIL_ITEM | slot`), farthest first.
+    /// The tie order for equal clamped keys: the ordering table (FUN_10054410) puts a key at its 512 clamp after the
+    /// bucket's nodes, so they draw as inserted, i.e. as the task list updates them. FUN_10074170 puts a generator's
+    /// new elements just before it: generators in start order, each one's elements oldest first.
+    fn insert_order(&self, c: &ElemCpu) -> (u32, u32) {
+        (self.insts.get(c.inst).and_then(|x| x.as_ref()).map_or(0, |x| x.started), c.serial)
+    }
+
+    /// The draw order with the after-images among the elements (`TRAIL_ITEM | slot`), farthest first (ties by
+    /// `insert_order`).
     pub fn draw_items(&self) -> Vec<u32> {
         let view = self.last_frame.map_or(Mat4::IDENTITY, |f| f.view);
-        let mut v: Vec<(f32, u32)> = self
+        let mut v: Vec<(f32, (u32, u32), u32)> = self
             .elems
             .iter()
             .enumerate()
-            .filter_map(|(i, c)| c.as_ref().filter(|c| c.draw != Draw::None && !c.hidden).map(|c| (c.key.clamp(0.0, 512.0), i as u32)))
-            .chain(self.trails.iter().enumerate().filter_map(|(i, t)| t.as_ref().filter(|t| t.count >= 2).map(|t| (t.key(&view), TRAIL_ITEM | i as u32))))
+            .filter_map(|(i, c)| c.as_ref().filter(|c| c.draw != Draw::None && !c.hidden).map(|c| (c.key.clamp(0.0, 512.0), self.insert_order(c), i as u32)))
+            .chain(self.trails.iter().enumerate().filter_map(|(i, t)| t.as_ref().filter(|t| t.count >= 2).map(|t| (t.key(&view), (0, 0), TRAIL_ITEM | i as u32))))
             .collect();
-        v.sort_by(|a, b| b.0.total_cmp(&a.0));
-        v.into_iter().map(|(_, i)| i).collect()
+        v.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        v.into_iter().map(|(_, _, i)| i).collect()
     }
 
     pub fn draw_order(&self) -> Vec<u32> {
-        let mut v: Vec<(f32, u32)> = self
+        let mut v: Vec<(f32, (u32, u32), u32)> = self
             .elems
             .iter()
             .enumerate()
-            .filter_map(|(i, c)| c.as_ref().filter(|c| c.draw != Draw::None && !c.hidden).map(|c| (c.key.clamp(0.0, 512.0), i as u32)))
+            .filter_map(|(i, c)| c.as_ref().filter(|c| c.draw != Draw::None && !c.hidden).map(|c| (c.key.clamp(0.0, 512.0), self.insert_order(c), i as u32)))
             .collect();
-        v.sort_by(|a, b| b.0.total_cmp(&a.0));
-        v.into_iter().map(|(_, i)| i).collect()
+        v.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        v.into_iter().map(|(_, _, i)| i).collect()
     }
 
     /// One line per instance not owned by the zone, sub-area or weather: name, owner, actors, attach, elements.

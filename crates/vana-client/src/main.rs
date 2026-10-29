@@ -1333,7 +1333,12 @@ fn main() -> Result<()> {
                             hi[k] = hi[k].max(v.pos[k]);
                         }
                     }
-                    println!("  model {i}: tex {:<16} verts {:4} idx {:4} strip {} bounds {:?}..{:?}", m.texture, m.vertices.len(), m.indices.len(), m.strip, lo, hi);
+                    println!("  model {i}: tex {:<16} verts {:4} idx {:4} strip {} blending {:#06x} bounds {:?}..{:?}", m.texture, m.vertices.len(), m.indices.len(), m.strip, m.blending, lo, hi);
+                    // Vertex colours (BGRA as stored): mean, min and max per channel.
+                    let ch = |k: u32| m.vertices.iter().map(move |v| (v.color >> (8 * k)) as u8);
+                    let n = m.vertices.len().max(1) as f32;
+                    let stats: Vec<String> = (0..4).map(|k| format!("{:.0} [{}..{}]", ch(k).map(f32::from).sum::<f32>() / n, ch(k).min().unwrap_or(0), ch(k).max().unwrap_or(0))).collect();
+                    println!("    colour B {} G {} R {} A {}", stats[0], stats[1], stats[2], stats[3]);
                 }
             }
             Ok(())

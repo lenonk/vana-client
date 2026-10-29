@@ -11756,3 +11756,28 @@ since "Ship voyages: the moving world" listed them as not done.
 - Not done: the airship ride (needs an airship pass), the skillchain helper (needs each weapon skill's skillchain
   properties, which the client has no table of; LSB keeps them server side). Remapster's 109 extra maps stay
   blocked: no file says which zone or floor each belongs to.
+
+## Effect draw order: equal clamped keys draw in insertion order (Port Bastok's harbour, 2026-10-29)
+
+- User report: the water in Port Bastok was far too dark. Arriving by airship at Vana'diel 12:07 it measured (10,
+  11, 12), black. On a fresh login it was navy (about (31, 45, 54) at noon), and after another landing a light
+  lavender (the night fog colour).
+- The harbour is three zone generators on one spot (t_ba/effe/esea): `down` (mesh col1, colour 0x96000000, blend
+  0x44, op 0x30 bias 5000), `col1` (mesh col1 untextured, 0x96808080 with R / G / B keyed by rtms / gtms / btms,
+  0.099 / 0.157 / 0.2 at noon, blend 0x44, bias 4500) and `1sea` (mesh 1sea, texture sea01, 0x78787878 keyed by
+  semt, additive, bias 4000, UV scroll). All three have template flags 0x401000: bit 22 makes the key the bias
+  alone, bit 12 writes depth. By y they lie down 9.9, col1 9.87, 1sea 9.84 (y down).
+- Retail's ordering table (FUN_10054410, asm 0x100544a5): the key is clamped to [0, 512] for the bucket, and the
+  walk compares that clamped key with each node's raw key, so a key at the clamp goes after every node in the
+  bucket. All three keys clamp to 512 and draw in insertion order. Elements insert in their own update
+  (FUN_10044c00 / FUN_10044ca0 -> FUN_10044ab0 -> FUN_10054600), i.e. in task-list order. The default list
+  (FUN_10074170) appends a task, or puts one made during another task's update just before that task. So a
+  generator's new elements run just before it, in creation order, and generators run in start order.
+- Ours tied the three at 512 and fell back to element slot order. With depth writes, the order decides the look:
+  col1 / 1sea first hide `down` (navy with the sea texture); 1sea first hides col1 (the fog colour through the
+  additive sea); `down` after col1 at a grazing event camera came out black. Now ties go by the generator's start
+  serial, then the element's (fx/mod.rs `insert_order`), so the harbour draws col1, 1sea, down every time. Seen
+  live after a login and after an airship landing (both navy); offscreen unchanged.
+- The navy itself is the data: untextured MMB `rgb = sat(2·D·F)` (model_draw.md 1.3) with D = 0x73 and F =
+  (0x19, 0x28, 0x32) gives about (23, 36, 46), then fog. Not compared with a retail screenshot.
+- mmb-dump prints each model's blending word and vertex colour mean / range.
