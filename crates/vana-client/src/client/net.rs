@@ -87,6 +87,8 @@ pub struct EntityUpdate {
     pub face: Option<u16>,
     /// Mask 0x04, u8 @0x28 bit 0x04 (LSB PetNewFlag; actor +0x12c bit 23): the model is made with 'spop'.
     pub spawn_fx: Option<bool>,
+    /// Mask 0x04, u8 @0x27 bit 1 (entity +0x12c bit 10; asm 0x10098e1a / 0x1009aaa5): a model made with no shadow.
+    pub shadowless: Option<bool>,
     /// 0x00E u32 @0x18 bit 16 (KingFlag): counted toward 0x00A SendCount before c2s 0x01A 0x14 (all.asm 167839).
     pub king: bool,
     /// 0x00D mask 0x04: ChocoboIndex u32 @0x20 bits 5..7 (asm 0x1009a1e7), the mount id u32 @0x44 bits 4..11 (asm
@@ -906,6 +908,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
         hp_bits: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| (p.u8(0x22) & 1 != 0, p.u8(0x22) & 1 == 0 && p.u8(0x2B) & 0x20 != 0)),
         face: (flags & 1 != 0).then(|| ((p.u32(0x18) >> 17) & 0x7fff) as u16),
         spawn_fx: (flags & 0x04 != 0 && p.data.len() > 0x28).then(|| p.u8(0x28) & 0x04 != 0),
+        shadowless: (flags & 0x04 != 0 && p.data.len() > 0x27).then(|| p.u8(0x27) & 0x02 != 0),
         king: kind == EntityKind::Npc && p.u32(0x18) >> 16 & 1 != 0,
         indi: (kind == EntityKind::Player && flags & 0x04 != 0 && p.data.len() > 0x42).then(|| p.u8(0x42)),
         gate: (flags & 0x04 != 0).then(|| if kind == EntityKind::Player { (p.data.len() > 0x44).then(|| p.u8(0x44) & 0xf) } else { (p.data.len() > 0x26).then(|| p.u8(0x26) >> 4) }).flatten(),

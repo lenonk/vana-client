@@ -63,6 +63,7 @@ mod dps;
 mod skillchain;
 mod clock;
 mod lamps;
+mod shadows;
 pub use lamps::Lamps;
 mod mousecur;
 mod party;
@@ -462,6 +463,11 @@ struct Entity {
     face: u16,
     /// Actor +0x12c bit 23 (0x00E / 0x00D @0x28 bit 0x04): a new model plays 'spop' (FUN_1008f740).
     spawn_fx: bool,
+    /// Entity +0x12c bits 10 (0x00D / 0x00E u8 @0x27 bit 1), 11 (event op 0xa5) and 12 (op 0xc0): a new model gets no
+    /// shadow (10, 11) or no blob (12) (FUN_1008dfb0, client/shadows.rs).
+    shadowless: bool,
+    ev_shadowless: bool,
+    noblob: bool,
     /// Actor +0x208: the model radius from 0x00E / 0x00D (net::EntityUpdate::hitbox).
     hitbox: f32,
     /// 0x00D's riding fields (ride.rs).
@@ -1393,6 +1399,9 @@ fn self_entity(w: &World) -> Entity {
         object: false,
         face: 0,
         spawn_fx: false,
+        shadowless: false,
+        ev_shadowless: false,
+        noblob: false,
         hitbox: 0.0,
         ride: Default::default(),
         aura: Default::default(),
@@ -4109,6 +4118,9 @@ fn place_mogdoor(w: &mut World) {
             object: true,
             face: 0,
             spawn_fx: false,
+            shadowless: false,
+            ev_shadowless: false,
+            noblob: false,
             hitbox: 0.0,
             ride: Default::default(),
             aura: Default::default(),
@@ -4291,6 +4303,9 @@ struct Actor {
     fade: Option<actmotion::Fade>,
     /// FUN_100c56e0 with 'spop': the scheduler to run once the model's files are in (model +0x8c4).
     spop: bool,
+    /// Actor +0x66c == 0 (no shadow) and +0x670 (no blob), latched from the entity when the model is made.
+    shadow_off: bool,
+    noblob: bool,
     /// Last frame's bone transforms (model space) and model scale, for look points.
     bones: Vec<(glam::Quat, Vec3)>,
     scale: f32,
@@ -4374,6 +4389,8 @@ impl Actor {
             flash: Default::default(),
             fade: None,
             spop: false,
+            shadow_off: false,
+            noblob: false,
             bones: Vec::new(),
             scale: 1.0,
             top_key: String::new(),
@@ -5628,6 +5645,8 @@ struct World {
     auto_advance: u32,
     /// The lamps' lights (client/lamps.rs, Settings' Lamp Lights).
     lamps: lamps::Lamps,
+    /// The actor shadows' light-state slots (client/shadows.rs).
+    shadow_slots: shadows::Slots,
     /// Config `earth_clock` (an extra, client/clock.rs), `hide_trust_speech` and `hide_ready_lines`.
     earth_clock: bool,
     hide_trust_speech: bool,
@@ -7180,6 +7199,7 @@ impl App {
                             auto_advance: self.cfg.auto_advance,
                             earth_clock: self.cfg.earth_clock,
                             lamps: Default::default(),
+                            shadow_slots: Default::default(),
                             hide_trust_speech: self.cfg.hide_trust_speech,
                             hide_ready_lines: self.cfg.hide_ready_lines,
                             target_since: Instant::now(),
@@ -7643,6 +7663,9 @@ impl App {
                             }
                         }
                         w.ground = Some(l.ground);
+                        if let Some(r) = w.renderer.as_mut() {
+                            r.reset_shadow_faces();
+                        }
                         w.sub.current = Some(id);
                         doors::reapply(w);
                         if !from_event {
@@ -7839,6 +7862,9 @@ impl App {
                         home.keep_body(old);
                     }
                     w.ground = Some(home);
+                    if let Some(r) = w.renderer.as_mut() {
+                        r.reset_shadow_faces();
+                    }
                 }
                 doors::reapply(w);
                 (w.sub.current, w.sub.weather) = (None, None);
@@ -8255,6 +8281,9 @@ impl App {
                         object: false,
                         face: 0,
                         spawn_fx: false,
+                        shadowless: false,
+                        ev_shadowless: false,
+                        noblob: false,
                         hitbox: 0.0,
                         ride: Default::default(),
                         aura: Default::default(),
@@ -8296,6 +8325,9 @@ impl App {
                     }
                     if let Some(s) = e.spawn_fx {
                         entry.spawn_fx = s;
+                    }
+                    if let Some(s) = e.shadowless {
+                        entry.shadowless = s;
                     }
                     if let Some(h) = e.hitbox {
                         entry.hitbox = h;
@@ -8886,6 +8918,7 @@ impl App {
             }
             let key = format!("{source:?}");
             let spawn_fx = world.entities.get(&id).is_some_and(|e| e.spawn_fx);
+            let shadow = world.entities.get(&id).map_or((false, false), |e| (e.shadowless || e.ev_shadowless, e.noblob));
             // FUN_10095dd0: a changed look waits while its actor is held (busy +0x11c: ops 0x1f / 0x20 / 0x59, a load).
             if world.actors.get(&id).is_some_and(|a| a.character.is_some() && a.key != key) && combat::held(world, id) {
                 world.held_looks.retain(|l| l.0 != id);
@@ -8906,6 +8939,7 @@ impl App {
             if spawn_fx {
                 (actor.alpha, actor.fade, actor.spop) = (0.0, None, true);
             }
+            (actor.shadow_off, actor.noblob) = shadow;
             actor.source = Some(source);
             // A look already loaded is shared at once; one load serves every actor waiting for it.
             if let Some(m) = world.models.get(&key) {
@@ -12225,6 +12259,7 @@ impl App {
                 let leads: HashMap<u32, f32> = w.actors.iter().filter_map(|(id, a)| Some((*id, frame_of(w.actors.get(&a.motion_link?)?)?))).collect();
                 let me = w.my_id;
                 let mut far_out: HashSet<u32> = HashSet::new();
+                let mut seen: HashMap<u32, shadows::Seen> = HashMap::new();
                 for (id, a) in w.actors.iter_mut() {
                     let Some(ch) = a.character.clone() else { continue };
                     let Some(&Place { pos, forward, tilt, status, ratio, size }) = places.get(id) else { continue };
@@ -12537,6 +12572,10 @@ impl App {
                     if r.clip[0] > 0.0 && *id != w.my_id && bx.is_some_and(|b| box_depth(cview, model, &box_corners(b)) > r.clip[0]) {
                         far_out.insert(*id);
                     }
+                    if drawn && let Some(b) = bx {
+                        let cs = box_corners(b);
+                        seen.insert(*id, shadows::Seen { pos: model.w_axis.truncate(), corners: cs.map(|c| model.transform_point3(c)), depth: box_depth(cview, model, &cs) });
+                    }
                     // Tests 1-5 of FUN_100c63d0 / FUN_100cbde0: a box, faded in, in front and on screen.
                     if drawn
                         && !far_out.contains(id)
@@ -12618,7 +12657,14 @@ impl App {
                 // with +0xb2 bit 0 set (FUN_100c63d0's tests and the occlusion, not in `visible`) is not drawn either;
                 // ours is never culled by them, nor are actors without a skeleton (props, ships).
                 let culled = |id: &u32, a: &Actor| a.character.is_some() && *id != w.my_id && !w.visible.contains(id);
-                let actors: Vec<&crate::render::ActorGpu> = w.actors.iter().filter(|(id, a)| !a.vanished() && !hidden.contains(id) && !far_out.contains(id) && !culled(id, a)).filter_map(|(_, a)| a.gpu.as_ref()).filter(|g| g.alpha >= 1e-4).collect();
+                let has = |id: u32| w.actors.contains_key(&id);
+                let flags = |id: u32| w.actors.get(&id).map_or((false, false), |a| (a.shadow_off, a.noblob));
+                let shadow_modes = match w.ground.as_ref() {
+                    Some(g) => shadows::modes(&shadows::Ctx { ground: g, setting: w.game.get(0x3a), me: w.my_id, zone: w.pos_zone, has: &has, flags: &flags, layers: r.shadow_layers(bg) }, &seen, camera.eye),
+                    None => Vec::new(),
+                };
+                let drawn_map: HashMap<u32, &crate::render::ActorGpu> = w.actors.iter().filter(|(id, a)| !a.vanished() && !hidden.contains(id) && !far_out.contains(id) && !culled(id, a)).filter_map(|(id, a)| Some((*id, a.gpu.as_ref()?))).filter(|(_, g)| g.alpha >= 1e-4).collect();
+                let actors: Vec<&crate::render::ActorGpu> = drawn_map.values().copied().collect();
                 counts = perf::Counts { entities: w.entities.len(), actors: w.actors.len(), posed: counts.posed, drawn: actors.len(), zone_draws: r.draw_count(), ui_vertices: 0, fx: [(0, 0); 3] };
                 m_actors = Instant::now();
                 // Mips of new textures (models that came this frame, a zone going up) under the frame budget.
@@ -12630,6 +12676,18 @@ impl App {
                 r.set_camera_list(&gfx.gpu, list);
                 perf::timed(|| "zone render".into(), || r.render(&gfx.gpu, &mut encoder, &scene_raw, &scene_depth, &camera, aspect, &actors));
                 mark!("scene");
+                // The actors' ground shadows over the scene (client/shadows.rs, render/shadow.rs).
+                if !r.has_shadow_texture()
+                    && let Some(t) = w.index.as_ref().and_then(|i| shadows::kage_texture(i))
+                {
+                    r.set_shadow_texture(&gfx.gpu, &t, scene_fmt);
+                }
+                if let Some(g) = w.ground.as_ref() {
+                    let casters = shadows::casters(&mut w.shadow_slots, g, shadow_modes, &drawn_map);
+                    let sun = r.lighting.map_or([0.0; 4], |l| [l.actor_dir.x, l.actor_dir.y, l.actor_dir.z, 1.0]);
+                    perf::timed(|| "shadows".into(), || r.draw_shadows(&gfx.gpu, &mut encoder, &scene_raw, &scene_depth, bg, g, &casters, sun, (dt * 60.0).max(1e-3)));
+                }
+                mark!("shadows");
                 // Refracting actors, farthest first (retail's sorted list), after the opaque scene.
                 let mut refracting: Vec<(f32, &crate::render::ActorGpu)> = w
                     .actors

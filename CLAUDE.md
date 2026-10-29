@@ -184,7 +184,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     pins, the weapon after-image (fx/trail.rs), the view gate, the party roster for the filter, moving-part lights,
     actor refraction (ops 0x48 / 0x49), op 0xac (the death pick), attach modes 0x14 / 0x15 (voyages) done;
     real lamp lights in place of the baked shells and soft glows done (Settings' Lamp Lights; MODLOG "Lamp
-    Lights"; left: interiors);
+    Lights"; left: interiors); actor ground shadows (client/shadows.rs, render/shadow.rs, config 0x3a; MODLOG "Actor
+    ground shadows") done;
   - fishing (client/fishing.rs, fishrod.rs, MODLOG "Fishing"): done and caught live, the +1 rods' glow too; left
     other anglers not seen live;
   - Monstrosity (spec `~/ffxi/lab/research/monstrosity_spec.md`; client/monstrosity.rs, moncustom.rs, MODLOG

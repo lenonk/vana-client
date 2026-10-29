@@ -11935,3 +11935,32 @@ since "Ship voyages: the moving world" listed them as not done.
   beams, and gl05..gl11 light the pillars and floor in pools. Live in East Ronfaure: 11 glows, 13 data lights, 1
   shell, 7 lamp lights on 17 instances.
 - Not done: sub-area (interior) instances get no lamp slots; lamps without any data light in their zone get no light.
+
+## Actor ground shadows (FUN_10032f80; 2026-10-29)
+
+- Spec: `~/ffxi/lab/research/actor_shadow_spec.md` (the mode gate FUN_100c9da0, light and size FUN_10033080, the three
+  draws FUN_1017dd50 / FUN_1017e0b0 / FUN_1017ecf0). Config 0x3a: High 2, Normal 0, Off 1.
+- Modes (client/shadows.rs `mode`):
+  - 1, the silhouette: ours (our mount's instead while riding; our own rod too), and everyone in High;
+  - 0, the projected blob (2 past view depth 20): every other PC, NPC and monster;
+  - 2, the quad: those standing on a covered face;
+  - none: others' riders, rods and Indi auras; feet more than 2 above the eye; zone 33 on surface kinds 8 / 9.
+- The entity flags (FUN_1008dfb0, latched on the actor when its model is made):
+  - +0x12c bit 10 (0x00D / 0x00E u8 @0x27 bit 1; LSB NPC name_prefix bit 1) or bit 11 (event op 0xa5): no shadow;
+  - bit 12 (event op 0xc0): no blob, the silhouette still draws.
+- Not ported: the "nothing drawn on the first frame" rule (+0x728 < 2, inferred) and chairs (they have no actor here).
+- GPU (render/shadow.rs), per frame:
+  - compute `prep`: the dominant light (the strongest point light in range of the floor's four, else the sun's travel
+    direction negated), below the horizon (0.45, -0.9, 0), eased 0.04 a tick in a per-caster state slot, held at 40.9
+    degrees under 60, S from the box corners seen from the light (5 / 9 for blobs), and the silhouette view-projection;
+  - silhouettes: each mode-1 actor skinned flat white into its own R8 layer (PerspectiveFovRH pi/16, aspect 1, eye
+    pos - 12 S L), the layers at the scene's size as retail's one target, as many as fit in 128 MB (at most 32;
+    the nearest get them, the rest blob);
+  - one pass over the scene: quads, then per collision cell instanced blob and silhouette draws on the cached faces
+    (`Ground::cell_tris`: the decal faces for blobs; for silhouettes geometry word 0 without the normal test, door
+    boxes left out), blend ZERO / INVSRCCOLOR, MODULATE2X, depth tested, no depth write, z bias 15, no fog.
+- The cell faces are cached per (x, z, kind) and dropped when a sub-area's ground goes in or out.
+- Seen live in East Ronfaure: Normal draws our silhouette at our feet (at 512 its edges were stair-stepped, so the
+  layers went to the scene size) and small blobs under Croteillard and Rayochindot (S/3 across, as read). High gives
+  Croteillard a silhouette lying the same way as ours; Off draws none.
+- Not seen: point-light shadows indoors, the quad under cover, riding, ops 0xa5 / 0xc0.

@@ -16,6 +16,7 @@ pub mod screenfx;
 pub mod scale;
 pub mod gputime;
 pub mod cull;
+pub mod shadow;
 
 use crate::dat::zone::ZoneScene;
 use anyhow::{Context, Result};
@@ -362,6 +363,12 @@ pub struct ZoneRenderer {
     shine_buf: wgpu::Buffer,
     shine_group: wgpu::BindGroup,
     refract_pipeline: wgpu::RenderPipeline,
+    /// Actor ground shadows (render/shadow.rs): the zone layouts they draw with, the silhouette pass and its layout,
+    /// and their state (made at the first shadow).
+    globals_layout: wgpu::BindGroupLayout,
+    sil_layout: wgpu::BindGroupLayout,
+    sil_pipeline: wgpu::RenderPipeline,
+    shadows: Option<shadow::Shadows>,
     refract_buf: wgpu::Buffer,
     refract_group: wgpu::BindGroup,
     /// The refraction pass's scene copy (DAT_10456e6c: scene size, one per frame per refracting actor).
@@ -745,6 +752,9 @@ pub struct ZonePipes {
     shine_pipeline: wgpu::RenderPipeline,
     refract_pipeline: wgpu::RenderPipeline,
     line_pipeline: wgpu::RenderPipeline,
+    /// The shadow silhouette pass (render/shadow.rs): its group 3 layout and pipeline.
+    sil_layout: wgpu::BindGroupLayout,
+    sil_pipeline: wgpu::RenderPipeline,
     /// The scenery's frustum culling (render/cull.rs): its group 3 layout, the visibility and compaction passes.
     cull_layout: wgpu::BindGroupLayout,
     cull: [wgpu::ComputePipeline; 2],
@@ -937,6 +947,36 @@ impl ZonePipes {
             multiview_mask: None,
             cache: None,
         });
+        // The shadow silhouette (FUN_100329e0): flat white into a shadow layer, no depth, no culling.
+        let sil_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("shadow silhouette"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: true, min_binding_size: wgpu::BufferSize::new(64) },
+                count: None,
+            }],
+        });
+        let sil_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("shadow silhouette"),
+            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("shadow silhouette"),
+                bind_group_layouts: &[Some(&globals_layout), Some(&texture_layout), Some(&pose_layout), Some(&sil_layout)],
+                immediate_size: 0,
+            })),
+            vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_skinned_silhouette"), compilation_options: Default::default(), buffers: &skin_buffers },
+            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+            depth_stencil: None,
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_silhouette"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState { format: shadow::SIL_FORMAT, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
         // The shine overlay (FUN_10024e10's second pass): additive (SRCALPHA / ONE), z tested (as drawn) but not written.
         let shine_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("shine"),
@@ -1047,7 +1087,7 @@ impl ZonePipes {
         let cull_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("cull"), bind_group_layouts: &[Some(&globals_layout), None, None, Some(&cull_layout)], immediate_size: 0 });
         let make_cull = |entry: &str| device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some(entry), layout: Some(&cull_pl), module: &shader, entry_point: Some(entry), compilation_options: Default::default(), cache: None });
         let cull = [make_cull("cs_cull_vis"), make_cull("cs_cull_compact")];
-        Self { globals_layout, texture_layout, pose_layout, scenery, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_pipeline, refract_pipeline, line_pipeline, cull_layout, cull }
+        Self { globals_layout, texture_layout, pose_layout, scenery, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_pipeline, refract_pipeline, line_pipeline, sil_layout, sil_pipeline, cull_layout, cull }
     }
 }
 
@@ -1384,6 +1424,10 @@ impl ZoneRenderer {
             shine_buf,
             shine_group,
             refract_pipeline: p.refract_pipeline,
+            globals_layout: p.globals_layout.clone(),
+            sil_layout: p.sil_layout,
+            sil_pipeline: p.sil_pipeline,
+            shadows: None,
             refract_buf,
             refract_group,
             refract_copy: None,

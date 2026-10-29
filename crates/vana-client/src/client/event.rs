@@ -845,6 +845,18 @@ impl Host for LiveHost<'_> {
                     self.st.status_lock.remove(&id);
                 }
             }
+            // FUN_100b8a90 (op 0xa5) / FUN_100b8ae0 (op 0xc0): the event actor's entity +0x12c bit 11 = u8@1 & 1 / bit 12
+            // = val@1 & 1, read when its model is next made (no shadow / no blob, client/shadows.rs).
+            Effect::Op { op: op @ (0xa5 | 0xc0), actor, args, .. } => {
+                let id = self.wid(actor);
+                if let (Some(v), Some(e)) = (Self::arg_int(&args, 0), self.w.entities.get_mut(&id)) {
+                    if op == 0xa5 {
+                        e.ev_shadowless = v & 1 != 0;
+                    } else {
+                        e.noblob = v & 1 != 0;
+                    }
+                }
+            }
             // FUN_100b8a80 (op 0x7c): actor@2's mouth on / off (+0x128 bit 17); silent "..." lines are wrapped in it.
             Effect::Op { op: 0x7c, args, .. } => {
                 if let (Some(on), Some(id)) = (Self::arg_int(&args, 0), self.arg_actor(&args, 1)) {

@@ -245,6 +245,23 @@ fn skin(v: SkinIn) -> VertexOut {
     return out;
 }
 
+// The shadow silhouette (render/shadow.rs, FUN_100329e0): the actor drawn flat white from its light, through the
+// caster's matrix at group 3 (a dynamic offset into the casters' outputs).
+@group(3) @binding(0) var<storage, read> sil_vp: mat4x4<f32>;
+
+@vertex
+fn vs_skinned_silhouette(v: SkinIn) -> VertexOut {
+    var out = skin(v);
+    out.clip = sil_vp * vec4<f32>(out.world, 1.0);
+    return out;
+}
+
+// TFACTOR 0x80FFFFFF selected for colour and alpha (textures ignored, so cutouts fill solid).
+@fragment
+fn fs_silhouette() -> @location(0) vec4<f32> {
+    return vec4<f32>(1.0);
+}
+
 // The actor shine overlay (scheduler ops 0x40..0x47): U / V scroll, TFACTOR (RGBA 0..1).
 struct ShineU {
     uv: vec4<f32>,

@@ -79,8 +79,10 @@ pub struct Ground {
     open: std::cell::RefCell<std::collections::HashSet<u32>>,
     /// Per triangle: the camera's rays pass it (cam_ray).
     cam_pass: Vec<bool>,
-    /// Per triangle: effect ground projections paint it (Collision::decal).
+    /// Per triangle: effect ground projections paint it (Collision::decal); its geometry word is 0 (the silhouette
+    /// shadow's faces: the decal rule without the normal test).
     decal: Vec<bool>,
+    plain: Vec<bool>,
     /// Mog House furniture boxes (FUN_1016d580): each piece's position and its 12 triangles with normals.
     furniture: Vec<(Vec3, Vec<([Vec3; 3], Vec3)>)>,
     /// The furniture meshes the camera ray tests (FUN_1016b1d0), each with its bounds; while `furcc` (config 0x99 bit 6
@@ -266,7 +268,7 @@ impl Ground {
     pub fn build(scene: &ZoneScene) -> Self {
         match scene.collision.as_ref() {
             Some(c) => Self::from_collision(c, &scene.light_keys),
-            None => Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), map_keys: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new(), obj_water: Vec::new(), obj_vis: Vec::new(), doors: Vec::new(), open: Default::default(), cam_pass: Vec::new(), decal: Vec::new(), furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true },
+            None => Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), map_keys: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new(), obj_water: Vec::new(), obj_vis: Vec::new(), doors: Vec::new(), open: Default::default(), cam_pass: Vec::new(), decal: Vec::new(), plain: Vec::new(), furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true },
         }
     }
 
@@ -306,11 +308,11 @@ impl Ground {
         let bounds = c.entries.iter().map(|e| tris[e.first as usize..(e.first + e.count) as usize].iter().flatten().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)))).collect();
         let grid = Some(Grid { w: c.grid.0, h: c.grid.1, cells: c.cells.clone(), entries, bounds });
         let doors = c.object.iter().map(|&o| c.objects[o as usize].door).collect();
-        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, map_keys, kinds: c.kinds.clone(), areas, objs: c.object.clone(), obj_lights, obj_water, obj_vis, doors, open: Default::default(), cam_pass: c.cam_pass.clone(), decal: c.decal.clone(), furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true }
+        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, map_keys, kinds: c.kinds.clone(), areas, objs: c.object.clone(), obj_lights, obj_water, obj_vis, doors, open: Default::default(), cam_pass: c.cam_pass.clone(), decal: c.decal.clone(), plain: c.flags.iter().zip(&c.object).map(|(&f, &o)| f == 0 && c.objects[o as usize].door == 0).collect(), furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true }
     }
 
     /// FUN_10182700's cells: the MZB cell of `c` (truncated) and its neighbours clamped to the grid; None without one.
-    fn decal_range(&self, c: Vec3) -> Option<(usize, usize, usize, usize)> {
+    pub fn decal_range(&self, c: Vec3) -> Option<(usize, usize, usize, usize)> {
         let g = self.grid.as_ref()?;
         let (cx, cz) = (((c.x + g.w as f32 * 2.0) * 0.25) as i32, ((c.z + g.h as f32 * 2.0) * 0.25) as i32);
         let clamp = |v: i32, n: usize| if v < 0 { 0 } else { (v as usize).min(n.saturating_sub(1)) };
@@ -320,6 +322,30 @@ impl Ground {
     /// The cells a ground projection at `c` paints (changes only when `c` moves to another cell).
     pub fn decal_cell(&self, c: Vec3) -> Option<(usize, usize)> {
         self.decal_range(c).map(|(x0, _, z0, _)| (x0, z0))
+    }
+
+    /// One cell's faces as the shadows paint them (FUN_1017e0b0 / FUN_1017ecf0): each listed run in order, repeats kept,
+    /// at most 1501 per listing; the decal faces, or with `any` every face of geometry word 0 (no normal test). World
+    /// vertices, three a triangle.
+    pub fn cell_tris(&self, x: usize, z: usize, any: bool) -> Vec<Vec3> {
+        let Some(g) = self.grid.as_ref() else { return Vec::new() };
+        let flags = if any { &self.plain } else { &self.decal };
+        let mut out = Vec::new();
+        for &k in g.cells.get(z * g.w + x).map_or(&[][..], |v| &v[..]) {
+            let Some(&(first, count, _)) = g.entries.get(k as usize) else { continue };
+            let mut n = 0;
+            for t in first as usize..(first + count) as usize {
+                if flags.get(t) != Some(&true) {
+                    continue;
+                }
+                out.extend_from_slice(&self.tris[t]);
+                n += 1;
+                if n > 1500 {
+                    break;
+                }
+            }
+        }
+        out
     }
 
     /// FUN_10182700's faces around `c`: z outer, x inner, each cell's listed runs in order (repeats kept), the
@@ -901,7 +927,7 @@ mod tests {
         // One MZB entry listed in every cell of a 256-unit grid, for cam_ray.
         let bounds = vec![tris.iter().flatten().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)))];
         let grid = Some(Grid { w: 64, h: 64, cells: vec![vec![0]; 64 * 64], entries: vec![(0, n as u32, false)], bounds });
-        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid, body: Cell::new(Body::NEW), covers: vec![false; n], map_keys: vec![0; n], kinds: vec![0; n], areas: vec![0; n], objs: vec![0; n], obj_lights: vec![[0; 4]], obj_water: vec![0.0], obj_vis: vec![0], doors: vec![0; n], open: Default::default(), cam_pass: vec![false; n], decal: vec![true; n], furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true }
+        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid, body: Cell::new(Body::NEW), covers: vec![false; n], map_keys: vec![0; n], kinds: vec![0; n], areas: vec![0; n], objs: vec![0; n], obj_lights: vec![[0; 4]], obj_water: vec![0.0], obj_vis: vec![0], doors: vec![0; n], open: Default::default(), cam_pass: vec![false; n], decal: vec![true; n], plain: vec![true; n], furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true }
     }
 
     fn quad(x0: f32, x1: f32, y0: f32, y1: f32) -> [Vec3; 4] {
