@@ -1053,6 +1053,47 @@ mod tests {
         assert!(pos.x < -0.4 && pos.y.abs() < 0.01, "{pos}");
     }
 
+    /// Crawlers' Nest region c_196, where LSB's height is 2.02 under the floor at (57, -25) and the snap from it finds
+    /// the level 27 below: a goal there keeps an actor walking on the floor on it, and an actor drawn below comes
+    /// back up when the next goal is sent (the gap is over 12).
+    #[test]
+    fn remote_actor_keeps_its_level() {
+        let Some(g) = zone(197) else { return };
+        assert!((g.snap(57.0, -25.0, -36.06).unwrap() + 10.61).abs() < 0.1);
+        let run = |mut pos: Vec3, mut goal: Vec3, frames: usize| {
+            let mut remain = 61.0;
+            for _ in 0..frames {
+                pos = super::super::slide_frame(pos, &mut goal, &mut remain, 1.0, Some(&g)).0;
+            }
+            pos
+        };
+        let walked = run(Vec3::new(55.5, -37.16, -27.5), Vec3::new(57.0, -36.06, -25.0), 120);
+        assert!((walked.y + 38.08).abs() < 0.2, "{walked}");
+        let back = run(Vec3::new(57.0, -10.61, -25.0), Vec3::new(55.5, -35.86, -27.5), 2);
+        assert!((back.y + 37.16).abs() < 0.2, "{back}");
+    }
+
+    /// Snaps a TSV of points (id, name, x, y, z) in zone FLOOR_ZONE from FLOOR_POINTS, printing the ones whose snap
+    /// leaves the given y by more than 1 (by hand: `cargo test --release snap_points -- --ignored --nocapture`).
+    #[test]
+    #[ignore]
+    fn snap_points() {
+        let (Ok(zone_id), Ok(path)) = (std::env::var("FLOOR_ZONE"), std::env::var("FLOOR_POINTS")) else { return };
+        let g = zone(zone_id.parse().unwrap()).unwrap();
+        let (mut n, mut off) = (0, 0);
+        for line in std::fs::read_to_string(path).unwrap().lines() {
+            let f: Vec<&str> = line.split('\t').collect();
+            let [x, y, z] = [2, 3, 4].map(|i| f[i].parse::<f32>().unwrap());
+            n += 1;
+            let s = g.snap(x, z, y);
+            if s.is_none_or(|s| (s - y).abs() > 1.0) {
+                off += 1;
+                println!("{} {} ({x:.1}, {y:.2}, {z:.1}) -> {s:?}, floors {:?}", f[0], f[1], g.floors(x, z));
+            }
+        }
+        println!("{off} of {n} off by more than 1");
+    }
+
     fn zone(id: u32) -> Option<Ground> {
         let cfg = crate::config::Config::load();
         let index = crate::dat::DatIndex::open(&cfg.ffxi_dir()).ok()?;

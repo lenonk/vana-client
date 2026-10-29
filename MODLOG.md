@@ -11476,3 +11476,49 @@ Regime (config `regime`, its drawer `regime_out`). The state comes from packets 
   now); the broken copies are in ~/ffxi/lab/scratch/crawl/broken_backup.
 - dat/overlay.rs merge: a mod's D3s chunk too small for its own size (or with a bad size) is passed over, so the next
   mod's or the stock image stays (image_ok).
+
+## Macro fields: the caret (2026-10-28)
+
+- The macro editor's title and lines, the book name (mcrselec) and the equip set name (mcres20) take the chat line's
+  keys (FUN_101ac4e0 / FUN_101ac520 Left / Right, Home / End, FUN_101abef0 / FUN_101abf40 Backspace / Delete): typed
+  or pasted printable ASCII goes in at the caret up to the field's bytes (title 8, lines 60, names 15). Before, the
+  fields only appended and popped.
+- The caret moves by units of the field's Shift-JIS bytes: a phrase block (FD .. FD, 6 bytes), a 1e / 1f code and a
+  double-byte char are one unit each, as the chat line's (FUN_1018fb00 / FUN_1018fa80).
+- The fields are drawn decoded (Shift-JIS, phrases written out) instead of as UTF-8, so macros made in retail with
+  auto-translate or Japanese show their text. Typing phrases into a field (Tab) is not done.
+- Classic: the caret bar at the prefix's width; modern: egui's width of the prefix, the line scrolled so the caret
+  stays in view. Seen live in both UIs on Lnxcsfix (Ctrl 1's line and Book01's name edited mid-text and restored).
+
+## Remote actors keep their level (2026-10-28)
+
+User report: in multi-level zones (Crawlers' Nest) monsters and trusts are drawn a level above or below where they
+fight, and cannot be seen or targeted.
+- Correction: FUN_100c4390's 0.125-a-tick ease is the facing (+0x61c.., wrapped at +-3.1415 by _DAT_1031eba0 /
+  _DAT_1031eb9c), not the position. The actor is drawn at the entity's slide: FUN_1008dfb0 and FUN_10091220 copy
+  entity +4 to actor +0x34 every frame. Our 0.125 position ease is gone.
+- FUN_1008b680: an actor with +0x120 bit 0x200 starts the frame's slide from its drawn position (+4 = actor +0x34),
+  moves it (goal +0x24 - start) / remaining ticks a tick, or onto the goal when none remain; then if
+  |goal - start|^2 > 144 (_DAT_103224e8) FUN_100911f0 copies the goal and its direction into the slide.
+- FUN_1008dfb0: a grounded actor is snapped by FUN_1017a400 from the slide (+2 above it down 52, _DAT_1036b2bc = 50;
+  else from 2 below up 15; FUN_10162590 takes every face, both sides, nearest to the start), and the result goes to both
+  the slide y (+8) and the goal y (+0x28). The 0x00E handler does not snap the goal; only a new actor is snapped
+  (FUN_10091220). So after one frame the goal stands on the actor's floor, and a goal sent on another level is more
+  than 12 away and taken at once.
+- Ours before: the goal was snapped at receipt from LSB's height, the drawn position eased and snapped on its own,
+  and the slide's y was forced to the goal's every frame, so the 12-unit check never saw a height gap. An actor that
+  once landed on the wrong level never came back: the eased y never got within 2 of the right floor. LSB's navmesh
+  height can be more than 2 under the collision floor: Crawlers' Nest region c_196 at (57, -25): LSB -36.06, floor
+  -38.08, the snap from LSB's height finds -10.61, 27 below.
+- Now mod.rs slide_frame (test ground::remote_actor_keeps_its_level on zone 197): the slide from the drawn spot, the
+  snap on the slide with the goal's height set from it, drawn at the slide. A goal at c_196's bad spot keeps a
+  walking actor on its floor; an actor drawn below comes back when the next goal arrives.
+- Knockback and op 0x7a pins: the slide goes on from the pushed / pinned spot, as retail's slide starts from the
+  actor's position; with no slide time left the actor goes to the goal at once *(inf: LSB sends no position after a
+  push)*.
+- Probe: ground test snap_points (FLOOR_ZONE, FLOOR_POINTS: a TSV of id, name, x, y, z), fed LSB's region vertices
+  (data/zones/<zone>/regions.yaml; spawns now live in data/zones/<zone>/mobs.yaml, mostly as regions, not in
+  mob_spawn_points). Crawlers' Nest: 89 of 8392 vertices more than 1 off, most 1..2 at region edges against walls
+  (a sloped wall face within 2 above), three on the wrong level.
+- Live: Lnxcsfix in c_196 with Worker Crawlers about, no "floor:" diagnostic lines. The user's Nine run predates the
+  diagnostic.

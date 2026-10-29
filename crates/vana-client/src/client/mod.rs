@@ -4562,6 +4562,32 @@ fn scan_track(world: &mut World, index: u16) {
     world.scan.track(index);
 }
 
+/// One frame of a remote actor's move: FUN_1008b680 slides from the drawn spot `pos` linearly to the goal over the
+/// remaining ticks, a goal more than 12 units from it taken at once (FUN_100911f0); then FUN_1008dfb0 stands a
+/// grounded actor on the floor under the slide and gives the goal that height (+8 and +0x28), so a goal sent on
+/// another level is more than 12 away and taken at once. Returns the slide (where the actor is drawn) and whether
+/// the goal was taken at once.
+fn slide_frame(pos: Vec3, target: &mut Vec3, remain: &mut f32, ticks: f32, floor: Option<&ground::Ground>) -> (Vec3, bool) {
+    let mut slide = pos;
+    if *remain > ticks {
+        slide += (*target - slide) / *remain * ticks;
+        *remain -= ticks;
+    } else {
+        slide = *target;
+        *remain = 0.0;
+    }
+    let jumped = (*target - pos).length_squared() > 144.0;
+    if jumped {
+        slide = *target;
+        *remain = 0.0;
+    }
+    if let Some(y) = floor.and_then(|g| g.snap(slide.x, slide.z, slide.y)) {
+        slide.y = y;
+        target.y = y;
+    }
+    (slide, jumped)
+}
+
 /// FUN_100c63d0: the drawn rotation eases 0.125 a tick toward the actor's, or op 0x59's percent of 0.00125 during an
 /// event.
 fn turn_rate(a: &Actor, in_event: bool) -> f32 {
@@ -8118,12 +8144,14 @@ impl App {
                         let mut p = Vec3::from(p);
                         entry.server_y = p.y;
                         entry.grounded = e.ground;
-                        if e.ground
+                        entry.target = p;
+                        // FUN_10091220: a new actor stands on the floor under the server's position.
+                        if fresh
+                            && e.ground
                             && let Some(y) = world.ground.as_ref().filter(|_| world.zone == Some(world.pos_zone) && world.loading.is_none()).and_then(|g| g.snap(p.x, p.z, p.y))
                         {
                             p.y = y;
                         }
-                        entry.target = p;
                         // FUN_1008b610: slide over the counter delta + 8 ticks (a smaller counter restarts it).
                         let c = e.counter;
                         let dur = if c < entry.counter { c } else { c - entry.counter };
@@ -9091,8 +9119,8 @@ impl App {
                 e.slide = e.pos;
                 e.remain = 0.0;
             }
-            // FUN_100c63d0 while +0x102 is set: the push moves the drawn position directly (no easing, no walk / turn
-            // motion choice); afterwards it eases back to the server's slide.
+            // FUN_100c63d0 while +0x102 is set: the push moves the drawn position directly (no walk / turn motion
+            // choice); the slide goes on from there afterwards (FUN_1008b680 starts from the actor's position).
             if let Some(k) = world.knocks.get_mut(eid) {
                 let (p, recover, done) = combat::knock_step(k, e.pos, ticks);
                 e.pos = p;
@@ -9102,15 +9130,17 @@ impl App {
                 {
                     e.pos.y = y;
                 }
+                e.slide = e.pos;
                 knock_ends.push((*eid, recover, done));
                 bump::active_tick(e, ticks);
                 e.last_pos = e.pos;
                 continue;
             }
-            // Scheduler op 0x7a: held at another actor's attach point for the move (FUN_100c63d0), no ease, no turn;
-            // afterwards it eases back to its slide.
+            // Scheduler op 0x7a: held at another actor's attach point for the move (FUN_100c63d0), no turn; the slide
+            // goes on from there afterwards.
             if let Some(&(p, yaw)) = world.effects.pinned.get(eid) {
                 e.pos = p;
+                e.slide = p;
                 if let Some(y) = yaw {
                     e.yaw = y;
                 }
@@ -9121,39 +9151,25 @@ impl App {
                 e.dir_seen = e.dir;
                 e.yaw = event::rad_of(e.dir);
             }
-            // FUN_1008b680: slide linearly to the goal over the remaining ticks; more than 12 units snaps.
-            if (e.target - e.slide).length_squared() > 144.0 {
-                e.slide = e.target;
-                e.pos = e.target;
+            let start = e.pos;
+            let jumped;
+            (e.slide, jumped) = slide_frame(start, &mut e.target, &mut e.remain, ticks, floor.filter(|_| e.grounded));
+            if jumped {
                 e.yaw = event::rad_of(e.dir);
-                e.remain = 0.0;
-            } else if e.remain > ticks {
-                e.slide += (e.target - e.slide) / e.remain * ticks;
-                e.remain -= ticks;
-            } else {
-                e.slide = e.target;
-                e.remain = 0.0;
             }
-            // FUN_100c4390: the drawn position eases 0.125 a tick toward it (per tick, so any frame rate).
-            let step = (e.slide - e.pos) * (1.0 - 0.875f32.powf(ticks));
-            e.pos += step;
             if e.grounded
                 && let Some(g) = floor
             {
-                if let Some(y) = g.snap(e.pos.x, e.pos.z, e.pos.y) {
-                    e.pos.y = y;
-                }
                 // Diagnostic: drawn on another level than the server's height (the floors under it, Y down).
-                let far = (e.pos.y - e.server_y).abs() > 3.0;
+                let far = (e.slide.y - e.server_y).abs() > 3.0;
                 if far && !e.floor_noted {
-                    log::info!("floor: {} {eid:#x} at ({:.1}, {:.1}): server y {:.2}, drawn {:.2}, floors {:?}", e.name, e.pos.x, e.pos.z, e.server_y, e.pos.y, g.floors(e.pos.x, e.pos.z));
+                    log::info!("floor: {} {eid:#x} at ({:.1}, {:.1}): server y {:.2}, drawn {:.2}, floors {:?}", e.name, e.slide.x, e.slide.z, e.server_y, e.slide.y, g.floors(e.slide.x, e.slide.z));
                 }
                 e.floor_noted = far;
-                if let Some(y) = g.snap(e.target.x, e.target.z, e.target.y) {
-                    e.target.y = y;
-                }
-                e.slide.y = e.target.y;
             }
+            // The actor is drawn at the slide (+0x34 = +4).
+            let step = e.slide - start;
+            e.pos = e.slide;
             // Characters in a lift shaft stand at its height (FUN_100a4ed0 runs for every collision actor).
             if e.door == 0
                 && e.lift.is_none()
