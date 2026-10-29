@@ -541,15 +541,12 @@ fn drop_rule(flags: u8, untargetable: bool, status: u8, dist: f32, hidden: bool)
 }
 
 /// Kind mask bits (FUN_1008e290): 1 PC, 2 NPC, 0x10 monster, 0x20 door.
+/// A door (+0xee 3) is an NPC with 0x20 added.
 fn kind_bits(id: u32, e: &super::Entity) -> u32 {
     if id >> 24 == 0 {
         1
-    } else if e.door != 0 {
-        0x20
-    } else if e.mob {
-        0x10
     } else {
-        2
+        (if e.mob { 0x10 } else { 2 }) | if e.door != 0 || e.sub_kind == 2 { 0x20 } else { 0 }
     }
 }
 

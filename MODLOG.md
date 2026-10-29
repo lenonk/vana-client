@@ -11964,3 +11964,14 @@ since "Ship voyages: the moving world" listed them as not done.
   layers went to the scene size) and small blobs under Croteillard and Rayochindot (S/3 across, as read). High gives
   Croteillard a silhouette lying the same way as ours; Off draws none.
 - Not seen: point-light shadows indoors, the quad under cover, riding, ops 0xa5 / 0xc0.
+
+## The Mog House door's target arrow (2026-10-29)
+
+- The client's own "Door: Back to Town" (FUN_101d2cc0) is an XiDoorActor like the server's doors: FUN_101d2ff0 makes
+  it at the `_720` record's position (FUN_100ad010: record +0xac..+0xb4, the box centre), and its screen point is
+  FUN_100ac390's (the position, unlifted). Ours took it for a modelled actor and pointed at the mesh top (above the
+  arch); it now uses the position, as the other doors.
+- Its entity +0xee is 3, which is SubKind 2 + 1 (a door, kind bit 0x20 in FUN_1008e290), not the lift kind 3 we had.
+  FUN_1008e290 gives a door 2 (NPC) | 0x20, so F10 / Alt+F8's NPC-or-monster pick (0x12) takes doors too; ours gave
+  doors 0x20 alone. Heads never turn to the Mog House door, as to the others.
+- Seen live (Lnxcsfix in its San d'Oria Mog House, Tab twice, locked on): the arrow sits in the middle of the doorway.

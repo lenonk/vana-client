@@ -1601,8 +1601,9 @@ fn target_point(world: &World, id: u32, sw: f32, sh: f32, view_proj: glam::Mat4)
 /// the model scale, rest data only, so it does not move with the pose; then FUN_100d4560's bone-0 drop
 /// (ride::bone0_drop). Without points: the mesh top.
 fn plate_point(world: &World, id: u32) -> Option<Vec3> {
-    // A door's screen point (XiDoorActor vtable +0x27c, FUN_100ac390) is its own position (+0x1bc), unlifted.
-    if let Some(e) = world.entities.get(&id).filter(|e| e.door != 0) {
+    // A door's screen point (XiDoorActor vtable +0x27c, FUN_100ac390) is its own position (+0x1bc), unlifted; the
+    // Mog House door is one too (FUN_101d2ff0, at its `_720` box centre).
+    if let Some(e) = world.entities.get(&id).filter(|e| e.door != 0 || id == myroom::DOOR_ID) {
         return Some(e.pos);
     }
     let (pos, status) = if id == world.my_id { (drawn_pos(world), world.my_motion.status) } else { world.entities.get(&id).map(|e| (e.pos, e.motion.status))? };
@@ -4128,7 +4129,8 @@ fn place_mogdoor(w: &mut World) {
             name_ncol: 0x17,
             marks: net::Marks::default(),
             female: false,
-            sub_kind: 3,
+            // +0xee 3 is SubKind 2 + 1 (MODLOG "0x00E SubKind 5 / 6"): a door, kind bit 0x20 (FUN_1008e290).
+            sub_kind: 2,
         },
     );
 }
@@ -12053,7 +12055,7 @@ impl App {
                         return None;
                     }
                     let t = if *id == w.my_id { w.target? } else { *by_index.get(&w.entities.get(id).map(|e| e.face).filter(|f| *f != 0)?)? };
-                    if t == *id || w.entities.get(&t).is_some_and(|e| e.door != 0) {
+                    if t == *id || t == myroom::DOOR_ID || w.entities.get(&t).is_some_and(|e| e.door != 0) {
                         return None;
                     }
                     let mut q = attach_point(w, &places, t, 3)?;
