@@ -236,6 +236,10 @@ pub struct Lighting {
     pub area: Vec3,
     /// The env's draw distance before the Clipping factor (@0x58; clipping()).
     pub draw_dist: f32,
+    /// Bump mapping off (FUN_10181b50): two lights, not eased: the sun (E+0xa4) with the background sun colour
+    /// (E+0xe4), the moon (E+0xc4) with the background moon colour (E+0xf4), both x the light scale; a flags-bit-0
+    /// environment's data direction with its sun colour, and no second light. Direction, colour, direction, colour.
+    pub two: [Vec3; 4],
 }
 
 /// FUN_101892b0 (K) and FUN_1018b8f0 (D, the scenery's draw distance; actors get the same values): `raw` an env's
@@ -372,6 +376,13 @@ impl Lighting {
             end = start + 1.0;
         }
         let sky = env.has_dome().then(|| (env.sky.map(rgb), env.stops));
+        let scale = env.bg.light_scale;
+        let two = if env.flags & 1 != 0 {
+            let d = |c: [u8; 4]| Vec3::new(c[0] as i8 as f32, c[1] as i8 as f32, c[2] as i8 as f32).normalize_or(Vec3::Y);
+            [d(env.bg.moon), rgb(env.bg.sun) * scale, moon, Vec3::ZERO]
+        } else {
+            [sun, rgb(env.bg.sun) * scale, moon, rgb(env.bg.moon) * scale]
+        };
         Self {
             dir,
             diffuse: diffuse * env.bg.light_scale,
@@ -386,6 +397,7 @@ impl Lighting {
             sky,
             area: env.area_light(),
             draw_dist: env.draw_dist,
+            two,
         }
     }
 }

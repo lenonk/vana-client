@@ -23,6 +23,10 @@ struct Uniforms {
     area_info: vec4<f32>,
     // The voyage matrix (identity off a ship's voyage).
     voyage: mat4x4<f32>,
+    // Config 0017 off: the sun and the moon (direction the light travels, colour) as two lights (FUN_10181b50).
+    two: array<vec4<f32>, 4>,
+    // x: 1 with bump mapping on (one eased light, vertex range fog), 0 off (two lights, table fog).
+    modes: vec4<f32>,
 };
 
 // An area environment's lighting (sun.w = 1 when it has one); fog.xy = start, end.
@@ -35,6 +39,7 @@ struct Area {
     actor_sun: vec4<f32>,
     actor_color: vec4<f32>,
     actor_ambient: vec4<f32>,
+    two: array<vec4<f32>, 4>,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -113,6 +118,10 @@ struct VertexOut {
     @location(8) @interpolate(flat) area: u32,
     // Actors: the model colour's RGB (actor +0x660, 0x80 = 1.0), the material colour of the ambient and diffuse terms.
     @location(9) @interpolate(flat) tint: vec3<f32>,
+    // Config 0017's bumped corners: 0.5 (T.L, B.L, N.L) + 0.5 (the vertex shader's oD1).
+    @location(10) tsl: vec3<f32>,
+    // The eye distance, for the vertex (range) fog of bump-mapping mode.
+    @location(11) range: f32,
 };
 
 // FUN_100c94a0: of the floor's lights, the strongest w = 1 / max(d^2 Att2, 1e-4) at the actor's position within
@@ -176,7 +185,8 @@ fn vs_main(v: VertexIn) -> VertexOut {
     // FUN_10175ac0 binds position buffer trunc((N - 1) s) = pos + k delta (render/sway.rs writes k).
     var pos = v.pos;
     let di = v.flags >> 8u;
-    if (di != 0u) {
+    let bumped = (v.flags & 2u) != 0u;
+    if (di != 0u && !bumped) {
         pos = pos + bitcast<f32>(v.area.y) * deltas[di - 1u].xyz;
     }
     let world = model * vec4<f32>(pos, 1.0);
@@ -186,6 +196,20 @@ fn vs_main(v: VertexIn) -> VertexOut {
     out.uv = v.uv;
     out.world = world.xyz;
     out.normal = normalize((model * vec4<f32>(v.normal, 0.0)).xyz);
+    out.range = distance(world.xyz, u.eye.xyz);
+    // The bumped vertex shader's oD1: the light (toward it) against T, B = N x T and N.
+    if (bumped && di != 0u) {
+        let t = normalize((model * vec4<f32>(deltas[di - 1u].xyz, 0.0)).xyz);
+        let n = out.normal;
+        let b = cross(n, t);
+        var sun = u.sun.xyz;
+        let slot = v.area.x;
+        if (slot != 0u && areas[slot].sun.w > 0.5) {
+            sun = areas[slot].sun.xyz;
+        }
+        let l = -sun;
+        out.tsl = 0.5 * vec3<f32>(dot(t, l), dot(b, l), dot(n, l)) + 0.5;
+    }
     out.depth = out.clip.w;
     out.flash = vec2<f32>(0.0, 1.0);
     out.tint = vec3<f32>(1.0);
@@ -467,9 +491,52 @@ fn lit_zone(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
         fog = select(a.fog.xy, u.fog.xy, (in.area & 0x8000u) != 0u);
     }
     let n = normalize(in.normal);
-    let ndl = max(dot(n, -sun), 0.0);
-    let lit = clamp(in.color.rgb * (ambient + sun_color * ndl + point_lights(in.lights, in.world, n)), vec3<f32>(0.0), vec3<f32>(1.0));
+    // Config 0017 (FUN_10174610): on, the one eased light and vertex fog over the eye range; off, the sun and the
+    // moon as two lights (the zone's, or the area's) and table fog over the view depth.
+    var direct = sun_color * max(dot(n, -sun), 0.0);
+    var d = in.range;
+    if (u.modes.x < 0.5) {
+        var two = u.two;
+        if (slot != 0u && areas[slot].sun.w > 0.5) {
+            two = areas[slot].two;
+        }
+        direct = two[1].rgb * max(dot(n, -two[0].xyz), 0.0) + two[3].rgb * max(dot(n, -two[2].xyz), 0.0);
+        d = in.depth;
+    }
+    let lit = clamp(in.color.rgb * (ambient + direct + point_lights(in.lights, in.world, n)), vec3<f32>(0.0), vec3<f32>(1.0));
     let rgb = clamp(to_gamma(t.rgb) * lit * 2.0, vec3<f32>(0.0), vec3<f32>(1.0));
+    let f = clamp((fog.y - d) / (fog.y - fog.x), 0.0, 1.0);
+    let c = mix(fog_color, rgb, f);
+    return vec4<f32>(select(pow(c, vec3<f32>(2.2)), c, u.fog.z > 0.5), 1.0);
+}
+
+// Config 0017's type-3 meshes (FUN_10175ac0 case 3, ps.1.1 at 0x1036b264): the normal map against the interpolated
+// light, r1 = sat(t1_bx2 . v1_bx2); r1 = r1 x t2 + t3 with t2 = sat(diffuse x vc) and t3 = sat((ambient + point lights)
+// x vc); rgb = 2 r1 t0. Fog by the view depth (the vertex shader's oFog).
+@group(2) @binding(0) var bump_tex: texture_2d<f32>;
+@group(2) @binding(1) var bump_samp: sampler;
+
+@fragment
+fn fs_bump(in: VertexOut) -> @location(0) vec4<f32> {
+    let t0 = textureSample(tex, samp, in.uv);
+    let t1 = textureSample(bump_tex, bump_samp, in.uv).rgb;
+    var sun_color = u.sun_color.rgb;
+    var ambient = u.ambient.rgb;
+    var fog_color = u.fog_color.rgb;
+    var fog = u.fog.xy;
+    let slot = in.area & 0x7fffu;
+    if (slot != 0u && areas[slot].sun.w > 0.5) {
+        let a = areas[slot];
+        sun_color = a.sun_color.rgb;
+        ambient = a.ambient.rgb;
+        fog_color = a.fog_color.rgb;
+        fog = select(a.fog.xy, u.fog.xy, (in.area & 0x8000u) != 0u);
+    }
+    let r1 = clamp(dot(t1 * 2.0 - 1.0, in.tsl * 2.0 - 1.0), 0.0, 1.0);
+    let n = normalize(in.normal);
+    let t2 = clamp(sun_color * in.color.rgb, vec3<f32>(0.0), vec3<f32>(1.0));
+    let t3 = clamp((ambient + point_lights(in.lights, in.world, n)) * in.color.rgb, vec3<f32>(0.0), vec3<f32>(1.0));
+    let rgb = clamp(2.0 * (r1 * t2 + t3) * to_gamma(t0.rgb), vec3<f32>(0.0), vec3<f32>(1.0));
     let f = clamp((fog.y - in.depth) / (fog.y - fog.x), 0.0, 1.0);
     let c = mix(fog_color, rgb, f);
     return vec4<f32>(select(pow(c, vec3<f32>(2.2)), c, u.fog.z > 0.5), 1.0);

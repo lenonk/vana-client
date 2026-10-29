@@ -164,6 +164,7 @@ pub mod overlay;
 pub mod cursor;
 pub mod statusinfo;
 pub mod tables;
+pub mod bump;
 pub mod zone;
 pub mod collision;
 pub mod character;

@@ -193,7 +193,8 @@ struct GpuVertex {
     color: [u8; 4],
     uv: [f32; 2],
     /// Bit 0: the MMB model's flag 0x1000 (header u32 +0x10 bit 28): lit by the sub-area's 'ev10' while one is in.
-    /// Bits 8..31: an animated mesh's delta (ZoneGeometry::deltas index + 1, 0 none; render/sway.rs).
+    /// Bit 1: a bump-mapped corner (config 0017). Bits 8..31: ZoneGeometry::deltas index + 1 (0 none): an animated
+    /// mesh's delta (render/sway.rs), or with bit 1 the corner's tangent.
     flags: u32,
 }
 
@@ -229,6 +230,10 @@ pub struct Uniforms {
     area_info: [f32; 4],
     /// The voyage matrix (identity off a ship's voyage).
     voyage: [[f32; 4]; 4],
+    /// Config 0017 off (FUN_10181b50): the sun and the moon as two lights, (direction, colour) each.
+    two: [[f32; 4]; 4],
+    /// x: 1 with bump mapping on (one eased light, vertex fog), 0 off (two lights, table fog).
+    modes: [f32; 4],
 }
 
 /// Area environments (DAT_10631f24 area objects) the scenery is lit by, slot 0 unused.
@@ -247,6 +252,8 @@ struct AreaGpu {
     actor_sun: [f32; 4],
     actor_color: [f32; 4],
     actor_ambient: [f32; 4],
+    /// The two lights of bump-off mode, as Uniforms::two.
+    two: [[f32; 4]; 4],
 }
 
 /// Door parts the GPU animates (slot 0 unused).
@@ -289,6 +296,8 @@ struct Draw {
     mode: u8,
     /// The indirect argument slots of its two runs (draw_runs), when the scenery is culled.
     args: [u32; 2],
+    /// A bump-mapped model's normal map (ZoneGeometry::bumps index; config 0017).
+    bump: Option<usize>,
 }
 
 impl Draw {
@@ -330,6 +339,7 @@ pub struct ZoneRenderer {
     pub lights: wgpu::Buffer,
     pub light_keys: Vec<u32>,
     scenery: [[wgpu::RenderPipeline; 3]; 4],
+    scenery_bump: [wgpu::RenderPipeline; 3],
     actor_pipeline: wgpu::RenderPipeline,
     sky_pipeline: wgpu::RenderPipeline,
     line_pipeline: wgpu::RenderPipeline,
@@ -344,6 +354,10 @@ pub struct ZoneRenderer {
     instances: wgpu::Buffer,
     /// The animated meshes' sway (config 0011, render/sway.rs), run before the culling.
     sway: Option<sway::Sway>,
+    /// Config 0017: the bumped draws' normal maps, the bumped pipelines, and the lighting mode (on: one eased light
+    /// and vertex fog; off: two lights and table fog).
+    bump_groups: Vec<wgpu::BindGroup>,
+    pub bump_mode: bool,
     /// The zone's scenery culled on the GPU (render/cull.rs) when the device draws indirectly, and its passes.
     cull: Option<cull::Cull>,
     cull_pipes: [wgpu::ComputePipeline; 2],
@@ -776,6 +790,7 @@ pub struct ZonePipes {
     pose_layout: wgpu::BindGroupLayout,
     /// Scenery by Draw::mode (opaque, cut out, blend, blend + cut out) and cull (none, back, front).
     scenery: [[wgpu::RenderPipeline; 3]; 4],
+    scenery_bump: [wgpu::RenderPipeline; 3],
     actor_pipeline: wgpu::RenderPipeline,
     sky_pipeline: wgpu::RenderPipeline,
     skin_pipeline: wgpu::RenderPipeline,
@@ -815,7 +830,7 @@ impl ZonePipes {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
                     count: None,
                 },
@@ -966,6 +981,21 @@ impl ZonePipes {
         });
         let culls = [None, Some(wgpu::Face::Back), Some(wgpu::Face::Front)];
         let scenery = [("fs_opaque", false), ("fs_alpha_test", false), ("fs_blend", true), ("fs_blend_test", true)].map(|(f, b)| culls.map(|c| make_scenery(f, b, c)));
+        // Config 0017's type-3 meshes (FUN_10175ac0 case 3): the colour texture, then the normal map at group 2.
+        let bump_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("zone bumped"), bind_group_layouts: &[Some(&globals_layout), Some(&texture_layout), Some(&texture_layout)], immediate_size: 0 });
+        let scenery_bump = culls.map(|cull| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("fs_bump"),
+                layout: Some(&bump_layout),
+                vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_main"), compilation_options: Default::default(), buffers: &vertex_layouts },
+                primitive: wgpu::PrimitiveState { front_face: wgpu::FrontFace::Cw, cull_mode: cull, ..Default::default() },
+                depth_stencil: Some(wgpu::DepthStencilState { format: DEPTH_FORMAT, depth_write_enabled: Some(true), depth_compare: Some(wgpu::CompareFunction::Less), stencil: Default::default(), bias: Default::default() }),
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState { module: &shader, entry_point: Some("fs_bump"), compilation_options: Default::default(), targets: &[Some(wgpu::ColorTargetState { format: color_format, blend: None, write_mask: wgpu::ColorWrites::ALL })] }),
+                multiview_mask: None,
+                cache: None,
+            })
+        });
         // Actors blend by their model alpha (fades); opaque ones output alpha 1.
         let actor_pipeline = make_pipeline("fs_actor", Some(wgpu::BlendState::ALPHA_BLENDING));
         let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -1142,7 +1172,7 @@ impl ZonePipes {
         let cull_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("cull"), bind_group_layouts: &[Some(&globals_layout), None, None, Some(&cull_layout)], immediate_size: 0 });
         let make_cull = |entry: &str| device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some(entry), layout: Some(&cull_pl), module: &shader, entry_point: Some(entry), compilation_options: Default::default(), cache: None });
         let cull = [make_cull("cs_cull_vis"), make_cull("cs_cull_compact")];
-        Self { globals_layout, texture_layout, pose_layout, scenery, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_wrap_layout, shine_pipeline, refract_pipeline, line_pipeline, sil_layout, sil_pipeline, cull_layout, cull }
+        Self { globals_layout, texture_layout, pose_layout, scenery, scenery_bump, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_wrap_layout, shine_pipeline, refract_pipeline, line_pipeline, sil_layout, sil_pipeline, cull_layout, cull }
     }
 }
 
@@ -1205,6 +1235,8 @@ pub struct ZoneGeometry {
     deltas: Vec<[f32; 4]>,
     sway_insts: Vec<u32>,
     sway_curves: crate::dat::zone::SwayCurves,
+    /// Config 0017: the normal maps the bumped draws use.
+    bumps: Vec<(u32, u32, Vec<u8>)>,
 }
 
 impl ZoneGeometry {
@@ -1299,6 +1331,20 @@ impl ZoneGeometry {
         let mut all_verts: Vec<GpuVertex> = Vec::new();
         let mut all_indices: Vec<u16> = Vec::new();
         let (mut deltas, mut sway_insts): (Vec<[f32; 4]>, Vec<u32>) = (Vec::new(), Vec::new());
+        // FUN_10039f80: a texture's bump map has the same name bytes 8..15.
+        let trim = |mut t: Vec<u8>| -> Vec<u8> {
+            while t.last().is_some_and(|c| *c == b' ' || *c == 0) {
+                t.pop();
+            }
+            t
+        };
+        let bump_keys: Vec<Vec<u8>> = scene.bumps.iter().map(|b| trim(b.key.to_vec())).collect();
+        let bump_of = |texture: &str| -> Option<usize> {
+            let t = trim(texture.as_bytes().iter().skip(8).take(8).copied().collect());
+            (!t.is_empty()).then(|| bump_keys.iter().position(|k| *k == t)).flatten()
+        };
+        let mut bumps: Vec<(u32, u32, Vec<u8>)> = Vec::new();
+        let mut bump_used: HashMap<usize, usize> = HashMap::new();
         for mesh in &scene.meshes {
             let Some(mut mats) = by_mesh.remove(mesh.name.as_str()) else { continue };
             // Normal placements first, then the mirrored ones (culled the other way).
@@ -1322,6 +1368,8 @@ impl ZoneGeometry {
                 (lo.min(p).min(q), hi.max(p).max(q))
             });
             let sways = animate && mesh.animated && mesh.models.iter().any(|m| m.vertices.iter().any(|v| v.delta != [0.0; 3]));
+            // FUN_10168eb0: a strip mesh (type 1) whose every model texture has a bump map becomes type 3.
+            let bumped: Option<Vec<usize>> = (animate && mesh.mesh_type == 1 && !scene.bumps.is_empty()).then(|| mesh.models.iter().map(|m| bump_of(&m.texture)).collect::<Option<Vec<usize>>>()).flatten();
             if sways {
                 sway_insts.extend(start..matrices.len() as u32);
             }
@@ -1333,9 +1381,44 @@ impl ZoneGeometry {
                 let at = m.transform_point3(c);
                 spheres.push([at.x, at.y, at.z, h.length() * k]);
             }
-            for model in &mesh.models {
+            for (mi, model) in mesh.models.iter().enumerate() {
                 let indices = if model.strip { strip_to_list(&model.indices) } else { model.indices.clone() };
                 if indices.is_empty() || model.vertices.is_empty() {
+                    continue;
+                }
+                // Type 3: every triangle unrolled to its own corners, each with its tangent (FUN_10169d10).
+                if let Some(slot) = bumped.as_ref().map(|b| b[mi]).filter(|_| indices.len() <= 0xffff && deltas.len() + indices.len() < 0xff_ffff) {
+                    let bi = *bump_used.entry(slot).or_insert_with(|| {
+                        let b = &scene.bumps[slot];
+                        bumps.push((b.width, b.height, b.rgba.clone()));
+                        bumps.len() - 1
+                    });
+                    let (first_index, base_vertex) = (all_indices.len() as u32, all_verts.len() as i32);
+                    let count = (indices.len() / 3 * 3) as u32;
+                    for tri in indices[..count as usize].chunks_exact(3) {
+                        let corner = |k: usize| model.vertices[tri[k] as usize];
+                        for k in 0..3 {
+                            let (a, b, c) = (corner(k), corner((k + 1) % 3), corner((k + 2) % 3));
+                            let t = corner_tangent(&a, &b, &c);
+                            deltas.push([t.x, t.y, t.z, 0.0]);
+                            let [bb, g, r, al] = a.color.to_le_bytes();
+                            let flags = (model.blending & 0x1000 != 0) as u32 | 2 | (deltas.len() as u32) << 8;
+                            all_indices.push((all_verts.len() as i32 - base_vertex) as u16);
+                            all_verts.push(GpuVertex { pos: a.pos, normal: a.normal, color: [r, g, bb, al], uv: a.uv, flags });
+                        }
+                    }
+                    draws.push(Draw {
+                        first_index,
+                        index_count: count,
+                        base_vertex,
+                        instances: instances.clone(),
+                        mirrored: mirrored.clone(),
+                        cull: model.blending & 0x2000 == 0,
+                        texture: texture_slot.get(model.texture.as_str()).copied().unwrap_or(0),
+                        mode: mesh.name.starts_with('_') as u8 | ((model.blending & 0x8000 != 0) as u8) << 1,
+                        args: [u32::MAX; 2],
+                        bump: Some(bi),
+                    });
                     continue;
                 }
                 let verts: Vec<GpuVertex> = model
@@ -1366,6 +1449,7 @@ impl ZoneGeometry {
                     // Same rule as the reference viewer: '_' meshes and blend bit 0x8000 are cut out.
                     mode: mesh.name.starts_with('_') as u8 | ((model.blending & 0x8000 != 0) as u8) << 1,
                     args: [u32::MAX; 2],
+                    bump: None,
                 });
             }
         }
@@ -1386,12 +1470,21 @@ impl ZoneGeometry {
             all_indices.push(0);
         }
         let sway_curves = if sway_insts.is_empty() { Default::default() } else { scene.sway.clone() };
-        Self { matrices, links, light_keys, area_keys, door_parts, door_bases, draws, verts: all_verts, indices: all_indices, cull, inst_placement, camera_lists: scene.camera_lists.clone(), spheres, deltas, sway_insts, sway_curves }
+        Self { matrices, links, light_keys, area_keys, door_parts, door_bases, draws, verts: all_verts, indices: all_indices, cull, inst_placement, camera_lists: scene.camera_lists.clone(), spheres, deltas, sway_insts, sway_curves, bumps }
     }
 
     fn parts(&self) -> [&[u8]; 3] {
         [bytemuck::cast_slice(&self.verts), bytemuck::cast_slice(&self.indices), bytemuck::cast_slice(&self.matrices)]
     }
+}
+
+/// FUN_10169d10: corner a's tangent from the triangle's corners in their drawn order (a, b, c): d = (Pc - Pb)(ua - ub)
+/// - (Pa - Pb)(uc - ub) normalised ((0, 0, 1) when zero), tangent = d x Na.
+fn corner_tangent(a: &crate::dat::zone::Vertex, b: &crate::dat::zone::Vertex, c: &crate::dat::zone::Vertex) -> Vec3 {
+    let (pa, pb, pc) = (Vec3::from(a.pos), Vec3::from(b.pos), Vec3::from(c.pos));
+    let d = (pc - pb) * (a.uv[0] - b.uv[0]) - (pa - pb) * (c.uv[0] - b.uv[0]);
+    let d = if d.length_squared() != 0.0 { d.normalize() } else { Vec3::Z };
+    d.cross(Vec3::from(a.normal))
 }
 
 /// Mip texels a frame (render/mipgen.rs): while a zone goes up, and in the world (new models spread over frames).
@@ -1468,11 +1561,26 @@ impl ZoneRenderer {
         let instances = buffer("instances", m, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE);
         let cull = cull::Cull::new(gpu, &p.cull_layout, &geo.cull, &instances);
         let sway = sway::Sway::new(gpu, &geo.sway_insts, &geo.sway_curves, &instances);
+        // Config 0017: the normal maps, uploaded at once (few and small).
+        if !geo.bumps.is_empty() {
+            log::info!("bump mapping: {} normal maps on {} draws", geo.bumps.len(), geo.draws.iter().filter(|d| d.bump.is_some()).count());
+        }
+        let bump_groups: Vec<wgpu::BindGroup> = geo
+            .bumps
+            .iter()
+            .map(|(w, h, rgba)| {
+                let view = upload_texture(gpu, &crate::dat::zone::Texture::new(String::new(), 0, *w, *h, rgba.clone()), false);
+                view_bind_group(gpu, &p.texture_layout, &sampler, &view)
+            })
+            .collect();
         if sway.is_some() {
             log::info!("environment animation: {} instances, {} vertex deltas, curves per tag {:?}", geo.sway_insts.len(), geo.deltas.len(), geo.sway_curves.by_tag.iter().map(Vec::len).collect::<Vec<_>>());
         }
         Self {
             sway,
+            bump_groups,
+            bump_mode: true,
+            scenery_bump: p.scenery_bump,
             scenery: p.scenery,
             actor_pipeline: p.actor_pipeline,
             sky_pipeline: p.sky_pipeline,
@@ -2251,11 +2359,14 @@ impl ZoneRenderer {
             sky_stops: [[0.0; 4]; 2],
             area_info: [0.0; 4],
             voyage: self.voyage.to_cols_array_2d(),
+            two: [[0.0; 4]; 4],
+            modes: [self.bump_mode as u32 as f32, 0.0, 0.0, 0.0],
         };
         let mut clear = self.fog_color;
         if let Some(l) = &self.lighting {
             u.sun = v4(l.dir, 1.0);
             u.sun_color = v4(l.diffuse, 1.0);
+            u.two = l.two.map(|v| v4(v, 1.0));
             u.ambient = v4(l.ambient, 1.0);
             u.actor_sun = v4(l.actor_dir, 1.0);
             u.actor_color = v4(l.actor_diffuse, 1.0);
@@ -2288,7 +2399,7 @@ impl ZoneRenderer {
         let mut areas = [AreaGpu::zeroed(); AREAS];
         for (slot, l) in self.area_lights.iter().enumerate().take(AREAS - 1) {
             if let Some(l) = l {
-                areas[slot + 1] = AreaGpu { sun: v4(l.dir, 1.0), sun_color: v4(l.diffuse, 1.0), ambient: v4(l.ambient, 1.0), fog_color: v4(l.fog, 1.0), fog: [l.fog_start, l.fog_end, 0.0, 0.0], actor_sun: v4(l.actor_dir, 1.0), actor_color: v4(l.actor_diffuse, 1.0), actor_ambient: v4(l.actor_ambient, 1.0) };
+                areas[slot + 1] = AreaGpu { sun: v4(l.dir, 1.0), sun_color: v4(l.diffuse, 1.0), ambient: v4(l.ambient, 1.0), fog_color: v4(l.fog, 1.0), fog: [l.fog_start, l.fog_end, 0.0, 0.0], actor_sun: v4(l.actor_dir, 1.0), actor_color: v4(l.actor_diffuse, 1.0), actor_ambient: v4(l.actor_ambient, 1.0), two: l.two.map(|v| v4(v, 1.0)) };
             }
         }
         gpu.queue.put(&self.areas, 0, bytemuck::cast_slice(&areas));
@@ -2550,13 +2661,18 @@ impl ZoneRenderer {
             pass.set_bind_group(1, &self.textures[d.texture], &[]);
             *bound = d.texture;
         }
+        let bump = d.bump.filter(|_| mode == 0).and_then(|b| self.bump_groups.get(b));
+        if let Some(g) = bump {
+            pass.set_bind_group(2, g, &[]);
+        }
         for (k, (c, range)) in runs.clone().into_iter().enumerate() {
             if !live(k) {
                 continue;
             }
-            if *pipe != c {
-                pass.set_pipeline(&self.scenery[mode as usize][c]);
-                *pipe = c;
+            let want = if bump.is_some() { 8 + c } else { c };
+            if *pipe != want {
+                pass.set_pipeline(if bump.is_some() { &self.scenery_bump[c] } else { &self.scenery[mode as usize][c] });
+                *pipe = want;
             }
             match culled {
                 Some((_, a, _)) => pass.draw_indexed_indirect(a, d.args[k] as u64 * 20),

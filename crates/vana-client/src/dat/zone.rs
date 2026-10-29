@@ -134,6 +134,8 @@ pub struct Mmb {
     pub models: Vec<Model>,
     /// Header byte 4 = 2: an animated mesh whose vertices sway along their delta (FUN_10168eb0, config 0011).
     pub animated: bool,
+    /// Header byte 4: 1 for the strip meshes bump mapping may turn into type 3 (config 0017).
+    pub mesh_type: u8,
 }
 
 pub fn parse_mmb(p: &[u8]) -> Result<Mmb> {
@@ -220,7 +222,7 @@ pub fn parse_mmb(p: &[u8]) -> Result<Mmb> {
             models.push(Model { texture, blending, vertices, indices, strip: !triangle_list });
         }
     }
-    Ok(Mmb { name, min, max, models, animated: wide_vertex })
+    Ok(Mmb { name, min, max, models, animated: wide_vertex, mesh_type: p[4] })
 }
 
 /// The 20 weather tags FUN_10160700 gathers sway curves for, in its order.
@@ -680,10 +682,12 @@ pub struct ZoneScene {
     pub camera_lists: std::collections::HashMap<u32, Vec<u32>>,
     /// The animated meshes' curves per weather tag (sway_curves).
     pub sway: SwayCurves,
+    /// The zone's bump maps (config 0017, dat/bump.rs), put in by the loader when bump mapping is on.
+    pub bumps: Vec<super::bump::BumpMap>,
 }
 
 pub fn load_scene(keys: &Keys, file: &[u8]) -> Result<ZoneScene> {
-    let mut scene = ZoneScene { regions: Vec::new(), collision: None, placements: Vec::new(), meshes: Vec::new(), textures: Vec::new(), warnings: Vec::new(), light_keys: Vec::new(), paths: Default::default(), camera_lists: Default::default(), sway: sway_curves(file) };
+    let mut scene = ZoneScene { regions: Vec::new(), collision: None, placements: Vec::new(), meshes: Vec::new(), textures: Vec::new(), warnings: Vec::new(), light_keys: Vec::new(), paths: Default::default(), camera_lists: Default::default(), sway: sway_curves(file), bumps: Vec::new() };
     let list: Vec<Chunk> = chunks(file)?;
     for c in list {
         let mut data = c.data.to_vec();

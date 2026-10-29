@@ -1152,7 +1152,13 @@ fn main() -> Result<()> {
             let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
             let keys = dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?)?;
             let file = index.read(dat::zone::file_id(zone))?;
-            let scene = dat::zone::load_scene(&keys, &file)?;
+            let mut scene = dat::zone::load_scene(&keys, &file)?;
+            // Config 0017 (FUN_10171360 / FUN_101720a0): the bump maps, never in zone 182.
+            let bump = cfg.tool("0017") != 0 && zone != 182;
+            if bump {
+                scene.bumps = dat::bump::parse(&index.read(dat::bump::file_id(zone)).unwrap_or_default());
+                println!("{} bump maps", scene.bumps.len());
+            }
             let lighting = match hour {
                 Some(h) => {
                     let w = dat::weather::ZoneWeather::parse(&file)?;
@@ -1193,6 +1199,7 @@ fn main() -> Result<()> {
                     let setup = |gpu: &render::Gpu, r: &mut render::ZoneRenderer| {
                         // Config 0011 at this weather; one frame, so the instances stand at their random start.
                         r.set_sway(0.0, sway_steps(cfg.tool("0011")), dat::zone::SWAY_TAGS.iter().position(|t| *t == weather));
+                        r.bump_mode = bump;
                         if let Some(v) = voyage_v {
                             r.voyage = v;
                         }

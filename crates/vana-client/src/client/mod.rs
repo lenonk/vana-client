@@ -7942,13 +7942,17 @@ impl App {
         }
         w.area.loading = true;
         // A background load like the select scene's: not through spawn, which marks the app busy.
+        let bump = self.cfg.tool("0017") != 0 && area != 182;
         match self.game_data() {
             Ok((index, keys)) => {
                 let tx = self.tasks_tx.clone();
                 std::thread::spawn(move || {
                     let _ = tx.send(Task::AreaLoaded(area, (|| {
                     let file = index.read(crate::dat::zone::file_id(area as u32))?;
-                    let scene = zone::load_scene(&keys, &file)?;
+                    let mut scene = zone::load_scene(&keys, &file)?;
+                    if bump {
+                        scene.bumps = crate::dat::bump::parse(&index.read(crate::dat::bump::file_id(area as u32)).unwrap_or_default());
+                    }
                     let ground = ground::Ground::build(&scene);
                     let weather = crate::dat::weather::ZoneWeather::parse(&file).map_err(|e| log::warn!("area {area} weather: {e:#}")).ok();
                     let geometry = Arc::new(crate::render::ZoneGeometry::build(&scene));
@@ -8997,11 +9001,16 @@ impl App {
                 Phase::World(w) => !w.effects.has_global(),
                 _ => false,
             };
+            // Config 0017 (FUN_10171360 / FUN_101720a0): the zone's bump maps, never in zone 182 (Walk of Echoes).
+            let bump = self.cfg.tool("0017") != 0 && map_no != 182;
             match self.game_data() {
                 Ok((index, keys)) => self.spawn(move || {
                     Task::ZoneLoaded(zone_id, map_no, (|| {
                         let file = index.read(crate::dat::zone::file_id(map_no as u32))?;
-                        let scene = zone::load_scene(&keys, &file)?;
+                        let mut scene = zone::load_scene(&keys, &file)?;
+                        if bump {
+                            scene.bumps = crate::dat::bump::parse(&index.read(crate::dat::bump::file_id(map_no as u32)).unwrap_or_default());
+                        }
                         let ground = ground::Ground::build(&scene);
                         let weather = crate::dat::weather::ZoneWeather::parse(&file).map_err(|e| log::warn!("zone {zone_id} weather: {e:#}")).ok();
                         let geometry = Arc::new(crate::render::ZoneGeometry::build(&scene));
@@ -12719,6 +12728,8 @@ impl App {
                 // FUN_10179390: the camera list under the eye, at the Retail draw distance only (render/cull.rs).
                 let list = if self.cfg.draw_distance == 100 { w.ground.as_ref().map_or(0, |g| g.camera_list(camera.eye)) } else { 0 };
                 r.set_camera_list(&gfx.gpu, list);
+                // Config 0017: bump mapping's lighting (one eased light, vertex fog) or the two-light model; never in 182.
+                r.bump_mode = self.cfg.tool("0017") != 0 && w.zone != Some(182);
                 // Config 0011: the animated meshes' sway this frame (render/sway.rs).
                 let steps = match self.cfg.tool("0011") {
                     0 => 1,

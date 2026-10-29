@@ -12091,3 +12091,27 @@ since "Ship voyages: the moving world" listed them as not done.
   blend and order for it)*.
 - Not modelled: retail's unused 1024 x 2 magenta / green textures (made, never bound).
 - Seen live: the gate in East Ronfaure side by side, the strip on frames 2 and 4 of four.
+
+## Config tool 0017 "Bump Mapping" (2026-10-29)
+
+- Spec: `~/ffxi/lab/research/stored_settings_spec.md` section 3; FUN_10181b50 (the two-light model) and FUN_10169d10
+  (the corner tangent) read again for this.
+- On (read at the zone load, never in zone 182): the zone's bump DAT (dat/bump.rs: file 39831 + zone, 83991 + zone
+  from 600) gives its Bp height maps, each made a normal map as FUN_1001d270 (wrapping neighbours; R from the rows
+  above / below, G from the columns, B = 128 + 255 s) *(inf: the rows are taken as stored, no flip)*.
+- A strip mesh (MMB header byte 4 = 1) whose every model texture has a bump map (name bytes 8..15 equal, trailing
+  blanks ignored) becomes type 3: each triangle unrolled to its own corners, corner a's tangent from the triangle in
+  drawn order (a, b, c): d = (Pc - Pb)(ua - ub) - (Pa - Pb)(uc - ub) normalised ((0, 0, 1) when zero), T = d x Na.
+  Tangents share the deltas buffer (globals binding 4) with the sway deltas; vertex flags bit 1 tells them apart.
+- Opaque type-3 draws go through scenery_bump / fs_bump (the normal map at group 2): vs_main's oD1 = 0.5 (T.L, B.L,
+  N.L) + 0.5 with L toward the eased light (the area's when it has one); ps r1 = sat(t1_bx2 . v1_bx2), r1 x sat(diffuse
+  x vc) + sat((ambient + points) x vc), x 2 x texture. Ours keeps the per-pixel point lights; cut-out and blended
+  type-3 models draw the plain way *(not retail)*.
+- The lighting model (FUN_10174610) follows the setting for all scenery: on, the one eased light and vertex fog over
+  the eye range (RANGEFOG; ours interpolates the range and fogs per pixel); off, two lights not eased, the sun
+  (E+0xa4, background sun colour E+0xe4) and the moon (E+0xc4, moon colour E+0xf4), both x the light scale (a flags-bit-0
+  environment: its data direction with the sun colour, no second light), and table fog over the view depth.
+  Lighting::two carries them; Uniforms / AreaGpu `two`, Uniforms `modes.x`.
+- Settings' row takes effect at the next zone load (the meshes are built then; the lighting mode follows at once).
+- Seen: zone-shot 230 (44 Bp, 41 used on 654 draws), on vs off differ over every directly lit face and the bumped
+  walls; live East Ronfaure (20 normal maps on 225 draws) with no errors.
