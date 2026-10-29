@@ -268,8 +268,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - Effect task slots are reused (the slowdown over time). Uploads are steered to host memory on the x1 eGPU link
     (vendor/gpu-allocator).
   - F12 shows GPU stage times.
-  - Left: Mog House furniture is unculled (by choice). Actors are hidden past D only, not for retail's other +0xb2
-    reasons.
+  - Actors are culled for every +0xb2 reason, model and plate (MODLOG "Actor culling"). Left: Mog House furniture is
+    unculled (by choice).
 - Deferred until after the first release (user, 2026-10-27): gamepad support.
 - Portability to Windows and macOS: see "Portability notes" in MODLOG. Windows (MinGW cross build, tested by the
   user in WinBoat): release/build-windows.sh links everything in (no MinGW DLLs); the exe icon is a resource
