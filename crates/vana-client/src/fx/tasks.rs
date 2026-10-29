@@ -1,6 +1,7 @@
 //! Running scheduler tasks, generator attachment to actors (FUN_10052eb0 / FUN_1003afd0), effect files loaded in
 //! the background, and the entry points from 0x028 actions (FUN_1009caa0, FUN_100a78c0, FUN_10083d60).
 
+use super::drive;
 use super::lib::Library;
 use super::sched::{ActionCtx, SOp, Task, Who, block_end, parse};
 use super::{Actors, Effects, Frame, Owner, Ref};
@@ -52,6 +53,9 @@ pub(super) struct Pending {
     pub quiet: bool,
     /// Looked up as vtable +0x298 (FUN_100cce00): the motion and model files, then DAT 0; no part files.
     pub own: bool,
+    /// A model actor's sequence (FUN_100c4730): the task is flagged (+0x143) and caught up by this many ticks (0:
+    /// from its first op).
+    pub seq: Option<f32>,
 }
 
 /// A doll (CXiDollActor, FUN_100abea0): the actor's placement and its 48 points when a scheduler froze it. Ops
@@ -244,7 +248,7 @@ impl Effects {
         let client_swing = swing.is_some();
         let ctx = Rc::new(RefCell::new(ActionCtx { action: a.clone(), cur: 0, swing, printed: vec![matches!(a.category, 1 | 2); records], last: 0, client_swing }));
         match a.category {
-            1 | 2 => self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: false }),
+            1 | 2 => self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: false, seq: None }),
             3..=6 | 0xb | 0xd..=0xf => {
                 let anim = a.targets.first().and_then(|t| t.results.first()).map_or(0, |r| r.animation as u32);
                 let Some(base) = effect_base(a.category, anim) else {
@@ -254,14 +258,14 @@ impl Effects {
                     return;
                 };
                 // The generic file; run_pending swaps in the per-race files for a skeleton caster.
-                self.pending.push(Pending { file: Some(base + anim), actor: None, name: MAIN, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: Some(caster), age: 0.0, skill: matches!(a.category, 3 | 0xe | 0xf).then_some((a.category, anim as u16)), skill_caster: None, wait_motion: None, num: None, quiet: false, own: false });
+                self.pending.push(Pending { file: Some(base + anim), actor: None, name: MAIN, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: Some(caster), age: 0.0, skill: matches!(a.category, 3 | 0xe | 0xf).then_some((a.category, anim as u16)), skill_caster: None, wait_motion: None, num: None, quiet: false, own: false, seq: None });
             }
             7..=0xa | 0xc => {
                 // Starts: the cmd_arg scheduler on the caster itself; "ca??" goes through FUN_10083d60 first.
                 if a.arg & 0xffff == 0x6163 {
                     self.cast_state(caster, a.arg);
                 }
-                self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: true });
+                self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: true, seq: None });
             }
             _ => {}
         }
@@ -272,7 +276,7 @@ impl Effects {
     fn cast_state(&mut self, caster: u32, arg: u32) {
         if let Some(prev) = self.casting.remove(&caster) {
             let st = (prev & 0xffff_7473) | 0x7473;
-            self.pending.push(Pending { file: None, actor: Some(caster), name: st, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: true });
+            self.pending.push(Pending { file: None, actor: Some(caster), name: st, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: true, seq: None });
         }
         if arg != 0 {
             self.casting.insert(caster, arg);
@@ -283,7 +287,7 @@ impl Effects {
     /// event's camera runner follows (its camera / fade ops are the runner's; the rest run here).
     pub fn on_event_scheduler(&mut self, file: u32, name: u32, a1: Who, a2: Who) {
         log::debug!("effects: event scheduler {} of DAT {file}", String::from_utf8_lossy(&name.to_le_bytes()));
-        self.pending.push(Pending { file: Some(file), actor: None, name, a1, a2, action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: false });
+        self.pending.push(Pending { file: Some(file), actor: None, name, a1, a2, action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: false, seq: None });
     }
 
     /// Event opcodes 0x52 and family: that scheduler's tasks on (a1, a2) end.
@@ -319,12 +323,12 @@ impl Effects {
             3 => *b"misv",
             _ => return,
         };
-        self.pending.push(Pending { file: Some(27), actor: None, name: u32::from_le_bytes(name), a1: Who::Actor(a1), a2: Who::Actor(a2), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: Some((value, rgb)), quiet: false, own: false });
+        self.pending.push(Pending { file: Some(27), actor: None, name: u32::from_le_bytes(name), a1: Who::Actor(a1), a2: Who::Actor(a2), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: Some((value, rgb)), quiet: false, own: false, seq: None });
     }
 
     /// A status scheduler on the actor with its motions left to the client (FUN_1008c6c0's `dead`).
     pub fn on_scheduler_quiet(&mut self, actor: u32, name: u32) {
-        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(actor), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: true, own: false });
+        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(actor), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: true, own: false, seq: None });
     }
 
     /// FUN_10083650: a scheduler `name` waiting or running on the actor (as actor1).
@@ -373,7 +377,7 @@ impl Effects {
 
     /// 0x038: a scheduler by 4cc on an actor (FUN_100cce00 with no action).
     pub fn on_scheduler(&mut self, actor: u32, target: u32, name: u32) {
-        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(target), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: true });
+        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(target), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: true, seq: None });
     }
 
     /// Starts waiting for files, when they are in.
@@ -458,8 +462,14 @@ impl Effects {
                                 if let Some(c) = p.skill_caster {
                                     self.skill_mains.push((t.uid, c));
                                 }
+                                t.seq = p.seq.is_some();
                             }
-                            self.run_new(ti, actors);
+                            match p.seq {
+                                // A file that came in later skips the time waited too (this frame's ticks came
+                                // before the start).
+                                Some(skip) if skip > 0.0 => _ = self.fast_forward(ti, skip + (p.age - f.dt).max(0.0), actors),
+                                _ => _ = self.run_new(ti, actors),
+                            }
                         }
                         None => {
                             if let Some(a) = self.reg.audit.as_mut() {
@@ -839,6 +849,28 @@ impl Effects {
                 self.op_start_generator(t, op, actors);
                 Flow::Next
             }
+            // Case 0x26 / 0x27 (asm 0x1005c954): a path drive on actor1 / actor2 along the Vtx @8, a child of this task;
+            // every drive on that actor goes first. Over a fast-forward it starts `seq_over` ticks in.
+            0x26 | 0x27 => {
+                let on = if op.code == 0x26 { t.a1 } else { t.a2 };
+                let (Some(id), Some(r)) = (on.id(), scope(self, kind::VTX)) else { return Flow::Next };
+                let Some(segs) = drive::path(self.reg.libs[r.0].data(r.1)) else { return Flow::Next };
+                // A curve above 6 is a KeyFrame's 4cc, sampled linearly *(inf: no ship file has one)*.
+                let curve = op.u32_at(0x14);
+                let key = if curve > 6 { self.reg.resolve(t.res.0, t.res.1, kind::KEYFRAME, curve).and_then(|k| self.reg.keyframe(k).cloned()) } else { None };
+                self.drives.retain(|d| d.actor != id);
+                self.drives.push(drive::Drive::new(id, t.uid, segs, &op.raw, t.speed, self.seq_over, key));
+                Flow::Next
+            }
+            // Case 0xa9 / 0xaa (FUN_1005fa20): a rotation drive on actor1 / actor2 from its drawn rotation, a child of
+            // this task.
+            0xa9 | 0xaa => {
+                let on = if op.code == 0xa9 { t.a1 } else { t.a2 };
+                let Some(id) = on.id() else { return Flow::Next };
+                let start = actors.rotation(id).unwrap_or(Vec3::ZERO);
+                self.rot_drives.push(drive::RotDrive::new(id, t.uid, &op.raw, t.speed, start));
+                Flow::Next
+            }
             0x1e | 0x2d => {
                 if let Some(g) = scope(self, kind::GENERATOR) {
                     self.stop_generator(g, t.a1, t.a2, op.code == 0x2d);
@@ -1126,7 +1158,7 @@ impl Effects {
                 Flow::Next
             }
             0x19 => {
-                self.pending.push(Pending { file: Some(0xaf0 + op.u32_at(8)), actor: None, name: MAIN, a1: t.a1, a2: t.a2, action: None, speed: t.speed, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: false });
+                self.pending.push(Pending { file: Some(0xaf0 + op.u32_at(8)), actor: None, name: MAIN, a1: t.a1, a2: t.a2, action: None, speed: t.speed, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: false, seq: None });
                 Flow::Next
             }
             // One of the ops up to 0x3e at random (FUN_1006afb0).
@@ -1580,7 +1612,7 @@ impl Effects {
                 self.loads.extend(recs.iter().map(|r| r.0));
                 let speed = action_speed(&a);
                 let clone = Rc::new(RefCell::new(ActionCtx { action: a, cur: 0, swing: None, printed: vec![true; n], last: 0, client_swing: false }));
-                self.pending.push(Pending { file: Some(0xaf0 + anim as u32), actor: None, name: MAIN, a1: Who::Actor(caster), a2: Who::Actor(target), action: Some(clone), speed, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: false });
+                self.pending.push(Pending { file: Some(0xaf0 + anim as u32), actor: None, name: MAIN, a1: Who::Actor(caster), a2: Who::Actor(target), action: Some(clone), speed, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: false, seq: None });
                 Flow::Next
             }
             _ => {
@@ -1647,18 +1679,18 @@ impl Effects {
     }
 
     /// Op 0x02 (FUN_10052710 via FUN_10057000 case 2): a clone of the generator on the task's actor pair.
-    fn op_start_generator(&mut self, t: &Task, op: &SOp, actors: &dyn Actors) {
+    fn op_start_generator(&mut self, t: &Task, op: &SOp, actors: &dyn Actors) -> Option<usize> {
         let Some(g) = self.reg.resolve(t.res.0, t.res.1, kind::GENERATOR, op.name()) else {
             self.reg.miss(t.res.0, t.res.1, op.name(), 5);
-            return;
+            return None;
         };
-        let Some(gd) = self.reg.libs[g.0].generator(g.1) else { return };
+        let gd = self.reg.libs[g.0].generator(g.1)?;
         let mode = gd.attach_mode();
         let attached = !matches!(mode, 0 | 0xe | 0xf | 0x14);
         let auto = gd.flags & 0x1000 != 0;
         let persistent = gd.flags & 0x400 != 0 || gd.template().is_some_and(|o| o.i16_at(0x22) == 0);
         if attached && [t.a1, t.a2].iter().any(|w| w.id().is_some_and(|id| actors.hidden(id))) {
-            return;
+            return None;
         }
         if auto {
             self.stop_generator(g, t.a1, t.a2, true);
@@ -1668,11 +1700,11 @@ impl Effects {
         if t.action.is_some() && (attached || !persistent) {
             let class = |w: Who| self.doll_of(w).id().map_or(8, |id| actors.fx_class(id));
             if !effects_allowed(self.filter.0, self.filter.1, class(t.a1) | class(t.a2) << 4) {
-                return;
+                return None;
             }
         }
         log::debug!("effects: generator {} (DAT {}) on {:?} -> {:?}", String::from_utf8_lossy(&self.reg.libs[g.0].tree.nodes[g.1].name), self.reg.libs[g.0].file_id, t.a1, t.a2);
-        let Some(i) = self.start(g, Owner::Task(t.uid)) else { return };
+        let i = self.start(g, Owner::Task(t.uid))?;
         // FUN_10041f40: "%d" of the task's number, ":" (the "Miss!" art) under `misv`; fixed at emission.
         let misv = self.reg.libs[t.res.0].tree.nodes[t.res.1].name == *b"misv";
         let dam = t.num.map(|(v, rgb)| super::DamValue { glyphs: if misv { vec![10] } else { v.to_string().bytes().filter(u8::is_ascii_digit).map(|b| b - b'0').take(16).collect() }, rgb });
@@ -1687,6 +1719,154 @@ impl Effects {
             }
         }
         self.attach_now(i, actors);
+        Some(i)
+    }
+
+    /// FUN_10097a80 / FUN_100c4730 on a model actor: its running sequence (+0x143) goes with its drives, and scheduler
+    /// `name` of `file` starts on it, caught up by `skip` ticks (0: from its first op).
+    pub fn start_sequence(&mut self, actor: u32, file: u32, name: u32, skip: f32) {
+        self.kill_sequence(actor);
+        self.pending.push(Pending { file: Some(file), actor: None, name, a1: Who::Actor(actor), a2: Who::Actor(actor), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: false, seq: Some(skip) });
+    }
+
+    /// The actor's sequence tasks (waiting or running) end; their drives go with them at the next step.
+    pub fn kill_sequence(&mut self, actor: u32) {
+        let who = Who::Actor(actor);
+        self.pending.retain(|p| !(p.seq.is_some() && p.a1 == who));
+        for t in self.tasks.iter_mut() {
+            if t.as_ref().is_some_and(|t| t.seq && t.a1 == who) {
+                *t = None;
+            }
+        }
+    }
+
+    /// The frame's path and rotation drives, after the schedulers (ship_actors_spec 3.8): one whose scheduler ended
+    /// goes first, so a backward drive never reaches its end snap; each sets its actor's pose for the client.
+    pub(super) fn step_drives(&mut self, f: &Frame, actors: &dyn Actors) {
+        self.actor_poses.clear();
+        if self.drives.is_empty() && self.rot_drives.is_empty() {
+            return;
+        }
+        let live: std::collections::HashSet<u64> = self.tasks.iter().flatten().map(|t| t.uid).collect();
+        self.drives.retain(|d| live.contains(&d.owner));
+        self.rot_drives.retain(|d| live.contains(&d.owner));
+        let merge = |into: &mut drive::ActorPose, p: drive::ActorPose| {
+            into.pos = p.pos.or(into.pos);
+            into.target = p.target.or(into.target);
+            into.snap = p.snap.or(into.snap);
+        };
+        let mut poses: std::collections::HashMap<u32, drive::ActorPose> = std::collections::HashMap::new();
+        for mut d in std::mem::take(&mut self.drives) {
+            let pos = actors.matrix(d.actor).map_or(Vec3::ZERO, |m| m.w_axis.truncate());
+            let (p, more) = d.step(f.dt, pos, actors.rotation(d.actor).unwrap_or(Vec3::ZERO));
+            merge(poses.entry(d.actor).or_default(), p);
+            if more {
+                self.drives.push(d);
+            }
+        }
+        for mut d in std::mem::take(&mut self.rot_drives) {
+            let (p, more) = d.step(f.dt);
+            merge(poses.entry(d.actor).or_default(), p);
+            if more {
+                self.rot_drives.push(d);
+            }
+        }
+        self.actor_poses = poses;
+    }
+
+    /// FUN_10056b20 + FUN_100575a0 (ship_actors_spec 3.3): task `i` caught up by `skip` ticks. The ops that came due
+    /// meanwhile run in the catch-up subset, each told how long ago it came due; true when it ended inside the skip.
+    fn fast_forward(&mut self, i: usize, skip: f32, actors: &dyn Actors) -> bool {
+        let Some(mut t) = self.tasks[i].take() else { return true };
+        self.stepping.push(i);
+        let at_end = |t: &Task| t.ip >= t.ops.len() || t.ops[t.ip].code == 0;
+        t.countdown -= skip;
+        let mut over = 0.0f32;
+        let mut ended = loop {
+            if t.countdown < 0.0 {
+                (over, t.countdown) = (-t.countdown, 0.0);
+            }
+            if at_end(&t) {
+                break t.countdown == 0.0;
+            }
+            while t.countdown == 0.0 && !at_end(&t) {
+                let op = t.ops[t.ip].clone();
+                t.countdown += op.wait as f32 * t.speed;
+                self.catch_up(i, &mut t, &op, over, actors);
+                t.ip += 1;
+                if t.countdown != 0.0 {
+                    t.countdown -= over;
+                    break;
+                }
+            }
+            if t.countdown >= 0.0 {
+                break false;
+            }
+        };
+        // FUN_10057c20: a looping one starts over.
+        if ended && (t.looping || t.ends_loop) {
+            (t.restart, ended) = (true, false);
+        }
+        log::debug!("effects: {} caught up {skip:.0} ticks: {}", String::from_utf8_lossy(&self.reg.libs[t.res.0].tree.nodes[t.res.1].name), if ended { "ended".to_string() } else { format!("op {} in {:.0}", t.ip, t.countdown) });
+        t.stepped = true;
+        t.done = ended;
+        self.settle(t, i);
+        self.stepping.pop();
+        ended
+    }
+
+    /// FUN_100575a0's subset: generators still alive start part-way, sub-schedulers are caught up themselves, 0x03 /
+    /// 0x73 only resolve, 0x1e / 0x26 / 0x27 / 0x3f run as normal (a drive `over` ticks in); every other op is skipped.
+    fn catch_up(&mut self, me: usize, t: &mut Task, op: &SOp, over: f32, actors: &dyn Actors) {
+        match op.code {
+            0x02 => self.catch_up_generator(t, op, over, actors),
+            0x09 | 0x57 => {
+                let (on, a1, a2) = if op.code == 0x09 { (t.a2, t.a2, t.a1) } else { (t.a1, t.a1, t.a2) };
+                let found = on.id().and_then(|id| self.find_on_actor(id, op.name(), actors, Parts::First, false).ok().flatten());
+                if let Some(r) = found.or_else(|| self.reg.resolve(t.res.0, t.res.1, kind::SCHEDULER, op.name())) {
+                    let c = self.spawn_task(r, a1, a2, t.action.clone(), t.speed, None);
+                    self.fast_forward(c, over.trunc(), actors);
+                }
+            }
+            0x1e | 0x26 | 0x27 | 0x3f => {
+                self.seq_over = over;
+                let _ = self.run_op(me, t, op, actors);
+                self.seq_over = 0.0;
+            }
+            _ => {}
+        }
+    }
+
+    /// Op 0x02 in a fast-forward: an unattached static generator starts as a world piece; else, unless an actor is
+    /// hidden, a 0x1000 one's clones on the pair go first, then a clone starts if static or still alive (op-1 element
+    /// life + the op's duration >= `over`), `over` ticks old unless static or 0x1000.
+    fn catch_up_generator(&mut self, t: &Task, op: &SOp, over: f32, actors: &dyn Actors) {
+        let Some(g) = self.reg.resolve(t.res.0, t.res.1, kind::GENERATOR, op.name()) else { return };
+        let Some(gd) = self.reg.libs[g.0].generator(g.1) else { return };
+        let world = matches!(gd.attach_mode(), 0 | 0xe | 0xf | 0x14);
+        let auto = gd.flags & 0x1000 != 0;
+        let life = gd.template().map_or(0, |o| o.i16_at(0x22));
+        let fixed = gd.flags & 0x400 != 0 || life == 0;
+        if world && fixed {
+            self.op_start_generator(t, op, actors);
+            return;
+        }
+        if !world && [t.a1, t.a2].iter().any(|w| w.id().is_some_and(|id| actors.hidden(id))) {
+            return;
+        }
+        if auto {
+            self.stop_generator(g, t.a1, t.a2, false);
+        }
+        if !fixed && (life as f32 + op.dur as f32) < over {
+            return;
+        }
+        if let Some(i) = self.op_start_generator(t, op, actors)
+            && !fixed
+            && !auto
+            && let Some(x) = self.insts[i].as_mut()
+        {
+            x.elapsed = over;
+        }
     }
 
     /// FUN_10052a50: instances of `g` on (a1, a2): killed now, or soft-stopped (emission ends, elements finish). No a1:
@@ -3585,5 +3765,129 @@ mod auto_tests {
         let (src, copy) = if tasks[0].vana { (tasks[0], tasks[1]) } else { (tasks[1], tasks[0]) };
         assert_eq!(src.countdown, 18000.0);
         assert!(!copy.vana && (79.0..=80.0).contains(&copy.countdown), "{}", copy.countdown);
+    }
+
+    /// A ship (client/ships.rs in small): the drives' poses move it; the heading target eases 1/8 a tick.
+    struct Ship {
+        file: u32,
+        pos: std::cell::Cell<Vec3>,
+        rot: std::cell::Cell<Vec3>,
+    }
+    const SHIP: u32 = 0x010f_8040;
+
+    impl Actors for Ship {
+        fn matrix(&self, _: u32) -> Option<Mat4> {
+            let r = self.rot.get();
+            Some(Mat4::from_translation(self.pos.get()) * Mat4::from_rotation_x(r.x) * Mat4::from_rotation_y(r.y) * Mat4::from_rotation_z(r.z))
+        }
+        fn rotation(&self, _: u32) -> Option<Vec3> {
+            Some(self.rot.get())
+        }
+        fn point(&self, _: u32, _: u16) -> Option<Vec3> {
+            Some(Vec3::ZERO)
+        }
+        fn scale(&self, _: u32) -> f32 {
+            1.0
+        }
+        fn files(&self, _: u32) -> (Vec<u32>, Vec<u32>) {
+            (Vec::new(), vec![self.file])
+        }
+        fn hidden(&self, _: u32) -> bool {
+            false
+        }
+        fn models(&self) -> Vec<(u32, Vec<u32>)> {
+            Vec::new()
+        }
+    }
+
+    /// Ship file `file`'s `seq` run at 30 fps (2-tick frames), caught up by `skip`: the position and the heading target
+    /// after each frame (index = ticks / 2).
+    fn sail(file: u32, seq: &[u8; 4], skip: f32, frames: usize, start: Vec3) -> Option<Vec<(Vec3, Vec3)>> {
+        let index = std::sync::Arc::new(crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()).ok()?);
+        let mut fx = Effects::new();
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, index.read(0).ok()?).ok()?);
+        fx.preload(&[file]);
+        for _ in 0..500 {
+            fx.poll_loads();
+            if fx.reg.lib_of(file).is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        fx.reg.lib_of(file)?;
+        let ship = Ship { file, pos: std::cell::Cell::new(start), rot: std::cell::Cell::new(Vec3::ZERO) };
+        let f = Frame { dt: 2.0, seconds: 2.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::ZERO, draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        fx.start_sequence(SHIP, file, u32::from_le_bytes(*seq), skip);
+        let mut target = Vec3::ZERO;
+        let mut out = Vec::new();
+        for _ in 0..frames {
+            fx.tick(&f, &ship);
+            if let Some(p) = fx.actor_poses.get(&SHIP).copied() {
+                if let Some(at) = p.pos {
+                    ship.pos.set(at);
+                }
+                if let Some(r) = p.snap {
+                    target = r;
+                    ship.rot.set(r);
+                }
+                if let Some(r) = p.target {
+                    target = r;
+                }
+            }
+            let mut r = ship.rot.get();
+            for _ in 0..2 {
+                r += (target - r) / 8.0;
+            }
+            ship.rot.set(r);
+            out.push((ship.pos.get(), target));
+        }
+        Some(out)
+    }
+
+    fn near(a: Vec3, b: [f32; 3]) -> bool {
+        a.distance(Vec3::from(b)) < 0.01
+    }
+
+    /// ship_actors_spec 3.7: Selbina's arrival (file 31008 `seq0`): `path` backward from the staging point, its heading
+    /// following the course, then `pat2` sideways into the berth.
+    #[test]
+    fn selbina_arrival() {
+        let Some(run) = sail(31008, b"seq0", 0.0, 1201, Vec3::new(9.294, 0.0, -69.775)) else { return };
+        let at = |t: usize| run[t / 2];
+        assert!(near(at(0).0, [-401.468, 0.0, -123.873]), "t 0: {}", at(0).0);
+        assert!(near(at(300).0, [-295.153, 0.0, -116.229]), "t 300: {}", at(300).0);
+        assert!((at(300).1.y - -0.0980).abs() < 0.002, "t 300 yaw {}", at(300).1.y);
+        assert!(near(at(1800).0, [9.295, 0.0, -100.0]), "t 1800: {}", at(1800).0);
+        assert!(near(at(2100).0, [9.295, 0.0, -84.887]), "t 2100: {}", at(2100).0);
+        assert!(near(at(2398).0, [9.295, 0.0, -69.775]), "t 2398: {}", at(2398).0);
+    }
+
+    /// 3.3: zoning in 1500 ticks into the arrival: `path` has 300 ticks left, so the boat starts near the berth.
+    #[test]
+    fn selbina_arrival_caught_up() {
+        let Some(run) = sail(31008, b"seq0", 1500.0, 160, Vec3::new(9.294, 0.0, -69.775)) else { return };
+        assert!(near(run[0].0, [-4.737, 0.0, -100.0]), "t 1500: {}", run[0].0);
+        assert!(near(run[150].0, [9.295, 0.0, -100.0]), "t 1800: {}", run[150].0);
+    }
+
+    /// 3.7: Port Jeuno's San d'Oria berth (file 31010 `seq0`): down from the sky, nose down.
+    #[test]
+    fn jeuno_descent() {
+        let Some(run) = sail(31010, b"seq0", 0.0, 801, Vec3::new(-68.0, 10.45, 117.0)) else { return };
+        let (p, r) = run[100];
+        assert!(near(p, [-254.825, -25.673, 356.751]), "t 200: {p}");
+        assert!((r.y - 0.5498).abs() < 0.002 && (r.z - 0.1880).abs() < 0.002, "t 200 rot {r}");
+        assert!(near(run[799].0, [-68.0, 10.45, 117.0]), "t 1598: {}", run[799].0);
+    }
+
+    /// 3.7: the pirate ship's leaving (file 31017 `seq1`) ends offshore, its heading never set. The scheduler's end
+    /// takes the drive at 0 ticks left before its last step (3.8), and `come` runs back on a sine: 1.75 short.
+    #[test]
+    fn pirate_away() {
+        let Some(run) = sail(31017, b"seq1", 0.0, 1600, Vec3::new(-30.0, 0.0, 0.0)) else { return };
+        let (p, r) = run[1599];
+        assert!(near(p, [-149.895, 0.0, -998.255]), "t 3198: {p}");
+        assert_eq!(r, Vec3::ZERO);
     }
 }

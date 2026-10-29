@@ -399,6 +399,8 @@ pub struct ZoneRenderer {
     furniture: Vec<SubGeometry>,
     furn_base: Option<usize>,
     furn_inst: Vec<Vec<Instance>>,
+    /// Ship model actors (client/ships.rs) by entity.
+    model_actors: HashMap<u32, ModelGeo>,
     /// Zone instances standing in for a sub-area (instance, link, as built), the link hidden now, and how many of
     /// `light_keys` are the zone's own.
     links: Vec<(u32, u32, Instance)>,
@@ -435,6 +437,22 @@ struct SubGeometry {
     draws: Vec<Draw>,
     tex_base: usize,
     link: u32,
+    shown: bool,
+}
+
+/// A ship's model (FUN_100c4c20 -> FUN_101844c0, drawn as furniture is): its own buffers, one instance that moves with
+/// the actor, and its own textures (slot 0 white), since the shared list is cut back by sub-areas and furniture; drawn
+/// once they and their mips are up and while the actor shows.
+struct ModelGeo {
+    vertices: wgpu::Buffer,
+    indices: wgpu::Buffer,
+    instances: wgpu::Buffer,
+    draws: Vec<Draw>,
+    inst: Instance,
+    textures: Vec<wgpu::BindGroup>,
+    pending: std::collections::VecDeque<(usize, crate::dat::zone::Texture, Option<upload::TexUp>)>,
+    mips: u64,
+    up: bool,
     shown: bool,
 }
 
@@ -1369,6 +1387,7 @@ impl ZoneRenderer {
             furniture: Vec::new(),
             furn_base: None,
             furn_inst: Vec::new(),
+            model_actors: HashMap::new(),
             links: geo.links.clone(),
             hidden: 0,
             link999_off: false,
@@ -1586,6 +1605,50 @@ impl ZoneRenderer {
         gpu.queue.put(&f.instances, i as u64 * INSTANCE_BYTES, bytemuck::bytes_of(&list[i]));
     }
 
+    /// A ship's model goes up at `matrix`, lit as furniture (the zone's 'l_01' only), area 0, drawn at any distance.
+    pub fn set_model_actor(&mut self, gpu: &Gpu, id: u32, geo: &ZoneGeometry, textures: Vec<crate::dat::zone::Texture>, matrix: Mat4) {
+        let device = &gpu.device;
+        let buffer = |label, bytes: &[u8], usage| {
+            let b = device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: (bytes.len() as u64).max(4), usage: usage | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+            gpu.queue.put(&b, 0, bytes);
+            b
+        };
+        let [v, i, _] = geo.parts();
+        let inst = Instance { model: matrix.to_cols_array_2d(), lights: furniture_lights(&self.light_keys), area: [0; 4], band: [0.0; 4] };
+        let white = self.textures[0].clone();
+        let n = textures.len();
+        self.model_actors.insert(
+            id,
+            ModelGeo {
+                vertices: buffer("ship vertices", v, wgpu::BufferUsages::VERTEX),
+                indices: buffer("ship indices", i, wgpu::BufferUsages::INDEX),
+                instances: buffer("ship instance", bytemuck::bytes_of(&inst), wgpu::BufferUsages::VERTEX),
+                draws: geo.draws.iter().map(|d| Draw { instances: 0..1, mirrored: 1..1, ..d.clone() }).collect(),
+                inst,
+                textures: vec![white; n + 1],
+                pending: textures.into_iter().enumerate().map(|(k, t)| (k + 1, t, None)).collect(),
+                mips: 0,
+                up: false,
+                shown: false,
+            },
+        );
+    }
+
+    /// A ship moved or turned, shown or hidden.
+    pub fn move_model_actor(&mut self, gpu: &Gpu, id: u32, matrix: Mat4, shown: bool) {
+        let Some(m) = self.model_actors.get_mut(&id) else { return };
+        m.shown = shown;
+        let model = matrix.to_cols_array_2d();
+        if m.inst.model != model {
+            m.inst.model = model;
+            gpu.queue.put(&m.instances, 0, bytemuck::bytes_of(&m.inst));
+        }
+    }
+
+    pub fn remove_model_actor(&mut self, id: u32) {
+        self.model_actors.remove(&id);
+    }
+
     /// The sub-area goes (FUN_10178ac0). Its stand-ins stay hidden: unloading does not run FUN_1017a630 again.
     pub fn clear_sub(&mut self) {
         if let Some(s) = self.sub.take() {
@@ -1686,6 +1749,19 @@ impl ZoneRenderer {
             if let Some(s) = &mut self.sub {
                 s.shown = true;
             }
+        }
+        for m in self.model_actors.values_mut() {
+            while gpu.upload_room() > 0
+                && let Some((_, t, up)) = m.pending.front_mut()
+            {
+                let up = up.get_or_insert_with(|| upload::TexUp::new(gpu, t, true));
+                let Some(seq) = up.step(gpu, t, false) else { break };
+                let view = up.texture.create_view(&Default::default());
+                let (slot, _, _) = m.pending.pop_front().unwrap();
+                m.textures[slot] = view_bind_group(gpu, &self.texture_layout, &self.sampler, &view);
+                m.mips = m.mips.max(seq);
+            }
+            m.up = m.pending.is_empty() && gpu.mips_done() >= m.mips;
         }
         if let Some(base) = self.furn_base
             && self.furniture.iter().any(|f| !f.shown)
@@ -2084,6 +2160,30 @@ impl ZoneRenderer {
                 }
             }
             if self.furniture.iter().any(|f| f.shown) {
+                pass.set_vertex_buffer(1, zone_inst.slice(..));
+                pass.set_vertex_buffer(0, self.vertices.slice(..));
+                pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
+            }
+            let ships: Vec<&ModelGeo> = self.model_actors.values().filter(|m| m.up && m.shown).collect();
+            for m in &ships {
+                pass.set_vertex_buffer(1, m.instances.slice(..));
+                pass.set_vertex_buffer(0, m.vertices.slice(..));
+                pass.set_index_buffer(m.indices.slice(..), wgpu::IndexFormat::Uint16);
+                for d in m.draws.iter().filter(|d| d.mode == mode) {
+                    for (c, range) in d.runs() {
+                        if range.is_empty() {
+                            continue;
+                        }
+                        pass.set_bind_group(1, &m.textures[d.texture.min(m.textures.len() - 1)], &[]);
+                        if pipe != c {
+                            pass.set_pipeline(&self.scenery[mode as usize][c]);
+                            pipe = c;
+                        }
+                        pass.draw_indexed(d.first_index..d.first_index + d.index_count, d.base_vertex, range);
+                    }
+                }
+            }
+            if !ships.is_empty() {
                 pass.set_vertex_buffer(1, zone_inst.slice(..));
                 pass.set_vertex_buffer(0, self.vertices.slice(..));
                 pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);

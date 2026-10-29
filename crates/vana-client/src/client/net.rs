@@ -57,6 +57,9 @@ pub struct EntityUpdate {
     /// SubKind 3 (a lift, asm 0x1009ccc9): the RID id @0x34, the move's start @0x38 (Vana'diel-epoch seconds) and
     /// its end, start + u16 @0x3c.
     pub lift: Option<(u32, u32, u32)>,
+    /// SubKind 4 (a ship, the same block): the ship id @0x34 and the sequence's start @0x38 (Vana'diel-epoch seconds);
+    /// u16 @0x3c is not used (ship_actors_spec 1.1).
+    pub ship: Option<(u32, u32)>,
     /// 0x00E with mask 0x04 (0x1009adbb): u8 @0x22 bit 0 sets actor +0x130 bit 20 and clears +0x128 bit 3,
     /// else +0x128 bit 3 = u8 @0x2B bit 0x20. Either hides the target gauge; bit 3 also the name plate.
     pub hp_bits: Option<(bool, bool)>,
@@ -888,6 +891,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
         look_kind: p.u8(0x30) & 7,
         door: (kind == EntityKind::Npc && p.u8(0x30) & 7 == 2 && p.data.len() >= 0x38).then(|| p.u32(0x34)).filter(|d| *d != 0),
         lift: (kind == EntityKind::Npc && p.u8(0x30) & 7 == 3 && p.data.len() >= 0x3e).then(|| (p.u32(0x34), p.u32(0x38), p.u32(0x38).wrapping_add(p.u16(0x3c) as u32))).filter(|l| l.0 != 0),
+        ship: (kind == EntityKind::Npc && p.u8(0x30) & 7 == 4 && p.data.len() >= 0x3c).then(|| (p.u32(0x34), p.u32(0x38))),
         untargetable: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| p.u8(0x2B) & 0x08 != 0),
         target_off: (flags & 0x04 != 0 && p.data.len() >= 0x24).then(|| p.u32(0x20) >> 19 & 1 != 0),
         listed_only: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x28).then(|| p.u32(0x24) >> 31 != 0),

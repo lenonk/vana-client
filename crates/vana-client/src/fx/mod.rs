@@ -2,6 +2,7 @@
 //! runs generators and builds elements (emit.rs); the GPU runs each element's update stream every frame and
 //! draws it (render/effects.rs). Sort keys and expire requests come back from the GPU a frame late.
 
+pub mod drive;
 pub mod elem;
 pub mod emit;
 mod equip;
@@ -32,6 +33,11 @@ pub type Ref = (usize, usize);
 pub trait Actors {
     /// Placement: rotation and translation (model space faces +x).
     fn matrix(&self, id: u32) -> Option<Mat4>;
+    /// The drawn rotation (vt+0x1c0, a model actor's +0x744), what ops 0xa9 / 0xaa turn from; else the placement's yaw.
+    fn rotation(&self, id: u32) -> Option<Vec3> {
+        let m = self.matrix(id)?;
+        Some(Vec3::new(0.0, (-m.x_axis.z).atan2(m.x_axis.x), 0.0))
+    }
     /// Attach point `k` in model space, model scale included.
     fn point(&self, id: u32, k: u16) -> Option<Vec3>;
     /// The size the scale vectors read (vtable +0x98 / +0x9c *(inf: the model scale)*).
@@ -879,6 +885,12 @@ pub struct Effects {
     pub fades: Vec<ColorOp>,
     /// The running channel-0 drives (CMoActorColorDriveTask), children of their scheduler task.
     color_drives: Vec<ColorDrive>,
+    /// The path and rotation drives (ops 0x26 / 0x27, 0xa9 / 0xaa), children of their scheduler task, and the poses
+    /// they set this frame for the client (ship model actors take them); the fast-forward's overshoot for a new drive.
+    drives: Vec<drive::Drive>,
+    rot_drives: Vec<drive::RotDrive>,
+    pub actor_poses: HashMap<u32, drive::ActorPose>,
+    seq_over: f32,
     /// Op 0x6e for the client: actor, ticks, units a tick along its facing.
     pub self_moves: Vec<(u32, f32, f32)>,
     /// Op 0x9a for the client: actor, entity +0x130 bit 1.
@@ -1048,6 +1060,10 @@ impl Effects {
             motions: Vec::new(),
             fades: Vec::new(),
             color_drives: Vec::new(),
+            drives: Vec::new(),
+            rot_drives: Vec::new(),
+            actor_poses: HashMap::new(),
+            seq_over: 0.0,
             self_moves: Vec::new(),
             gens_off: Vec::new(),
             holds: Vec::new(),
@@ -1164,6 +1180,8 @@ impl Effects {
         self.weathers.clear();
         self.wading.clear();
         self.tasks.clear();
+        self.drives.clear();
+        self.rot_drives.clear();
         self.trails.clear();
         self.trails_dirty = true;
         self.dolls.clear();
@@ -1674,6 +1692,7 @@ impl Effects {
         self.run_equip(actors);
         self.run_pending(f, actors);
         self.step_tasks(f, actors);
+        self.step_drives(f, actors);
         self.step_trails(f, actors);
         // Op 0xbf: the push starts when its delay has counted down (its task's destructor).
         for k in self.knocks_later.iter_mut() {

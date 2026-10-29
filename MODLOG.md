@@ -11659,3 +11659,43 @@ ticks forever.
 - The orbs' permanent freeze in the first report was the slot-keyed clones (see "Clones belong to their task by uid").
   Her orb generators are unaffected by "Generator clones go with their last element": element life 40 against an
   interval of 20.
+
+## Ship actors: 0x00E SubKind 4, the XiModelActor (2026-10-29; spec ~/ffxi/lab/research/ship_actors_spec.md)
+
+The boats and airships seen from the docks, the overhead airships, the pirate ship, the barge, the Manaclipper. Done
+since "Ship voyages: the moving world" listed them as not done.
+- 0x00E SubKind 4 (asm 0x1009cc43): kind 5, ship id u32 @0x34 (+0xf8; another id rebuilds the model), start u32 @0x38
+  (+0x184, Vana'diel-epoch seconds); u16 @0x3c unused. The 0x00E position and heading reach the model actor only at
+  its creation; server positions never move it afterwards (FUN_10092c20 skips kind 5). Ours: net.rs `ship`, Entity
+  `ship` / `ship_rebuild`.
+- The model (FUN_100c41f0 / FUN_100c4410): file id + 0x791c (ids 0..21 = 31004..31025), or the furniture table when
+  the state is 0x37 at creation (props); MMB `fune`, else `_fun` (alpha tested), else the first; ids 0, 1, 2, 5, 6 keep
+  their model generators off (entity +0x130 bit 1); the first 4 draws are skipped; on `fune` / `_fun` the heading
+  eases 1/8 a tick toward its target (ours continuously, the same at 60 fps). Drawn as furniture (lit as the zone,
+  'l_01' only, area 0), no shadow, no collision, no distance cull. Matrix T * Rx * Ry * Rz (FUN_100c4b50).
+- States 0x12..0x19 play `seq0`..`seq7` (DAT_1032d42c) the frame they arrive (FUN_1008b460 returns 1 for kind 5):
+  FUN_10097a80 / FUN_100c4730 kill the actor's running sequence (task +0x143, its drives with it) and start the new
+  one; elapsed = now x 60 - start x 60 below 600 ticks plays from the first op, else the scheduler is caught up
+  (FUN_100575a0: ops come due in turn, each told how long ago; generators still alive start part-way, sub-schedulers
+  0x09 / 0x57 are caught up themselves, 0x1e / 0x26 / 0x27 / 0x3f run as normal, the rest is skipped). Bound to an
+  event (op 0x4f), the start is now. Quiet under event op 0xab 5.
+- Ops 0x26 / 0x27 (CMoPathDriveActorTask, fx/drive.rs): the Vtx spline over the op's duration, easing curves 0..4
+  (FUN_10055ad0), flags @0x10 abs / face / forward, yaw0 @0x18; a new one kills the actor's drives; a child of its
+  scheduler (it dies with it, before its step, so a backward drive never reaches its u = 1.0 end); the heading from
+  the second frame (snap once, then the target when the step is >= 0.1; ours samples every 2 ticks). Ops 0xa9 / 0xaa
+  (CMoActorRotationDriveTask): degrees, mode 0 holds, else linear. A drive made this frame places its actor without
+  running its time *(inf: retail's first update is the frame after)*. A start's wait for its file is added to its skip
+  (not the frame it was asked in).
+- Ours: client/ships.rs (loads, the model actor, states, poses after each effects tick into the renderer's
+  model_actors: own buffers and textures, drawn after the furniture), fx/drive.rs, fx/tasks.rs (start_sequence /
+  kill_sequence, step_drives, fast_forward), FxActors (matrix, rotation, files, hidden, every point the position).
+  Tests: the drive against the spec's worked examples (Selbina `seq0` from the staging point and caught up 1500
+  ticks, Port Jeuno's descent with yaw / pitch, the pirate ship's leaving), the easing curves, the 22 ship files'
+  MMBs.
+- Live (Lnxcsfix, Port Jeuno): zoned in with the Bastok berth's `seq2` 7260 ticks old, caught up and drawn at the
+  berth; LSB's state changes 0x15 / 0x18 / 0x19 / 0x12 played as they came; the San d'Oria airship slid into its
+  berth with its wake and docked with its door at the pier, then backed out on `seq1`. Selbina: the ferry made at
+  the staging point mid-departure (state 0x13, 54000 ticks: caught up, ended), its arrival `seq0` started at the
+  stamp; not seen on screen (the test camera sat behind the pier).
+- Correction to "0x00E SubKind 5 / 6 and event op 0xb6 0x11": op 0xb6 0x11 swaps the model of a SubKind 4 prop (an
+  XiModelActor, state 0x37), not of a SubKind 5 / 6 actor (those are skeleton actors). Not done yet.

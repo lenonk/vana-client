@@ -147,6 +147,8 @@ pub struct Task {
     pub vana: bool,
     /// +0x22: paused while an actor of it is hidden (FUN_10074a30); no op progress, no time.
     pub paused: u32,
+    /// +0x143: a model actor's sequence (FUN_100c4730), killed by the next one.
+    pub seq: bool,
 }
 
 impl Task {
@@ -159,7 +161,7 @@ impl Task {
         });
         static UID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let uid = UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Self { res, ops, ip: 0, countdown: 0.0, speed, a1, a2, action, parent: None, early: 0.0, waiting: false, stop_at: None, stack: Vec::new(), loop_at: None, done: false, motions, num: None, uid, looping: false, ends_loop: false, restart: false, stepped: false, vana: false, paused: 0 }
+        Self { res, ops, ip: 0, countdown: 0.0, speed, a1, a2, action, parent: None, early: 0.0, waiting: false, stop_at: None, stack: Vec::new(), loop_at: None, done: false, motions, num: None, uid, looping: false, ends_loop: false, restart: false, stepped: false, vana: false, paused: 0, seq: false }
     }
 }
 

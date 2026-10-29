@@ -58,6 +58,7 @@ mod myroom;
 mod bump;
 mod doors;
 mod lifts;
+mod ships;
 mod mousecur;
 mod party;
 mod macros;
@@ -183,6 +184,7 @@ impl Task {
             Task::Names(_) => "names",
             Task::Actions(_) => "actions",
             Task::Furniture(_) => "furniture",
+            Task::Ship(_) => "ship",
             Task::NameChecked(_) => "name check",
             Task::Created(_) => "created",
             Task::TwoFa(_) => "two-factor",
@@ -222,6 +224,8 @@ enum Task {
     Actions(Result<crate::dat::actions::Actions>),
     /// Mog House furniture geometry (client/furniture.rs).
     Furniture(Result<furniture::Loaded>),
+    /// A ship's model (client/ships.rs).
+    Ship(Result<ships::Loaded>),
 }
 
 /// A pick read-back key: bit 63, the actor, a bone or 0x8000 | attach point.
@@ -438,6 +442,10 @@ struct Entity {
     door: u32,
     /// A lift's (shaft id, move start, move end) (0x00E SubKind 3, client/lifts.rs).
     lift: Option<(u32, u32, u32)>,
+    /// A ship's (id, sequence start) (0x00E SubKind 4, client/ships.rs), and +0x120 bit 0: another id came, the model
+    /// is made again.
+    ship: Option<(u32, u32)>,
+    ship_rebuild: bool,
     /// client/bump.rs: ticks left of "active" (+0x5ae), made passable by event op 0xab 0x0b (+0x120 bit 6), and the
     /// SubKind 0 model id (+0xfc).
     active: f32,
@@ -1372,6 +1380,8 @@ fn self_entity(w: &World) -> Entity {
         ev_reserved: false,
         door: 0,
         lift: None,
+        ship: None,
+        ship_rebuild: false,
         active: 0.0,
         no_bump: false,
         model: 0,
@@ -4042,6 +4052,8 @@ fn place_mogdoor(w: &mut World) {
             ev_reserved: false,
             door: 0,
             lift: None,
+            ship: None,
+            ship_rebuild: false,
             active: 0.0,
             no_bump: false,
             model: 0,
@@ -4749,6 +4761,8 @@ struct FxActors<'a> {
     bells: bool,
     /// Mog House furniture: id, model file, matrix (client/furniture.rs).
     furniture: &'a [(u32, u32, glam::Mat4)],
+    /// Ships: entity, model file, matrix, drawn rotation, hidden (client/ships.rs).
+    ships: &'a [(u32, u32, glam::Mat4, Vec3, bool)],
     /// FUN_1008e4d0's hidden models (+0xb2 bit 1): event::hidden.
     model_hidden: &'a HashSet<u32>,
     /// FUN_100d4560's bone-0 drop by actor (riders, chair sitters), ride::bone0_drop.
@@ -4760,6 +4774,10 @@ impl FxActors<'_> {
     fn furniture(&self, id: u32) -> Option<&(u32, u32, glam::Mat4)> {
         self.furniture.iter().find(|f| f.0 == id)
     }
+
+    fn ship(&self, id: u32) -> Option<&(u32, u32, glam::Mat4, Vec3, bool)> {
+        self.ships.iter().find(|s| s.0 == id)
+    }
 }
 
 impl crate::fx::Actors for FxActors<'_> {
@@ -4770,6 +4788,9 @@ impl crate::fx::Actors for FxActors<'_> {
     fn matrix(&self, id: u32) -> Option<glam::Mat4> {
         if let Some(f) = self.furniture(id) {
             return Some(f.2);
+        }
+        if let Some(s) = self.ship(id) {
+            return Some(s.2);
         }
         let p = self.places.get(&id)?;
         Some(match self.actors.get(&id) {
@@ -4821,10 +4842,22 @@ impl crate::fx::Actors for FxActors<'_> {
         Some(pool.into_iter().map(str::to_string).collect())
     }
 
+    fn rotation(&self, id: u32) -> Option<Vec3> {
+        if let Some(s) = self.ship(id) {
+            return Some(s.3);
+        }
+        let m = self.matrix(id)?;
+        Some(Vec3::new(0.0, (-m.x_axis.z).atan2(m.x_axis.x), 0.0))
+    }
+
     // FUN_100d4560 -> FUN_1002c400: point 2 is the root plus its offset (no bone, no pose); the others ride the drawn
     // pose's bones (posed for effect actors, see posed_actors).
     /// FUN_100d4560 -> FUN_1002c400; a point on bone 0 then drops by size x d in world y (riding, chairs).
+    /// A model actor's every point is its position (vt+0x1c4 FUN_100c4b00).
     fn point(&self, id: u32, k: u16) -> Option<Vec3> {
+        if self.ship(id).is_some() {
+            return Some(Vec3::ZERO);
+        }
         let a = self.actors.get(&id)?;
         let ch = a.character.as_ref()?;
         let (bone, off) = ch.skeleton.points.get(k as usize)?;
@@ -4838,7 +4871,11 @@ impl crate::fx::Actors for FxActors<'_> {
         Some(if d == 0.0 { p } else { p + self.matrix(id).map_or(Vec3::new(0.0, d * a.scale, 0.0), |m| point_drop(m, d * a.scale)) })
     }
 
+    /// A model actor's point frame is its matrix, the point ignored (vt+0x1d0 FUN_100c4b50).
     fn point_frame(&self, id: u32, k: u16) -> Option<glam::Mat4> {
+        if self.ship(id).is_some() {
+            return Some(glam::Mat4::IDENTITY);
+        }
         let a = self.actors.get(&id)?;
         let ch = a.character.as_ref()?;
         let (bone, off) = *ch.skeleton.points.get(k as usize)?;
@@ -4877,7 +4914,7 @@ impl crate::fx::Actors for FxActors<'_> {
     }
 
     fn ready(&self, id: u32) -> Option<bool> {
-        if self.furniture(id).is_some() {
+        if self.furniture(id).is_some() || self.ship(id).is_some() {
             return Some(true);
         }
         let a = self.actors.get(&id)?;
@@ -4892,12 +4929,18 @@ impl crate::fx::Actors for FxActors<'_> {
         if let Some(f) = self.furniture(id) {
             return vec![f.1];
         }
+        if let Some(s) = self.ship(id) {
+            return vec![s.1];
+        }
         self.actors.get(&id).and_then(|a| a.character.as_ref()).map_or(Vec::new(), |ch| ch.files.clone())
     }
 
     fn files(&self, id: u32) -> (Vec<u32>, Vec<u32>) {
         if let Some(f) = self.furniture(id) {
             return (Vec::new(), vec![f.1]);
+        }
+        if let Some(s) = self.ship(id) {
+            return (Vec::new(), vec![s.1]);
         }
         let Some(a) = self.actors.get(&id) else { return (Vec::new(), Vec::new()) };
         let Some(ch) = a.character.as_ref() else { return (Vec::new(), Vec::new()) };
@@ -4906,13 +4949,16 @@ impl crate::fx::Actors for FxActors<'_> {
 
     /// Actor +0xb2 bit 1 (the server's hide bits), not alpha: a 'spop' actor at alpha 0 still takes generators.
     fn hidden(&self, id: u32) -> bool {
+        if let Some(s) = self.ship(id) {
+            return s.4 || self.model_hidden.contains(&id);
+        }
         self.furniture(id).is_none() && (!self.actors.contains_key(&id) || self.model_hidden.contains(&id))
     }
 
     fn models(&self) -> Vec<(u32, Vec<u32>)> {
         // The model's files, then every mesh's (FUN_100d62c0: part files too).
         let actors = self.actors.iter().filter(|(id, _)| self.places.contains_key(id)).filter_map(|(id, a)| a.character.as_ref().map(|ch| (*id, ch.files.iter().chain(&ch.part_files).copied().collect())));
-        actors.chain(self.furniture.iter().map(|f| (f.0, vec![f.1]))).collect()
+        actors.chain(self.furniture.iter().map(|f| (f.0, vec![f.1]))).chain(self.ships.iter().map(|s| (s.0, vec![s.1]))).collect()
     }
 
     fn pc(&self, id: u32) -> Option<(u8, i8)> {
@@ -5162,6 +5208,9 @@ struct World {
     /// The zone's lift shafts and lift actors; whether our last step stood on one (+0x5e2), and our y then (the
     /// camera follows the lift, DAT_10456d9c).
     lifts: lifts::Lifts,
+    /// Ship model actors (client/ships.rs), and the loads the frame wants started.
+    ships: ships::Ships,
+    ship_jobs: Vec<ships::Job>,
     /// The character we are held against (client/bump.rs).
     bump: bump::State,
     riding: bool,
@@ -6817,6 +6866,11 @@ impl App {
                 (Err(e), _) => log::warn!("furniture: {e:#}"),
                 _ => {}
             },
+            Task::Ship(res) => match (res, &mut self.phase) {
+                (Ok(l), Phase::World(w)) => w.ships.ready.push(l),
+                (Err(e), _) => log::warn!("ship: {e:#}"),
+                _ => {}
+            },
             Task::Battle(res) => match (res, &mut self.phase) {
                 (Ok(b), Phase::World(w)) => w.battle = Some(Arc::new(b)),
                 (Err(e), _) => log::warn!("battle messages: {e:#}"),
@@ -6969,6 +7023,8 @@ impl App {
                             visible: HashSet::new(),
                             zone_lines: Vec::new(),
                             lifts: Default::default(),
+                            ships: Default::default(),
+                            ship_jobs: Vec::new(),
                             bump: Default::default(),
                             riding: false,
                             ride_y: 0.0,
@@ -7552,6 +7608,7 @@ impl App {
                 let Phase::World(world) = &mut self.phase else { return };
                 world.loading = None;
                 world.furniture.reset();
+                (world.ships, world.ship_jobs) = (Default::default(), Vec::new());
                 world.area = AreaSwitch::default();
                 match result {
                     Ok((mut scene, ground, weather, geometry, (zone_fx, global_fx))) => {
@@ -8106,6 +8163,8 @@ impl App {
                         ev_reserved: false,
                         door: 0,
                         lift: None,
+                        ship: None,
+                        ship_rebuild: false,
                         active: 0.0,
                         no_bump: false,
                         model: 0,
@@ -8295,6 +8354,11 @@ impl App {
                     }
                     if e.lift.is_some() {
                         entry.lift = e.lift;
+                    }
+                    // Asm 0x1009cc43: another ship id rebuilds the model.
+                    if let Some((ship, start)) = e.ship {
+                        entry.ship_rebuild |= entry.ship.is_some_and(|(old, _)| old != ship);
+                        entry.ship = Some((ship, start));
                     }
                 }
                 NetEvent::Chat { kind, attr, data, from, text } => {
@@ -8826,6 +8890,15 @@ impl App {
         {
             self.spawn(move || Task::Furniture(furniture::load(&index, &keys, seq, &want, map, floor)));
         }
+        let jobs = match &mut self.phase {
+            Phase::World(w) => std::mem::take(&mut w.ship_jobs),
+            _ => Vec::new(),
+        };
+        for job in jobs {
+            if let Ok((index, keys)) = self.game_data() {
+                self.spawn(move || Task::Ship(ships::load(&index, &keys, job)));
+            }
+        }
     }
 
     fn update_movement(&mut self, dt: f32) {
@@ -8848,6 +8921,8 @@ impl App {
         if world.in_scene() {
             doors::update(world);
             lifts::update(world);
+            let jobs = ships::update(world);
+            world.ship_jobs.extend(jobs);
             // FUN_10178b30: V for this frame (the scenery's world slot, attach modes 0x14 / 0x15, the sun and moon).
             world.effects.voyage = world.voyage.step(Instant::now());
         }
@@ -11908,6 +11983,26 @@ impl App {
                     r.move_furniture(&gfx.gpu, file, old, new);
                 }
             }
+            // Ships (client/ships.rs): new models go up, gone ones down, then each one's pose from the last drives.
+            if w.renderer.is_some() {
+                for l in std::mem::take(&mut w.ships.ready) {
+                    if let Some(m) = ships::create(w, &l)
+                        && let Some(r) = w.renderer.as_mut()
+                    {
+                        r.set_model_actor(&gfx.gpu, l.entity, &l.geo, l.textures, m);
+                    }
+                }
+                let removed = std::mem::take(&mut w.ships.removed);
+                let moved = ships::apply(w, dt * 60.0, &model_hidden);
+                if let Some(r) = w.renderer.as_mut() {
+                    for id in removed {
+                        r.remove_model_actor(id);
+                    }
+                    for (id, m, shown) in moved {
+                        r.move_model_actor(&gfx.gpu, id, m, shown);
+                    }
+                }
+            }
             let lines = layout::overlay(w);
             let ceiling = !w.layout.as_ref().is_some_and(|l| l.view == 0);
             if let Some(r) = w.renderer.as_mut() {
@@ -12493,7 +12588,8 @@ impl App {
                         weekday: w.clock.map_or(0, |(t, at)| (((t as f64 + at.elapsed().as_secs_f64()) / 2.4 / 1440.0) as u64 & 7) as u32),
                     };
                     let party: Vec<u32> = std::iter::once(w.my_id).chain(w.party.party().map(|m| m.id).filter(|&id| id != w.my_id)).collect();
-                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts, entities: &w.entities, me: w.my_id, me_moving: w.moving, pet: w.my_pet, party, my_index: w.my_index, areas: &w.area_lights, ground: w.ground.as_ref(), bells: w.game.get(0x99) & 2 != 0, furniture: &w.furniture.pieces, model_hidden: &model_hidden, drops: &drops, wades: &w.wades };
+                    let ship_fx = ships::fx_actors(&w.ships, &w.entities);
+                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts, entities: &w.entities, me: w.my_id, me_moving: w.moving, pet: w.my_pet, party, my_index: w.my_index, areas: &w.area_lights, ground: w.ground.as_ref(), bells: w.game.get(0x99) & 2 != 0, furniture: &w.furniture.pieces, ships: &ship_fx, model_hidden: &model_hidden, drops: &drops, wades: &w.wades };
                     if let Some(g) = &w.ground {
                         w.effects.set_covered(g.covered(camera.eye));
                     }
