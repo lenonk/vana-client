@@ -75,8 +75,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - Event VM gaps: audit `~/ffxi/lab/research/xievents_check/STATUS.md` (2026-10-23, ranked R1..R21 against
   REPORT.md). Done since: R1..R8 (R8: MODLOG "Op 0xd4 sub 0: the map preview"), R10, R13 (0x7e, MODLOG "Riding"),
   R14, R16..R18, R21, R11 / R12 / R15 toggles (spec `~/ffxi/lab/research/event_toggles_spec.md`; MODLOG "Event
-  toggles, part 2"), R9 (MODLOG "The control lock"). Left: 0xb6 0x11 (swaps a SubKind 4 prop's model from the furniture table; the props are
-  ship model actors now, client/ships.rs, MODLOG "Ship actors"), 0xb3 mini-game (its actors in zones 104, 109, 119, 243, 244, 248, 249 are not on LSB; 0xd8 and 0x46/3 done).
+  toggles, part 2"), R9 (MODLOG "The control lock"), 0xb6 0x11 (client/ships.rs swap_model, MODLOG "Extras: target
+  distance ..."). Left: 0xb3 mini-game (its actors in zones 104, 109, 119, 243, 244, 248, 249 are not on LSB; 0xd8 and 0x46/3 done).
 - New-character flow, one nation at a time (create, opening cutscenes, first zone):
   - San d'Oria: under review;
   - Windurst and Bastok: the openings looked right to the user (2026-10-23; Windurst Waters 531, Bastok Markets);
@@ -245,9 +245,10 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   options (resolution, frame limit, ...) go in Settings, not here. Done: the map overlay, the synthesis amount,
   timestamps on every line, timers (recasts, our effects, ours on others and monsters at LSB's lengths, a docked
   drawer; MODLOG "Timers"), the minimap (MODLOG "Minimap"), the training regime window (client/regime.rs, MODLOG
-  "Training regime window").
-  - candidates: target distance, party buffs / TP, target HP %, clock, text auto-advance, Find
-    across bags; later Battlemod-style filtering, a DPS meter, a skillchain helper.
+  "Training regime window"), target distance and HP %, text auto-advance, /find, /dps (MODLOG "Extras: target
+  distance ...").
+  - candidates: party buffs / TP, clock; later Battlemod-style filtering, a skillchain helper (no client table of
+    weapon skill properties).
 - Chat log (user, 2026-10-23: "needs a lot of love"; audit `~/ffxi/lab/research/chat_audit/`): done the server side
   (treasure pool, MsgShift gaps, 0x017 kinds and echoes, 0x027 / 0x043, 0x009 keys, lines held until the message
   tables load, the server message and /servmes, zone text colours) and /emote, /recast, talk range / mounted, /party
