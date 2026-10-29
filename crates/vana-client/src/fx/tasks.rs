@@ -1679,6 +1679,8 @@ impl Effects {
         if let Some(x) = self.insts[i].as_mut() {
             x.actors = [t.a1, t.a2];
             x.dam = dam;
+            // An unattached static generator runs as its template (asm 0x10058a41), not as a clone.
+            x.clone = attached || !persistent;
             if !persistent && !auto {
                 let d = op.dur as f32 * t.speed;
                 x.life = if d == 0.0 { 1.0 } else { d };
@@ -2192,6 +2194,7 @@ impl Effects {
                 if let Some(i) = self.start(g, Owner::Actor(id)) {
                     if let Some(x) = self.insts[i].as_mut() {
                         x.actors = [Who::Actor(id), Who::None];
+                        x.clone = true;
                     }
                     self.attach_now(i, actors);
                 }

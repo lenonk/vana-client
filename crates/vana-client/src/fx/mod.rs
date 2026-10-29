@@ -372,6 +372,10 @@ pub struct Instance {
     pub weather: f32,
     pub live: Vec<u32>,
     pub finished: bool,
+    /// A CMoGeneratorClone nothing holds (op 0x02's, a model file's): it goes with its last live element whatever its
+    /// life (FUN_10043b30: the elements' references are the clone's count). `emptied`: that happened this frame.
+    pub clone: bool,
+    pub emptied: bool,
     pub owner: Owner,
     pub parent_elem: Option<u32>,
     /// Actor1 / actor2 (gen +0x30: +0x3c / +0x40).
@@ -1502,6 +1506,8 @@ impl Effects {
             weather: 1.0,
             live: Vec::new(),
             finished: false,
+            clone: false,
+            emptied: false,
             owner,
             parent_elem: None,
             actors: [sched::Who::None; 2],
@@ -1715,13 +1721,12 @@ impl Effects {
             }
         }
         self.step_sounds(f);
-        // Finished or stopped instances go once their elements have.
+        // Finished or stopped instances go once their elements have; a clone whose last element went this frame goes
+        // unless its generator has emitted again since *(inf: retail's order of generators and elements in a frame)*.
         for i in 0..self.insts.len() {
-            if let Some(x) = &self.insts[i]
-                && (x.finished || x.stopping)
-                && x.live.is_empty()
-                && !matches!(x.owner, Owner::Zone | Owner::SubArea | Owner::Actor(_) | Owner::Weather(_))
-            {
+            let Some(x) = self.insts[i].as_mut() else { continue };
+            let orphan = std::mem::take(&mut x.emptied) && x.live.is_empty();
+            if orphan || (x.finished || x.stopping) && x.live.is_empty() && !matches!(x.owner, Owner::Zone | Owner::SubArea | Owner::Actor(_) | Owner::Weather(_)) {
                 self.kill(i);
             }
         }
@@ -2162,12 +2167,18 @@ impl Effects {
                 self.writes.push(Write::Words(e, w::LIFE, vec![0]));
                 self.writes.push(Write::Words(e, w::CTRL, vec![ctl::LIFE_SET]));
             } else {
-                if let Some(x) = self.insts.get_mut(inst).and_then(|x| x.as_mut()) {
-                    x.live.retain(|&l| l != e);
-                }
-                self.drop_elem(e);
+                self.elem_gone(inst, e);
             }
         }
+    }
+
+    /// Element `e` of instance `inst` goes.
+    fn elem_gone(&mut self, inst: usize, e: u32) {
+        if let Some(x) = self.insts.get_mut(inst).and_then(|x| x.as_mut()) {
+            x.live.retain(|&l| l != e);
+            x.emptied |= x.clone && x.live.is_empty();
+        }
+        self.drop_elem(e);
     }
 
     /// A footstep (FUN_100d2970 step 7): SeSep `name` (none while sneaking) in the zone's 'fses' folder ('fser' in the
@@ -2310,10 +2321,7 @@ impl Effects {
             match self.sounds[k].elem.filter(|&e| self.elems.get(e as usize).is_some_and(|c| c.is_some())) {
                 Some(e) => {
                     let inst = self.elems[e as usize].as_ref().unwrap().inst;
-                    if let Some(x) = self.insts.get_mut(inst).and_then(|x| x.as_mut()) {
-                        x.live.retain(|&l| l != e);
-                    }
-                    self.drop_elem(e);
+                    self.elem_gone(inst, e);
                 }
                 None => {
                     let s = self.sounds.swap_remove(k);

@@ -11620,3 +11620,29 @@ in "Event VM" listing 0x20 / 0x21 as not done: done.
 - Live, classic, M02: the mouse (a click on the voucher row and on rune 021, Num-, a cell hovered, a click placed it)
   and the glint on Fire's cell (cell 6) under the placed Fire rune; M02's Lightning / Wind / Light marks and blocked
   cells 4, 12, 20 drawn.
+
+## Generator clones go with their last element (2026-10-28)
+
+User report: casting Tonko: Ni left a looping effect on the caster. File 3154's `main` starts `gu01` and `gu00` with op
+0x02 (duration 90 each). They are the same generator but for flag 0x1000 on `gu00` (0x1200 against 0x0200); both have
+life 0, element life 90 (op 1 i16 @0x22) and an interval of 100 (rand(@0x64 = 0) + 1 + @0x66 = 99). Op 0x02 gives a
+0x1000 clone no duration (asm 0x10058b93: FUN_1005d1e0 on the clone), so it is endless; ours re-emitted it every 100
+ticks forever.
+- Retail ends it another way. A generator's +0x18 low 15 bits are a reference count (FUN_10070ee0 up, FUN_10070f10
+  down, walking +0x28 up to the file root). Each element holds its generator twice (FUN_10047150, and FUN_1004d920 asm
+  0x100503c9). The element destructor FUN_10043b30 (current build FUN_10044970) drops them (asm 0x10043b90..0x10043b9a)
+  and, when the generator is a clone (+0x1a bit 2, set by FUN_10052710's `|= 5`) and the count is 0, deletes it (asm
+  0x10043bea..0x10043c15: FUN_10072b70, FUN_100731d0). So an unheld clone goes with its last live element, whatever its
+  life or 0x1000: `gu00` shows one 90-tick element, as long as `gu01`.
+- Held clones stay: the footstep dust and `i900` (the actor holds one), and an element's sub-clone while its parent
+  element lives (+0x164, released at asm 0x10043b9f). Generators run as their own template never go this way: the
+  unattached 0x1000 ones started at load, and op 0x02's unattached static path (asm 0x10058a41..0x10058a5f).
+- Not the cause: the file's release (FUN_10073110 frees only files with a zero count, from the allocator under
+  pressure; FUN_10047050 deletes a freed template's clones, which have no elements by then), the task's destructor
+  (FUN_100564f0 never walks clones), the clone's +0x64 task link (read only by FUN_10041100 for damage numbers).
+- Ours: fx Instance `clone` (op 0x02 off the template path, model-file generators) and `emptied`. An element that goes
+  (expiry, a sound element's end) marks its clone. The end-of-frame sweep kills a marked clone still without elements
+  after the generators' emissions *(inf: retail's order of generators and elements within a frame)*. Of the install's
+  8216 actor-attached 0x1000 generators, 249 have element life + random below the interval and so end after one
+  element, mostly in spell and ability files. Checked offscreen (`fx-shot 235 --file 3154`: nothing from 3154 is left
+  once `main` ends; before, `gu00` stayed); the fx tests pass.
