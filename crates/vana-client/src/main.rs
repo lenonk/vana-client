@@ -2234,6 +2234,7 @@ impl fx::Actors for ShotActors {
 fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim: &[f32], (category, anim, dust, fx_file): (u8, u16, Option<String>, Option<u32>), walk: &[f32], frames: u32, every: u32, hour: f32, despawn: Option<u32>) -> Result<()> {
     use glam::Vec3;
     let cfg = config::Config::load();
+    render::SHINE_WRAP.store(cfg.tool("0040") == 0, std::sync::atomic::Ordering::Relaxed);
     let index = std::sync::Arc::new(dat::DatIndex::open(&cfg.ffxi_dir())?);
     let keys = dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?)?;
     let file = index.read(dat::zone::file_id(zone))?;

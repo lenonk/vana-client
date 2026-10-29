@@ -12012,3 +12012,17 @@ since "Ship voyages: the moving world" listed them as not done.
   set at start and by Settings) a category-10 image goes through texpresso BC2 and back (ClusterFit), the lossy
   surface retail's D3DX load gives *(inf: D3DX's encoder differs in detail; the blocks are the same kind)*. Takes
   effect at the next map load (Settings row NextZone). Test map_category_10_through_dxt3.
+
+## Config tool 0040 "Graphics Stabilization" (2026-10-29)
+
+- Spec: `~/ffxi/lab/research/stored_settings_spec.md` section 4 (FUN_10024e10, cur FUN_10025c40): the actor shine
+  pass sets D3DRS_WRAP0 = 7 when 0040 is 0 (Off, the default; also not on the listed Intel fallback device), so each
+  generated coordinate runs the short way round the 0 / 1 seam across a triangle; On interpolates plainly.
+- Ours had only the plain form (= On). Now vs_skinned_shine reads its triangle's first corner from the skinned vertex
+  buffer (bound as storage at group 3 binding 1; the draws are non-indexed lists, so a triangle is vertex_index / 3),
+  skins its normal the same way and takes each coordinate relative to it (s0 + d - round(d)) when the shine uniform's
+  uv.z is 1 (render::SHINE_WRAP, 0040 == 0). Each skinned model makes its shine group once (Skinned::shine). Settings'
+  row is live.
+- FFXI_SHINE_TEST puts a striped shine on our own actor (checks; no effect file needed). Seen live with it, wrap on and
+  off: the pass draws, no errors; the difference is limited to triangles whose corners' normals differ widely in x / y.
+- fx-shot honours 0040 (it draws no actor models, so it cannot show the shine).

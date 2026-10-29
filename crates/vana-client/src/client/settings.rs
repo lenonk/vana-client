@@ -243,7 +243,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
         row("Lamp Lights", "Baked: the lamplight painted onto the walls, as retail. Real: point lights at the lamps (not retail).", LampLights, &[(0, "Baked"), (1, "Real")], Now),
         row("Environment Animation", "0011: environment (vegetation) animation.", Tool("0011"), &[(0, "Off"), (1, "Normal"), (2, "Smooth")], Stored),
         row("Bump Mapping", "0017: enhanced shading.", Tool("0017"), OFF_ON, Stored),
-        row("Graphics Stabilization", "0040: graphics stabilization for some cards.", Tool("0040"), OFF_ON, Stored),
+        row("Graphics Stabilization", "0040: On interpolates the shine overlay's coordinates plainly (no seam wrap).", Tool("0040"), OFF_ON, Now),
         row("3D LCD Mode", "0030: interleaved stereo for 3D LCD screens.", Tool("0030"), OFF_ON, Stored),
     ];
     const SOUND: &[Row] = &[

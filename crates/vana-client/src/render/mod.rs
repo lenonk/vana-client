@@ -361,7 +361,7 @@ pub struct ZoneRenderer {
     skin_pipeline: wgpu::RenderPipeline,
     shine_pipeline: wgpu::RenderPipeline,
     shine_buf: wgpu::Buffer,
-    shine_group: wgpu::BindGroup,
+    shine_wrap_layout: wgpu::BindGroupLayout,
     refract_pipeline: wgpu::RenderPipeline,
     /// Actor ground shadows (render/shadow.rs): the zone layouts they draw with, the silhouette pass and its layout,
     /// and their state (made at the first shadow).
@@ -476,6 +476,8 @@ pub static ANISOTROPY: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU
 /// uploaded uncompressed); read when samplers and textures are made, so at the next zone load.
 pub static MIPMAPS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 pub static UNCOMPRESSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Config-tool 0040 = 0 (Graphics Stabilization Off, the default): the shine pass wraps its coordinates (D3DRS_WRAP0 = 7).
+pub static SHINE_WRAP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 /// Config-tool 0019 = 0 (2-D Mapping Compressed): the palettized map images go through DXT3 at load (client/map.rs).
 pub static MAP_COMPRESSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -711,9 +713,32 @@ struct Build {
     cur: Option<upload::TexUp>,
 }
 
+/// The shine uniform's wrap flag (uv.z): 1 while 0040 is Off.
+fn shine_wrap() -> f32 {
+    if SHINE_WRAP.load(std::sync::atomic::Ordering::Relaxed) { 1.0 } else { 0.0 }
+}
+
+impl ZoneRenderer {
+    /// A skinned actor's shine group: the shared uniform slots and its own vertices.
+    fn shine_group<'a>(&self, gpu: &Gpu, skin: &'a Skinned) -> &'a wgpu::BindGroup {
+        skin.shine.get_or_init(|| {
+            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("actor shine"),
+                layout: &self.shine_wrap_layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding { buffer: &self.shine_buf, offset: 0, size: wgpu::BufferSize::new(32) }) },
+                    wgpu::BindGroupEntry { binding: 1, resource: skin.vertices.as_entire_binding() },
+                ],
+            })
+        })
+    }
+}
+
 #[derive(Clone)]
 struct Skinned {
     vertices: wgpu::Buffer,
+    /// The shine pass's group 3 over these vertices (read as storage for the wrap), made at the first shine.
+    shine: std::sync::Arc<std::sync::OnceLock<wgpu::BindGroup>>,
     bones: usize,
     /// Dynamic offset of this frame's pose region, and the pose frame it was written in.
     offset: u32,
@@ -751,6 +776,7 @@ pub struct ZonePipes {
     sky_pipeline: wgpu::RenderPipeline,
     skin_pipeline: wgpu::RenderPipeline,
     shine_layout: wgpu::BindGroupLayout,
+    shine_wrap_layout: wgpu::BindGroupLayout,
     shine_pipeline: wgpu::RenderPipeline,
     refract_pipeline: wgpu::RenderPipeline,
     line_pipeline: wgpu::RenderPipeline,
@@ -989,11 +1015,28 @@ impl ZonePipes {
                 count: None,
             }],
         });
+        let shine_wrap_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("shine with vertices"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: true, min_binding_size: wgpu::BufferSize::new(32) },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                },
+            ],
+        });
         let shine_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("actor shine"),
             layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("actor shine"),
-                bind_group_layouts: &[Some(&globals_layout), Some(&texture_layout), Some(&pose_layout), Some(&shine_layout)],
+                bind_group_layouts: &[Some(&globals_layout), Some(&texture_layout), Some(&pose_layout), Some(&shine_wrap_layout)],
                 immediate_size: 0,
             })),
             vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_skinned_shine"), compilation_options: Default::default(), buffers: &skin_buffers },
@@ -1089,7 +1132,7 @@ impl ZonePipes {
         let cull_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("cull"), bind_group_layouts: &[Some(&globals_layout), None, None, Some(&cull_layout)], immediate_size: 0 });
         let make_cull = |entry: &str| device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some(entry), layout: Some(&cull_pl), module: &shader, entry_point: Some(entry), compilation_options: Default::default(), cache: None });
         let cull = [make_cull("cs_cull_vis"), make_cull("cs_cull_compact")];
-        Self { globals_layout, texture_layout, pose_layout, scenery, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_pipeline, refract_pipeline, line_pipeline, sil_layout, sil_pipeline, cull_layout, cull }
+        Self { globals_layout, texture_layout, pose_layout, scenery, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_wrap_layout, shine_pipeline, refract_pipeline, line_pipeline, sil_layout, sil_pipeline, cull_layout, cull }
     }
 }
 
@@ -1376,11 +1419,6 @@ impl ZoneRenderer {
         // Slot 0 of actors: magenta, so a missing texture is obvious.
         let magenta = texture_bind_group(gpu, &p.texture_layout, &sampler, 1, 1, &[255, 0, 255, 255]);
         let shine_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("actor shine"), size: SHINE_SLOTS as u64 * SHINE_STRIDE, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
-        let shine_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("actor shine"),
-            layout: &p.shine_layout,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding { buffer: &shine_buf, offset: 0, size: wgpu::BufferSize::new(32) }) }],
-        });
         let refract_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("actor refraction"), size: SHINE_SLOTS as u64 * SHINE_STRIDE, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let refract_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("actor refraction"),
@@ -1424,7 +1462,7 @@ impl ZoneRenderer {
             skin_pipeline: p.skin_pipeline,
             shine_pipeline: p.shine_pipeline,
             shine_buf,
-            shine_group,
+            shine_wrap_layout: p.shine_wrap_layout.clone(),
             refract_pipeline: p.refract_pipeline,
             globals_layout: p.globals_layout.clone(),
             sil_layout: p.sil_layout,
@@ -1938,8 +1976,8 @@ impl ZoneRenderer {
         let mut a = self.new_actor(gpu, ch);
         let mesh = ch.skin.clone().unwrap_or_else(|| std::sync::Arc::new(SkinMesh::build(ch)));
         a.draws = mesh.groups.iter().map(|(tex, r, wep)| (a.slot.get(tex.as_str()).copied().unwrap_or(0), r.clone(), *wep)).collect();
-        let vertices = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("skinned actor"), contents: bytemuck::cast_slice(&mesh.verts), usage: wgpu::BufferUsages::VERTEX });
-        a.skin = Some(Skinned { vertices, bones: mesh.bones, offset: 0, frame: u64::MAX });
+        let vertices = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("skinned actor"), contents: bytemuck::cast_slice(&mesh.verts), usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE });
+        a.skin = Some(Skinned { vertices, shine: Default::default(), bones: mesh.bones, offset: 0, frame: u64::MAX });
         a
     }
 
@@ -1958,7 +1996,7 @@ impl ZoneRenderer {
             }
             let draws = mesh.groups.iter().map(|(tex, r, wep)| (slot.get(tex.as_str()).copied().unwrap_or(0), r.clone(), *wep)).collect();
             let size = (std::mem::size_of_val(mesh.verts.as_slice()) as u64).max(4);
-            let vertices = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("skinned actor"), size, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+            let vertices = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("skinned actor"), size, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
             let instance = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("actor instance"), size: INSTANCE_BYTES, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
             let actor = ActorGpu {
                 textures: vec![self.magenta.clone(); ch.textures.len() + 1],
@@ -1969,7 +2007,7 @@ impl ZoneRenderer {
                 hidden_weps: ch.init_hidden_mask(),
                 shine: None,
                 refract: None,
-                skin: Some(Skinned { vertices, bones: mesh.bones, offset: 0, frame: u64::MAX }),
+                skin: Some(Skinned { vertices, shine: Default::default(), bones: mesh.bones, offset: 0, frame: u64::MAX }),
                 alpha: 1.0,
                 tint: [1.0; 3],
                 flash: [0.0, 1.0],
@@ -2330,9 +2368,9 @@ impl ZoneRenderer {
                 if slot >= SHINE_SLOTS as u64 {
                     break;
                 }
-                gpu.queue.put(&self.shine_buf, slot * SHINE_STRIDE, bytemuck::cast_slice(&[s.u, s.v, 0.0, 0.0, s.tf[0], s.tf[1], s.tf[2], s.tf[3]]));
+                gpu.queue.put(&self.shine_buf, slot * SHINE_STRIDE, bytemuck::cast_slice(&[s.u, s.v, shine_wrap(), 0.0, s.tf[0], s.tf[1], s.tf[2], s.tf[3]]));
                 pass.set_pipeline(&self.shine_pipeline);
-                pass.set_bind_group(3, &self.shine_group, &[(slot * SHINE_STRIDE) as u32]);
+                pass.set_bind_group(3, self.shine_group(gpu, skin), &[(slot * SHINE_STRIDE) as u32]);
                 pass.set_bind_group(2, group, &[skin.offset]);
                 pass.set_bind_group(1, tex, &[]);
                 pass.set_vertex_buffer(0, skin.vertices.slice(..));
@@ -2424,9 +2462,9 @@ impl ZoneRenderer {
                 && let Some(tex) = self.shine_tex.get(&s.key)
             {
                 let so = (SHINE_SLOTS - 1 - slot) as u64 * SHINE_STRIDE;
-                gpu.queue.put(&self.shine_buf, so, bytemuck::cast_slice(&[s.u, s.v, 0.0, 0.0, s.tf[0], s.tf[1], s.tf[2], s.tf[3]]));
+                gpu.queue.put(&self.shine_buf, so, bytemuck::cast_slice(&[s.u, s.v, shine_wrap(), 0.0, s.tf[0], s.tf[1], s.tf[2], s.tf[3]]));
                 pass.set_pipeline(&self.shine_pipeline);
-                pass.set_bind_group(3, &self.shine_group, &[so as u32]);
+                pass.set_bind_group(3, self.shine_group(gpu, skin), &[so as u32]);
                 pass.set_bind_group(1, tex, &[]);
                 for (_, range, wep) in &a.draws {
                     if shown(*wep) {

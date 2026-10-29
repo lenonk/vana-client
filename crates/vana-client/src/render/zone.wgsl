@@ -269,12 +269,36 @@ struct ShineU {
 };
 @group(3) @binding(0) var<uniform> shine: ShineU;
 
+// The skinned vertices as words (SkinVertex, 20 a vertex: n0 at 3, n1 at 9, bones at 12), for the wrap.
+@group(3) @binding(1) var<storage, read> shine_verts: array<u32>;
+
+fn shine_coords(i: u32) -> vec2<f32> {
+    let o = 20u * i;
+    let w = &shine_verts;
+    let n0 = vec3<f32>(bitcast<f32>((*w)[o + 3u]), bitcast<f32>((*w)[o + 4u]), bitcast<f32>((*w)[o + 5u]));
+    let n1 = vec3<f32>(bitcast<f32>((*w)[o + 9u]), bitcast<f32>((*w)[o + 10u]), bitcast<f32>((*w)[o + 11u]));
+    let a = 6u + 2u * (*w)[o + 12u];
+    let b = 6u + 2u * (*w)[o + 13u];
+    let n = qrot(pose[a], n0) + qrot(pose[b], n1);
+    let len = length(n);
+    let nn = select(vec3<f32>(0.0), n / len, len > 1e-12);
+    let model = mat4x4<f32>(pose[0], pose[1], pose[2], pose[3]);
+    let wn = normalize((model * vec4<f32>(nn, 0.0)).xyz);
+    return vec2<f32>(0.5 * wn.x + 0.5 + shine.uv.x, 0.5 * wn.y + 0.5 + shine.uv.y);
+}
+
 // FUN_1002b6e0's second pass: texture coordinates from the camera-space normal through the inverse view rotation
-// (the world normal), x 0.5 + 0.5, plus the scroll.
+// (the world normal), x 0.5 + 0.5, plus the scroll. With 0040 Off (uv.z = 1, D3DRS_WRAP0 = 7) each coordinate runs the
+// short way round the 0 / 1 seam across a triangle: taken relative to the triangle's first corner.
 @vertex
-fn vs_skinned_shine(v: SkinIn) -> VertexOut {
+fn vs_skinned_shine(v: SkinIn, @builtin(vertex_index) vi: u32) -> VertexOut {
     var out = skin(v);
     out.uv = vec2<f32>(0.5 * out.normal.x + 0.5 + shine.uv.x, 0.5 * out.normal.y + 0.5 + shine.uv.y);
+    if (shine.uv.z > 0.5) {
+        let first = shine_coords(vi - vi % 3u);
+        let d = out.uv - first;
+        out.uv = first + d - round(d);
+    }
     return out;
 }
 

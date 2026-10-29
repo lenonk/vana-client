@@ -6411,6 +6411,7 @@ impl App {
         crate::render::MIPMAPS.store(cfg.tool("0000") != 0, std::sync::atomic::Ordering::Relaxed);
         crate::render::UNCOMPRESSED.store(cfg.tool("0018") >= 2, std::sync::atomic::Ordering::Relaxed);
         crate::render::MAP_COMPRESSED.store(cfg.tool("0019") == 0, std::sync::atomic::Ordering::Relaxed);
+        crate::render::SHINE_WRAP.store(cfg.tool("0040") == 0, std::sync::atomic::Ordering::Relaxed);
         let (tasks_tx, tasks) = channel();
         let phase = Phase::login(&cfg);
         let installed = crate::dat::installed(&cfg.ffxi_dir());
@@ -6541,6 +6542,7 @@ impl App {
         crate::render::MIPMAPS.store(self.cfg.tool("0000") != 0, std::sync::atomic::Ordering::Relaxed);
         crate::render::UNCOMPRESSED.store(self.cfg.tool("0018") >= 2, std::sync::atomic::Ordering::Relaxed);
         crate::render::MAP_COMPRESSED.store(self.cfg.tool("0019") == 0, std::sync::atomic::Ordering::Relaxed);
+        crate::render::SHINE_WRAP.store(self.cfg.tool("0040") == 0, std::sync::atomic::Ordering::Relaxed);
         let (m, e) = self.volume_factors();
         if let Some(a) = self.audio.as_mut() {
             a.set_volumes(m, e);
@@ -12254,6 +12256,15 @@ impl App {
                     }
                     let c = |sh: u32| ((tf >> sh) & 0xff) as f32 / 255.0;
                     shines.insert(id, crate::render::Shine { key, u, v, tf: [c(16), c(8), c(0), c(24)] });
+                }
+                // FFXI_SHINE_TEST (checks): a striped shine on our own actor, to see the pass and its 0040 wrap.
+                if std::env::var_os("FFXI_SHINE_TEST").is_some() {
+                    let key = (u32::MAX, 0);
+                    if !r.has_shine(key) {
+                        let rgba: Vec<u8> = (0..64 * 64).flat_map(|i| if (i % 64) / 8 % 2 == 0 { [255, 255, 255, 128] } else { [0, 0, 0, 0] }).collect();
+                        r.add_shine(&gfx.gpu, key, &crate::dat::zone::Texture::new(String::new(), 0, 64, 64, rgba));
+                    }
+                    shines.insert(w.my_id, crate::render::Shine { key, u: 0.25, v: 0.0, tf: [0.5, 0.5, 0.5, 0.5] });
                 }
                 // Ops 0x48 / 0x49: the refraction level per actor.
                 let refracts: HashMap<u32, f32> = w.effects.refractions().into_iter().collect();
