@@ -460,6 +460,14 @@ impl Ground {
         down.or_else(|| hits.iter().map(|h| h.0).filter(|&h| h <= y + 2.0 && h > y - 13.0).max_by(|a, b| a.total_cmp(b)))
     }
 
+    /// The heights of every face over (x, z), top first (diagnostics).
+    pub fn floors(&self, x: f32, z: f32) -> Vec<f32> {
+        let mut h: Vec<f32> = self.heights(x, z).into_iter().map(|h| (h.0 * 100.0).round() / 100.0).collect();
+        h.sort_by(|a, b| a.total_cmp(b));
+        h.dedup();
+        h
+    }
+
     /// FUN_101815d0: no wall within 4 ahead of 1 above the feet (FUN_1016b1d0), and the first face under that point
     /// (2 above the feet down to 98 below) is water (type 9).
     pub fn water_ahead(&self, pos: Vec3, forward: Vec3) -> bool {

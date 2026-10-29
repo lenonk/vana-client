@@ -416,6 +416,9 @@ struct Entity {
     /// ticks to the next idle pick (+0x1ba, FUN_1008da00).
     mon_stat: u8,
     idle_swap: f32,
+    /// The height the server last gave, and whether a drawn height far from it was logged (the floor follow's check).
+    server_y: f32,
+    floor_noted: bool,
     /// +0x2a0: the master's ActIndex (s2c 0x067 kind 3 @0x0C; LSB sends it for our trusts), 0 none.
     master: u16,
     /// +0x128 bit 29: the model's "init" ran (FUN_1008c480).
@@ -1352,6 +1355,8 @@ fn self_entity(w: &World) -> Entity {
         sub: [0, 8, 0],
         mon_stat: 0,
         idle_swap: 0.0,
+        server_y: 0.0,
+        floor_noted: false,
         master: 0,
         init_done: false,
         motion_bases: Vec::new(),
@@ -4002,6 +4007,8 @@ fn place_mogdoor(w: &mut World) {
             sub: [0, 8, 0],
             mon_stat: 0,
             idle_swap: 0.0,
+            server_y: 0.0,
+            floor_noted: false,
             master: 0,
             init_done: false,
             motion_bases: Vec::new(),
@@ -8013,6 +8020,8 @@ impl App {
                         sub: [0, 8, 0],
                         mon_stat: 0,
                         idle_swap: 0.0,
+                        server_y: 0.0,
+                        floor_noted: false,
                         master: 0,
                         init_done: false,
                         motion_bases: Vec::new(),
@@ -8107,6 +8116,7 @@ impl App {
                     }
                     if let Some(p) = e.pos {
                         let mut p = Vec3::from(p);
+                        entry.server_y = p.y;
                         entry.grounded = e.ground;
                         if e.ground
                             && let Some(y) = world.ground.as_ref().filter(|_| world.zone == Some(world.pos_zone) && world.loading.is_none()).and_then(|g| g.snap(p.x, p.z, p.y))
@@ -9133,6 +9143,12 @@ impl App {
                 if let Some(y) = g.snap(e.pos.x, e.pos.z, e.pos.y) {
                     e.pos.y = y;
                 }
+                // Diagnostic: drawn on another level than the server's height (the floors under it, Y down).
+                let far = (e.pos.y - e.server_y).abs() > 3.0;
+                if far && !e.floor_noted {
+                    log::info!("floor: {} {eid:#x} at ({:.1}, {:.1}): server y {:.2}, drawn {:.2}, floors {:?}", e.name, e.pos.x, e.pos.z, e.server_y, e.pos.y, g.floors(e.pos.x, e.pos.z));
+                }
+                e.floor_noted = far;
                 if let Some(y) = g.snap(e.target.x, e.target.z, e.target.y) {
                     e.target.y = y;
                 }
