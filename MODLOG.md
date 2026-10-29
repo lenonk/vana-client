@@ -12035,3 +12035,22 @@ since "Ship voyages: the moving world" listed them as not done.
   dl_data), faith*, 20th*, 2habi*.
 - tex-export and tex-pack now leave out the textures a file's own sprite libraries use (texpack.rs `images`); the 639
   files were rebuilt (one still had other images; the rest are stock again).
+
+## Config tool 0023 "Simple Character Creation" (2026-10-29)
+
+- Spec: `~/ffxi/lab/research/stored_settings_spec.md` section 7 (cur FUN_10239720 creator entry, FUN_10239260 /
+  FUN_102394c0 chdummy mode 0).
+- Read as the creator opens (App::creator_simple). With it on: no zone-133 backdrop, no dancer, no race music (the title
+  music goes on, MusicScene::Title until the nation step); creator::Portrait is chdummy mode 0:
+  - index face % 8 + (race + hair x 8) x 8, file 39631 + index (charmake<race><face>[b], 512 x 512 DXT1 + one sprite
+    whose cell is 512 x 448 at 0, 0);
+  - per 30 Hz frame: a change starts a 10-frame settle (a further change during it goes back to waiting), the level
+    drops 8 a frame from 0x80 to 0, the file loads (a thread), the level rises 8 a frame back to 0x80; FUN_10239480(0)
+    starts at level 0x80 with nothing shown, so the first picture comes after the settle and a fade-out of nothing;
+  - drawn first in the 2D layer at the chdummy window's origin (0, 0, layout 39542), the cell's colour (0x80, 0x80,
+    0x80, 0xc0) times the level: rgb a / 0x80, alpha min(1.5 a / 0x80, 1).
+  - From the nation step on chdummy is mode 1 (the flyover, drawn without a creator scene); going back restarts mode 0.
+- Not done: the forced-on cases (app state 4 after a lobby return whose dancer had drawn *(inf)*, the fallback device)
+  and the screen tint reset on leaving *(inf)*.
+- Seen live (lnxtest01, Create, classic and modern UI): Hume M face 1 hair A, then Down: the old picture holds through
+  the settle, Hume F follows.

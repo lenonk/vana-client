@@ -6286,6 +6286,9 @@ pub struct App {
     creator: Option<creator::Creator>,
     creator_state: LoadState,
     dancer_loading: Option<(usize, usize)>,
+    /// Config-tool 0023 read as the creator opens: the 2-D portraits (creator::Portrait) instead of the 3D scene.
+    creator_simple: bool,
+    portrait: creator::Portrait,
     creator_step: usize,
     creator_yes: bool,
     /// The creator's menu ok popup and what its OK leads to.
@@ -6496,6 +6499,8 @@ impl App {
             creator: None,
             creator_state: LoadState::Idle,
             dancer_loading: None,
+            creator_simple: false,
+            portrait: Default::default(),
             creator_step: 0,
             creator_yes: false,
             creator_ok: None,
@@ -6785,6 +6790,7 @@ impl App {
         let scene = match &self.phase {
             Phase::Login { .. } => MusicScene::Title,
             // FUN_1022ef00: the race BGM until the nation step (its step 7, where the dancer is also torn down).
+            Phase::Characters { screen: LobbyScreen::Create, .. } if self.creator_simple && self.creator_step < 6 => MusicScene::Title,
             Phase::Characters { screen: LobbyScreen::Create, .. } if !self.music_created && self.creator_step < 6 => MusicScene::Creator,
             Phase::Characters { screen: LobbyScreen::Create, .. } => MusicScene::Created,
             Phase::Characters { screen: LobbyScreen::Select, .. } if self.music_created => MusicScene::Created,
@@ -10774,6 +10780,7 @@ impl App {
                             Some(1) => {
                                 *screen = LobbyScreen::Create;
                                 self.creator_step = 0;
+                                (self.creator_simple, self.portrait) = (self.cfg.tool("0023") != 0, Default::default());
                                 (self.creator_world, self.creator_passed, self.creator_refused) = (None, None, None);
                             }
                             Some(2) => *screen = LobbyScreen::Delete,
@@ -10884,7 +10891,7 @@ impl App {
                             None => {}
                         }
                     }
-                    LobbyScreen::Create if self.game_ui.is_some() && self.creator.is_some() => {
+                    LobbyScreen::Create if self.game_ui.is_some() && (self.creator.is_some() || self.creator_simple) => {
                         // Steps and their menus (0x30 layouts); help lines from groups 8 / 0x1b (creator::draw_ui).
                         // Step 7 is the type-5 confirm, 8 the create under way; menu ok popups over any step.
                         use creator::STEPS;
@@ -10960,6 +10967,15 @@ impl App {
                             }
                         }
                         gu.clear();
+                        if self.creator_simple {
+                            if step < 6 {
+                                let index = self.index.clone();
+                                self.portrait.update(creator::Portrait::index(*race, *face as usize / 2, *face as usize % 2), index.as_ref());
+                                self.portrait.draw(gu);
+                            } else {
+                                self.portrait = Default::default();
+                            }
+                        }
                         if step >= 6 && self.nation.fade < 1.0 {
                             gu.rect(0.0, 0.0, sw, sh, [0.0, 0.0, 0.0, 1.0 - self.nation.fade]);
                         }
@@ -11657,7 +11673,7 @@ impl App {
             self.select_key.clear();
         }
         let in_create = matches!(&self.phase, Phase::Characters { screen: LobbyScreen::Create, .. });
-        if in_create {
+        if in_create && !self.creator_simple {
             if self.creator.is_none() && self.creator_state == LoadState::Idle
                 && let Ok((index, keys)) = self.game_data()
             {
@@ -11684,7 +11700,7 @@ impl App {
                     });
                 }
             }
-        } else if !matches!(self.phase, Phase::Characters { .. }) {
+        } else if !in_create && !matches!(self.phase, Phase::Characters { .. }) {
             self.creator = None;
         }
         // Nation step: the highlighted city's flyover (FUN_1022ea40): a 10-frame settle, a 60-tick fade to
@@ -11763,7 +11779,7 @@ impl App {
         self.last_frame = Instant::now();
         self.key_functions(dt);
         perf::timed(|| "movement".into(), || self.update_movement(dt));
-        if matches!(&self.phase, Phase::Characters { screen: LobbyScreen::Create, .. }) && self.creator.as_ref().is_some_and(|c| c.wants().is_some()) && self.lobby_fade.next.is_none() {
+        if matches!(&self.phase, Phase::Characters { screen: LobbyScreen::Create, .. }) && (self.creator_simple || self.creator.as_ref().is_some_and(|c| c.wants().is_some())) && self.lobby_fade.next.is_none() {
             self.lobby_fade.scene_to = 1.0;
         }
         // FUN_10230a10 loads the select scene before it fades in (FUN_10233cf0): hold the fade while ours loads.
@@ -12833,6 +12849,18 @@ impl App {
                     }
                 }
             }
+            drew_world = true;
+        }
+        if matches!(&self.phase, Phase::Characters { screen: LobbyScreen::Create, .. })
+            && self.creator_simple
+            && self.creator_step >= 6
+            && let Some((_, fly)) = &mut self.nation.fly
+        {
+            fly.advance(dt);
+            if fly.done {
+                fly.restart();
+            }
+            fly.render(&gfx.gpu, gfx.config.format, &mut encoder, &scene_view, &scene_depth, bg, aspect);
             drew_world = true;
         }
         if matches!(&self.phase, Phase::Characters { screen: LobbyScreen::Select | LobbyScreen::Delete, .. })

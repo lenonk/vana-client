@@ -772,3 +772,113 @@ mod random_name_tests {
         }
     }
 }
+
+/// Config-tool 0023 (Simple Character Creation): chdummy mode 0 (FUN_1022ea40 / FUN_1022eca0, cur FUN_10239260 /
+/// FUN_102394c0) shows a 2-D portrait of (race, face, hair) in place of the dancer: file 39631 + face % 8 + (race + hair
+/// x 8) x 8. A change waits out a 10-frame settle, fades the old picture out 8 a frame, loads, fades in 8 a frame; the
+/// file's sprite (512 x 448 at the chdummy window's origin, 0, 0) is drawn with colour (a, a, a, a), linear.
+pub struct Portrait {
+    /// +0x1c / +0x20: the index wanted and the one being shown; +0x18 the state; +0x24 the colour level.
+    want: Option<u32>,
+    shown: Option<u32>,
+    state: u32,
+    level: i32,
+    /// The picture up (+0x34): its image name and size; the next one loading.
+    up: Option<(String, f32, f32)>,
+    rx: Option<std::sync::mpsc::Receiver<Option<(u32, u32, u32, Vec<u8>)>>>,
+    pending: Option<(String, u32, u32, Vec<u8>)>,
+    ticks: f32,
+    last: Option<std::time::Instant>,
+}
+
+impl Default for Portrait {
+    /// FUN_10239480(0): level 0x80, nothing wanted or shown.
+    fn default() -> Self {
+        Portrait { want: None, shown: None, state: 0, level: 0x80, up: None, rx: None, pending: None, ticks: 0.0, last: None }
+    }
+}
+
+/// A portrait file's picture: its sprite's cell cut from the image (cells address it in stock texels).
+fn portrait_picture(index: &DatIndex, file: u32) -> Option<(u32, u32, Vec<u8>)> {
+    let ui = crate::dat::ui::UiFile::parse(&index.read(file).ok()?).ok()?;
+    let cell = ui.libs.first()?.sprites.first()?.cells.first()?.clone();
+    let img = ui.images.get(&cell.texture)?;
+    let (u, v, w, h) = (cell.uv[0] as u32, cell.uv[1] as u32, cell.size[0] as u32, cell.size[1] as u32);
+    if u + w > img.width || v + h > img.height {
+        return None;
+    }
+    let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+    for y in v..v + h {
+        let at = ((y * img.width + u) * 4) as usize;
+        rgba.extend_from_slice(&img.rgba[at..at + (w * 4) as usize]);
+    }
+    Some((w, h, rgba))
+}
+
+impl Portrait {
+    /// The picture index of race 0..7, face 0..7, hair 0 / 1.
+    pub fn index(race: usize, face: usize, hair: usize) -> u32 {
+        (face % 8 + (race + hair * 8) * 8) as u32
+    }
+
+    /// One update per 30 Hz frame since the last call.
+    pub fn update(&mut self, want: u32, index: Option<&Arc<DatIndex>>) {
+        let now = std::time::Instant::now();
+        let dt = self.last.map_or(0.0, |t| (now - t).as_secs_f32().min(0.1));
+        self.last = Some(now);
+        self.want = Some(want);
+        self.ticks += dt * 30.0;
+        while self.ticks >= 1.0 {
+            self.ticks -= 1.0;
+            self.frame(index);
+        }
+    }
+
+    fn frame(&mut self, index: Option<&Arc<DatIndex>>) {
+        // The settle: a change starts it; at its end a further change goes back to waiting.
+        match self.state {
+            0 if self.want != self.shown => (self.shown, self.state) = (self.want, 1),
+            1..=9 => self.state += 1,
+            10 => self.state = if self.want != self.shown { 0 } else { 0xb },
+            _ => {}
+        }
+        match self.state {
+            0xb if self.level != 0 => self.level -= 8,
+            0xb => self.state += 1,
+            0xc => {
+                let (Some(index), Some(n)) = (index, self.shown) else { return };
+                let (index, (tx, rx)) = (index.clone(), std::sync::mpsc::channel());
+                std::thread::spawn(move || {
+                    let _ = tx.send(portrait_picture(&index, 39631 + n).map(|(w, h, rgba)| (n, w, h, rgba)));
+                });
+                self.rx = Some(rx);
+                self.state += 1;
+            }
+            0xd => {
+                if let Some(got) = self.rx.as_ref().and_then(|r| r.try_recv().ok()) {
+                    self.rx = None;
+                    if let Some((n, w, h, rgba)) = got {
+                        let name = format!("portrait:{n}");
+                        self.up = Some((name.clone(), w as f32, h as f32));
+                        self.pending = Some((name, w, h, rgba));
+                    }
+                    self.state += 1;
+                }
+            }
+            0xe if self.level != 0x80 => self.level += 8,
+            0xe => self.state += 1,
+            0xf => self.state = 0,
+            _ => {}
+        }
+    }
+
+    /// The picture at the origin; the cell colour (0x80, 0x80, 0x80, 0xc0) times the level.
+    pub fn draw(&mut self, gu: &mut super::game_ui::GameUi) {
+        if let Some((name, w, h, rgba)) = self.pending.take() {
+            gu.image(&name, w, h, rgba);
+        }
+        let Some((name, w, h)) = &self.up else { return };
+        let k = self.level as f32 / 128.0;
+        gu.image_rect(name, 0.0, 0.0, *w, *h, [k, k, k, (1.5 * k).min(1.0)]);
+    }
+}
