@@ -12705,6 +12705,13 @@ impl App {
                 // FUN_10179390: the camera list under the eye, at the Retail draw distance only (render/cull.rs).
                 let list = if self.cfg.draw_distance == 100 { w.ground.as_ref().map_or(0, |g| g.camera_list(camera.eye)) } else { 0 };
                 r.set_camera_list(&gfx.gpu, list);
+                // Config 0011: the animated meshes' sway this frame (render/sway.rs).
+                let steps = match self.cfg.tool("0011") {
+                    0 => 1,
+                    1 => 16,
+                    _ => 32,
+                };
+                r.set_sway(dt * 60.0, steps, crate::dat::zone::SWAY_TAGS.iter().position(|t| *t == crate::dat::weather::weather_tag(w.weather)));
                 perf::timed(|| "zone render".into(), || r.render(&gfx.gpu, &mut encoder, &scene_raw, &scene_depth, &camera, aspect, &actors));
                 mark!("scene");
                 // The actors' ground shadows over the scene (client/shadows.rs, render/shadow.rs).

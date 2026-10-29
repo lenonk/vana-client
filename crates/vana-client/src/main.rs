@@ -1191,6 +1191,8 @@ fn main() -> Result<()> {
                         Some(m)
                     });
                     let setup = |gpu: &render::Gpu, r: &mut render::ZoneRenderer| {
+                        // Config 0011 at this weather; one frame, so the instances stand at their random start.
+                        r.set_sway(0.0, sway_steps(cfg.tool("0011")), dat::zone::SWAY_TAGS.iter().position(|t| *t == weather));
                         if let Some(v) = voyage_v {
                             r.voyage = v;
                         }
@@ -2231,6 +2233,15 @@ impl fx::Actors for ShotActors {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Config 0011's steps: Off 1 (static), Normal 16, Smooth 32 (FUN_10168eb0).
+fn sway_steps(v: u32) -> u32 {
+    match v {
+        0 => 1,
+        1 => 16,
+        _ => 32,
+    }
+}
+
 fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim: &[f32], (category, anim, dust, fx_file): (u8, u16, Option<String>, Option<u32>), walk: &[f32], frames: u32, every: u32, hour: f32, despawn: Option<u32>) -> Result<()> {
     use glam::Vec3;
     let cfg = config::Config::load();

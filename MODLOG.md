@@ -12054,3 +12054,22 @@ since "Ship voyages: the moving world" listed them as not done.
   and the screen tint reset on leaving *(inf)*.
 - Seen live (lnxtest01, Create, classic and modern UI): Hume M face 1 hair A, then Down: the old picture holds through
   the settle, Hume F follows.
+
+## Config tool 0011 "Environment Animation" (2026-10-29)
+
+- Spec: `~/ffxi/lab/research/stored_settings_spec.md` section 2 (MMB loader FUN_10168eb0, per-draw FUN_101734f0,
+  curve FUN_10053550, curve tables FUN_10160700 / FUN_10160830 / FUN_101606a0).
+- Data: dat/zone.rs keeps the type-2 vertices' delta (@12 of the 48-byte vertex; Vertex::delta, Mmb::animated) and the
+  curves (sway_curves: per SWAY_TAGS weather tag the type-0x19 chunks of `weat/<tag>/kfrm`, else `mode/kfrm`, at
+  most 32; (t, value) pairs up to t = 1). Zone 101 has mode/kfrm only (one curve for every tag); Jugner (104) has
+  weat/fine/kfrm and no mode/kfrm, so its animated meshes stand still in any other weather (retail too, as read).
+- GPU (render/sway.rs): per animated instance a (timer, curve) state, the timer from rand() % 300, the curve picked
+  on the first frame. A compute pass per frame, before the culling copies the instances: the timer advances by the
+  frame's ticks; past 300 it wraps and picks a curve of the current weather; s = max(0, 1 - curve(timer / 300)),
+  k = floor((N - 1) s) / (N - 1) with N = 1 / 16 / 32 for Off / Normal / Smooth, written into the instance's area.y.
+  vs_main adds k x delta (vertex flags >> 8 index the deltas at globals binding 4; retail draws position buffer
+  trunc((N - 1) s) of N baked ones, the same quantised offsets). Mesh boxes include pos + delta for the culling.
+- Not modelled: undrawn instances keep advancing (retail advances an instance only when drawn *(inf: call site)*);
+  the random picks are a hash, not rand(). Sub-areas share the zone's globals and get no deltas (none seen animated).
+- Seen: zone-shot of La Theine (102) by an animated instance: the dandelions' heads move between Off and Smooth;
+  live in East Ronfaure (2412 animated instances, 6118 deltas) with no errors.

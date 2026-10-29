@@ -115,6 +115,8 @@ pub struct Vertex {
     /// BGRA
     pub color: u32,
     pub uv: [f32; 2],
+    /// An animated mesh's (type 2) sway offset at full swing (0011; zero otherwise).
+    pub delta: [f32; 3],
 }
 
 pub struct Model {
@@ -130,6 +132,8 @@ pub struct Mmb {
     pub min: [f32; 3],
     pub max: [f32; 3],
     pub models: Vec<Model>,
+    /// Header byte 4 = 2: an animated mesh whose vertices sway along their delta (FUN_10168eb0, config 0011).
+    pub animated: bool,
 }
 
 pub fn parse_mmb(p: &[u8]) -> Result<Mmb> {
@@ -201,7 +205,8 @@ pub fn parse_mmb(p: &[u8]) -> Result<Mmb> {
                     let v = at + i * stride;
                     let n = if wide_vertex { v + 24 } else { v + 12 };
                     let c = n + 12;
-                    Vertex { pos: vec3_at(p, v), normal: vec3_at(p, n), color: u32_at(p, c), uv: [f32_at(p, c + 4), f32_at(p, c + 8)] }
+                    let delta = if wide_vertex { vec3_at(p, v + 12) } else { [0.0; 3] };
+                    Vertex { pos: vec3_at(p, v), normal: vec3_at(p, n), color: u32_at(p, c), uv: [f32_at(p, c + 4), f32_at(p, c + 8)], delta }
                 })
                 .collect();
             at += nverts * stride;
@@ -215,7 +220,52 @@ pub fn parse_mmb(p: &[u8]) -> Result<Mmb> {
             models.push(Model { texture, blending, vertices, indices, strip: !triangle_list });
         }
     }
-    Ok(Mmb { name, min, max, models })
+    Ok(Mmb { name, min, max, models, animated: wide_vertex })
+}
+
+/// The 20 weather tags FUN_10160700 gathers sway curves for, in its order.
+pub const SWAY_TAGS: [&str; 20] = ["fine", "suny", "clod", "mist", "dryw", "heat", "rain", "sqal", "dust", "sand", "wind", "stom", "snow", "bliz", "thdr", "bolt", "aura", "ligt", "fogd", "dark"];
+
+/// The environment-animation curves (FUN_10160830): per weather tag the type-0x19 chunks of `weat/<tag>/kfrm`, else
+/// of `mode/kfrm`, at most 32 each; a curve is its (t, value) pairs up to the one at t = 1.
+#[derive(Clone, Debug, Default)]
+pub struct SwayCurves {
+    pub by_tag: Vec<Vec<Vec<[f32; 2]>>>,
+}
+
+pub fn sway_curves(file: &[u8]) -> SwayCurves {
+    let parse = |d: &[u8]| -> Vec<[f32; 2]> {
+        let mut out = Vec::new();
+        for k in (0..d.len().saturating_sub(7)).step_by(8) {
+            let pair = [f32_at(d, k), f32_at(d, k + 4)];
+            out.push(pair);
+            if pair[0] >= 1.0 {
+                break;
+            }
+        }
+        out
+    };
+    let (mut weat, mut mode): (std::collections::HashMap<String, Vec<Vec<[f32; 2]>>>, Vec<Vec<[f32; 2]>>) = (Default::default(), Vec::new());
+    let mut stack: Vec<String> = Vec::new();
+    for c in chunks(file).unwrap_or_default() {
+        match c.kind {
+            0x01 => stack.push(c.name()),
+            0x00 => {
+                stack.pop();
+            }
+            0x19 => {
+                let n = stack.len();
+                if n >= 3 && stack[n - 1] == "kfrm" && stack[n - 3] == "weat" {
+                    weat.entry(stack[n - 2].clone()).or_default().push(parse(c.data));
+                } else if n >= 2 && stack[n - 1] == "kfrm" && stack[n - 2] == "mode" {
+                    mode.push(parse(c.data));
+                }
+            }
+            _ => {}
+        }
+    }
+    let pick = |v: &[Vec<[f32; 2]>]| v.iter().take(32).cloned().collect::<Vec<_>>();
+    SwayCurves { by_tag: SWAY_TAGS.iter().map(|t| weat.get(*t).filter(|v| !v.is_empty()).map_or_else(|| pick(&mode), |v| pick(v))).collect() }
 }
 
 #[derive(Clone, Debug)]
@@ -628,10 +678,12 @@ pub struct ZoneScene {
     pub paths: [Option<Vec<u8>>; 4],
     /// The MZB's camera lists by offset (camera_lists), as indices into `placements`.
     pub camera_lists: std::collections::HashMap<u32, Vec<u32>>,
+    /// The animated meshes' curves per weather tag (sway_curves).
+    pub sway: SwayCurves,
 }
 
 pub fn load_scene(keys: &Keys, file: &[u8]) -> Result<ZoneScene> {
-    let mut scene = ZoneScene { regions: Vec::new(), collision: None, placements: Vec::new(), meshes: Vec::new(), textures: Vec::new(), warnings: Vec::new(), light_keys: Vec::new(), paths: Default::default(), camera_lists: Default::default() };
+    let mut scene = ZoneScene { regions: Vec::new(), collision: None, placements: Vec::new(), meshes: Vec::new(), textures: Vec::new(), warnings: Vec::new(), light_keys: Vec::new(), paths: Default::default(), camera_lists: Default::default(), sway: sway_curves(file) };
     let list: Vec<Chunk> = chunks(file)?;
     for c in list {
         let mut data = c.data.to_vec();

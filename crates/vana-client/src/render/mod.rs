@@ -17,6 +17,7 @@ pub mod scale;
 pub mod gputime;
 pub mod cull;
 pub mod shadow;
+pub mod sway;
 
 use crate::dat::zone::ZoneScene;
 use anyhow::{Context, Result};
@@ -192,6 +193,7 @@ struct GpuVertex {
     color: [u8; 4],
     uv: [f32; 2],
     /// Bit 0: the MMB model's flag 0x1000 (header u32 +0x10 bit 28): lit by the sub-area's 'ev10' while one is in.
+    /// Bits 8..31: an animated mesh's delta (ZoneGeometry::deltas index + 1, 0 none; render/sway.rs).
     flags: u32,
 }
 
@@ -340,6 +342,8 @@ pub struct ZoneRenderer {
     globals: wgpu::BindGroup,
     textures: Vec<wgpu::BindGroup>,
     instances: wgpu::Buffer,
+    /// The animated meshes' sway (config 0011, render/sway.rs), run before the culling.
+    sway: Option<sway::Sway>,
     /// The zone's scenery culled on the GPU (render/cull.rs) when the device draws indirectly, and its passes.
     cull: Option<cull::Cull>,
     cull_pipes: [wgpu::ComputePipeline; 2],
@@ -821,6 +825,12 @@ impl ZonePipes {
                     ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                },
             ],
         });
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1190,16 +1200,26 @@ pub struct ZoneGeometry {
     camera_lists: HashMap<u32, Vec<u32>>,
     /// Each instance's world bounding sphere (centre, radius), for the lamps' lights (set_lamps).
     spheres: Vec<[f32; 4]>,
+    /// Config 0011: the animated meshes' vertex deltas (GpuVertex flags >> 8, minus 1), their instances and the
+    /// zone's curves (render/sway.rs). None for a sub-area, which shares the zone's globals.
+    deltas: Vec<[f32; 4]>,
+    sway_insts: Vec<u32>,
+    sway_curves: crate::dat::zone::SwayCurves,
 }
 
 impl ZoneGeometry {
     pub fn build(scene: &ZoneScene) -> Self {
-        Self::build_keyed(scene, &scene.light_keys, &[])
+        Self::build_with(scene, &scene.light_keys, &[], true)
     }
 
     /// With the point-light table `keys` (a sub-area's light refs resolve into the zone's table, FUN_1017a5e0).
     /// `areas`: area keys already in slots (the zone's, for a sub-area); new ones follow.
     pub fn build_keyed(scene: &ZoneScene, keys: &[u32], areas: &[u32]) -> Self {
+        Self::build_with(scene, keys, areas, false)
+    }
+
+    /// `animate`: the animated meshes keep their deltas (not for a sub-area).
+    fn build_with(scene: &ZoneScene, keys: &[u32], areas: &[u32], animate: bool) -> Self {
         // Slot 0 is the plain white texture; scene textures follow in order.
         let texture_slot: HashMap<&str, usize> = scene.textures.iter().enumerate().map(|(i, t)| (t.name.as_str(), i + 1)).collect();
         // A placement's refs become their table slot + 1, except keys starting with 'c', which the main scenery
@@ -1278,6 +1298,7 @@ impl ZoneGeometry {
         let mut draws = Vec::new();
         let mut all_verts: Vec<GpuVertex> = Vec::new();
         let mut all_indices: Vec<u16> = Vec::new();
+        let (mut deltas, mut sway_insts): (Vec<[f32; 4]>, Vec<u32>) = (Vec::new(), Vec::new());
         for mesh in &scene.meshes {
             let Some(mut mats) = by_mesh.remove(mesh.name.as_str()) else { continue };
             // Normal placements first, then the mirrored ones (culled the other way).
@@ -1295,10 +1316,15 @@ impl ZoneGeometry {
             }
             let (instances, mirrored) = (start..split, split..matrices.len() as u32);
             // The mesh's box over every model drawn, for each of its placements.
+            // Swaying meshes reach as far as pos + delta.
             let (lo, hi) = mesh.models.iter().filter(|m| !m.indices.is_empty()).flat_map(|m| m.vertices.iter()).fold((Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)), |(lo, hi), v| {
-                let p = Vec3::from(v.pos);
-                (lo.min(p), hi.max(p))
+                let (p, q) = (Vec3::from(v.pos), Vec3::from(v.pos) + Vec3::from(v.delta));
+                (lo.min(p).min(q), hi.max(p).max(q))
             });
+            let sways = animate && mesh.animated && mesh.models.iter().any(|m| m.vertices.iter().any(|v| v.delta != [0.0; 3]));
+            if sways {
+                sway_insts.extend(start..matrices.len() as u32);
+            }
             let (c, h) = if lo.x <= hi.x { ((lo + hi) / 2.0, (hi - lo) / 2.0) } else { (Vec3::ZERO, Vec3::ZERO) };
             bounds.extend(reaches.iter().map(|r| [c.x, c.y, c.z, r[0], h.x, h.y, h.z, r[1]]));
             for inst in &matrices[start as usize..] {
@@ -1317,7 +1343,12 @@ impl ZoneGeometry {
                     .iter()
                     .map(|v| {
                         let [b, g, r, a] = v.color.to_le_bytes();
-                        GpuVertex { pos: v.pos, normal: v.normal, color: [r, g, b, a], uv: v.uv, flags: (model.blending & 0x1000 != 0) as u32 }
+                        let mut flags = (model.blending & 0x1000 != 0) as u32;
+                        if sways && v.delta != [0.0; 3] && deltas.len() < 0xff_ffff {
+                            deltas.push([v.delta[0], v.delta[1], v.delta[2], 0.0]);
+                            flags |= (deltas.len() as u32) << 8;
+                        }
+                        GpuVertex { pos: v.pos, normal: v.normal, color: [r, g, b, a], uv: v.uv, flags }
                     })
                     .collect();
                 let count = (indices.len() / 3 * 3) as u32;
@@ -1354,7 +1385,8 @@ impl ZoneGeometry {
         while all_indices.len() % 2 != 0 || all_indices.is_empty() {
             all_indices.push(0);
         }
-        Self { matrices, links, light_keys, area_keys, door_parts, door_bases, draws, verts: all_verts, indices: all_indices, cull, inst_placement, camera_lists: scene.camera_lists.clone(), spheres }
+        let sway_curves = if sway_insts.is_empty() { Default::default() } else { scene.sway.clone() };
+        Self { matrices, links, light_keys, area_keys, door_parts, door_bases, draws, verts: all_verts, indices: all_indices, cull, inst_placement, camera_lists: scene.camera_lists.clone(), spheres, deltas, sway_insts, sway_curves }
     }
 
     fn parts(&self) -> [&[u8]; 3] {
@@ -1403,6 +1435,10 @@ impl ZoneRenderer {
         let lights = device.create_buffer(&wgpu::BufferDescriptor { label: Some("point lights"), size: (LIGHTS * 32) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let areas = device.create_buffer(&wgpu::BufferDescriptor { label: Some("area lighting"), size: (AREAS * std::mem::size_of::<AreaGpu>()) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let parts_gpu = device.create_buffer(&wgpu::BufferDescriptor { label: Some("door parts"), size: (PARTS * std::mem::size_of::<PartGpu>()) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let deltas = device.create_buffer(&wgpu::BufferDescriptor { label: Some("sway deltas"), size: (geo.deltas.len().max(1) * 16) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        if !geo.deltas.is_empty() {
+            gpu.queue.put(&deltas, 0, bytemuck::cast_slice(&geo.deltas));
+        }
         let globals = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("globals"),
             layout: &p.globals_layout,
@@ -1411,6 +1447,7 @@ impl ZoneRenderer {
                 wgpu::BindGroupEntry { binding: 1, resource: lights.as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 2, resource: areas.as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 3, resource: parts_gpu.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 4, resource: deltas.as_entire_binding() },
             ],
         });
         let sampler = mip_sampler(device);
@@ -1430,7 +1467,12 @@ impl ZoneRenderer {
         // The culling reads the instances as storage.
         let instances = buffer("instances", m, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE);
         let cull = cull::Cull::new(gpu, &p.cull_layout, &geo.cull, &instances);
+        let sway = sway::Sway::new(gpu, &geo.sway_insts, &geo.sway_curves, &instances);
+        if sway.is_some() {
+            log::info!("environment animation: {} instances, {} vertex deltas, curves per tag {:?}", geo.sway_insts.len(), geo.deltas.len(), geo.sway_curves.by_tag.iter().map(Vec::len).collect::<Vec<_>>());
+        }
         Self {
+            sway,
             scenery: p.scenery,
             actor_pipeline: p.actor_pipeline,
             sky_pipeline: p.sky_pipeline,
@@ -2141,6 +2183,14 @@ impl ZoneRenderer {
         self.shine_tex.insert(key, view_bind_group(gpu, &self.texture_layout, &self.sampler, &view));
     }
 
+    /// This frame's environment animation (config 0011): 60 Hz ticks, steps 1 / 16 / 32, the weather tag's index
+    /// in dat::zone::SWAY_TAGS (None: the "suny" curves).
+    pub fn set_sway(&mut self, ticks: f32, steps: u32, tag: Option<usize>) {
+        if let Some(s) = &mut self.sway {
+            s.next = (ticks, steps, tag.unwrap_or(1) as u32);
+        }
+    }
+
     /// Uploads this frame's posed mesh and placement.
     pub fn update_actor(&self, gpu: &Gpu, actor: &mut ActorGpu, mesh: &character::PosedMesh, model: Mat4) {
         let mut verts: Vec<GpuVertex> = Vec::new();
@@ -2243,6 +2293,9 @@ impl ZoneRenderer {
         }
         gpu.queue.put(&self.areas, 0, bytemuck::cast_slice(&areas));
         gpu.queue.put(&self.uniforms, 0, bytemuck::bytes_of(&u));
+        if let Some(s) = &self.sway {
+            s.run(gpu, encoder);
+        }
         // The scenery this camera sees (render/cull.rs), from the uniforms just written.
         if let Some(c) = &self.cull {
             c.run(encoder, &self.globals, &self.cull_pipes);

@@ -53,6 +53,8 @@ struct Part {
     pos_time: vec4<f32>,
 };
 @group(0) @binding(3) var<storage, read> parts: array<Part>;
+// Config 0011: the animated meshes' vertex deltas (vertex flags >> 8, minus 1); the instance's sway is area.y.
+@group(0) @binding(4) var<storage, read> deltas: array<vec4<f32>>;
 
 fn part_k(time: vec4<f32>) -> f32 {
     return select(clamp((u.area_info.y - time.x) / time.y, 0.0, 1.0), 1.0, time.y <= 0.0);
@@ -171,7 +173,13 @@ fn vs_main(v: VertexIn) -> VertexOut {
     if (voyaged) {
         model = u.voyage * model;
     }
-    let world = model * vec4<f32>(v.pos, 1.0);
+    // FUN_10175ac0 binds position buffer trunc((N - 1) s) = pos + k delta (render/sway.rs writes k).
+    var pos = v.pos;
+    let di = v.flags >> 8u;
+    if (di != 0u) {
+        pos = pos + bitcast<f32>(v.area.y) * deltas[di - 1u].xyz;
+    }
+    let world = model * vec4<f32>(pos, 1.0);
     var out: VertexOut;
     out.clip = u.view_proj * world;
     out.color = v.color;
