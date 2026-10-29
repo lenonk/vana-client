@@ -279,6 +279,8 @@ fn text_field_open(w: &World) -> bool {
         || macroedit::typing(w)
         || faqmain::typing(w)
         || polmail::composing(w)
+        // The modern list search (magic, abilities, items, journal, the auction's bid pages) takes the letters.
+        || w.list_search.is_some()
 }
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
