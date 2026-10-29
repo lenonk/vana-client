@@ -612,6 +612,16 @@ pub fn run(w: &mut World, line: &str, mode: Mode) {
         }
         return;
     }
+    // Ours (not retail; the find-all add-ons): /find <words> lists the bags holding each item whose name has them.
+    if first.eq_ignore_ascii_case("/find") {
+        find(w, line[first.len()..].trim());
+        return;
+    }
+    // Ours (the DPS-meter add-ons): /dps prints the party's damage since the last /dps reset (client/dps.rs).
+    if first.eq_ignore_ascii_case("/dps") {
+        super::dps::command(w, line.split_whitespace().nth(1));
+        return;
+    }
     let first_flags = table().get(first).map_or(0, |e| e.1);
     let target_cmd = first_flags & flag::TARGET != 0;
     // With the prompt up a typed line runs only with flag 0x02 (else group 7 0xa4); a macro line is dropped.
@@ -2341,6 +2351,49 @@ fn atoi(s: &str) -> i64 {
     };
     let n = d.bytes().take_while(u8::is_ascii_digit).take(18).fold(0i64, |a, c| a * 10 + (c - b'0') as i64);
     if neg { -n } else { n }
+}
+
+/// A container's name for /find (the wardrobes and safes numbered).
+fn bag_name(c: u8) -> String {
+    match c {
+        0 => "Inventory".into(),
+        1 => "Mog Safe".into(),
+        2 => "Storage".into(),
+        3 => "Temporary".into(),
+        4 => "Mog Locker".into(),
+        5 => "Mog Satchel".into(),
+        6 => "Mog Sack".into(),
+        7 => "Mog Case".into(),
+        8 => "Mog Wardrobe".into(),
+        9 => "Mog Safe 2".into(),
+        10..=16 => format!("Mog Wardrobe {}", c - 8),
+        _ => format!("Bag {c}"),
+    }
+}
+
+/// /find: one line per matching item, its bags with the count in each; "(none)" without a match.
+fn find(w: &mut World, what: &str) {
+    let Some(info) = w.item_info.clone() else { return };
+    let want = what.to_lowercase();
+    if want.is_empty() {
+        return;
+    }
+    let mut found: std::collections::BTreeMap<String, std::collections::BTreeMap<u8, u32>> = Default::default();
+    for (&(c, _), &(id, n)) in &w.inv.slots {
+        let Some(it) = info.item(id).filter(|_| id != 0 && id != 0xffff) else { continue };
+        if it.name.to_lowercase().contains(&want) {
+            *found.entry(it.name.clone()).or_default().entry(c).or_default() += n.max(1);
+        }
+    }
+    let colour = w.battle.as_ref().map_or([0x80; 4], |bt| bt.colour_in(0x8b, &w.game));
+    if found.is_empty() {
+        w.chat.push_colour(format!("/find {what}: (none)"), colour);
+        return;
+    }
+    for (name, bags) in found {
+        let at: Vec<String> = bags.iter().map(|(c, n)| format!("{} {n}", bag_name(*c))).collect();
+        w.chat.push_colour(format!("{name}: {}", at.join(", ")), colour);
+    }
 }
 
 /// FUN_1007cab0: PlayTime from the 0x00A plus the time since, group 10 0x2e (h, m, s) or 0x2f (with days), mode 0x8b.

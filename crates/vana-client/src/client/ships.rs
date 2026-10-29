@@ -45,6 +45,8 @@ pub struct Loaded {
     pub seq: u64,
     pub file: u32,
     pub mesh: String,
+    /// The file has an 'init' scheduler (played once on a prop, FUN_100c47f0).
+    pub init: bool,
     pub geo: Arc<ZoneGeometry>,
     pub textures: Vec<Texture>,
 }
@@ -141,6 +143,16 @@ pub fn create(w: &mut World, l: &Loaded) -> Option<Mat4> {
         return None;
     }
     w.ships.loading.remove(&l.entity);
+    let smooth = l.mesh == "fune" || l.mesh == "_fun";
+    // Op 0xb6 0x11's new model: the actor stays as it is.
+    if let Some(a) = w.ships.actors.get_mut(&l.entity) {
+        log::info!("ship {:#x}: model now file {}, mesh {}", l.entity, l.file, l.mesh);
+        (a.file, a.smooth, a.shown) = (l.file, smooth, false);
+        if !smooth && l.init {
+            w.effects.on_scheduler_quiet(l.entity, u32::from_le_bytes(*b"init"));
+        }
+        return Some(a.matrix);
+    }
     let (ship, start) = w.entities.get(&l.entity)?.ship?;
     let state = in_force(w, l.entity)?;
     let e = w.entities.get_mut(&l.entity)?;
@@ -148,13 +160,29 @@ pub fn create(w: &mut World, l: &Loaded) -> Option<Mat4> {
         e.gens_off = true;
     }
     let (pos, rot) = (e.pos, Vec3::new(0.0, super::event::rad_of(e.dir), 0.0));
-    let smooth = l.mesh == "fune" || l.mesh == "_fun";
     let matrix = model_matrix(pos, rot);
     log::info!("ship {:#x}: id {ship}, file {}, mesh {}, state {state:#x} at {pos} yaw {:.3}", l.entity, l.file, l.mesh, rot.y);
     w.ships.actors.insert(l.entity, ModelActor { file: l.file, pos, rot, target: rot, smooth, skip_draws: 4, state, matrix, shown: false });
     let bound = super::event::active(w) && w.doors.event.contains_key(&l.entity);
     start_seq(w, l.entity, if bound { 0 } else { start });
+    // A prop (the generic MMB branch) plays its file's 'init' once *(ours at creation; retail the second update)*.
+    if !smooth && l.init {
+        w.effects.on_scheduler_quiet(l.entity, u32::from_le_bytes(*b"init"));
+    }
     Some(matrix)
+}
+
+/// Event op 0xb6 0x11 (FUN_1008a750 -> FUN_100c4380): a model actor's model becomes the furniture table's `model`
+/// (FUN_100c51c0(2, val)), picked by the same MMB rules; nothing on other actors (FUN_1002c8f0(XiModelActor)).
+pub fn swap_model(w: &mut World, id: u32, model: u16) {
+    let Some(file) = crate::dat::furniture::model_file(model) else { return };
+    if w.ships.actors.get(&id).is_none_or(|a| a.file == file) {
+        return;
+    }
+    log::debug!("ship {id:#x}: op 0xb6 0x11, model {model} (file {file})");
+    w.ships.seq += 1;
+    w.ships.loading.insert(id, w.ships.seq);
+    w.ship_jobs.push((id, w.ships.seq, file));
 }
 
 /// FUN_100c4b50: identity, then RotZ(z), RotY(y), RotX(x) post-multiplied, then the position: T * Rx * Ry * Rz.
@@ -228,7 +256,8 @@ pub fn load(index: &DatIndex, keys: &Keys, (entity, seq, file): Job) -> Result<L
     let name = scene.meshes[0].name.clone();
     scene.placements = vec![Placement { name: name.clone(), translate: [0.0; 3], rotate: [0.0; 3], scale: [1.0; 3], lights: [0; 4], link: 0, area: 0, id: 0, lod: [0.0; 2], world: false, own_dist: None }];
     let geo = Arc::new(ZoneGeometry::build(&scene));
-    Ok(Loaded { entity, seq, file, mesh: name, geo, textures: std::mem::take(&mut scene.textures) })
+    let init = crate::dat::chunks(&bytes).is_ok_and(|c| c.iter().any(|c| c.kind == 0x07 && c.name() == "init"));
+    Ok(Loaded { entity, seq, file, mesh: name, init, geo, textures: std::mem::take(&mut scene.textures) })
 }
 
 #[cfg(test)]

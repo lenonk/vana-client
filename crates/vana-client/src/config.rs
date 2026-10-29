@@ -95,6 +95,13 @@ pub struct Config {
     /// Extra (the timestamp add-on): retail's chat timestamps (config 0xb5) on every log line; seconds while 0xb5 is
     /// off.
     pub stamp_all_lines: bool,
+    /// Extra (the distance / target-info add-ons): the target's distance in the target window, and its HP percent in the
+    /// classic one (the modern one shows it anyway).
+    pub target_distance: bool,
+    pub target_hpp: bool,
+    /// Extra (the text auto-advance add-ons): an event message waiting for a key goes on by itself after this many
+    /// seconds; 0 off.
+    pub auto_advance: u32,
     /// Extra (the Timers add-on): the timers window, its dock (0 left, 1 right, 2 top), its drawer out, folded
     /// sections (a bit each).
     pub timers: bool,
@@ -265,6 +272,9 @@ impl Default for Config {
             map_overlay_opacity: 0.6,
             synth_amount: false,
             stamp_all_lines: false,
+            target_distance: false,
+            target_hpp: false,
+            auto_advance: 0,
             timers: false,
             timers_dock: 0,
             timers_out: true,

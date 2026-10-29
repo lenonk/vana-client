@@ -506,6 +506,11 @@ impl LiveHost<'_> {
         use crate::dat::npc::NpcLook;
         let id = if matches!(sub, 0x16 | 0x17) { self.w.my_id } else { self.wid(actor) };
         let v = |k: usize| Self::arg_int(args, k).unwrap_or(0) as u16;
+        // 0x11: a model actor's (a ship-kind prop's) model from the furniture table.
+        if sub == 0x11 {
+            super::ships::swap_model(self.w, id, v(0));
+            return;
+        }
         // 0xf / 0x17: the event actor's / player's scale +0x204 = val@2 * 0.01.
         if matches!(sub, 0xf | 0x17) {
             if let Some(a) = self.w.actors.get_mut(&id) {
@@ -1700,8 +1705,10 @@ pub fn update(w: &mut World, dt: f32) {
         }
     }
     // FUN_10136cd0: under the auto-advance the rem sends message 5 every frame: each waiting page goes on (SE 0015);
-    // the message's close clears it (FUN_10136ab0).
-    if live.st.auto_advance
+    // the message's close clears it (FUN_10136ab0). Extra (ours): a page waiting the set seconds goes on the same way.
+    let extra = w.auto_advance as f32 * 60.0;
+    let timed = extra > 0.0 && live.st.choice.is_none() && live.st.msg.as_ref().is_some_and(|m| m.open >= extra);
+    if (live.st.auto_advance || timed)
         && let Some(m) = live.st.msg.as_mut().filter(|m| m.waits_key())
     {
         w.sounds.push(crate::audio::Ui::Page as u32);

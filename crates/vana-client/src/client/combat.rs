@@ -609,6 +609,12 @@ fn print(w: &mut World, m: Msg) {
         log::info!("battle message {} before the message tables loaded", m.id);
         return;
     };
+    // Ours: the /dps tally, whatever the filters show (a damage number's message, main and proc records).
+    if let Some(which @ (0 | 1)) = m.which
+        && bt.screen_kind(m.id) == 1
+    {
+        super::dps::add(w, m.actor, m.work[1 + which as usize]);
+    }
     // Chat Filters (0x32 / 0x33) hide battle messages on the client, number and line.
     if bt.filtered(m.id, filter_relation(w, m.actor, m.target), &w.game) {
         return;

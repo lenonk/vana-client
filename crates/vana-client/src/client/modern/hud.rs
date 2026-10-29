@@ -127,6 +127,8 @@ pub struct TargetView {
     pub colour: Option<Color32>,
     /// What it is casting (and how far by the spell's base time) or readying (not retail).
     pub cast: Option<(String, Option<f32>)>,
+    /// Extra: how far it is, centre to centre.
+    pub distance: Option<f32>,
 }
 
 /// The target's cast or readied skill: a spell's name and how far by its base cast time (gone 2 s after it should
@@ -419,7 +421,8 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
 pub fn target_panel(p: &mut Panels, v: &TargetView) {
     let m = p.m;
     let frame = if v.locked { "window_alert" } else { "window_normal" };
-    let title = Title { icon: Some(v.ring), text: &v.name, note: None };
+    let dist = v.distance.map(|d| format!("{d:.1}"));
+    let title = Title { icon: Some(v.ring), text: &v.name, note: dist.as_deref() };
     let r = p.framed("target", None, 340.0, frame, |ui| {
         super::title_row_in(ui, m, &title, v.colour.unwrap_or(m.theme.color("gold")));
         ui.add_space(6.0);
@@ -839,5 +842,5 @@ fn target_view(w: &World, gu: Option<&super::super::game_ui::GameUi>) -> Option<
         "indicators/target_neutral"
     };
     let colour = gu.map(|gu| super::chat::colour(super::super::name_colour(id, e, w, |i| gu.ncol(i)).to_le_bytes()));
-    Some(TargetView { name, ring, locked: w.locked, hp: (!e.no_gauge).then_some((e.hpp, w.target_gauge.1 as f32 / 100.0)), colour, cast: target_cast(w, id) })
+    Some(TargetView { name, ring, locked: w.locked, hp: (!e.no_gauge).then_some((e.hpp, w.target_gauge.1 as f32 / 100.0)), colour, cast: target_cast(w, id), distance: w.target_distance.then(|| e.pos.distance(w.pos)) })
 }

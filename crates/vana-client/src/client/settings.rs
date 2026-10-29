@@ -22,6 +22,9 @@ pub struct Settings {
     pub map_opacity: u32,
     pub synth_amount: bool,
     pub stamp_all_lines: bool,
+    pub target_distance: bool,
+    pub target_hpp: bool,
+    pub auto_advance: u32,
     pub timers: bool,
     pub timers_dock: u32,
     pub regime: bool,
@@ -56,6 +59,9 @@ impl Settings {
             map_opacity: pct(c.map_overlay_opacity),
             synth_amount: c.synth_amount,
             stamp_all_lines: c.stamp_all_lines,
+            target_distance: c.target_distance,
+            target_hpp: c.target_hpp,
+            auto_advance: c.auto_advance,
             timers: c.timers,
             timers_dock: c.timers_dock,
             regime: c.regime,
@@ -89,6 +95,9 @@ impl Settings {
         c.map_overlay_opacity = self.map_opacity as f32 / 100.0;
         c.synth_amount = self.synth_amount;
         c.stamp_all_lines = self.stamp_all_lines;
+        c.target_distance = self.target_distance;
+        c.target_hpp = self.target_hpp;
+        c.auto_advance = self.auto_advance;
         c.timers = self.timers;
         c.timers_dock = self.timers_dock;
         c.regime = self.regime;
@@ -135,6 +144,9 @@ enum Val {
     MapOpacity,
     SynthAmount,
     StampAll,
+    TargetDistance,
+    TargetHpp,
+    AutoAdvance,
     Timers,
     TimersDock,
     Regime,
@@ -255,6 +267,9 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
     const EXTRA_MISC: &[Row] = &[
         row("Synthesis Amount", "After Synthesize, ask how many to make and make them one after another.", SynthAmount, OFF_ON, Now),
         row("Timestamps on All Lines", "Every log line gets the time, not only chat (the format of /timestamp; seconds while it is off).", StampAll, OFF_ON, Now),
+        row("Target Distance", "How far your target is, centre to centre, in the target window.", TargetDistance, OFF_ON, Now),
+        row("Target HP %", "The target's HP percent beside its gauge in the classic target window (the modern one shows it).", TargetHpp, OFF_ON, Now),
+        row("Text Auto-Advance", "An event's message waiting for a key goes on by itself after this many seconds.", AutoAdvance, &[(0, "OFF"), (3, "3 s"), (5, "5 s"), (8, "8 s")], Now),
     ];
     match kind {
         Kind::Extras if modern => [&MAPS[..3], TIMERS_MODERN, EXTRA_MISC][tab.min(2)],
@@ -388,6 +403,9 @@ impl SettingsUi {
             Val::MapOpacity => self.s.map_opacity,
             Val::SynthAmount => self.s.synth_amount as u32,
             Val::StampAll => self.s.stamp_all_lines as u32,
+            Val::TargetDistance => self.s.target_distance as u32,
+            Val::TargetHpp => self.s.target_hpp as u32,
+            Val::AutoAdvance => self.s.auto_advance,
             Val::Timers => self.s.timers as u32,
             Val::TimersDock => self.s.timers_dock,
             Val::Regime => self.s.regime as u32,
@@ -414,6 +432,9 @@ impl SettingsUi {
             Val::MapOverlay => self.s.map_overlay = x != 0,
             Val::SynthAmount => self.s.synth_amount = x != 0,
             Val::StampAll => self.s.stamp_all_lines = x != 0,
+            Val::TargetDistance => self.s.target_distance = x != 0,
+            Val::TargetHpp => self.s.target_hpp = x != 0,
+            Val::AutoAdvance => self.s.auto_advance = x,
             Val::Timers => self.s.timers = x != 0,
             Val::TimersDock => self.s.timers_dock = x,
             Val::Regime => self.s.regime = x != 0,

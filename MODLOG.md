@@ -11730,3 +11730,29 @@ since "Ship voyages: the moving world" listed them as not done.
 - That event ends on fdo1 with no fade-in (the server warps the player to Batallia Downs after it), so with `!cs`
   the screen stays black until the next zone change; the fade outlives the event, as retail's does.
 - zone-info lists the sub-area triggers ('m' / 'M' records: class, param, box).
+
+## Extras: target distance and HP %, text auto-advance, /find, /dps; op 0xb6 0x11 (2026-10-29)
+
+- Ours, not retail (the add-on candidates in CLAUDE.md), all off by default, rows on the Extras page's misc list:
+  - Target Distance (config `target_distance`): centre to centre, one decimal. Classic: left of the target window's
+    HP gauge, on its row. Modern: the target panel title's note. Seen live in both UIs (Rock Jaw 13.2, Biora 4.3).
+  - Target HP % (`target_hpp`): the classic target window's HP percent at its right edge, in the gauge's tint (the
+    modern panel shows it anyway). Seen live (100%, a Rock Lizard at 56%).
+  - Text Auto-Advance (`auto_advance`, OFF / 3 / 5 / 8 s): an event page that waits for a key goes on once it has
+    been open that long, through retail's own auto-advance branch (FUN_10136cd0: the page sound, then message 5).
+    Never with a choice up. Seen live: event 20089 (Mumor) played from start to end with no key but the answers.
+  - `/find <words>`: one line per matching item in every bag held, with the count in each ("(none)" without one).
+  - `/dps [reset]`: the damage our party, trusts and pets dealt since the first hit after a reset. It counts every
+    battle message that puts up a damage number (main and proc records) by actor, whatever the chat filters show.
+    It prints the span, then each actor's total, share, damage a second and hits (client/dps.rs). Seen live (one
+    Rock Lizard: 34 damage, 2.1/s, 3 hits).
+- Event op 0xb6 0x11 (FUN_1008a750 -> FUN_100c4380): a model actor's (SubKind 4 prop) model becomes furniture-table
+  model val (FUN_100c51c0(2, val)), chosen by the same MMB rules. Other actors are left alone. Ours: ships::swap_model
+  reloads the file and keeps the actor (place, state, sequence). A prop's own 'init' scheduler plays once when its
+  model loads *(retail: the second update)*. Event 20089 sets 16 props this way (models 3696, 3697, 370, ...) before
+  any is made; they loaded live with the swapped meshes (m_evn_36, m_evn_37, ...).
+- The ferry ride (task: ride a ship) went end to end live on Lnxcsfix: Selbina, ticket (key item 101), the boarding
+  event 200 in cuboid 485, the voyage zone 221, then Mhaura.
+- Not done: the airship ride (needs an airship pass), the skillchain helper (needs each weapon skill's skillchain
+  properties, which the client has no table of; LSB keeps them server side). Remapster's 109 extra maps stay
+  blocked: no file says which zone or floor each belongs to.

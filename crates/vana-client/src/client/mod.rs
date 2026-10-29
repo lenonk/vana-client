@@ -59,6 +59,7 @@ mod bump;
 mod doors;
 mod lifts;
 mod ships;
+mod dps;
 mod mousecur;
 mod party;
 mod macros;
@@ -3350,10 +3351,22 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // FUN_101501a0: FUN_101c9fa0(W - 13, L + 5, T + 6, name, the name-plate colour, centred), split into
                 // lines only while the target has no gauge.
                 if let Some(e) = target {
-                    let max = gu.window_rect("menu    targetwi", sw, sh).map_or(100.0, |r| r[2] - 13.0);
+                    let rect = gu.window_rect("menu    targetwi", sw, sh);
+                    let max = rect.map_or(100.0, |r| r[2] - 13.0);
                     let tid = world.target.unwrap_or(0);
                     let tint = name_colour(tid, e, world, |i| gu.ncol(i));
                     gu.wrapped_name(monstrosity::name(e), max, t.x, t.y, tint, true, e.no_gauge);
+                    // Extras: the distance left of the HP gauge, the HP percent at the window's right, on the gauge's row.
+                    if !e.no_gauge {
+                        if world.target_distance {
+                            gu.shape_text(&format!("{:.1}", e.pos.distance(world.pos)), t.x, t.y + 17.0, 0x8080_8080, false);
+                        }
+                        if world.target_hpp
+                            && let Some(r) = rect
+                        {
+                            gu.shape_text(&format!("{}%", e.hpp), r[0] + r[2] - 6.0, t.y + 17.0, gu.hp_tint(e.hpp), true);
+                        }
+                    }
                 }
             }
             // Alliance rows (FUN_10202720) by their window slot: name (TP as on party rows), HP in the HP colour, MP,
@@ -5569,6 +5582,12 @@ struct World {
     synth_amount: bool,
     /// Config `stamp_all_lines` (extra).
     stamp_all_lines: bool,
+    /// The /dps tally (client/dps.rs).
+    dps: dps::Dps,
+    /// Config `target_distance` / `target_hpp` / `auto_advance` (extras).
+    target_distance: bool,
+    target_hpp: bool,
+    auto_advance: u32,
     key_items: Vec<u32>,
     /// "Downloading data ..." (menu chdummy in mode 2, FUN_1022eca0): when it opened; up from the lobby's
     /// world entry or the server's zone change until the zone has loaded (FUN_100135c0 closes it).
@@ -6474,6 +6493,7 @@ impl App {
             w.map_overlay = self.cfg.map_overlay;
             w.synth_amount = self.cfg.synth_amount;
             w.stamp_all_lines = self.cfg.stamp_all_lines;
+            (w.target_distance, w.target_hpp, w.auto_advance) = (self.cfg.target_distance, self.cfg.target_hpp, self.cfg.auto_advance);
             w.extra_timers = self.cfg.timers;
             w.extra_regime = self.cfg.regime;
             w.timers_dock = self.cfg.timers_dock;
@@ -7103,6 +7123,10 @@ impl App {
                             map_overlay: self.cfg.map_overlay,
                             synth_amount: self.cfg.synth_amount,
                             stamp_all_lines: self.cfg.stamp_all_lines,
+                            dps: Default::default(),
+                            target_distance: self.cfg.target_distance,
+                            target_hpp: self.cfg.target_hpp,
+                            auto_advance: self.cfg.auto_advance,
                             target_since: Instant::now(),
                             cam_turn: (0.0, 0.0),
                             sounds: Vec::new(),
