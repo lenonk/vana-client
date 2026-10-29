@@ -81,7 +81,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - San d'Oria: under review;
   - Windurst and Bastok: the openings looked right to the user (2026-10-23; Windurst Waters 531, Bastok Markets);
     left: Windurst's water (too dark; the world blends in gamma space since, MODLOG "The world scene blends in gamma
-    space", not seen by the user yet; the lobby scenes still blend in linear space), the other openings (Port
+    space", not seen by the user yet; the lobby scenes always did, MODLOG "Correction: the lobby scenes"), the other openings (Port
     Windurst, Windurst Woods, Bastok Mines, Port Bastok) not seen by the user. They play to the end (2026-10-28:
     Lnxcsfix with char var HQuest[newCharacterCS]notSeen = 1 and her zone set; contact sheets in
     ~/ffxi/lab/scratch/openings).

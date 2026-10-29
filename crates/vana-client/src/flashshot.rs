@@ -16,7 +16,8 @@ pub fn run(zone: u32, hour: f32, pos: [f32; 3], out_dir: &std::path::Path) -> Re
     let lighting = weather.at("suny", hour * 60.0).map(|e| dat::weather::Lighting::from_env(&e, hour * 60.0));
     let ch = std::sync::Arc::new(dat::character::load_character(&index, &dat::character::Look { race: 1, face: 0, head: 0, body: 8, hands: 8, legs: 8, feet: 8, main: 0, sub: 0, range: 0 })?);
     let gpu = render::Gpu::headless()?;
-    let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+    // A plain target, written and blended in gamma space as the client's.
+    let format = wgpu::TextureFormat::Rgba8Unorm;
     let mut r = render::ZoneRenderer::new(&gpu, &scene, format);
     r.lighting = lighting;
     let p = Vec3::from(pos);

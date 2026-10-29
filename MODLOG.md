@@ -12145,3 +12145,13 @@ since "Ship voyages: the moving world" listed them as not done.
   WxH]` writes frames (CPU colour) or the window as drawn.
 - Seen: a driven run, the movie with its music, Escape, 4.0 s of black, the title and its music; the GPU frames
   match the CPU conversion.
+
+## Correction: the lobby scenes already blend in gamma space (2026-10-29)
+
+- "The world scene blends in gamma space" ended with "Not yet: the title flyover, character select and creator
+  scenes (still sRGB)". That was never true of the client: its surface has been Bgra8Unorm (plain) since the first
+  commit (egui wants a non-sRGB target), and the scene target takes the surface's format, so every scene, the lobby's
+  included, has been written and blended in gamma space. The sRGB target that cut the canal water was zone-shot's.
+  The creator's dancer shader writes gamma values for a plain target (render/dancer.rs), which is what it gets.
+- flash-shot rendered to Rgba8UnormSrgb, the last 3D tool doing so; now Rgba8Unorm like the client. char-shot's
+  own single-model shader (render/character.rs) keeps its sRGB target: it draws one opaque model, no blending.
