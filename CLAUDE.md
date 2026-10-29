@@ -235,8 +235,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   Amelila upscale 02 / 01 / megapack 2019, xiPrime menus / status icons / cursors, Remapster, AshenbubsHD (lowest).
   Settings' Mods page (enable / disable / order, install packs from zip / 7z / rar archives; MODLOG "Mod manager: the
   Mods page") done. Sound overlays (a mod's sound*/win before the game's) and root files (the cursor
-  pack) done. Left: mod VTABLE / FTABLE (new file ids, e.g.
-  Remapster's 109 extra maps, which need an add-on in retail too).
+  pack) done. Left: mod VTABLE / FTABLE (new file ids; no installed pack needs it: Remapster's 109
+  orphans are duplicates of its files at the current paths, MODLOG "Remapster's 109 orphans ...").
   - Our own pack (user, 2026-10-27): every game texture through Upscayl Standard 4x, `tex-export` / batch.py /
     `tex-pack` into mods/vana-upscale (29 GB; MODLOG "Our upscale pack"); the work files stay in
     ~/ffxi/lab/scratch/upscale (export, up, meta/encoded) for a rebuild.

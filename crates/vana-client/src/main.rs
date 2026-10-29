@@ -218,12 +218,14 @@ enum Cmd {
         ids: Vec<u32>,
     },
     /// Save the images (IMG chunks) of the game's own DAT files (never a mod's) as PNGs: every image of the given ids, or
-    /// with --random N one image each from N random files that hold any.
+    /// with --random N one image each from N random files that hold any; --file reads any DAT by path (a mod's too).
     TexDump {
         #[arg(value_parser = parse_num)]
         ids: Vec<u32>,
         #[arg(long)]
         random: Option<usize>,
+        #[arg(long)]
+        file: Vec<PathBuf>,
         #[arg(long)]
         out: PathBuf,
     },
@@ -1490,7 +1492,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         Cmd::UiDump { id, out } => uishot::ui_dump(id, &out),
-        Cmd::TexDump { ids, random, out } => tex_dump(&ids, random, &out),
+        Cmd::TexDump { ids, random, file, out } => tex_dump(&ids, random, &file, &out),
         Cmd::TexExport { out } => texpack::export(&out),
         Cmd::StatusDump { out } => texpack::status_dump(&out),
         Cmd::TexPack { manifest, upscaled, out } => texpack::pack(&manifest, &upscaled, &out),
@@ -1666,7 +1668,7 @@ fn run_with_progress(opts: &install::Options) -> Result<()> {
 
 /// `tex-dump`: a file's images as `<id>_<k>_<name>.png`; with `random`, one random image from each of that many random
 /// files that hold images.
-fn tex_dump(ids: &[u32], random: Option<usize>, out: &std::path::Path) -> Result<()> {
+fn tex_dump(ids: &[u32], random: Option<usize>, files: &[PathBuf], out: &std::path::Path) -> Result<()> {
     let cfg = config::Config::load();
     let index = dat::DatIndex::open_stock(&cfg.ffxi_dir())?;
     std::fs::create_dir_all(out)?;
@@ -1679,12 +1681,12 @@ fn tex_dump(ids: &[u32], random: Option<usize>, out: &std::path::Path) -> Result
         state ^= state << 17;
         state
     };
-    let images = |id: u32| -> Vec<dat::zone::Texture> {
-        let Ok(bytes) = index.read(id) else { return Vec::new() };
-        let Ok(chunks) = dat::chunks(&bytes) else { return Vec::new() };
+    let decode = |bytes: &[u8]| -> Vec<dat::zone::Texture> {
+        let Ok(chunks) = dat::chunks(bytes) else { return Vec::new() };
         chunks.iter().filter(|c| c.kind == 0x20).filter_map(|c| dat::zone::parse_img(c.data).ok()).collect()
     };
-    let save = |id: u32, k: usize, t: &dat::zone::Texture| -> Result<()> {
+    let images = |id: u32| -> Vec<dat::zone::Texture> { index.read(id).map(|b| decode(&b)).unwrap_or_default() };
+    let save = |id: &str, k: usize, t: &dat::zone::Texture| -> Result<()> {
         let name: String = t.name.trim().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
         let path = out.join(format!("{id}_{k}_{name}.png"));
         let mut enc = png::Encoder::new(std::io::BufWriter::new(std::fs::File::create(&path)?), t.width, t.height);
@@ -1695,7 +1697,19 @@ fn tex_dump(ids: &[u32], random: Option<usize>, out: &std::path::Path) -> Result
     };
     for &id in ids {
         for (k, t) in images(id).iter().enumerate() {
-            save(id, k, t)?;
+            save(&id.to_string(), k, t)?;
+        }
+    }
+    // A file by path is named by its last three parts (ROM2/16/84.DAT -> ROM2_16_84).
+    for f in files {
+        let parts: Vec<String> = f.with_extension("").iter().rev().take(3).map(|c| c.to_string_lossy().into_owned()).collect();
+        let id: Vec<&str> = parts.iter().rev().map(String::as_str).collect();
+        let imgs = decode(&std::fs::read(f).map_err(|e| anyhow::anyhow!("reading {}: {e}", f.display()))?);
+        if imgs.is_empty() {
+            println!("{}: no images", f.display());
+        }
+        for (k, t) in imgs.iter().enumerate() {
+            save(&id.join("_"), k, t)?;
         }
     }
     if let Some(n) = random {
@@ -1708,7 +1722,7 @@ fn tex_dump(ids: &[u32], random: Option<usize>, out: &std::path::Path) -> Result
                 continue;
             }
             let k = (next() % imgs.len() as u64) as usize;
-            save(id, k, &imgs[k])?;
+            save(&id.to_string(), k, &imgs[k])?;
             got += 1;
         }
     }

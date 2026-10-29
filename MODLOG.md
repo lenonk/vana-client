@@ -11867,3 +11867,18 @@ since "Ship voyages: the moving world" listed them as not done.
   for a monster outside the party (dps::ours: party, trusts, pets hidden). Seen live: Ayame's Tachi: Yukikaze
   printed only "uses", ours still "readies Fast Blade". A monster's line under the filter was not seen live (the worm
   used no move in the window).
+
+## Remapster's 109 orphans are duplicates at old paths (2026-10-29)
+
+- Correction to "DAT overlays, merged per chunk" and "Extras: target distance ...": Remapster's 109 files at paths no
+  current VTABLE / FTABLE entry points to are not extra maps. Every one carries the image name of a stock map:
+  `ex_data_m_121_00` (zone 121, floor 0), `ex2_datam_009_07`, `ex3_datam_072_08`, `ex4_datam_175_03` ... The name is
+  the zone id and the floor. Each matches exactly one stock file in FUN_101ef690's map ranges (0x14c0.., 0xd02f..,
+  0xd417..).
+- The paths are an older layout: Zi'Tah's map is file 5608 at ROM/282/123 today, and Remapster has it there and again
+  at ROM2/16/84; whole folders of that layout (ROM4/3) no longer exist in the install.
+- Seen side by side: the same frame, grid and compass, Remapster's drawing more detailed.
+- 41 zones: Pso'Xja 16 floors, Arrapago Reef 11, Alzadaal 11, Aydeewa 7, the Zilart caves and the [S] maps.
+- `tex-dump --file PATH` reads any DAT by path (a mod's too).
+- Each is byte-identical to the file Remapster also ships at the map's current path (sha1 of all 109 pairs), so nothing
+  is missing: the pack carries the old layout beside the current one. They stay unread, as they should.
