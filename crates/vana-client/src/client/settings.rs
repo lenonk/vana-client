@@ -236,7 +236,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
     ];
     const TEXTURES: &[Row] = &[
         row("Textures", "0018: compressed (BC1 / BC2) or uncompressed textures.", Tool("0018"), &[(0, "High"), (1, "Low"), (2, "Full")], NextZone),
-        row("2-D Mapping", "0019: on-screen map images.", Tool("0019"), &[(0, "Compressed"), (1, "Full")], Stored),
+        row("2-D Mapping", "0019: map images compressed (DXT3) or at full quality.", Tool("0019"), &[(0, "Compressed"), (1, "Full")], NextZone),
         row("Fonts", "0036: the font texture quality.", Tool("0036"), &[(0, "Compressed"), (1, "Full"), (2, "High")], Restart),
     ];
     const EFFECTS: &[Row] = &[

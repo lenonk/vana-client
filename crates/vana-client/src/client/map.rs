@@ -2223,10 +2223,31 @@ fn marker(gu: &mut GameUi, x: f32, y: f32, facing: f32, shade: f32) {
 
 /// The map DAT's first image.
 fn decode(index: &DatIndex, file: u32) -> Loaded {
-    index.read(file).ok().and_then(|b| crate::dat::ui::UiFile::parse(&b).map_err(|e| log::warn!("map {file}: {e:#}")).ok()).and_then(|ui| {
-        let (name, img) = ui.images.into_iter().next()?;
-        Some((format!("map:{file}:{name}"), img.width, img.height, img.rgba))
-    })
+    let bytes = index.read(file).ok()?;
+    let ui = crate::dat::ui::UiFile::parse(&bytes).map_err(|e| log::warn!("map {file}: {e:#}")).ok()?;
+    let (name, img) = ui.images.into_iter().next()?;
+    let mut rgba = img.rgba;
+    if crate::render::MAP_COMPRESSED.load(std::sync::atomic::Ordering::Relaxed) && category_10(&bytes) {
+        rgba = through_dxt3(&rgba, img.width, img.height);
+    }
+    Some((format!("map:{file}:{name}"), img.width, img.height, rgba))
+}
+
+/// FUN_10038c40's category 10 (0019): the file's first IMG is flag 0xB1 with the u32 at payload 57 low nibble 10 (the
+/// 209 palettized `menumap` images; the DXT ones are used as stored).
+fn category_10(bytes: &[u8]) -> bool {
+    crate::dat::chunks(bytes).ok().and_then(|c| c.into_iter().find(|c| c.kind == 0x20)).is_some_and(|c| c.data.len() > 61 && c.data[0] == 0xB1 && c.data[57] & 0xf == 10)
+}
+
+/// 0019 Compressed: the image as a DXT3 surface holds it (retail converts to A8R8G8B8 and loads it into DXT3).
+fn through_dxt3(rgba: &[u8], w: u32, h: u32) -> Vec<u8> {
+    let f = texpresso::Format::Bc2;
+    let (w, h) = (w as usize, h as usize);
+    let mut data = vec![0u8; f.compressed_size(w, h)];
+    f.compress(rgba, w, h, texpresso::Params { algorithm: texpresso::Algorithm::ClusterFit, ..Default::default() }, &mut data);
+    let mut out = vec![0u8; w * h * 4];
+    f.decompress(&data, w, h, &mut out);
+    out
 }
 
 /// Reads and decodes the map DAT off the UI thread: its first image.
@@ -2269,6 +2290,24 @@ mod tests {
         let g = crate::client::ground::Ground::build(&crate::dat::zone::load_scene(&keys, &index.read(crate::dat::zone::file_id(238)).unwrap()).unwrap());
         let key = |x: f32, z: f32| g.map_key(glam::Vec3::new(x, g.snap(x, z, 0.0).unwrap(), z));
         assert_eq!((key(0.0, 100.0), key(0.0, -150.0)), (1, 2));
+    }
+
+    /// 0019: the palettized menumap images are category 10, and going through DXT3 changes their pixels.
+    #[test]
+    fn map_category_10_through_dxt3() {
+        let cfg = crate::config::Config::load();
+        let Ok(dll) = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")) else { return };
+        let Ok(index) = crate::dat::DatIndex::open_stock(&cfg.ffxi_dir()) else { return };
+        let mut files: Vec<u32> = regions(&dll).iter().map(|r| r.file_id()).collect();
+        files.sort_unstable();
+        files.dedup();
+        let cat10: Vec<u32> = files.iter().copied().filter(|&f| index.read(f).is_ok_and(|b| category_10(&b))).collect();
+        assert!(!cat10.is_empty(), "no category-10 map among {}", files.len());
+        let ui = crate::dat::ui::UiFile::parse(&index.read(cat10[0]).unwrap()).unwrap();
+        let img = ui.images.values().next().unwrap();
+        let lossy = through_dxt3(&img.rgba, img.width, img.height);
+        assert_eq!(lossy.len(), img.rgba.len());
+        assert!(lossy != img.rgba);
     }
 
     /// The overlay keeps the map pixel under the cursor while zooming, and the image over the whole box.

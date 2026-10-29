@@ -12002,3 +12002,13 @@ since "Ship voyages: the moving world" listed them as not done.
   error-diffuses (Floyd-Steinberg) the alpha onto the 16 levels for translucent images (half the visible pixels
   partial). Rebuilt: every translucent image's encoding, 8,898 DATs.
 - Offscreen (zone-shot 101 at 20:15 from (80, -64.5, 268)): the halo is smooth, close to stock.
+
+## Config tool 0019 "2-D Mapping" (2026-10-29)
+
+- Spec: `~/ffxi/lab/research/stored_settings_spec.md` section 1 (FUN_10038c40, cur FUN_10039a80): category 10
+  (flag-0xB1 images with the u32 at payload 57 low nibble 10: the 209 palettized `menumap` images) are made DXT3 when
+  0019 is 0 (Compressed), uncompressed when 1 (Full). The DXT map images are used as stored either way.
+- Ours: client/map.rs `decode` (the map window, the overlay, the minimap): with 0019 = 0 (render::MAP_COMPRESSED,
+  set at start and by Settings) a category-10 image goes through texpresso BC2 and back (ClusterFit), the lossy
+  surface retail's D3DX load gives *(inf: D3DX's encoder differs in detail; the blocks are the same kind)*. Takes
+  effect at the next map load (Settings row NextZone). Test map_category_10_through_dxt3.

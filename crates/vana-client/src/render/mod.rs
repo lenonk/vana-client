@@ -476,6 +476,8 @@ pub static ANISOTROPY: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU
 /// uploaded uncompressed); read when samplers and textures are made, so at the next zone load.
 pub static MIPMAPS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 pub static UNCOMPRESSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Config-tool 0019 = 0 (2-D Mapping Compressed): the palettized map images go through DXT3 at load (client/map.rs).
+pub static MAP_COMPRESSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// FFXI_TEX_OLD=1: the old upload (RGBA level 0 only, bilinear), for before / after shots.
 fn old_textures() -> bool {
