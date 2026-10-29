@@ -11986,3 +11986,19 @@ since "Ship voyages: the moving world" listed them as not done.
   which we do not have), with no message. PNG, not retail's JPEG (no encoder in the tree; by choice).
 - Script and drive shots stay full size. Settings' row is live (When::Now).
 - Seen live: 512 x 382 in screenshots/, 2560 x 1366 in ffxiuser/screenshots/.
+
+## Our upscale pack: dithered glows and DXT3 banding (2026-10-29)
+
+- Seen live at dusk in East Ronfaure: a translucent checkerboard over the San d'Oria gate. Not the renderer (it went
+  with vana-upscale off, stayed with Lamp Lights off): zone 101's `light   light` / `light   lanp` glows have
+  dithered alpha at 64 x 64, which bilinear filtering hides at 1x; Upscayl kept each dither dot as a hard 4 x 4 square
+  (and drew an "X" across `lanp`).
+- Undithered: textures whose visible pixels are mostly partial alpha (at least half) and whose alpha gradients are
+  pixel dither (the share of gradient pixels that are a peak or pit across a row or column, >= 0.25): 2,270 images,
+  blurred premultiplied (Gaussian sigma 0.7, float) before Upscayl. Scripts in ~/ffxi/lab/scratch/checker
+  (dither_scan.py, undither_lib.py, undither_all.py, apply_undither.py); the earlier upscales in
+  ~/ffxi/lab/scratch/upscale/up_dithered.
+- That showed DXT3's 4-bit alpha: halved to the PS2 scale a smooth glow has about 8 levels and banded. tex-pack now
+  error-diffuses (Floyd-Steinberg) the alpha onto the 16 levels for translucent images (half the visible pixels
+  partial). Rebuilt: every translucent image's encoding, 8,898 DATs.
+- Offscreen (zone-shot 101 at 20:15 from (80, -64.5, 268)): the halo is smooth, close to stock.

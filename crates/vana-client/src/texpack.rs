@@ -162,11 +162,53 @@ fn encode(dxt1: bool, w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
         for p in px.chunks_exact_mut(4) {
             p[3] = (p[3] as u16).div_ceil(2) as u8;
         }
+        if translucent(&px) {
+            dither_alpha(&mut px, w as usize);
+        }
     }
     let mut data = vec![0u8; format.compressed_size(w as usize, h as usize)];
     let params = texpresso::Params { algorithm: texpresso::Algorithm::ClusterFit, weigh_colour_by_alpha: !dxt1, ..Default::default() };
     format.compress(&px, w as usize, h as usize, params, &mut data);
     data
+}
+
+/// Half or more of the visible pixels have partial alpha (glows, smoke), not a cutout's 0 / full.
+fn translucent(px: &[u8]) -> bool {
+    let (mut vis, mut mid) = (0usize, 0usize);
+    for p in px.chunks_exact(4) {
+        if p[3] > 5 {
+            vis += 1;
+            mid += (p[3] > 10 && p[3] < 118) as usize;
+        }
+    }
+    vis > 0 && mid * 2 >= vis
+}
+
+/// Floyd-Steinberg onto DXT3's 16 alpha levels, so a smooth gradient does not band at 4 bits.
+fn dither_alpha(px: &mut [u8], w: usize) {
+    let h = px.len() / 4 / w.max(1);
+    let mut err = vec![0f32; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            let i = y * w + x;
+            let v = px[i * 4 + 3] as f32 + err[i];
+            let q = ((v / 17.0).round().clamp(0.0, 15.0)) * 17.0;
+            px[i * 4 + 3] = q as u8;
+            let e = v - q;
+            if x + 1 < w {
+                err[i + 1] += e * 7.0 / 16.0;
+            }
+            if y + 1 < h {
+                if x > 0 {
+                    err[i + w - 1] += e * 3.0 / 16.0;
+                }
+                err[i + w] += e * 5.0 / 16.0;
+                if x + 1 < w {
+                    err[i + w + 1] += e / 16.0;
+                }
+            }
+        }
+    }
 }
 
 /// The chunk payload around encoded `data`.
