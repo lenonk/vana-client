@@ -11569,3 +11569,51 @@ User requests, the modern layer unless noted.
   connections at once (net::search Slot), the friend list, Link List, level sync and search included.
 - The list search's score (client/listsearch.rs) takes typos when nothing else matches: every query word within an
   edit (4..5 letters) or two (6+) of a name word or its start, a swap of neighbours one edit ("ghysal" finds Gysahl).
+
+## Moblin Maze Mongers: the Maze Tabula editor (2026-10-28)
+
+Spec `~/ffxi/lab/research/mmm_maze_spec.md` (FFXiMain 30261006_0). Corrections: "s2c 0x0AD and 0x0B5" above says the
+maze window "only opens from the MMM NPC's event" and that ours does not keep 0x0AD: the window is the Maze Tabula
+editor, opened by using a tabula (no packet) and by event op 0x71 0x20 (view only); both done now. The op 0x71 line
+in "Event VM" listing 0x20 / 0x21 as not done: done.
+- dat/maze.rs: the shapes (table 0x103850a8: w, h, four 4 x 4 rotation masks, rotation 1 a quarter turn clockwise),
+  cell masks (FUN_101fda30), the clamp (FUN_101fdb40), the extdata bit stream (voucher index + 1 in bits 0..6, the
+  anchor mask in 7..31 = the first cell of each rune in row-major order, rune k's index + 1 in 32 + 9 k and rotation in
+  140 + 2 k; FUN_101fd290 decodes, FUN_101fd600 encodes), the rune count and d5's (%d). Tested on the spec's vector.
+- K7000 records keep their 64-byte block (Item::maze): a tabula's 25 cells (-1 empty, < -1 blocked, 0..7 an
+  element), a voucher's allowed-rune bits (byte n >> 3, bit n & 7: FUN_101fe4d0), a rune's element (0xff none) and
+  shape. File 92 (prvdungp, prvdunsi, the prvdunge library, tex4) loads with the UI (FUN_101cc620(0x5c)).
+- client/maze.rs: s2c 0x0AD's store (vouchers 8 bytes, runes 64), cleared at zone change. iuse Use / the direct list
+  on type 0x16 opens the editor, 0x17 views (FUN_101fcf60); the event op opens a view with no slot and 0x21 closes it.
+  bluinven at (16, 48) (group 0x10) fed by the maze list: the vouchers (green the current), the Type row and the
+  learned runes (grey not allowed by the voucher, green placed, orange held), or the placed runes in view mode;
+  bluehelp at (16, 240) (group 8) with the voucher's description or the rune's text for the voucher (language slot
+  0x26, entry rune index x 64 + voucher index); prvdunsi's 11 shape buttons filter the runes. Keys as §3: Escape
+  silent (runes -> vouchers, else close), Enter on another voucher asks group 9 0xf6 (default No), a rune is carried
+  to the grid (its last place, rotation 0; a placed one is picked up), arrows move it clamped (SE 0001), key
+  function 0x18 (Num-) turns it (SE 0015), Enter places it unless a cell is taken (SE 0004), Escape drops it (SE 0003;
+  a picked-up rune is gone). The list's cursor on a placed rune pulses it on the grid (hover). View mode's Enter goes
+  on to the event's message.
+- Drawing (FUN_101fe0b0, classic): the voucher's icon at (8, 16) and name at (44, 24) in green; the placed runes;
+  sprite 1 on blocked cells and the element gaiji at (5, 5) at quarter alpha; the placed runes again faded
+  (0x50808080), or with the glint on a cell of their element; the held rune lifted at the pulse's alpha, carried with
+  a shadow at (3, 3). Sprite prvdunge 3 + 11 element + shape (element 8 none), turned by quarter turns through the
+  2 x 2 matrix about its origin and moved by (h, 0) / (w, h) / (0, w). Pulse 0x60..0xa0 by 8, glint 0x30..0x7f by
+  2, stepped 30 times a second *(inf)*. The item list (inventor) is not drawn while the editor is up *(inf: retail's
+  bluinven covers it exactly)*; prvdungp's 0x20000 flag joins the windows that stop Num+'s log focus.
+- c2s 0x0D8 when an edited tabula closes and its encoding changed: {ActIndex, tabula, slot, UniqueNo, the 24
+  bytes}, dropped within a second of the last. The event start closes the windows and keeps the state; the event end
+  saves it (retail's late 0x0D8) and closes any open view.
+- iteminfo: "<Maze Voucher 01 [3]>" for an M tabula, "[3](0)" for an R one, from the extdata.
+- Modern (modern/maze.rs): the list (or the 11 shapes, each with its mask drawn) beside a 5 x 5 grid of 44 px cells
+  (blocked crossed, element cells faint with the initial, placed runes in their element's colour, gold-edged on a
+  cell of their element, the held one teal / red by whether it fits), the rune or voucher text under it. Mouse:
+  rows hover and click; while carrying, a cell moves the rune there, a click places, a right click drops, the wheel
+  or a middle click turns.
+- Live (Lnxcsfix, both UIs; the unlocks written to char_unlocks before login, restored after): M01 opened with the
+  two learned vouchers, 021 / 106 / 109 listed, 021 carried, moved, turned and placed, 106 refused over a taken and a
+  blocked cell, the voucher prompt (No kept the runes), the T filter left 106; closing sent 0x0D8 and LSB's map
+  server logged "GP_CLI_COMMAND_DUNGEON_PARAM: Not implemented. ActIndex: 1026, Param1: 28672, Param2: 6" (LSB does
+  not store it: the tabula reopens empty). R01 with the spec's vector in its extdata: iteminfo "Maze Voucher 01
+  [3](0)", the view listed the three runes, the hover pulse and texts. The event op: event-run 245 0x4e21 gives item
+  28704 and dwords 0x90008001, 0x01b4d415, 0, 0, 0x00011000, 0 (the same vector); LSB never starts these events.

@@ -793,13 +793,14 @@ pub fn check_iuse(w: &mut World) {
     }
 }
 
-/// iuse Use (FUN_101f33a0 case 1): tabulae open a window we do not have yet, crystals the synthesis; anything else passes the
+/// iuse Use (FUN_101f33a0 case 1): tabulae open the maze editor, crystals the synthesis; anything else passes the
 /// status gate 0x7f, or, for an item with record flag 0x0008 in the Mog Garden, gate 0x77 quietly (the Mog House bit
 /// left out), and opens the target prompt with the item's targets (0x7f with no record), title "Items", help 0xe 4.
 fn use_entry(w: &mut World, index: u8, id: u16) {
     let it = w.item_info.as_ref().and_then(|c| c.item(id));
     match it.as_ref().map(|i| i.item_type) {
-        Some(0x16 | 0x17) => log::info!("iuse: the maze tabula window is not implemented"),
+        // A Maze Tabula (FUN_101fcf60): the editor, M tabulae (0x16) to edit, R ones (0x17) to view; iuse closes.
+        Some(t @ (0x16 | 0x17)) => super::maze::use_tabula(w, index, id, t == 0x16),
         // A crystal (type 8): the status gate 0x77, then the synthesis window (FUN_101e0e30); a refusal plays SE 0004.
         Some(8) => {
             if !super::textcmd::status_gate(w, 0x77) || !super::synth::open(w, index, id) {

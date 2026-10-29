@@ -15,6 +15,10 @@ const ROW: f32 = 34.0;
 const ICON: f32 = 24.0;
 
 pub fn draw(p: &mut Panels, w: &mut World) {
+    // The Maze Tabula editor takes the item list's place while it is up.
+    if w.maze.screen.is_some() {
+        return;
+    }
     list(p, w);
     info(p, w);
 }
@@ -279,10 +283,11 @@ fn info(p: &mut Panels, w: &World) {
     let now = super::super::vana_now(w) as u32;
     let aug = gu.aug_ctx();
     let build = |it: &crate::dat::items::Item, ext: Option<&[u8; 24]>, cx: &iteminfo::Ctx| iteminfo::build(it, ext, cx, &|g, k| gu.item_msg(g, k), &|_| 0.0, aug.as_ref());
-    let info = build(&it, ext.as_ref(), &iteminfo::Ctx { now, equipped, shop: false, container, flags });
+    let voucher = super::super::maze::tabula_voucher(w, &it, ext.as_ref());
+    let info = build(&it, ext.as_ref(), &iteminfo::Ctx { now, equipped, shop: false, container, flags, voucher });
     let cmp = gitems::compare(w).flatten().and_then(|(cid, cext, c)| {
         let cit = cache.item(cid)?;
-        Some((cid, build(&cit, cext.as_ref(), &iteminfo::Ctx { now, equipped: true, shop: false, container: Some(c), flags: 0 })))
+        Some((cid, build(&cit, cext.as_ref(), &iteminfo::Ctx { now, equipped: true, shop: false, container: Some(c), flags: 0, voucher: None })))
     });
     let icon = m.item_icon(p.ctx, &cache, id);
     let cmp_icon = cmp.as_ref().and_then(|(cid, _)| m.item_icon(p.ctx, &cache, *cid));

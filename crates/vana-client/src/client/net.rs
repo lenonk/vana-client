@@ -562,6 +562,8 @@ pub enum NetEvent {
     MagicKnown(Vec<u8>),
     /// s2c 0x0AC COMMAND_DATA: weapon skill, job ability, pet command bits (64 bytes each), traits (32).
     CommandsKnown(Vec<u8>),
+    /// s2c 0x0AD DUNGEON: the learned maze vouchers (8 bytes) and runes (64), 56 unread.
+    Dungeon(Vec<u8>),
     /// s2c 0x017: Kind @4, Attr @5 (bit 0 GM), Data @6 (the yell's zone; assist: mastery, mentor rank), name @8,
     /// text @0x17.
     Chat { kind: u8, attr: u8, data: u16, from: String, text: String },
@@ -1129,6 +1131,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x119 => tx.send(NetEvent::AbilityRecasts((0..31).map(|i| (p.u8(4 + 8 * i + 3) as u16, p.u16(4 + 8 * i), p.u8(4 + 8 * i + 2), p.u16(4 + 8 * i + 4) as i16)).collect()))?,
                     0x0AA => tx.send(NetEvent::MagicKnown((0..128).map(|i| p.u8(4 + i)).collect()))?,
                     0x0AC => tx.send(NetEvent::CommandsKnown((0..224).map(|i| p.u8(4 + i)).collect()))?,
+                    0x0AD => tx.send(NetEvent::Dungeon((0..0x80).map(|i| p.u8(4 + i)).collect()))?,
                     0x0DF => {
                         if p.u32(4) == login.char_id {
                             tx.send(NetEvent::Vitals { hp: p.u32(8), mp: p.u32(12), tp: p.u32(16), hpp: p.u8(0x16), mpp: p.u8(0x17) })?;

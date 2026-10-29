@@ -1173,6 +1173,17 @@ impl Host for LiveHost<'_> {
                 let id = Self::arg_int(&args, 0).unwrap_or(0) as u16;
                 self.w.info_win = (id != 0).then_some((id, None, 0));
             }
+            // FUN_100b93e0: the Maze Tabula preview of item val@2 with extdata val@4..val@0xe, view only and with no slot;
+            // FUN_100b9470 (0x21) closes it (never sending: a view).
+            Effect::Op { op: 0x71, sub: Some(0x20), args, .. } => {
+                let int = |i| Self::arg_int(&args, i).unwrap_or(0) as u32;
+                let mut ext = [0u8; 24];
+                for k in 0..6 {
+                    ext[4 * k..4 * k + 4].copy_from_slice(&int(k + 1).to_le_bytes());
+                }
+                super::maze::open(self.w, false, None, int(0) as u16, ext);
+            }
+            Effect::Op { op: 0x71, sub: Some(0x21), .. } => super::maze::close(self.w),
             // FUN_100b7e10 0x40: the concierge's list (link5 mode 1, link6 title val@2).
             Effect::Op { op: 0x71, sub: Some(0x40), args, .. } => {
                 let title = Self::arg_int(&args, 0).unwrap_or(0) as u8;
@@ -1508,6 +1519,7 @@ pub fn queue(w: &mut World, s: EventStart) {
     w.self_lock = None;
     w.event_pending = Some(Box::new(Waiting { start: s, blocks: None, asked: HashSet::new(), timer: ASK_AGAIN, joined: HashSet::new(), since: Instant::now() }));
     w.menu = None;
+    super::maze::event_start(w);
     // Event start (FUN_1015f3e0(0x800)) closes the battle set too; it does not come back at the event's end.
     (w.action_menu, w.gauge, w.held_menu) = (None, None, None);
     w.win = None;
@@ -1881,6 +1893,7 @@ fn finish(w: &mut World, live: Box<Live>) {
     w.event_end_at = Some(Instant::now());
     w.screen.shot = None;
     w.map_open = None;
+    super::maze::event_end(w);
     // The player's post-event request (+0x1f8 = 300, +0x1fa = 1).
     if live.st.bound.contains(&w.my_id) {
         w.self_lock = Some(300.0);

@@ -37,7 +37,7 @@ const WHITE: u32 = 0x8080_8080;
 const MORE: [u8; 2] = [0x81, 0xa5];
 
 /// The game around the item.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Ctx {
     /// Vana'diel-epoch seconds (FUN_101039e0), for charge timers.
     pub now: u32,
@@ -49,6 +49,8 @@ pub struct Ctx {
     pub container: Option<u8>,
     /// +0x374: bit 0 hides the extra line, bit 1 the signature.
     pub flags: u32,
+    /// A Maze Tabula's voucher by name (its compact record, FUN_1015bbd0), when its extdata names one.
+    pub voucher: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -292,6 +294,11 @@ pub fn build(it: &Item, ext: Option<&[u8; 24]>, cx: &Ctx, msg: &dyn Fn(u8, usize
             if e[8] == 4 {
                 info.extra_tint = 0x8040_4040;
             }
+        }
+        // Maze Tabulae (cases 0x16 / 0x17): the voucher and the runes on it, "%s [%d]"; an R one adds d5 bits 4..10, "(%d)".
+        (0x16 | 0x17, Some(e)) if cx.voucher.is_some() => {
+            let (name, n) = (cx.voucher.clone().unwrap_or_default(), crate::dat::maze::count(e));
+            line = if t == 0x17 { format!("{name} [{n}]({})", crate::dat::maze::extra(e)) } else { format!("{name} [{n}]") };
         }
         // Furnishings: the element glyph and the storage.
         (10 | 12 | 14, _) => {

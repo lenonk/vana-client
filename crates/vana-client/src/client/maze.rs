@@ -232,9 +232,9 @@ pub fn open(w: &mut World, edit: bool, slot: Option<u8>, tabula: u16, ext: [u8; 
 }
 
 /// iuse Use / the direct list on an inventory tabula: type 0x16 edits, 0x17 views (FUN_101fcf60(0 / 1, slot)).
-pub fn use_tabula(w: &mut World, index: u8, id: u16, item_type: u16) {
+pub fn use_tabula(w: &mut World, index: u8, id: u16, edit: bool) {
     let ext = w.inv.ext.get(&(0, index)).copied().unwrap_or([0; 24]);
-    open(w, item_type == 0x16, Some(index), id, ext);
+    open(w, edit, Some(index), id, ext);
 }
 
 /// FUN_101fcfb0: an edited tabula whose encoding changed goes out as c2s 0x0D8; then the windows close.
@@ -557,6 +557,12 @@ pub(super) fn help_text(w: &World, s: &Screen) -> Option<(String, bool)> {
     }
     let entry = (v - RUNE_BASE) as usize * 64 + s.voucher.checked_sub(VOUCHER_BASE)? as usize;
     w.maze.texts.as_ref()?.text(entry).map(|t| (t, false))
+}
+
+/// The voucher a tabula's extdata names, by name (iteminfo's extra line).
+pub(super) fn tabula_voucher(w: &World, it: &crate::dat::items::Item, ext: Option<&[u8; 24]>) -> Option<String> {
+    let v = ext.filter(|_| matches!(it.item_type, 0x16 | 0x17)).map(maze::voucher).filter(|&v| v != 0)?;
+    w.item_info.as_ref()?.item(v).map(|i| i.name.clone())
 }
 
 fn item_name(w: &World, id: u16) -> String {

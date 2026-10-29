@@ -548,6 +548,8 @@ struct UiInput {
     down: bool,
     released: bool,
     right_clicked: bool,
+    /// A middle click (the maze grid's turn, message 7 *(inf)*).
+    middle_clicked: bool,
     /// Wheel notches for the focused list, up positive (FUN_10125360).
     wheel: i32,
     events: Vec<egui::Event>,
@@ -1192,7 +1194,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.blklist.is_some() || w.inspect.up() || mannequin::active(w) || w.moncustom.is_some() || w.pupequip.is_some() || w.pupset.is_some() || w.friendui.is_some() || polmail::focused(w)) {
+    if w.log_focus == 0 && (w.maze.screen.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.blklist.is_some() || w.inspect.up() || mannequin::active(w) || w.moncustom.is_some() || w.pupequip.is_some() || w.pupset.is_some() || w.friendui.is_some() || polmail::focused(w)) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1798,6 +1800,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // The event's area picker (op 0xcc 0x10) and the concierge's list take the keys before the event.
                 _ if world.arealist.is_some() && arealist::picking(world) => arealist::key(world, gu, *key),
                 _ if world.concierge_ui.is_some() => concierge::key(world, gu, *key),
+                // The event's tabula preview (op 0x71 0x20) takes the keys; its Enter goes on to the event's message.
+                _ if world.maze.screen.is_some() && event::active(world) && world.confirm.is_none() => _ = maze::key(world, *key),
                 // An event takes the keys: Enter advances or picks, arrows move, Escape cancels.
                 _ if event::active(world) => event::key(world, *key),
                 _ if gmtell::open(world) => gmtell::key(world, *key),
@@ -1897,6 +1901,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 },
                 _ if polmail::focused(world) => polmail::key(world, *key),
                 _ if friendlist::focused(world) => friendlist::key(world, *key),
+                _ if world.maze.screen.is_some() && world.confirm.is_none() => _ = maze::key(world, *key),
                 _ if world.bluset.is_some() && world.confirm.is_none() => bluset::key(world, *key),
                 _ if world.pupset.is_some() && world.confirm.is_none() => pupset::key(world, gu, *key),
                 _ if world.moncustom.is_some() && world.confirm.is_none() => moncustom::key(world, gu, *key),
@@ -2307,6 +2312,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // Mouse on an open window's item list (the modern layer's own list takes it there).
     if world.win.is_some()
         && !(world.modern && items::modern_list(world))
+        && world.maze.screen.is_none()
         && let Some(p) = input.pointer
     {
         items::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
@@ -2441,6 +2447,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     if let Some(p) = input.pointer.filter(|_| world.pupset.is_some() && world.confirm.is_none()) {
         pupset::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| world.maze.screen.is_some() && world.confirm.is_none()) {
+        maze::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked, input.middle_clicked);
     }
     // Mouse on the magic / ability lists and their category windows, or the Set Spells screen over them.
     if let Some(p) = input.pointer.filter(|_| world.bluset.is_some() && world.confirm.is_none()) {
@@ -3140,7 +3149,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     blockers.extend(inspect::draw(gu, world, sw, sh));
     blockers.extend(synth::draw(gu, world, sw, sh));
-    if !(world.modern && items::modern_list(world)) {
+    // The Maze Tabula's list sits where the item list does (bluinven over inventor *(inf)*): the item list waits.
+    if !(world.modern && items::modern_list(world)) && world.maze.screen.is_none() {
         blockers.extend(items::draw(gu, world, sw, sh));
     }
     // The action menu (FUN_101276a0), beneath the lists it opens: label sprites, the highlighted one tinted 0x80805020; none
@@ -3186,6 +3196,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(merits::draw(gu, world, sw, sh));
     blockers.extend(equipwin::pup_draw(gu, world, sw, sh));
     blockers.extend(pupset::draw(gu, world, sw, sh));
+    blockers.extend(maze::draw(gu, world, sw, sh));
     blockers.extend(jobpoints::draw(gu, world, sw, sh));
     blockers.extend(aepoints::draw(gu, world, sw, sh));
     if !world.modern {
@@ -3806,6 +3817,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     merits::bars(gu, world, &mut bars);
     equipwin::pup_bars(gu, world, &mut bars);
     pupset::bars(gu, world, &mut bars);
+    maze::bars(gu, world, &mut bars);
     jobpoints::bars(gu, world, &mut bars);
     aepoints::bars(gu, world, &mut bars);
     missions::bars(gu, world, &mut bars);
@@ -4507,7 +4519,7 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
     if p.1 != id {
         p = (0, id, 1);
     }
-    let cx = iteminfo::Ctx { now: vana_now(world) as u32, equipped, shop: false, container, flags };
+    let cx = iteminfo::Ctx { now: vana_now(world) as u32, equipped, shop: false, container, flags, voucher: maze::tabula_voucher(world, &it, ext.as_ref()) };
     let aug = gu.aug_ctx();
     let info = iteminfo::build(&it, ext.as_ref(), &cx, &|g, k| gu.item_msg(g, k), &|s| gu.text_width(s), aug.as_ref());
     p.2 = info.pages.len();
@@ -4517,7 +4529,7 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
     let cmp = items::compare(world);
     let cmp_info = cmp.flatten().and_then(|(cid, cext, c)| {
         let cit = cache.item(cid)?;
-        let cx = iteminfo::Ctx { now: vana_now(world) as u32, equipped: true, shop: false, container: Some(c), flags: 0 };
+        let cx = iteminfo::Ctx { now: vana_now(world) as u32, equipped: true, shop: false, container: Some(c), flags: 0, voucher: None };
         Some((cid, iteminfo::build(&cit, cext.as_ref(), &cx, &|g, k| gu.item_msg(g, k), &|s| gu.text_width(s), aug.as_ref())))
     });
     let rows = iteminfo::rows(&info, page).max(cmp_info.as_ref().map_or(3, |(_, ci)| iteminfo::rows(ci, 0)));
@@ -5935,6 +5947,7 @@ impl World {
         if let Some(s) = &self.pupset {
             kept.extend(pupset::kept(s));
         }
+        kept.extend(maze::kept(self));
         self.cursor_mem.extend(kept);
     }
 
@@ -7846,6 +7859,7 @@ impl App {
                     world.gmtell = Default::default();
                     // FUN_10093af0: the 0x075 store; the sync table goes with the zone's entities *(inf)*.
                     objective::reset(world);
+                    maze::zone_reset(world);
                     world.index_masks.clear();
                     border::remove(world);
                     (world.region_menu, world.cnq) = (None, None);
@@ -8610,6 +8624,7 @@ impl App {
                     world.spells_known = bits;
                 }
                 NetEvent::CommandsKnown(bits) => world.commands_known = bits,
+                NetEvent::Dungeon(store) => maze::on_store(world, &store),
                 // LAB_100a2540 stores the offer whatever our state (it may come before our dead status, e.g. during a
                 // zone-in event); the K.O. step shows it once we are dead.
                 NetEvent::MannequinLook { rec } => {
@@ -9131,6 +9146,7 @@ impl App {
         equipwin::tick(world);
         auction::update(world, dt);
         auction::index_tick(world);
+        maze::tick(world, dt);
         currencies::update(world, dt * 60.0);
         merits::update(world);
         jobpoints::update(world, dt * 60.0);
@@ -9631,7 +9647,12 @@ impl App {
             roe::flip_page(world);
         }
         // FUN_1013c220: key function 0x18 (Num- / -) turns the item info window's page; past the last, back to 0.
-        if self.input.test(0x18, input::mode::PRESS) && (world.info_win.is_some() || items::info_source(world).is_some()) {
+        // Message 7 on the maze grid: the carried rune turns (the tabula's window over the item list keeps the page).
+        if world.maze.screen.is_some() {
+            if self.input.test(0x18, input::mode::PRESS) {
+                maze::rotate(world);
+            }
+        } else if self.input.test(0x18, input::mode::PRESS) && (world.info_win.is_some() || items::info_source(world).is_some()) {
             let mut p = world.info_page.get();
             p.0 = if p.0 + 1 >= p.2.min(3) { 0 } else { p.0 + 1 };
             world.info_page.set(p);
@@ -10117,6 +10138,7 @@ impl App {
             down: i.pointer.primary_down() && mine,
             released: i.pointer.primary_released() && !swallow && mine,
             right_clicked: i.pointer.secondary_clicked() && mine,
+            middle_clicked: i.pointer.button_clicked(egui::PointerButton::Middle) && mine,
             events: i.events.clone(),
         });
         if input.moved
@@ -10182,7 +10204,7 @@ impl App {
                     let fields = [&mut self.cfg.server, &mut self.cfg.username, &mut *password, &mut *otp];
                     let remembered = self.cfg.remember_password;
                     // While an error shows, the fields take no input (the OK window has it).
-                    let none = UiInput { pointer: None, moved: false, clicked: false, pressed: false, down: false, released: false, right_clicked: false, wheel: 0, events: Vec::new() };
+                    let none = UiInput { pointer: None, moved: false, clicked: false, pressed: false, down: false, released: false, right_clicked: false, middle_clicked: false, wheel: 0, events: Vec::new() };
                     let shown = if self.login_error.is_some() || self.twofa.is_some() { &none } else { &input };
                     let mut sounds = Vec::new();
                     let modern_ui = self.cfg.modern_ui;
