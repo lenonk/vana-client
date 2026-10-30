@@ -138,6 +138,12 @@ enum Cmd {
         /// Goal x,z.
         #[arg(long, allow_hyphen_values = true)]
         to: String,
+        /// Every door open (their collision boxes skipped), but those near a --closed point.
+        #[arg(long)]
+        open_doors: bool,
+        /// With --open-doors: doors within 3 units of these x,z points stay shut ("x,z;x,z").
+        #[arg(long, allow_hyphen_values = true)]
+        closed: Option<String>,
     },
     /// Each ground position's map (the sub-map key under it, its map number) and grid square, as the location panel
     /// shows it (FUN_101f7600).
@@ -1399,7 +1405,7 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        Cmd::ZonePath { zone, from, to } => zone_path(zone, &from, &to),
+        Cmd::ZonePath { zone, from, to, open_doors, closed } => zone_path(zone, &from, &to, open_doors, closed.as_deref()),
         Cmd::MapGrid { zone, points } => {
             let pts: Vec<[f32; 3]> = points.iter().map(|s| -> Result<[f32; 3]> {
                 let v: Vec<f32> = s.split(',').map(|v| Ok(v.trim().parse::<f32>()?)).collect::<Result<_>>()?;
@@ -1928,7 +1934,7 @@ fn parse_num(s: &str) -> Result<u32, String> {
 }
 
 /// A* over 1-unit cells; an edge is walkable when Ground::walk reaches its end.
-fn zone_path(zone: u32, from: &str, to: &str) -> Result<()> {
+fn zone_path(zone: u32, from: &str, to: &str, open_doors: bool, closed: Option<&str>) -> Result<()> {
     use glam::Vec3;
     use std::collections::{BinaryHeap, HashMap};
     let nums = |s: &str| -> Result<Vec<f32>> { s.split(',').map(|v| Ok(v.trim().parse::<f32>()?)).collect() };
@@ -1938,6 +1944,14 @@ fn zone_path(zone: u32, from: &str, to: &str) -> Result<()> {
     let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
     let keys = dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?)?;
     let ground = client::ground::Ground::build(&dat::zone::load_scene(&keys, &index.read(dat::zone::file_id(zone))?)?);
+    if open_doors {
+        let keep: Vec<(f32, f32)> = closed.unwrap_or("").split(';').filter(|s| !s.is_empty()).map(|s| nums(s).map(|v| (v[0], v[1]))).collect::<Result<_>>()?;
+        let kept = ground.open_doors_except(&keep, 3.0);
+        println!("doors open; kept shut: {kept:?}");
+        for (d, c) in ground.door_boxes() {
+            println!("door {d:#x} box centre ({:.1}, {:.1}, {:.1})", c.x, c.y, c.z);
+        }
+    }
     let start = Vec3::new(f[0], f[1], f[2]);
     let cell = |x: f32, z: f32| ((x.round()) as i32, (z.round()) as i32);
     let goal = cell(t[0], t[1]);

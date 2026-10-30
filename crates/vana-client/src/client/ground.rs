@@ -380,6 +380,27 @@ impl Ground {
         if solid { open.remove(&door) } else { open.insert(door) };
     }
 
+    /// Every door's box skipped, but those whose box centre is within `r` of one of `keep` (x, z), which stay solid
+    /// (zone-path's --open-doors / --closed). The doors kept, by id.
+    pub fn open_doors_except(&self, keep: &[(f32, f32)], r: f32) -> Vec<u32> {
+        let kept: std::collections::HashSet<u32> =
+            self.door_boxes().into_iter().filter(|(_, c)| keep.iter().any(|&(x, z)| (c.x - x).hypot(c.z - z) < r)).map(|(d, _)| d).collect();
+        let mut open = self.open.borrow_mut();
+        open.extend(self.doors.iter().copied().filter(|d| *d != 0 && !kept.contains(d)));
+        kept.into_iter().collect()
+    }
+
+    /// Each door's id and the centre of its box (zone-path's listing).
+    pub fn door_boxes(&self) -> Vec<(u32, Vec3)> {
+        let mut sum: std::collections::BTreeMap<u32, (Vec3, f32)> = Default::default();
+        for (d, t) in self.doors.iter().zip(&self.tris).filter(|(d, _)| **d != 0) {
+            let e = sum.entry(*d).or_insert((Vec3::ZERO, 0.0));
+            e.0 += t[0] + t[1] + t[2];
+            e.1 += 3.0;
+        }
+        sum.into_iter().map(|(d, (s, n))| (d, s / n)).collect()
+    }
+
     /// FUN_10176dd0(0): every door box solid (a sub-area load starts).
     pub fn close_all_doors(&self) {
         self.open.borrow_mut().clear();

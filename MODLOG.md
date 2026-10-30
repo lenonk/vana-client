@@ -12257,3 +12257,13 @@ since "Ship voyages: the moving world" listed them as not done.
 - cs-shot prints each path's attach word.
 - Live (Lnxcsfix, `!cs 152 0 1` by Aldo in sub-area 457): cm41 frames Aldo with Verena at the door, cm42 / cm43
   Verena and Aldo, cm44 Fickblix with Verena.
+
+## zone-path: doors open or shut (2026-10-30; tool)
+
+- `zone-path ZONE --from x,y,z --to x,z [--open-doors [--closed "x,z;x,z"]]`: --open-doors skips every door's collision
+  box (Ground::open_doors_except) but those whose box centre is within 3 of a --closed point, and lists each door by id
+  (its 4cc name, "_440" = 0x3034345f) with its box centre (Ground::door_boxes). So which door a route needs: it
+  reaches with all open and fails with that one shut.
+- Qulun Dome (148), for the LSB walkthrough: arrival A (337.9, 20.1) reaches the Quadav Crest ??? only through _441;
+  the Magicite reaches arrival C (2.9, 60.0) only through _440 (from the Magicite out: its raised floor is not entered
+  by this walk's 1.2 step); arrival B is a closed pocket (533 cells) even with every door open.
