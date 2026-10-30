@@ -52,13 +52,21 @@ impl Lamps {
         self.at = Some(Instant::now());
         let scan = fx.lamp_scan(on);
         let first = fx.reg.light_keys.len() as u32;
-        let list = if on { build(&scan.glows, &scan.lights, first, |a, b| ground?.raycast(a, b)) } else { Vec::new() };
+        let mut list = if on { build(&scan.glows, &scan.lights, first, |a, b| ground?.raycast(a, b)) } else { Vec::new() };
+        // A lamp keeps the colour it was first given (glows pulse; the list changes only when the lamps do).
+        for l in &mut list {
+            if let Some(old) = self.list.iter().find(|o| o.slot == l.slot && o.pos == l.pos && o.template == l.template) {
+                l.colour = old.colour;
+            }
+        }
+        // Logged when the lamps change, and once at the first scan that finds anything (zones whose glows are all lit).
         let counts = (scan.glows.len(), scan.lights.len(), scan.shells);
-        if list == self.list && counts == self.counts {
+        let first_seen = self.counts == (0, 0, 0) && counts != (0, 0, 0);
+        self.counts = counts;
+        if list == self.list && !first_seen {
             return None;
         }
         log::info!("lamps: {} glows, {} data lights, {} shells: {} lamp lights", counts.0, counts.1, counts.2, list.len());
-        self.counts = counts;
         if list == self.list {
             return None;
         }
@@ -89,7 +97,7 @@ fn build(glows: &[(Vec3, u32)], lights: &[(Vec3, u32)], first: u32, ray: impl Fn
             break;
         }
         let template = lights.iter().min_by(|a, b| a.0.distance(c).total_cmp(&b.0.distance(c))).map_or(OWN, |l| l.1);
-        out.push(Lamp { pos: off_wall(c, &ray), slot, template, colour });
+        out.push(Lamp { pos: off_wall(c, &ray), slot, template, colour: if template == OWN { colour } else { 0 } });
     }
     out
 }

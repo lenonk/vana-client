@@ -12200,3 +12200,14 @@ since "Ship voyages: the moving world" listed them as not done.
 - `battle-dump [ids]`: every basic battle message's English text with sample names and its raw codes.
 - Live (Lnxtest at a Snipper, modern UI): "Snipper → Lnxtest: 17", "Lnxtest → Snipper: miss (x2)", "32!" for a
   critical, the claimed Snipper orange; "uses Provoke on the Snipper" then added as a form.
+
+## Help Desk: Execute seen live (2026-10-29)
+
+- Live (Lnxcsfix, modern UI): /helpdesk, Help Desk, "I can't move my character or log out of the game.", "My character
+  is stuck.", "I am stuck and need to get out ...", the question page "A GM will be called." with the text field
+  ("vana-client test call, please ignore"), Execute: c2s 0x0D3 type 2 in two packets (244 + 112 bytes), group 7031
+  0x14 "Your call has been placed in the queue." in the log, faqmain closed. LSB stored it as help_desk row 3 for
+  charid 5 with the text (removed after the check). The EXEC.LOGOUT / EXEC.RESCUE paths are on nodes this walk does not
+  reach (not pressed).
+- Lamp Lights correction: a lamp copying a data light carries no colour, and an own-light lamp keeps its first one, so
+  the pulsing glows no longer change the list (and re-apply the lamps) every second; the counts log once per zone.
