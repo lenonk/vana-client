@@ -37,6 +37,8 @@ pub struct TwoFa {
 pub enum Act {
     Send(Command, String),
     Close,
+    /// The recovery code to the clipboard.
+    Copy(String),
 }
 
 /// The window as drawn, for the modern layer (UI pixels): the frame, the text lines (rect, text, colour, centred),
@@ -66,6 +68,7 @@ impl TwoFa {
             Step::Scan { .. } => &["Confirm", "Cancel"],
             Step::Code(Ask::Off) => &["Turn off", "Cancel"],
             Step::Code(Ask::Recovery) => &["Make a new code", "Cancel"],
+            Step::Done { code: Some(_), .. } => &["Copy code", "OK"],
             Step::Done { .. } => &["OK"],
         }
     }
@@ -228,6 +231,8 @@ fn layout(lu: &GameUi, size: [u32; 2], st: &TwoFa, busy: bool, f: f32) -> Lay {
 #[allow(clippy::too_many_arguments)]
 pub fn window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], st: &mut TwoFa, busy: bool, sounds: &mut Vec<crate::audio::Ui>, modern: Option<&mut Option<View>>) -> Option<Act> {
     let f = if modern.is_some() { 1.5 } else { 1.0 };
+    // The modern layer's rule: hovering only lights a button.
+    let hover_moves = modern.is_none();
     let lay = layout(lu, size, st, busy, f);
     let first = st.has_field() as usize;
     let items = first + lay.buttons.len();
@@ -236,7 +241,7 @@ pub fn window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], st: &mut TwoFa, 
     if !busy {
         if let Some(k) = input.pointer.and_then(|p| lay.buttons.iter().position(|r| inside(r, p))) {
             lu.hover.set(true);
-            if input.moved {
+            if input.moved && hover_moves {
                 st.focus = first + k;
             }
             if input.clicked {
@@ -248,6 +253,8 @@ pub fn window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], st: &mut TwoFa, 
         }
         for ev in &input.events {
             match ev {
+                // Ctrl+C copies the recovery code.
+                egui::Event::Copy if matches!(st.step, Step::Done { code: Some(_), .. }) => press = Some(0),
                 egui::Event::Text(t) | egui::Event::Paste(t) if first == 1 && st.focus == 0 => {
                     st.code.extend(t.chars().filter(|c| c.is_ascii_alphanumeric()));
                     st.code = st.code.chars().take(32).collect();
@@ -283,6 +290,7 @@ pub fn window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], st: &mut TwoFa, 
             (Step::Menu, 0) => act = Some(Act::Send(Command::CreateTotp, String::new())),
             (Step::Menu, 1) => (st.step, st.focus) = (Step::Code(Ask::Off), 0),
             (Step::Menu, 2) => (st.step, st.focus) = (Step::Code(Ask::Recovery), 0),
+            (Step::Done { code: Some(c), .. }, 0) => act = Some(Act::Copy(c.clone())),
             (Step::Menu, _) | (Step::Done { .. }, _) => act = Some(Act::Close),
             _ if needs_code => st.error = Some("Enter a code first.".into()),
             (Step::Scan { .. }, 0) => act = Some(Act::Send(Command::VerifyTotp, st.code.clone())),

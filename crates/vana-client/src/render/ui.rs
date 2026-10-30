@@ -84,6 +84,9 @@ pub struct UiBatch {
     pub frames: Vec<[f32; 4]>,
 }
 
+/// The margin between a retail window's rect and the modern frame's border, as a share of the frame's corner.
+const MODERN_PAD: f32 = 0.2;
+
 /// The modern UI's window frame for the retail windows: the border texture's name, its corner as a share of its
 /// side, the corner's size in layout pixels, the interior's top and bottom colours and inset (a share of the side).
 #[derive(Clone, Debug)]
@@ -94,6 +97,13 @@ pub struct ModernFrame {
     pub top: [f32; 4],
     pub bottom: [f32; 4],
     pub inset: f32,
+}
+
+impl ModernFrame {
+    /// How far the frame stands out past the window it frames: its border and the margin.
+    pub fn grow(&self) -> f32 {
+        self.corner * (self.inset / self.corner_uv + MODERN_PAD)
+    }
 }
 
 /// A cell cut from the caption glyphs: "font    font" (screens::CAPTION_GLYPHS) or the menus' italic sheet "menu
@@ -541,16 +551,20 @@ impl UiBatch {
         }
     }
 
-    /// The modern frame over (x, y, w, h) at alpha `a`: the interior's gradient, then the border in nine slices.
+    /// The modern frame round (x, y, w, h) at alpha `a`: the interior's gradient, then the border in nine slices. The
+    /// border is the panels' size and sits outside the window with a margin, clear of contents laid out for retail's
+    /// thin edges. The rect drawn.
     #[allow(clippy::too_many_arguments)]
-    fn push_modern_frame(&mut self, f: &ModernFrame, x: f32, y: f32, w: f32, h: f32, a: f32, no_edges: bool) {
+    fn push_modern_frame(&mut self, f: &ModernFrame, x: f32, y: f32, w: f32, h: f32, a: f32, no_edges: bool) -> [f32; 4] {
+        let grow = if no_edges { 0.0 } else { f.grow() };
+        let (x, y, w, h) = (x - grow, y - grow, w + 2.0 * grow, h + 2.0 * grow);
         let c = f.corner.min(w / 2.0).min(h / 2.0);
         let ins = f.inset / f.corner_uv * c;
         let [t, b] = [f.top, f.bottom].map(|k| [k[0], k[1], k[2], a]);
         let (ix, iy, iw, ih) = (x + ins, y + ins, (w - 2.0 * ins).max(0.0), (h - 2.0 * ins).max(0.0));
         self.push_quad(None, Blend::Alpha, [[ix, iy], [ix + iw, iy], [ix, iy + ih], [ix + iw, iy + ih]], [[0.0; 2]; 4], [t, t, b, b]);
         if no_edges {
-            return;
+            return [x, y, w, h];
         }
         let (u0, u1) = (f.corner_uv, 1.0 - f.corner_uv);
         let white = [[1.0, 1.0, 1.0, a]; 4];
@@ -567,14 +581,15 @@ impl UiBatch {
                 self.push_quad(Some(&f.texture), Blend::Alpha, corners, uvs, white);
             }
         }
+        [x, y, w, h]
     }
 
     /// A window frame of w x h from a style library ("win00", files 14..21), as FUN_1022a290:
     /// piece 0 background (9 when `alt_back`), 2/7 top/bottom edges, 4/5 sides, 1/3/6/8 corners.
     pub fn push_frame(&mut self, ui: &UiFile, style: &SpriteLib, x: f32, y: f32, w: f32, h: f32, sx: f32, sy: f32, tint: u32, blend_word: u32, alt_back: bool, no_edges: bool) {
         if let Some(f) = self.modern.clone() {
-            self.push_modern_frame(&f, x, y, w * sx, h * sy, ((tint >> 24 & 0xff) as f32 / 128.0).min(1.0), no_edges);
-            self.frames.push([x, y, w * sx, h * sy]);
+            let r = self.push_modern_frame(&f, x, y, w * sx, h * sy, ((tint >> 24 & 0xff) as f32 / 128.0).min(1.0), no_edges);
+            self.frames.push(r);
             return;
         }
         let mut piece = |k: usize, ox: f32, oy: f32, pw: f32, ph: f32| {

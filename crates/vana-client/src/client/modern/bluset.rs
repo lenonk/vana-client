@@ -7,7 +7,6 @@ use super::super::World;
 use super::super::game_ui::GameUi;
 use super::craft::tint;
 use super::{Panels, STRONG, Title};
-use crate::audio::Ui as Se;
 use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
 
 const COL_W: f32 = 300.0;
@@ -21,14 +20,13 @@ fn heading(ui: &mut Ui, m: &super::Modern, text: &str) {
 }
 
 /// A list's rows: the slot number, the spell's icon (`icons`: the room for one), the text in its tint; the cursor's
-/// kept in view. Hover only on the list with the keys (`focused`), clicks where `clicks`. (hovered, clicked).
-fn rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, salt: &str, rows: &[RowLook], cursor: usize, (focused, clicks, icons): (bool, bool, bool)) -> (Option<usize>, Option<usize>) {
+/// kept in view; clicks where `clicks`. The row clicked.
+fn rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, salt: &str, rows: &[RowLook], cursor: usize, (focused, clicks, icons): (bool, bool, bool)) -> Option<usize> {
     let ctx = ui.ctx().clone();
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let seen = egui::Id::unique((salt, "bluset cursor seen"));
     let follow = ctx.data(|d| d.get_temp::<usize>(seen)) != Some(cursor);
     ctx.data_mut(|d| d.insert_temp(seen, cursor));
-    let (mut hover, mut click) = (None, None);
+    let mut click = None;
     egui::ScrollArea::vertical().id_salt(salt).max_height(TALL).auto_shrink([false, true]).show(ui, |ui| {
         for (k, r) in rows.iter().enumerate() {
             let (rect, resp) = ui.allocate_exact_size(vec2(COL_W - 14.0, ROW), if clicks { Sense::click() } else { Sense::hover() });
@@ -55,16 +53,13 @@ fn rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, salt: &str, rows: &[RowLook
             if k == cursor && follow {
                 ui.scroll_to_rect(rect, None);
             }
-            if focused && resp.hovered() && moved {
-                hover = Some(k);
-            }
             if clicks && resp.clicked() {
                 click = Some(k);
             }
             ui.add_space(2.0);
         }
     });
-    (hover, click)
+    click
 }
 
 pub fn draw(p: &mut Panels, w: &mut World) {
@@ -78,7 +73,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let open = free && v.sibo.is_none();
     let note = format!("{}/{}", v.used, v.total);
     let title = gu.title_msg(0x8d).unwrap_or_else(|| "Blue Magic".into());
-    let (mut equip, mut inven, mut sibo) = ((None, None), (None, None), (None, None));
+    let (mut equip, mut inven, mut sibo) = (None, None, None);
     p.panel("window", Some(Title { icon: Some("icons/magic"), text: &title, note: Some(&note) }), 2.0 * COL_W + 16.0 + 44.0, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
@@ -116,24 +111,13 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     if !free {
         return;
     }
-    let cursor = |w: &mut World| w.sounds.push(Se::Cursor as u32);
-    if let Some(k) = sibo.0
-        && bluset::set_sibo(w, k as u16 + 1)
-    {
-        cursor(w);
-    }
-    if let Some(k) = sibo.1 {
+    if let Some(k) = sibo {
         bluset::set_sibo(w, k as u16 + 1);
         bluset::key(w, egui::Key::Enter);
         return;
     }
     for (list, on_equip) in [(equip, true), (inven, false)] {
-        if let Some(k) = list.0
-            && bluset::set_row(w, on_equip, k)
-        {
-            cursor(w);
-        }
-        if let Some(k) = list.1 {
+        if let Some(k) = list {
             bluset::set_row(w, on_equip, k);
             bluset::key(w, egui::Key::Enter);
             return;

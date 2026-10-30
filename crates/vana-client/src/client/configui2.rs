@@ -350,9 +350,34 @@ fn row_toggle(ui: &mut ConfigUi, v: &mut Values, name: &str, r: usize, out: &mut
     }
 }
 
+/// FUN_10195460 / FUN_101957b0: every key back to its default.
+pub(super) fn reset_keys(v: &mut Values, out: &mut Out) {
+    for id in 0x4a..=0x89u16 {
+        let d = crate::gamecfg::def(id).map_or(0, |d| d.default);
+        if v.set(id, d) {
+            out.changed.push(id);
+        }
+    }
+}
+
+/// A key assignment page's rows (k1assign, k2assign).
+pub(super) fn assign_rows(v: &Values, name: &str) -> usize {
+    match name {
+        "k1assign" if v.get(0x42) == 2 => 30,
+        "k1assign" => 28,
+        _ => 29,
+    }
+}
+
+/// A key assignment row's function name and config id.
+pub(super) fn assign_row(gu: &GameUi, name: &str, r: usize) -> (String, u16) {
+    let (label, id) = if name == "k1assign" { (K1_LABELS.get(r).copied().unwrap_or(0), 0x4a + r as u16) } else { (K2_LABELS.get(r).copied().unwrap_or(0), 0x6a + r as u16) };
+    (gu.group_b(label as usize).unwrap_or_default(), id)
+}
+
 /// Key assignment (FUN_10194e10): a key assigns to the cursor row; the same key again unassigns; a key is held
 /// by one row only. k2assign refuses the digits. Returns false for keys that are not assignable.
-fn assign(v: &mut Values, out: &mut Out, name: &str, row: usize, key: egui::Key) -> bool {
+pub(super) fn assign(v: &mut Values, out: &mut Out, name: &str, row: usize, key: egui::Key) -> bool {
     let Some(code) = dik_of(key) else { return false };
     let (base, n) = if name == "k1assign" { (0x4a, 30) } else { (0x6a, 29) };
     if name == "k2assign" && (0x02..=0x0b).contains(&code) {
@@ -500,14 +525,7 @@ pub fn custom(ui: &mut ConfigUi, v: &mut Values, name: &str, k: u8, out: &mut Ou
             ui.stack.pop();
         }
         ("yesno", 1) => {
-            // FUN_10195460 / FUN_101957b0: every key back to its default.
-            let ids: Vec<u16> = (0x4a..=0x89).collect();
-            for id in ids {
-                let d = crate::gamecfg::def(id).map_or(0, |d| d.default);
-                if v.set(id, d) {
-                    out.changed.push(id);
-                }
-            }
+            reset_keys(v, out);
             ui.stack.pop();
             ui.extra.ask_keys = None;
         }

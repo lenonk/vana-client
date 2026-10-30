@@ -30,13 +30,12 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     fish_gauge(p, w);
 }
 
-/// Plain rows (text, grey), the cursor's lit while focused and kept in view. (hovered, clicked) while focused.
-fn plain_rows(ui: &mut egui::Ui, m: &super::Modern, salt: &str, rows: &[(String, bool)], cursor: usize, focused: bool) -> (Option<usize>, Option<usize>) {
-    let moved = ui.ctx().input(|i| i.pointer.delta() != egui::Vec2::ZERO);
+/// Plain rows (text, grey), the cursor's lit while focused and kept in view; the row clicked while focused.
+fn plain_rows(ui: &mut egui::Ui, m: &super::Modern, salt: &str, rows: &[(String, bool)], cursor: usize, focused: bool) -> Option<usize> {
     let seen = egui::Id::unique((salt, "plain cursor seen"));
     let follow = ui.ctx().data(|d| d.get_temp::<usize>(seen)) != Some(cursor);
     ui.ctx().data_mut(|d| d.insert_temp(seen, cursor));
-    let (mut hover, mut click) = (None, None);
+    let mut click = None;
     egui::ScrollArea::vertical().id_salt(salt).max_height(TALL).auto_shrink([false, true]).show(ui, |ui| {
         for (k, (text, grey)) in rows.iter().enumerate() {
             let (r, resp) = ui.allocate_exact_size(vec2(W - 14.0, ROW), if focused { Sense::click() } else { Sense::hover() });
@@ -53,26 +52,19 @@ fn plain_rows(ui: &mut egui::Ui, m: &super::Modern, salt: &str, rows: &[(String,
             if k == cursor && follow {
                 ui.scroll_to_rect(r, None);
             }
-            if focused && resp.hovered() && moved {
-                hover = Some(k);
-            }
             if focused && resp.clicked() {
                 click = Some(k);
             }
             ui.add_space(2.0);
         }
     });
-    (hover, click)
+    click
 }
 
-/// A list's mouse: hover moves the cursor (SE 0001), a click moves it and is Enter.
-fn act(w: &mut World, (hover, click): (Option<usize>, Option<usize>), set: impl Fn(&mut World, usize) -> bool, enter: impl Fn(&mut World)) {
-    for k in hover.into_iter().chain(click) {
-        if set(w, k) {
-            w.sounds.push(Se::Cursor as u32);
-        }
-    }
-    if click.is_some() {
+/// A list's mouse: a click moves the cursor and is Enter.
+fn act(w: &mut World, click: Option<usize>, set: impl Fn(&mut World, usize) -> bool, enter: impl Fn(&mut World)) {
+    if let Some(k) = click {
+        set(w, k);
         enter(w);
     }
 }
@@ -84,7 +76,7 @@ fn remodel_list(p: &mut Panels, w: &mut World) {
     let m = p.m;
     let free = w.confirm.is_none();
     let title = gu.focus_text(remodel::WINDOW, 0)[1].clone().unwrap_or_else(|| "Remodel".into());
-    let mut got = (None, None);
+    let mut got = None;
     p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None }), W + 44.0, |ui| {
         got = plain_rows(ui, m, "remodel rows", &rows, sel, free);
     });
@@ -99,7 +91,7 @@ fn primer_lists(p: &mut Panels, w: &mut World) {
     let free = w.confirm.is_none();
     let title = w.battle.as_ref().and_then(|b| b.group9(0xc5)).unwrap_or_else(|| "Help Desk".into());
     let width = W + if v.list.is_some() { 16.0 + W } else { 0.0 } + 44.0;
-    let (mut cats, mut topics, mut turn) = ((None, None), (None, None), None);
+    let (mut cats, mut topics, mut turn) = (None, None, None);
     p.panel("window", Some(Title { icon: Some("icons/help"), text: &title, note: None }), width, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
@@ -152,10 +144,9 @@ fn concierge_list(p: &mut Panels, w: &mut World) {
     let m = p.m;
     let ctx = p.ctx;
     let info = w.item_info.clone();
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let free = w.confirm.is_none();
     let focused = free && v.lsc.is_none();
-    let (mut tab, mut hover, mut click) = (None, None, None);
+    let (mut tab, mut click) = (None, None);
     let title = gu.focus_text(super::super::linkshell::LIST, 0)[1].clone().unwrap_or_else(|| "Linkshell".into());
     p.panel("window", Some(Title { icon: Some("icons/linkshell"), text: &title, note: None }), LIST_W + 44.0, |ui| {
         if !v.title.is_empty() {
@@ -204,9 +195,6 @@ fn concierge_list(p: &mut Panels, w: &mut World) {
                 if k == v.cursor && follow {
                     ui.scroll_to_rect(rect, None);
                 }
-                if focused && resp.hovered() && moved {
-                    hover = Some(k);
-                }
                 if focused && resp.clicked() {
                     click = Some(k);
                 }
@@ -221,7 +209,7 @@ fn concierge_list(p: &mut Panels, w: &mut World) {
         concierge::pick_filter(w, gu, k);
         return;
     }
-    for k in hover.into_iter().chain(click) {
+    if let Some(k) = click {
         if concierge::set_row(w, k) {
             w.sounds.push(Se::Cursor as u32);
         }
@@ -274,10 +262,9 @@ fn block_list(p: &mut Panels, w: &mut World) {
     let Some(gu) = p.gu else { return };
     let Some((rows, cursor, main, empty)) = blklist::view(w) else { return };
     let m = p.m;
-    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let free = w.confirm.is_none();
     let title = gu.focus_text(blklist::LIST, 1)[1].clone().unwrap_or_else(|| "Blacklist".into());
-    let (mut hover, mut click, mut delete) = (None, None, false);
+    let (mut click, mut delete) = (None, false);
     p.panel("blklist", Some(Title { icon: Some("icons/party"), text: &title, note: None }), W + 44.0, |ui| {
         if !empty.is_empty() {
             ui.label(egui::RichText::new(&empty).size(m.theme.small).color(m.theme.color("muted")));
@@ -299,9 +286,6 @@ fn block_list(p: &mut Panels, w: &mut World) {
                 if k == cursor && follow {
                     ui.scroll_to_rect(r, None);
                 }
-                if focused && resp.hovered() && moved {
-                    hover = Some(k);
-                }
                 if focused && resp.clicked() {
                     click = Some(k);
                 }
@@ -322,7 +306,7 @@ fn block_list(p: &mut Panels, w: &mut World) {
         blklist::key(w, egui::Key::Enter);
         return;
     }
-    for k in hover.into_iter().chain(click) {
+    if let Some(k) = click {
         if blklist::set_cursor(w, k) {
             w.sounds.push(Se::Cursor as u32);
         }
@@ -337,13 +321,12 @@ fn chat_mode(p: &mut Panels, w: &mut World) {
     let Some(gu) = p.gu else { return };
     let Some(v) = chatctrl::look(w, gu) else { return };
     let m = p.m;
-    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let free = w.confirm.is_none();
     let title = gu.focus_text(chatctrl::WINDOW, v.sel)[1].clone().unwrap_or_else(|| "Chat".into());
-    let mut got = (None, None);
+    let mut got = None;
     p.panel("chatctrl", Some(Title { icon: None, text: &title, note: None }), social::width(1), |ui| {
         let col = MenuWin { name: chatctrl::WINDOW, sel: v.sel, off: v.off.clone(), labels: Vec::new(), marked: Vec::new(), values: v.values.clone() };
-        got = social::column(ui, m, gu, &col, free, moved);
+        got = social::column(ui, m, gu, &col, free);
         ui.add_space(6.0);
         let head = m.caption(gu, "menu    windowps", 283).unwrap_or_default();
         let range = m.caption(gu, "menu    windowps", v.range).unwrap_or_default();
@@ -367,12 +350,11 @@ fn garden_windows(p: &mut Panels, w: &mut World) {
     let m = p.m;
     let ctx = p.ctx;
     let info = w.item_info.clone();
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let free = w.confirm.is_none();
     // 0xd 0x59 "Gardening".
     let title = gu.title_msg(0x59).filter(|t| !t.is_empty()).unwrap_or_else(|| "Gardening".into());
     let wide = if v.list.is_some() { 360.0 } else { social::width(1 + v.bank.is_some() as usize) - 44.0 };
-    let (mut win, mut bank, mut row) = ((None, None), (None, None), (None, None));
+    let (mut win, mut bank, mut row) = (None, None, None);
     p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None }), wide + 44.0, |ui| {
         if let (Some((rows, tints, cur)), Some(info)) = (&v.list, &info) {
             row = super::craft::list(ui, m, ctx, info, "garden list", rows, tints, *cur, free, &[]);
@@ -381,12 +363,12 @@ fn garden_windows(p: &mut Panels, w: &mut World) {
         ui.horizontal_top(|ui| {
             if let Some((name, sel)) = v.win {
                 let col = MenuWin { name, sel, off: Vec::new(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
-                win = social::column(ui, m, gu, &col, free && v.bank.is_none(), moved);
+                win = social::column(ui, m, gu, &col, free && v.bank.is_none());
             }
             if let Some((sel, off)) = &v.bank {
                 ui.add_space(12.0);
                 let col = MenuWin { name: garden::BANK, sel: *sel, off: off.clone(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
-                bank = social::column(ui, m, gu, &col, free, moved);
+                bank = social::column(ui, m, gu, &col, free);
             }
         });
     });
@@ -410,12 +392,11 @@ fn layout_windows(p: &mut Panels, w: &mut World) {
     let m = p.m;
     let ctx = p.ctx;
     let info = w.item_info.clone();
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let free = w.confirm.is_none();
     // Title slot 0 in layout mode (layout::bars).
     let title = gu.title_msg(4).filter(|t| !t.is_empty()).unwrap_or_else(|| "Layout".into());
     let wide = if v.list.is_some() { 360.0 } else { social::width(1 + v.bank.is_some() as usize) - 44.0 };
-    let (mut win, mut bank, mut row) = ((None, None), (None, None), (None, None));
+    let (mut win, mut bank, mut row) = (None, None, None);
     p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None }), wide + 44.0, |ui| {
         if let (Some((rows, tints, cur)), Some(info)) = (&v.list, &info) {
             row = super::craft::list(ui, m, ctx, info, "layout furniture", rows, tints, *cur, free, &[]);
@@ -424,12 +405,12 @@ fn layout_windows(p: &mut Panels, w: &mut World) {
         ui.horizontal_top(|ui| {
             if let Some((name, sel, off)) = &v.win {
                 let col = MenuWin { name, sel: *sel, off: off.clone(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
-                win = social::column(ui, m, gu, &col, free && v.bank.is_none(), moved);
+                win = social::column(ui, m, gu, &col, free && v.bank.is_none());
             }
             if let Some((sel, off)) = &v.bank {
                 ui.add_space(12.0);
                 let col = MenuWin { name: layout::BANK, sel: *sel, off: off.clone(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
-                bank = social::column(ui, m, gu, &col, free, moved);
+                bank = social::column(ui, m, gu, &col, free);
             }
         });
     });
@@ -455,13 +436,12 @@ fn pup_menu(p: &mut Panels, w: &mut World) {
     let Some(gu) = p.gu else { return };
     let Some((name, sel)) = equipwin::pup_look(w) else { return };
     let m = p.m;
-    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let free = w.confirm.is_none();
     let title = gu.title_msg(0x14).unwrap_or_else(|| "Equipment".into());
-    let mut got = (None, None);
+    let mut got = None;
     p.panel("window", Some(Title { icon: Some("icons/equipment"), text: &title, note: None }), social::width(1), |ui| {
         let col = MenuWin { name, sel, off: Vec::new(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
-        got = social::column(ui, m, gu, &col, free, moved);
+        got = social::column(ui, m, gu, &col, free);
     });
     if free {
         social::act(w, gu, got, equipwin::set_pup, |w, gu| equipwin::pup_key(w, gu, egui::Key::Enter));

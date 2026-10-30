@@ -11,7 +11,7 @@ use super::super::settings::SettingsUi;
 use crate::gamecfg::Values;
 use super::super::select::{Pointer, View};
 use super::craft::{button, tint};
-use super::{Modern, Panels, Title, paint};
+use super::{Modern, Panels, Title, kit, paint};
 use egui::{Align2, Color32, Context, FontFamily, FontId, Sense, Ui, pos2, vec2};
 
 const W: f32 = 380.0;
@@ -350,7 +350,6 @@ fn creator_panel(p: &mut Panels, gu: &GameUi, c: &Page, out: &mut creator::Point
     let m = p.m;
     let v = c.view;
     let screen = p.ctx.content_rect();
-    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let live = c.free && c.ok.is_none() && c.confirm.is_none();
     let at = pos2(screen.width() * 0.0121, screen.height() * 0.06);
     let note = Some(format!("{}/7", v.step + 1));
@@ -374,9 +373,6 @@ fn creator_panel(p: &mut Panels, gu: &GameUi, c: &Page, out: &mut creator::Point
         if v.step != 5 {
             for (k, t) in step_rows(gu, v.step).iter().enumerate() {
                 let resp = pick_row(ui, m, t, k == sel, live);
-                if live && resp.hovered() && moved {
-                    out.row.0 = Some(k);
-                }
                 if live && resp.clicked() {
                     out.row.1 = Some(k);
                 }
@@ -405,9 +401,6 @@ fn creator_panel(p: &mut Panels, gu: &GameUi, c: &Page, out: &mut creator::Point
                         egui::ScrollArea::vertical().id_salt("creator worlds").max_height(screen.height() * 0.4).auto_shrink([false, true]).show(ui, |ui| {
                             for (k, t) in w.rows.iter().enumerate() {
                                 let resp = pick_row(ui, m, t, k == w.cursor, live);
-                                if live && resp.hovered() && moved {
-                                    out.world.0 = Some(k);
-                                }
                                 if live && resp.clicked() {
                                     out.world.1 = Some(k);
                                 }
@@ -455,7 +448,6 @@ fn creator_panel(p: &mut Panels, gu: &GameUi, c: &Page, out: &mut creator::Point
 fn creator_prompts(p: &mut Panels, gu: &GameUi, c: &Page, out: &mut creator::Pointer) {
     let m = p.m;
     let screen = p.ctx.content_rect();
-    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let low = pos2(screen.center().x - 230.0, screen.height() * 0.62);
     if let Some(text) = &c.ok {
         p.panel_at("creator prompt", None, 460.0, low, |ui| {
@@ -480,9 +472,6 @@ fn creator_prompts(p: &mut Panels, gu: &GameUi, c: &Page, out: &mut creator::Poi
                     }
                     let label = caption(if child { 1 } else { 2 }, d);
                     ui.painter().text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(m.theme.ui), if on { m.theme.color("gold") } else { m.theme.color("text") });
-                    if resp.hovered() && moved {
-                        out.yes.0 = Some(child);
-                    }
                     if resp.clicked() {
                         out.yes.1 = Some(child);
                     }
@@ -527,7 +516,6 @@ fn from_bottom(m: &Modern, id: &str, width: f32, corner: egui::Pos2, right: bool
 fn list_panel(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
     let m = p.m;
     let screen = p.ctx.content_rect();
-    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let title = if v.deleting { gu.lobby_msg(8, 0x6a, "Delete Character") } else { "Select Character".to_string() };
     let title = title.lines().next().unwrap_or_default().to_string();
     let (gap, width) = (screen.width() * 0.0121, W + 44.0);
@@ -564,9 +552,6 @@ fn list_panel(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
         egui::ScrollArea::vertical().id_salt("select rows").max_height(tall).auto_shrink([false, true]).show(ui, |ui| {
             for (k, r) in v.rows.iter().enumerate() {
                 let resp = row(ui, m, r, k == v.cursor, focused);
-                if focused && resp.hovered() && moved {
-                    out.row.0 = Some(k);
-                }
                 if focused && resp.clicked() {
                     out.row.1 = Some(k);
                 }
@@ -577,10 +562,12 @@ fn list_panel(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
                 ui.add_space(2.0);
             }
         });
-        if !v.deleting && v.options.is_none() && focused {
+        // The Settings button, a stop under the list for the keys; lit while its options are open.
+        if !v.deleting {
             ui.add_space(6.0);
             let label = gu.focus_text("menu    chfwin", 0)[1].clone().unwrap_or_else(|| "Settings".into());
-            if button(ui, m, &label, 200.0, false, v.rows.is_empty()) {
+            let s = kit::Btn { lit: v.options.is_some(), cursor: v.button, off: v.rows.is_empty() };
+            if kit::clicked(&kit::button(ui, m, &label, 200.0, s), s) && (focused || v.button) {
                 out.options = true;
             }
         }
@@ -595,7 +582,6 @@ fn list_panel(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
 fn windows(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
     let m = p.m;
     let screen = p.ctx.content_rect();
-    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     // Left of the list (bottom right), level with its top.
     let list = m.rects.borrow().get("select").copied().unwrap_or(egui::Rect::from_min_size(pos2(screen.max.x - W - 60.0, screen.height() * 0.4), vec2(W, 200.0)));
     let side = pos2(list.min.x - 264.0 - 12.0, list.min.y);
@@ -607,9 +593,6 @@ fn windows(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
             let face = if child == cur { "controls/list_row_selected" } else if resp.hovered() { "controls/list_row_hover" } else { "controls/list_row_normal" };
             super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
             ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, t, FontId::proportional(m.theme.ui), m.theme.color("text"));
-            if resp.hovered() && moved {
-                out.child.0 = Some(child);
-            }
             if resp.clicked() {
                 out.child.1 = Some(child);
             }
@@ -637,27 +620,14 @@ fn windows(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
     let low = pos2(screen.center().x - 230.0, screen.height() * 0.62);
     if let Some((text, yes)) = &v.prompt {
         let caption = |k: u16, d: &str| gu.child_caption("menu    ptc6yesn", k).filter(|c| !c.is_empty()).unwrap_or_else(|| d.to_string());
-        p.panel_at("select prompt", None, 460.0, low, |ui| {
-            ui.label(egui::RichText::new(text).size(m.theme.ui).color(m.theme.color("text")));
-            ui.add_space(10.0);
-            ui.horizontal(|ui| {
-                for (child, d) in [(1u16, "Yes"), (2, "No")] {
-                    let (r, resp) = ui.allocate_exact_size(vec2(130.0, 30.0), Sense::click());
-                    let on = (child == 1) == *yes;
-                    let face = if on { "controls/button_selected" } else if resp.hovered() { "controls/button_hover" } else { "controls/button_normal" };
-                    if let Some(s) = m.art.sprite(face) {
-                        ui.painter().add(paint::nine_slice(&s, r, 0.5, Color32::WHITE));
-                    }
-                    ui.painter().text(r.center(), Align2::CENTER_CENTER, caption(child, d), FontId::proportional(m.theme.ui), if on { m.theme.color("gold") } else { m.theme.color("text") });
-                    if resp.hovered() && moved {
-                        out.child.0 = Some(child);
-                    }
-                    if resp.clicked() {
-                        out.child.1 = Some(child);
-                    }
-                    ui.add_space(8.0);
-                }
-            });
+        let (y, n) = (caption(1, "Yes"), caption(2, "No"));
+        let at = pos2(screen.center().x - 340.0, low.y);
+        p.panel_at("select prompt", None, 680.0, at, |ui| {
+            ui.add_space(6.0);
+            if let Some(a) = kit::yes_no(ui, m, text, [&y, &n], *yes, m.theme.title * 1.2) {
+                out.child.1 = Some(if a { 1 } else { 2 });
+            }
+            ui.add_space(4.0);
         });
     }
     if let Some(text) = &v.ok {

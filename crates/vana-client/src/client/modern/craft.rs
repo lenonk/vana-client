@@ -18,12 +18,12 @@ const ICON: f32 = 24.0;
 const CRYSTAL: u32 = 0x8090_9040;
 const ELEMENTS: [&str; 8] = ["icons/fire", "icons/ice", "icons/wind", "icons/earth", "icons/lightning", "icons/water", "icons/light", "icons/dark"];
 
-/// What the mouse did this frame: a tile or a list row hovered (the pointer moved) or clicked, a button's key.
+/// What the mouse did this frame: a tile or a list row clicked, a button's key.
 #[derive(Default)]
 struct Mouse {
-    tile: (Option<u16>, Option<u16>),
+    tile: Option<u16>,
     theirs: Option<u16>,
-    row: (Option<usize>, Option<usize>),
+    row: Option<usize>,
     key: Option<egui::Key>,
 }
 
@@ -81,52 +81,35 @@ pub(super) fn tile(ui: &mut Ui, m: &super::Modern, r: Rect, id: egui::Id, icon: 
     resp
 }
 
-/// Eight tiles in two rows of four: children 1..8. (hovered, clicked).
+/// Eight tiles in two rows of four: children 1..8; the tile clicked.
 #[allow(clippy::too_many_arguments)]
-fn grid(ui: &mut Ui, m: &super::Modern, ctx: &egui::Context, info: &ItemCache, salt: &str, slots: &[(u16, u32, bool); 8], cursor: Option<(u16, bool)>, sense: bool) -> (Option<u16>, Option<u16>) {
+fn grid(ui: &mut Ui, m: &super::Modern, ctx: &egui::Context, info: &ItemCache, salt: &str, slots: &[(u16, u32, bool); 8], cursor: Option<(u16, bool)>, sense: bool) -> Option<u16> {
     let (area, _) = ui.allocate_exact_size(vec2(GRID_W, 2.0 * TILE + GAP), Sense::hover());
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
-    let mut out = (None, None);
+    let mut out = None;
     for (k, &(id, count, missing)) in slots.iter().enumerate() {
         let r = Rect::from_min_size(area.min + vec2((k % 4) as f32 * (TILE + GAP), (k / 4) as f32 * (TILE + GAP)), vec2(TILE, TILE));
         let child = k as u16 + 1;
         let icon = (id != 0).then(|| m.item_icon(ctx, info, id)).flatten();
         let at = cursor.filter(|c| c.0 == child).map(|c| c.1);
         let resp = tile(ui, m, r, egui::Id::unique((salt, k)), icon, count, at, missing);
-        if sense && resp.hovered() && moved {
-            out.0 = Some(child);
-        }
         if sense && resp.clicked() {
-            out.1 = Some(child);
+            out = Some(child);
         }
     }
     out
 }
 
-/// A button in the pack's frame: lit under the cursor, grey when off; true when clicked.
+/// The kit's button `width` wide with the keyboard cursor on it while `lit` (the cursor still shows on one that is
+/// off, as retail's hand does); true when clicked.
 pub(super) fn button(ui: &mut Ui, m: &super::Modern, label: &str, width: f32, lit: bool, off: bool) -> bool {
-    let (r, resp) = ui.allocate_exact_size(vec2(width, 28.0), Sense::click());
-    // The cursor still shows on a disabled button (dimmed), as retail's hand does.
-    let (face, tint) = match () {
-        _ if off && lit => ("controls/button_selected", Color32::from_gray(140)),
-        _ if off => ("controls/button_disabled", Color32::WHITE),
-        _ if lit => ("controls/button_selected", Color32::WHITE),
-        _ if resp.hovered() => ("controls/button_hover", Color32::WHITE),
-        _ => ("controls/button_normal", Color32::WHITE),
-    };
-    if let Some(s) = m.art.sprite(face) {
-        ui.painter().add(paint::nine_slice(&s, r, 0.5, tint));
-    }
-    let c = if off { m.theme.color("muted") } else if lit { m.theme.color("gold") } else { m.theme.color("text") };
-    ui.painter().text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(m.theme.small), c);
-    resp.clicked() && !off
+    let s = super::kit::Btn { lit: lit && !off, cursor: lit, off };
+    super::kit::clicked(&super::kit::button(ui, m, label, width, s), s)
 }
 
-/// An item list: every row with its icon, name, count and colour, the cursor's row kept in view. (hovered, clicked).
+/// An item list: every row with its icon, name, count and colour, the cursor's row kept in view The row clicked.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn list(ui: &mut Ui, m: &super::Modern, ctx: &egui::Context, info: &ItemCache, salt: &str, rows: &[Slot], tints: &[u32], cur: usize, focused: bool, stars: &[bool]) -> (Option<usize>, Option<usize>) {
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
-    let (mut hover, mut click) = (None, None);
+pub(super) fn list(ui: &mut Ui, m: &super::Modern, ctx: &egui::Context, info: &ItemCache, salt: &str, rows: &[Slot], tints: &[u32], cur: usize, focused: bool, stars: &[bool]) -> Option<usize> {
+    let mut click = None;
     let seen = egui::Id::unique((salt, "cursor seen"));
     let follow = ui.ctx().data(|d| d.get_temp::<usize>(seen)) != Some(cur);
     ui.ctx().data_mut(|d| d.insert_temp(seen, cur));
@@ -157,9 +140,6 @@ pub(super) fn list(ui: &mut Ui, m: &super::Modern, ctx: &egui::Context, info: &I
             if k == cur && follow {
                 ui.scroll_to_rect(r, None);
             }
-            if resp.hovered() && moved {
-                hover = Some(k);
-            }
             if resp.clicked() {
                 click = Some(k);
             }
@@ -169,7 +149,7 @@ pub(super) fn list(ui: &mut Ui, m: &super::Modern, ctx: &egui::Context, info: &I
             ui.label(egui::RichText::new("Empty.").size(m.theme.ui).color(m.theme.color("muted")));
         }
     });
-    (hover, click)
+    click
 }
 
 /// The count asked (itemctrl's for a stack, or the amount to make): the value of most and its keys as buttons (itemctrl's
@@ -258,11 +238,10 @@ fn heading(ui: &mut Ui, m: &super::Modern, text: &str, colour: Color32) {
 fn synthesis(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
     let m = p.m;
     let ctx = p.ctx;
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let v = synth::view(w);
     let mut mouse = Mouse::default();
-    let mut menu_got = (None, None);
-    let mut fav_got: (Option<u16>, Option<u16>) = (None, None);
+    let mut menu_got = None;
+    let mut fav_got: Option<u16> = None;
     let mut fav_open = false;
     let wide = v.crystals.is_some() || v.win.as_ref().is_some_and(|x| x.picker.is_some()) || v.history.is_some();
     let width = if wide { GRID_W + LIST_W + 70.0 } else { social::width(1) };
@@ -271,7 +250,7 @@ fn synthesis(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
         if let Some((sel, off, focused)) = v.menu {
             ui.horizontal_top(|ui| {
                 let mw = MenuWin { name: synth::CMBMENU, sel, off: if off { vec![1, 2] } else { Vec::new() }, labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
-                menu_got = social::stack(ui, m, gu, std::slice::from_ref(&mw), focused, moved);
+                menu_got = social::stack(ui, m, gu, std::slice::from_ref(&mw), focused);
                 if let Some((rows, cur)) = &v.crystals {
                     ui.add_space(12.0);
                     ui.vertical(|ui| {
@@ -310,10 +289,10 @@ fn synthesis(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
                 ui.horizontal(|ui| {
                     let (ok, cancel) = (caption(gu, synth::TSKILL1, 9, "OK"), caption(gu, synth::TSKILL1, 10, "Cancel"));
                     if button(ui, m, &ok, 110.0, x.cursor == 9 && x.on_slots, !x.complete) {
-                        mouse.tile.1 = Some(9);
+                        mouse.tile = Some(9);
                     }
                     if button(ui, m, &cancel, 110.0, x.cursor == 10 && x.on_slots, false) {
-                        mouse.tile.1 = Some(10);
+                        mouse.tile = Some(10);
                     }
                 });
                 if let Some((n, max, amount)) = x.count {
@@ -338,7 +317,7 @@ fn synthesis(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
                     ui.horizontal(|ui| {
                         for (c, fallback) in [(1u16, "Favorite"), (2, "Unfavorite")] {
                             if button(ui, m, &caption(gu, synth::CMBHWIN, c, fallback), 140.0, *focused && *fav == Some(c), records.is_empty()) {
-                                fav_got = (None, Some(c));
+                                fav_got = Some(c);
                             }
                         }
                     });
@@ -353,58 +332,34 @@ fn synthesis(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
     let enter = |w: &mut World| synth::key(w, gu, egui::Key::Enter);
     if v.menu.is_some() {
         social::act(w, gu, menu_got, synth::set_menu, |w, gu| synth::key(w, gu, egui::Key::Enter));
-        if let Some(k) = mouse.row.0
-            && synth::set_crystal(w, k)
-        {
-            w.sounds.push(crate::audio::Ui::Cursor as u32);
-        }
-        if let Some(k) = mouse.row.1 {
+        if let Some(k) = mouse.row {
             synth::set_crystal(w, k);
             enter(w);
         }
         return;
     }
     // cmbhwin takes the focus as Num+ gives it, then its row.
-    if let Some(c) = fav_got.1 {
+    if let Some(c) = fav_got {
         if !fav_open {
             synth::num_plus(w);
         }
         synth::set_history(w, c);
         enter(w);
-    } else if let Some(c) = fav_got.0.filter(|_| fav_open)
-        && synth::set_history(w, c)
-    {
-        w.sounds.push(crate::audio::Ui::Cursor as u32);
     }
     if v.history.is_some() {
-        // A history row: hover follows it as the keys do, a click is Enter (tskill1 on OK).
-        if let Some(k) = mouse.row.0
-            && synth::set_history(w, k as u16 + 1)
-        {
-            w.sounds.push(crate::audio::Ui::Cursor as u32);
-        }
-        if let Some(k) = mouse.row.1 {
+        // A history row: a click is Enter (tskill1 on OK).
+        if let Some(k) = mouse.row {
             synth::set_history(w, k as u16 + 1);
             enter(w);
         }
     } else {
         // A picker row puts its item in the cursor's slot (the first empty one from OK or Cancel).
-        if let Some(k) = mouse.row.0.filter(|_| v.win.as_ref().is_some_and(|x| x.on_list))
-            && synth::set_row(w, k)
-        {
-            w.sounds.push(crate::audio::Ui::Cursor as u32);
-        }
-        if let Some(k) = mouse.row.1 {
+        if let Some(k) = mouse.row {
             synth::set_row(w, k);
             enter(w);
         }
     }
-    if let Some(c) = mouse.tile.0.filter(|_| v.win.as_ref().is_some_and(|x| x.on_slots))
-        && synth::set_slot(w, c)
-    {
-        w.sounds.push(crate::audio::Ui::Cursor as u32);
-    }
-    if let Some(c) = mouse.tile.1 {
+    if let Some(c) = mouse.tile {
         synth::set_slot(w, c);
         enter(w);
     }
@@ -447,10 +402,10 @@ fn trading(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
                 ui.horizontal(|ui| {
                     let (ok, cancel) = (caption(gu, name, 9, "OK"), caption(gu, name, 10, "Cancel"));
                     if button(ui, m, &ok, 110.0, v.cursor == 9 && v.on_window, v.our_ok) {
-                        mouse.tile.1 = Some(9);
+                        mouse.tile = Some(9);
                     }
                     if button(ui, m, &cancel, 110.0, v.cursor == 10 && v.on_window, false) {
-                        mouse.tile.1 = Some(10);
+                        mouse.tile = Some(10);
                     }
                 });
                 if let Some((n, max)) = v.qty {
@@ -471,7 +426,7 @@ fn trading(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
                     let slots: [(u16, u32, bool); 8] = std::array::from_fn(|i| (theirs[i].0, theirs[i].1, false));
                     let cursor = v.gift.map(|g| (g, free));
                     let got = grid(ui, m, ctx, info, "trade theirs", &slots, cursor, free && !v.our_ok);
-                    mouse.theirs = got.0.or(got.1);
+                    mouse.theirs = got;
                     ui.add_space(8.0);
                     ui.label(egui::RichText::new(gil_text(*gil)).size(m.theme.ui).color(m.theme.color("text")));
                     if *ok {
@@ -489,12 +444,7 @@ fn trading(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
         });
     });
     let enter = |w: &mut World| trade::key(w, gu, egui::Key::Enter);
-    if let Some(c) = mouse.tile.0.filter(|_| v.on_window)
-        && trade::set_cursor(w, c)
-    {
-        w.sounds.push(crate::audio::Ui::Cursor as u32);
-    }
-    if let Some(c) = mouse.tile.1 {
+    if let Some(c) = mouse.tile {
         if trade::set_cursor(w, c) || v.cursor == c {
             enter(w);
         }
@@ -506,12 +456,7 @@ fn trading(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
     {
         w.sounds.push(crate::audio::Ui::Cursor as u32);
     }
-    if let Some(k) = mouse.row.0.filter(|_| v.on_list)
-        && trade::set_row(w, k)
-    {
-        w.sounds.push(crate::audio::Ui::Cursor as u32);
-    }
-    if let Some(k) = mouse.row.1
+    if let Some(k) = mouse.row
         && (trade::set_row(w, k) || v.on_list)
     {
         enter(w);

@@ -115,6 +115,8 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         ui.horizontal_top(|ui| {
             let lists = [(true, format!("{}  {used} / {room}", BAGS[g].0), &bag_names, &bag_icons, &tints_bag, bcur), (false, format!("Inventory  {} / {inv_room}", inv.len()), &inv_names, &inv_icons, &tints_inv, icur)];
             for (bank_side, title, names, icons, tints, cur) in lists {
+                // The cursor's row kept in view as the keys move it (bag and side in the key).
+                let follow = m.moved(if bank_side { "storage bag" } else { "storage inventory" }, cur + g * 100_000);
                 ui.vertical(|ui| {
                     ui.set_width(340.0);
                     ui.label(egui::RichText::new(title).size(m.theme.small).color(m.theme.color("gold")));
@@ -122,6 +124,9 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                         for (k, name) in names.iter().enumerate() {
                             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
                             let focus = on_bank == bank_side && k == cur;
+                            if k == cur && follow {
+                                ui.scroll_to_rect(r, None);
+                            }
                             let face = match () {
                                 _ if focus => "controls/list_row_selected",
                                 _ if resp.hovered() => "controls/list_row_hover",

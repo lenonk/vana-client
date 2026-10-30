@@ -5,7 +5,7 @@
 use super::super::map::MapImage;
 use super::super::timers::{self, Group, Icon, SECTIONS};
 use super::super::{World, event, minimap};
-use super::Panels;
+use super::{Panels, kit};
 use egui::{Align2, Color32, FontFamily, FontId, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2, pos2, vec2};
 
 pub fn draw(p: &mut Panels, w: &mut World) {
@@ -849,10 +849,11 @@ fn widescan_panel(p: &mut Panels, w: &mut World) {
         // Scan now (between the 10-s refreshes: camping a notorious monster); greyed while a list comes in.
         let label = if streaming { "Scanning..." } else { "Scan" };
         ui.horizontal(|ui| {
-            if ui.add_enabled(!streaming, egui::Button::new(egui::RichText::new(label).size(m.theme.small))).clicked() {
+            let s = kit::Btn { off: streaming, ..Default::default() };
+            if kit::clicked(&kit::chip(ui, m, label, s, None), s) {
                 scan = true;
             }
-            if area.is_some() && ui.button(egui::RichText::new("Show all").size(m.theme.small)).clicked() {
+            if area.is_some() && kit::chip(ui, m, "Show all", kit::Btn::default(), None).clicked() {
                 show_all = true;
             }
         });
@@ -861,8 +862,7 @@ fn widescan_panel(p: &mut Panels, w: &mut World) {
             ui.spacing_mut().item_spacing.x = 4.0;
             for (bit, label) in [(1u8, "Players"), (2, "NPCs"), (4, "Monsters")] {
                 let on = kinds & bit != 0;
-                let text = egui::RichText::new(label).size(m.theme.small).color(if on { kind_colour(bit) } else { m.theme.color("muted") });
-                if ui.add(egui::Button::new(text).selected(on)).clicked() {
+                if kit::chip(ui, m, label, kit::Btn { lit: on, ..Default::default() }, Some(kind_colour(bit))).clicked() {
                     flip ^= bit;
                 }
             }
@@ -924,10 +924,11 @@ fn widescan_panel(p: &mut Panels, w: &mut World) {
                     ui.horizontal(|ui| {
                         ui.add_space(12.0);
                         let track = if e.index == tracked { "Stop tracking" } else { "Track target" };
-                        if ui.add_enabled(e.kind != 0, egui::Button::new(egui::RichText::new(track).size(m.theme.small))).clicked() {
+                        let s = kit::Btn { off: e.kind == 0, ..Default::default() };
+                        if kit::clicked(&kit::chip(ui, m, track, s, None), s) {
                             pick = Some(e.index);
                         }
-                        if ui.button(egui::RichText::new("Narrow down range").size(m.theme.small)).clicked() {
+                        if kit::chip(ui, m, "Narrow down range", kit::Btn::default(), None).clicked() {
                             narrow = true;
                         }
                     });

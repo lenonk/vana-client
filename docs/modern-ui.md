@@ -91,6 +91,22 @@ Interaction contract from the pack (docs/INTERACTION.md there):
 - Window manager: layouts per character, display and UI scale; window chrome drags apart from content drags; Reset
   Layout always there.
 
+## The widget kit (modern/kit.rs, 2026-10-30)
+
+Every control a modern page draws comes from the kit, and every page's keys go through its one key model, so like
+controls behave alike everywhere. A fix to how a kind of control behaves goes into the kit, never into one page.
+
+- A page lists its stops top to bottom: tabs, values (options, toggles, sliders), rows of buttons, lists.
+- Up / Down move between stops (round the ends) and along a list; Left / Right change a value at once, walk a row of
+  buttons, page a list or turn tabs; Tab / Shift+Tab turn a page's tabs from anywhere; Enter steps an option or
+  presses; Escape goes back. A prompt's Escape is No.
+- The mouse: hovering only lights a control and never moves a cursor; a click puts the cursor there and takes it; a
+  drag moves a slider.
+- One look per control: buttons (lit, off, the keyboard cursor's ring), list rows, sliders, tab strips, text fields,
+  yes / no prompts, scroll bars that show whenever a list is longer than its room, and the cursor kept in view.
+- Retail windows still drawn in the modern UI get the modern frame at the panels' size, standing out past the window
+  with a margin.
+
 ## UI states
 
 | Mode | Emphasis |

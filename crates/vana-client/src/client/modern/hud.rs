@@ -500,9 +500,10 @@ pub fn where_panel(p: &mut Panels, v: &WhereView) {
             compass(painter, m, dial, c);
         }
         let g = painter.text(pos2(dial.x, r.min.y + 2.0), Align2::CENTER_CENTER, &v.grid, FontId::proportional(m.theme.small), m.theme.color("muted"));
-        // The weather fills the room right of the compass, centred (a double weather's art in the same square).
-        let room = Rect::from_min_max(pos2(right, r.min.y), r.max);
-        let size = room.width().min(room.height()) - 4.0;
+        // The weather fills the room right of the compass, centred in the whole panel (the clock line too; a double
+        // weather's art in the same square).
+        let room = Rect::from_min_max(pos2(right, r.min.y), pos2(r.max.x, clock_row.map_or(r.max.y, |c| c.max.y)));
+        let size = room.width().min(r.height()) - 4.0;
         if let Some(s) = v.weather.and_then(|id| m.art.sprite(&format!("weather/w{id:02}"))) {
             painter.add(paint::image(&s, room.center() - vec2(size, size) / 2.0, size, Color32::WHITE));
         }
@@ -595,10 +596,16 @@ fn compass(painter: &Painter, m: &Modern, c: Pos2, v: &CompassView) {
         let col = if letter == "N" { m.theme.color("hp") } else { gold };
         painter.text(p, Align2::CENTER_CENTER, letter, font.clone(), col);
     }
+    // What is tracked: an arrowhead on the rim, pulsing.
     if let Some((lx, ly, col)) = v.arrow {
-        let (tip, base) = (at(lx, ly, DIAL + 5.0), at(lx, ly, DIAL - 5.0));
-        let n = (tip - base).normalized().rot90() * 4.5;
-        painter.add(egui::Shape::convex_polygon(vec![tip, base + n, base - n], m.theme.color(col), Stroke::new(1.0, Color32::from_black_alpha(180))));
+        let pulse = ((painter.ctx().input(|i| i.time) * 4.0).sin() as f32 + 1.0) / 2.0;
+        let k = 1.0 + 0.25 * pulse;
+        let (tip, base) = (at(lx, ly, DIAL + 8.0 * k), at(lx, ly, DIAL - 6.0 * k));
+        let n = (tip - base).normalized().rot90() * 6.0 * k;
+        let c = m.theme.color(col);
+        painter.add(egui::Shape::convex_polygon(vec![tip, base + n, base - n], c.gamma_multiply(0.25 * pulse), Stroke::new(4.0 * pulse, c.gamma_multiply(0.35 * pulse))));
+        painter.add(egui::Shape::convex_polygon(vec![tip, base + n, base - n], c, Stroke::new(1.0, Color32::from_black_alpha(180))));
+        painter.ctx().request_repaint();
     }
 }
 

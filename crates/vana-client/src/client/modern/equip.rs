@@ -30,11 +30,10 @@ enum Gear {
     Worn(usize),
 }
 
-/// What the mouse did: a slot clicked, a list row hovered or clicked, a drop, the wheel.
+/// What the mouse did: a slot clicked, a list row clicked, a drop, the wheel.
 #[derive(Default)]
 struct Mouse {
     slot_click: Option<u16>,
-    row_hover: Option<usize>,
     row_click: Option<usize>,
     drop: Option<(Gear, Option<usize>)>,
     wheel: f32,
@@ -65,7 +64,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let Some(info) = w.item_info.clone() else { return };
     let m = p.m;
     let ctx = p.ctx;
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let persona = gitems::persona(w);
     let gil = gil_text(w.inv.gil() as i64);
     let worn: Vec<Option<(u16, u8)>> = w.inv.equip.iter().map(|e| e.and_then(|(c, i)| Some((w.inv.slots.get(&(c, i))?.0, c)))).collect();
@@ -175,7 +173,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             ui.add_space(18.0);
             let col = ui.vertical(|ui| {
                 ui.set_width(LIST_W);
-                list(ui, m, &v, &row_icons, &names, room, moved, &mut mouse);
+                list(ui, m, &v, &row_icons, &names, room, &mut mouse);
             });
             // The whole list column takes a worn piece dropped on it: off it comes.
             let area = Rect::from_min_max(col.response.rect.min, pos2(col.response.rect.max.x, ui.min_rect().max.y));
@@ -224,7 +222,7 @@ pub(super) fn persona_row(ui: &mut Ui, m: &super::Modern, persona: &crate::inven
 
 /// The slot's pieces from every bag: the icon, the name (green worn, grey out of reach) and where it is; or, before a
 /// slot is picked, what to do.
-fn list(ui: &mut Ui, m: &super::Modern, v: &equipwin::View, icons: &[Option<egui::TextureId>], names: &[String], room: bool, moved: bool, mouse: &mut Mouse) {
+fn list(ui: &mut Ui, m: &super::Modern, v: &equipwin::View, icons: &[Option<egui::TextureId>], names: &[String], room: bool, mouse: &mut Mouse) {
     let Some(slot) = v.list_slot else {
         ui.label(egui::RichText::new(SLOTS[equip_slot(v.grid)]).size(m.theme.title).family(FontFamily::Name(super::STRONG.into())).color(m.theme.color("gold")));
         ui.add_space(6.0);
@@ -277,22 +275,13 @@ fn list(ui: &mut Ui, m: &super::Modern, v: &equipwin::View, icons: &[Option<egui
             (None, _) => bag(x.c).to_string(),
         };
         ui.painter().text(pos2(r.max.x - 12.0, r.center().y), Align2::RIGHT_CENTER, place, FontId::proportional(m.theme.small), m.theme.color("muted"));
-        if resp.hovered() && moved {
-            mouse.row_hover = Some(k);
-        }
         if resp.clicked() {
             mouse.row_click = Some(k);
         }
         ui.add_space(2.0);
     }
-    let n = v.rows.len();
-    if n > MODERN_ROWS {
-        let track = Rect::from_min_max(pos2(ui.max_rect().max.x + 8.0, top.y), pos2(ui.max_rect().max.x + 12.0, ui.cursor().min.y));
-        ui.painter().rect_filled(track, 2.0, m.theme.color("charcoal"));
-        let h = track.height() * MODERN_ROWS as f32 / n as f32;
-        let y = track.min.y + (track.height() - h) * v.scroll as f32 / (n - MODERN_ROWS) as f32;
-        ui.painter().rect_filled(Rect::from_min_size(pos2(track.min.x, y), vec2(track.width(), h)), 2.0, m.theme.color("bronze"));
-    }
+    let track = Rect::from_min_max(pos2(ui.max_rect().max.x + 6.0, top.y), pos2(ui.max_rect().max.x + 14.0, ui.cursor().min.y));
+    super::kit::bar(ui.painter(), m, track, v.rows.len(), MODERN_ROWS, v.scroll);
     let area = Rect::from_min_max(top, pos2(ui.max_rect().max.x, ui.cursor().min.y.max(top.y + ROW)));
     if ui.rect_contains_pointer(area) {
         mouse.wheel = ui.input(|i| {
@@ -317,8 +306,8 @@ fn enter(w: &mut World) {
     gitems::key(w, egui::Key::Enter, false, false);
 }
 
-/// The mouse: a click on a slot lists its pieces; on the list hovering moves the cursor and a click on it puts the
-/// piece on; drops equip, move or take off.
+/// The mouse: a click on a slot lists its pieces; a click on a list row puts the piece on; drops equip, move or take
+/// off.
 fn apply(w: &mut World, v: &equipwin::View, mouse: Mouse, dragging: bool) {
     if let Some((g, to)) = mouse.drop {
         match (g, to) {
@@ -342,14 +331,11 @@ fn apply(w: &mut World, v: &equipwin::View, mouse: Mouse, dragging: bool) {
     if dragging || v.list_slot.is_none() {
         return;
     }
-    if let Some(k) = mouse.row_hover {
+    if let Some(k) = mouse.row_click {
         equipwin::point_row(w, k);
-    }
-    if let Some(k) = mouse.row_click
-        && !equipwin::point_row(w, k)
-        && equipwin::view(w).is_some_and(|x| x.cursor == k)
-    {
-        enter(w);
+        if equipwin::view(w).is_some_and(|x| x.cursor == k) {
+            enter(w);
+        }
     }
     if mouse.wheel != 0.0 {
         let msg = if mouse.wheel > 0.0 { Msg::Up } else { Msg::Down };

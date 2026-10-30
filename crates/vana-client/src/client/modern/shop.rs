@@ -24,7 +24,6 @@ const SHOPSELL: &str = "menu    shopsell";
 #[derive(Default)]
 struct Mouse {
     tab: Option<u16>,
-    hover: Option<usize>,
     click: Option<usize>,
     confirm: Option<u16>,
     key: Option<egui::Key>,
@@ -44,7 +43,6 @@ fn req_text(m: &super::Modern, gu: &GameUi, r: Req) -> String {
 /// in view as it moves.
 fn list(ui: &mut Ui, m: &super::Modern, gu: &GameUi, info: &ItemCache, v: &Look, focused: bool, mouse: &mut Mouse) {
     let ctx = ui.ctx().clone();
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let seen = egui::Id::unique("modern shop cursor seen");
     let follow = ctx.data(|d| d.get_temp::<usize>(seen)) != Some(v.cursor);
     ctx.data_mut(|d| d.insert_temp(seen, v.cursor));
@@ -83,9 +81,6 @@ fn list(ui: &mut Ui, m: &super::Modern, gu: &GameUi, info: &ItemCache, v: &Look,
             }
             if k == v.cursor && follow {
                 ui.scroll_to_rect(rect, None);
-            }
-            if focused && resp.hovered() && moved {
-                mouse.hover = Some(k);
             }
             if focused && resp.clicked() {
                 mouse.click = Some(k);
@@ -208,11 +203,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     if let Some(k) = mouse.key {
         shop::key(w, k);
         return;
-    }
-    if let Some(k) = mouse.hover
-        && shop::set_row(w, k)
-    {
-        cursor(w);
     }
     if let Some(k) = mouse.click {
         shop::set_row(w, k);

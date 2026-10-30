@@ -59,6 +59,27 @@ const TOP: &[Entry] = &[
     row("Synthesis", "icons/craft", 0, 10),
     Entry { label: "System", icon: "icons/system", kind: Kind::Sub(SYSTEM) },
 ];
+/// In the Mog House retail's row 12 is Mog House, not Map (FUN_1013ff90): a row of its own here, the map's
+/// category keeping Region Info and Current Time.
+const WORLD_MH: &[Entry] = &[row("Region Info", "icons/find", 0, 11), row("Current Time", "icons/timer", 1, 10)];
+const TOP_MH: &[Entry] = &[
+    row("Status", "icons/status", 0, 1),
+    row("Equipment", "icons/equipment", 0, 2),
+    row("Items", "icons/items", 0, 4),
+    row("Magic", "icons/magic", 0, 3),
+    row("Abilities", "icons/abilities", 0, 5),
+    row("Mog House", "icons/mog_house", 0, 12),
+    Entry { label: "Social", icon: "icons/party", kind: Kind::Sub(SOCIAL) },
+    Entry { label: "Journal", icon: "icons/quest_log", kind: Kind::Sub(JOURNAL) },
+    Entry { label: "World", icon: "icons/map", kind: Kind::Sub(WORLD_MH) },
+    row("Synthesis", "icons/craft", 0, 10),
+    Entry { label: "System", icon: "icons/system", kind: Kind::Sub(SYSTEM) },
+];
+
+/// The top level: the Mog House's in the Mog House (not in Monstrosity, whose row 12 stays the map).
+fn top(w: &World) -> &'static [Entry] {
+    if w.myroom.is_some() && !monstrosity::active(w) { TOP_MH } else { TOP }
+}
 
 /// The top level's and Journal's rows (label, icon, opens a submenu), for modern-shot's row comparison.
 pub(super) fn sample() -> [Vec<(&'static str, &'static str, bool)>; 2] {
@@ -73,12 +94,10 @@ pub struct CmdMenu {
     pub sub: Option<usize>,
 }
 
-/// A row's label where the retail menu swaps it (FUN_10140070 / FUN_1013ff90): Customization in Monstrosity, Mog
-/// House in the Mog House.
+/// A row's label where the retail menu swaps it (FUN_10140070): Customization in Monstrosity.
 fn label(w: &World, e: &Entry) -> &'static str {
     match e.kind {
         Kind::Row(0, 2) if monstrosity::active(w) => "Customization",
-        Kind::Row(0, 12) if w.myroom.is_some() && !monstrosity::active(w) => "Mog House",
         _ => e.label,
     }
 }
@@ -97,13 +116,15 @@ fn disabled(w: &World, e: &Entry) -> bool {
 pub fn key(w: &mut World, key: egui::Key) {
     use egui::Key as K;
     let mut c = w.cmd;
-    let sub = match TOP[c.top].kind {
+    let top = top(w);
+    c.top = c.top.min(top.len() - 1);
+    let sub = match top[c.top].kind {
         Kind::Sub(s) => Some(s),
         Kind::Row(..) | Kind::Roe => None,
     };
     match (c.sub, key) {
         (None, K::ArrowDown | K::ArrowUp) => {
-            let n = TOP.len();
+            let n = top.len();
             c.top = if key == K::ArrowDown { (c.top + 1) % n } else { (c.top + n - 1) % n };
             w.sounds.push(Se::Cursor as u32);
         }
@@ -116,7 +137,7 @@ pub fn key(w: &mut World, key: egui::Key) {
             c.sub = Some(0);
             w.sounds.push(Se::Select as u32);
         }
-        (None, K::Enter) => pick(w, &TOP[c.top]),
+        (None, K::Enter) => pick(w, &top[c.top]),
         (Some(k), K::Enter) => {
             if let Some(e) = sub.and_then(|s| s.get(k)) {
                 pick(w, e);
@@ -140,7 +161,8 @@ pub enum BarFocus {
 
 pub fn bar_focus(w: &World) -> BarFocus {
     let c = w.cmd;
-    let top = &TOP[c.top.min(TOP.len() - 1)];
+    let list = top(w);
+    let top = &list[c.top.min(list.len() - 1)];
     let e = match (&top.kind, c.sub) {
         (Kind::Sub(s), Some(k)) => s.get(k).unwrap_or(top),
         _ => top,
@@ -168,20 +190,17 @@ fn pick(w: &mut World, e: &Entry) {
     }
 }
 
-/// One list of rows; the row clicked or hovered.
-fn rows(ui: &mut egui::Ui, m: &super::Modern, w: &World, list: &[Entry], cursor: Option<usize>, open: Option<usize>) -> (Option<usize>, Option<usize>) {
-    let (mut clicked, mut hovered) = (None, None);
+/// One list of rows; the row clicked.
+fn rows(ui: &mut egui::Ui, m: &super::Modern, w: &World, list: &[Entry], cursor: Option<usize>, open: Option<usize>) -> Option<usize> {
+    let mut clicked = None;
     for (k, e) in list.iter().enumerate() {
         let on = cursor == Some(k) || open == Some(k);
         let resp = super::rows::menu_row(ui, m, e.icon, label(w, e), on, disabled(w, e), matches!(e.kind, Kind::Sub(_)), false);
         if resp.clicked() {
             clicked = Some(k);
         }
-        if resp.hovered() {
-            hovered = Some(k);
-        }
     }
-    (clicked, hovered)
+    clicked
 }
 
 pub fn draw(p: &mut Panels, w: &mut World) {
@@ -189,45 +208,38 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         return;
     }
     let m = p.m;
+    let list_top = top(w);
+    w.cmd.top = w.cmd.top.min(list_top.len() - 1);
     let c = w.cmd;
-    let (mut top_click, mut top_hover) = (None, None);
+    let mut top_click = None;
     let rect = p.panel("command", Some(Title { icon: None, text: "Menu", note: None }), 250.0, |ui| {
-        (top_click, top_hover) = rows(ui, m, w, TOP, c.sub.is_none().then_some(c.top), c.sub.map(|_| c.top));
+        top_click = rows(ui, m, w, list_top, c.sub.is_none().then_some(c.top), c.sub.map(|_| c.top));
     });
     let mut c = w.cmd;
-    // Hovering a row moves the cursor there (0001) when the pointer moves; a category under it opens beside the menu.
-    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
-    if let Some(k) = top_hover.filter(|_| moved)
-        && (k != c.top || c.sub.is_some() && !matches!(TOP[k].kind, Kind::Sub(_)))
-    {
-        c.top = k;
-        c.sub = matches!(TOP[k].kind, Kind::Sub(_)).then_some(0).filter(|_| c.sub.is_some());
-        w.sounds.push(Se::Cursor as u32);
-    }
+    // A click takes a row (a category opens beside the menu); hovering only lights it.
     if let Some(k) = top_click {
         c.top = k;
-        match TOP[k].kind {
+        match list_top[k].kind {
             Kind::Sub(_) => {
                 c.sub = Some(0);
                 w.sounds.push(Se::Select as u32);
             }
-            Kind::Row(..) | Kind::Roe => pick(w, &TOP[k]),
+            Kind::Row(..) | Kind::Roe => pick(w, &list_top[k]),
         }
     }
     w.cmd = c;
-    let Kind::Sub(list) = TOP[c.top].kind else { return };
+    let Kind::Sub(list) = list_top[c.top].kind else { return };
     let Some(sub) = c.sub else { return };
     let Some(r) = rect else { return };
     // The submenu opens at the left of the menu, level with its category.
-    let (mut sub_click, mut sub_hover) = (None, None);
-    p.panel_at("command sub", Some(Title { icon: Some(TOP[c.top].icon), text: TOP[c.top].label, note: None }), 250.0, egui::pos2(r.min.x - 262.0, r.min.y), |ui| {
-        (sub_click, sub_hover) = rows(ui, m, w, list, Some(sub), None);
+    let mut sub_click = None;
+    p.panel_at("command sub", Some(Title { icon: Some(list_top[c.top].icon), text: list_top[c.top].label, note: None }), 250.0, egui::pos2(r.min.x - 262.0, r.min.y), |ui| {
+        sub_click = rows(ui, m, w, list, Some(sub), None);
     });
-    if let Some(k) = sub_hover.filter(|&k| k != sub && moved) {
+    if let Some(k) = sub_click
+        && let Some(e) = list.get(k)
+    {
         w.cmd.sub = Some(k);
-        w.sounds.push(Se::Cursor as u32);
-    }
-    if let Some(e) = sub_click.and_then(|k| list.get(k)) {
         pick(w, e);
     }
 }

@@ -6,7 +6,6 @@ use super::super::World;
 use super::super::maze::{self, Mode, Row};
 use super::craft::tint;
 use super::{Panels, STRONG, Title};
-use crate::audio::Ui as Se;
 use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
 
 const COL_W: f32 = 300.0;
@@ -39,13 +38,12 @@ fn heading(ui: &mut Ui, m: &super::Modern, text: &str) {
 
 /// The list's rows: the item's icon (none for Type), the name in its tint; the cursor kept in view. (hovered,
 /// clicked).
-fn rows(ui: &mut Ui, m: &super::Modern, w: &World, rows: &[(Row, String, u32)], cursor: usize, focused: bool) -> (Option<usize>, Option<usize>) {
+fn rows(ui: &mut Ui, m: &super::Modern, w: &World, rows: &[(Row, String, u32)], cursor: usize, focused: bool) -> Option<usize> {
     let ctx = ui.ctx().clone();
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let seen = egui::Id::unique("maze cursor seen");
     let follow = ctx.data(|d| d.get_temp::<usize>(seen)) != Some(cursor);
     ctx.data_mut(|d| d.insert_temp(seen, cursor));
-    let (mut hover, mut click) = (None, None);
+    let mut click = None;
     egui::ScrollArea::vertical().id_salt("maze list").max_height(TALL).auto_shrink([false, true]).show(ui, |ui| {
         for (k, (row, text, t)) in rows.iter().enumerate() {
             let (rect, resp) = ui.allocate_exact_size(vec2(COL_W - 14.0, ROW), if focused { Sense::click() } else { Sense::hover() });
@@ -66,16 +64,13 @@ fn rows(ui: &mut Ui, m: &super::Modern, w: &World, rows: &[(Row, String, u32)], 
             if k == cursor && follow {
                 ui.scroll_to_rect(rect, None);
             }
-            if focused && resp.hovered() && moved {
-                hover = Some(k);
-            }
             if focused && resp.clicked() {
                 click = Some(k);
             }
             ui.add_space(2.0);
         }
     });
-    (hover, click)
+    click
 }
 
 /// A shape's mask drawn small (its rotation 0), for the filter's rows.
@@ -91,10 +86,9 @@ fn shape_mini(ui: &Ui, at: egui::Pos2, shape: u8, colour: Color32) {
     }
 }
 
-/// prvdunsi's eleven shapes as rows. (hovered, clicked).
-fn filter_rows(ui: &mut Ui, m: &super::Modern, cursor: u16) -> (Option<u16>, Option<u16>) {
-    let moved = ui.ctx().input(|i| i.pointer.delta() != egui::Vec2::ZERO);
-    let (mut hover, mut click) = (None, None);
+/// prvdunsi's eleven shapes as rows; the row clicked.
+fn filter_rows(ui: &mut Ui, m: &super::Modern, cursor: u16) -> Option<u16> {
+    let mut click = None;
     for (k, name) in SHAPES.iter().enumerate() {
         let child = k as u16 + 1;
         let (rect, resp) = ui.allocate_exact_size(vec2(COL_W - 14.0, ROW), Sense::click());
@@ -102,15 +96,12 @@ fn filter_rows(ui: &mut Ui, m: &super::Modern, cursor: u16) -> (Option<u16>, Opt
         super::rows::face(ui.painter(), m, rect, face, Color32::WHITE);
         shape_mini(ui, pos2(rect.min.x + 16.0, rect.center().y), k as u8, m.theme.color("text"));
         ui.painter().text(pos2(rect.min.x + 56.0, rect.center().y), Align2::LEFT_CENTER, *name, FontId::proportional(m.theme.small), m.theme.color("text"));
-        if resp.hovered() && moved {
-            hover = Some(child);
-        }
         if resp.clicked() {
             click = Some(child);
         }
         ui.add_space(2.0);
     }
-    (hover, click)
+    click
 }
 
 /// What the pointer did on the grid this frame.
@@ -196,7 +187,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let free = w.confirm.is_none();
     let carrying = v.on_grid && v.held.is_some_and(|h| h.3);
     let title = gu.title_msg(0x96).unwrap_or_else(|| "Tabula".into());
-    let (mut list, mut filter, mut mouse) = ((None, None), (None, None), GridMouse::default());
+    let (mut list, mut filter, mut mouse) = (None, None, GridMouse::default());
     p.panel("window", Some(Title { icon: Some("icons/items"), text: &title, note: Some(&v.tabula) }), COL_W + CELL * 5.0 + 32.0 + 44.0, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
@@ -260,23 +251,12 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     if !free {
         return;
     }
-    let cursor = |w: &mut World| w.sounds.push(Se::Cursor as u32);
-    if let Some(c) = filter.0
-        && maze::set_sibo(w, c)
-    {
-        cursor(w);
-    }
-    if let Some(c) = filter.1 {
+    if let Some(c) = filter {
         maze::set_sibo(w, c);
         maze::key(w, egui::Key::Enter);
         return;
     }
-    if let Some(k) = list.0
-        && maze::set_row(w, k)
-    {
-        cursor(w);
-    }
-    if let Some(k) = list.1 {
+    if let Some(k) = list {
         maze::set_row(w, k);
         maze::key(w, egui::Key::Enter);
         return;

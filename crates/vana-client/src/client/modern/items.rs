@@ -1,13 +1,12 @@
 //! The modern Items window over the retail one's state (client/items.rs keeps the list, iuse, sortyn, itmsort2, Manual
 //! Sort and every rule), and the item info panel for whatever item the game describes (the list's, a shop's, the
-//! auction's, a trade's ...). The mouse acts as retail's: hovering moves the cursor, a click on the cursor's row is
-//! Enter; the wheel scrolls.
+//! auction's, a trade's ...). The mouse is the kit's: hovering only lights a row, a click puts the cursor on it and
+//! takes it; the wheel scrolls.
 
 use super::super::items::{self as gitems, SortWin, Sub, Win};
 use super::super::scrollbar::{Msg, Owner};
 use super::super::{World, iteminfo};
-use super::{Panels, Title, chat, lists, paint};
-use crate::audio::Ui as Se;
+use super::{Panels, Title, chat, lists};
 use crate::inventory::{TINT_WHITE, VISIBLE_ROWS};
 use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
 
@@ -28,30 +27,15 @@ fn tint(m: &super::Modern, t: u32) -> Color32 {
     if t == TINT_WHITE { m.theme.color("text") } else { chat::colour(t.to_le_bytes()) }
 }
 
-/// A button in the pack's frame; true when clicked.
+/// The kit's button, the keyboard cursor on it while `lit`; true when clicked (and not off).
 fn button(ui: &mut Ui, m: &super::Modern, label: &str, lit: bool, off: bool) -> bool {
-    let font = FontId::proportional(m.theme.small);
-    let tw = ui.fonts_mut(|f| f.layout_no_wrap(label.to_string(), font.clone(), Color32::WHITE).size().x);
-    let (r, resp) = ui.allocate_exact_size(vec2(tw + 20.0, 24.0), Sense::click());
-    let face = match () {
-        _ if off => "controls/button_disabled",
-        _ if lit => "controls/button_selected",
-        _ if resp.hovered() => "controls/button_hover",
-        _ => "controls/button_normal",
-    };
-    if let Some(s) = m.art.sprite(face) {
-        ui.painter().add(paint::nine_slice(&s, r, 0.5, Color32::WHITE));
-    }
-    let c = if off { m.theme.color("muted") } else if lit { m.theme.color("gold") } else { m.theme.color("text") };
-    ui.painter().text(r.center(), Align2::CENTER_CENTER, label, font, c);
-    resp.clicked()
+    let s = super::kit::Btn { lit: lit && !off, cursor: lit, off };
+    super::kit::clicked(&super::kit::button(ui, m, label, 0.0, s), s)
 }
 
-/// What the mouse did this frame: a row hovered (when the pointer moved) or clicked, a strip button, a question's
-/// answer, the wheel's notches.
+/// What the mouse did this frame: a row clicked, a strip button, a question's answer, the wheel's notches.
 #[derive(Default)]
 struct Mouse {
-    hover: Option<usize>,
     click: Option<usize>,
     sort: Option<u16>,
     ask: Option<bool>,
@@ -78,7 +62,6 @@ fn list(p: &mut Panels, w: &mut World) {
     let note = format!("{} / {}", shown.len(), w.inv.sizes[gitems::INVENTORY as usize].saturating_sub(1));
     let icons: Vec<Option<egui::TextureId>> = rows.iter().skip(scroll).take(VISIBLE_ROWS).map(|r| m.item_icon(p.ctx, &info, r.id)).collect();
     let held = manual.flatten();
-    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let msg = |g: u8, k: usize, or: &str| gu.map_or(or.to_string(), |gu| gu.lobby_msg(g, k, or));
     let mut mouse = Mouse::default();
     let search = lists::search_hits(p, w);
@@ -86,7 +69,7 @@ fn list(p: &mut Panels, w: &mut World) {
     let title = Title { icon: None, text: "Items", note: (!direct).then_some(note.as_str()) };
     p.panel("window", Some(title), 380.0, |ui| {
         if let Some((text, sel, hits, icons)) = &search {
-            found = lists::search_rows(ui, m, w, icons, text, *sel, hits, moved);
+            found = lists::search_rows(ui, m, w, icons, text, *sel, hits);
             return;
         }
         if !direct {
@@ -134,23 +117,14 @@ fn list(p: &mut Panels, w: &mut World) {
             if let Some(n) = &row.count {
                 painter.text(pos2(r.max.x - 12.0, r.center().y), Align2::RIGHT_CENTER, n, FontId::proportional(m.theme.ui), m.theme.color("text"));
             }
-            if resp.hovered() && moved {
-                mouse.hover = Some(k);
-            }
             if resp.clicked() {
                 mouse.click = Some(k);
             }
             ui.add_space(2.0);
         }
         // The bar: the rows shown out of all, at the right edge.
-        let n = rows.len();
-        if n > VISIBLE_ROWS {
-            let track = Rect::from_min_max(pos2(ui.max_rect().max.x + 8.0, top.y), pos2(ui.max_rect().max.x + 12.0, ui.cursor().min.y));
-            ui.painter().rect_filled(track, 2.0, m.theme.color("charcoal"));
-            let h = track.height() * VISIBLE_ROWS as f32 / n as f32;
-            let y = track.min.y + (track.height() - h) * scroll as f32 / (n - VISIBLE_ROWS) as f32;
-            ui.painter().rect_filled(Rect::from_min_size(pos2(track.min.x, y), vec2(track.width(), h)), 2.0, m.theme.color("bronze"));
-        }
+        let track = Rect::from_min_max(pos2(ui.max_rect().max.x + 6.0, top.y), pos2(ui.max_rect().max.x + 14.0, ui.cursor().min.y));
+        super::kit::bar(ui.painter(), m, track, rows.len(), VISIBLE_ROWS, scroll);
         match sub {
             Some(Sub::Use { child, index, id }) => {
                 let on = gitems::iuse_states(w, index, id);
@@ -246,22 +220,11 @@ fn apply(w: &mut World, mouse: Mouse, sort: Option<SortWin>, sub: Option<Sub>) {
     if sort.is_some() {
         return;
     }
-    if let Some(k) = mouse.hover
+    if let Some(k) = mouse.click
         && let Some((cursor, ..)) = win_mut(w)
-        && *cursor != k
     {
         *cursor = k;
-        w.sounds.push(Se::Cursor as u32);
-    }
-    if let Some(k) = mouse.click {
-        match win_mut(w) {
-            Some((cursor, ..)) if *cursor == k => enter(w),
-            Some((cursor, ..)) => {
-                *cursor = k;
-                w.sounds.push(Se::Cursor as u32);
-            }
-            None => {}
-        }
+        enter(w);
     }
     // A notch of the wheel is a row.
     if mouse.wheel != 0.0 {

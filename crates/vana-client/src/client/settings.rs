@@ -362,6 +362,9 @@ pub struct SettingsUi {
     pub hover: bool,
     /// The Mods page's archives and moves, opened the first time the page shows.
     pub mods_ui: Option<super::modsui::Mods>,
+    /// The modern Mods page's cursor (stop, button) and a removal being asked (pack, Yes on the cursor).
+    pub m_mods: (usize, usize),
+    pub m_remove: Option<(usize, bool)>,
 }
 
 /// What a row's controls are.
@@ -376,7 +379,7 @@ impl SettingsUi {
     }
 
     pub fn open_kind(c: &Config, window: [u32; 2], kind: Kind) -> Self {
-        let mut s = Self { kind, s: Settings::of(c), monitors: Vec::new(), gpus: Vec::new(), window, in_game: false, tab: 0, row: 0, col: 0, edit: false, sounds: Vec::new(), dirty: false, hover: false, mods_ui: None };
+        let mut s = Self { kind, s: Settings::of(c), monitors: Vec::new(), gpus: Vec::new(), window, in_game: false, tab: 0, row: 0, col: 0, edit: false, sounds: Vec::new(), dirty: false, hover: false, mods_ui: None, m_mods: (0, 0), m_remove: None };
         s.col = s.marked_col();
         s
     }
@@ -882,7 +885,7 @@ impl SettingsUi {
     /// The help bar's text for the cursor's row, with when a change shows.
     pub fn help(&self) -> String {
         if self.on_mods() {
-            return self.mods_help();
+            return if self.s.modern_ui { self.modern_mods_help() } else { self.mods_help() };
         }
         let Some(r) = self.row.checked_sub(1).and_then(|i| self.rows().get(i)) else {
             return format!("Left / Right: another page of {}.", self.title().to_lowercase());
@@ -1207,6 +1210,89 @@ impl SettingsUi {
         }
         if total > super::modsui::VISIBLE {
             gu.scroll_bar(x + W - 12.0, y + Self::TOP, PITCH * super::modsui::VISIBLE as f32, total, super::modsui::VISIBLE, top);
+        }
+    }
+
+    /// The modern Mods page is the one open.
+    pub fn on_mods_page(&self) -> bool {
+        self.on_mods()
+    }
+
+    /// The installed packs (name, on) in priority order, then the archives found (name, per mille when installing).
+    pub fn mods_rows(&self) -> (Vec<(String, bool)>, Vec<(String, Option<u32>)>) {
+        let packs = self.s.mods.iter().map(|m| (m.name.clone(), m.enabled)).collect();
+        let archives = self
+            .mods_ui
+            .as_ref()
+            .map(|m| m.packs.iter().map(|p| (p.path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default(), m.progress(&p.slug))).collect())
+            .unwrap_or_default();
+        (packs, archives)
+    }
+
+    /// Pack `i` on or off.
+    pub fn mod_enable(&mut self, i: usize, on: bool) {
+        if let Some(m) = self.s.mods.get_mut(i) {
+            self.dirty |= m.enabled != on;
+            m.enabled = on;
+            self.sounds.push(Se::Select);
+        }
+    }
+
+    /// Pack `i` a place up (higher priority) or down; true when it moved.
+    pub fn mod_move(&mut self, i: usize, up: bool) -> bool {
+        let j = if up { i.checked_sub(1) } else { Some(i + 1).filter(|&j| j < self.s.mods.len()) };
+        let Some(j) = j.filter(|_| i < self.s.mods.len()) else {
+            self.sounds.push(Se::Error);
+            return false;
+        };
+        self.s.mods.swap(i, j);
+        self.dirty = true;
+        self.sounds.push(Se::Select);
+        true
+    }
+
+    /// Pack `i` removed: its folder deleted and its entry dropped.
+    pub fn mod_remove(&mut self, i: usize) {
+        let Some(m) = self.s.mods.get(i) else { return };
+        if super::modsui::remove_folder(&m.name) {
+            self.s.mods.remove(i);
+            self.dirty = true;
+            self.sounds.push(Se::Select);
+        } else {
+            self.sounds.push(Se::Error);
+        }
+    }
+
+    /// Archive `k` of those found installed.
+    pub fn archive_install(&mut self, k: usize) {
+        let ok = self.mods_ui.as_mut().is_some_and(|m| m.install(k));
+        self.sounds.push(if ok { Se::Select } else { Se::Error });
+    }
+
+    pub fn mods_mut(&mut self) -> Option<&mut super::modsui::Mods> {
+        self.mods_ui.as_mut()
+    }
+
+    pub fn mods_state(&self) -> Option<&super::modsui::Mods> {
+        self.mods_ui.as_ref()
+    }
+
+    /// The modern Mods page's help for its cursor (m_mods: the tabs, Install from File, the packs, the archives).
+    fn modern_mods_help(&self) -> String {
+        if self.mods_ui.as_ref().is_some_and(|m| m.browse.is_some()) {
+            return "Enter: open the folder, or install the archive (zip, 7z, rar). Escape: back.".into();
+        }
+        let n = self.s.mods.len();
+        match self.m_mods {
+            (0, _) => "Left / Right or Tab: another page of settings.".into(),
+            (1, _) => "Pick a mod archive (zip, 7z, rar) to install. Takes effect on restart.".into(),
+            (st, b) if st >= 2 && st - 2 < n => match b {
+                0 => "This pack on or off. Takes effect on restart.",
+                1 | 2 => "A higher pack's textures win over a lower one's. Takes effect on restart.",
+                _ => "Deletes this pack's folder.",
+            }
+            .into(),
+            _ => "Unpacks the archive's game files into the mods folder, on and first. Takes effect on restart.".into(),
         }
     }
 

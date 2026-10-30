@@ -21,10 +21,9 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let (Some(v), Some(info)) = (treasure::view(w), w.item_info.clone()) else { return };
     let m = p.m;
     let ctx = p.ctx;
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let free = w.confirm.is_none();
     let note = format!("{} / {}", v.rows.len(), treasure::SLOTS);
-    let (mut hover, mut click, mut act, mut rest) = (None, None, None, false);
+    let (mut click, mut act, mut rest) = (None, None, false);
     p.panel("loot", Some(Title { icon: Some("icons/currency"), text: "Treasure Pool", note: Some(&note) }), W, |ui| {
         for (k, r) in v.rows.iter().enumerate() {
             let row = k as u16 + 1;
@@ -85,9 +84,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                     act = Some((row, false));
                 }
             }
-            if free && resp.hovered() && moved {
-                hover = Some(row);
-            }
             if free && resp.clicked() {
                 click = Some(row);
             }
@@ -110,11 +106,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     if rest {
         treasure::pass_rest(w);
         return;
-    }
-    if let Some(row) = hover.filter(|_| v.ope.is_none())
-        && treasure::set_cursor(w, row)
-    {
-        w.sounds.push(Se::Cursor as u32);
     }
     if let Some(row) = click {
         if treasure::set_cursor(w, row) {

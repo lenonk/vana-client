@@ -108,6 +108,20 @@ fn kind(p: &Path) -> Option<Kind> {
     }
 }
 
+/// Whether `p` is an archive kind the manager reads (zip, 7z, rar).
+pub fn is_archive(p: &Path) -> bool {
+    kind(p).is_some()
+}
+
+/// An archive picked by hand as a pack: its game files planned, or why it holds none.
+pub fn pack_of(path: &Path) -> Result<Pack> {
+    let plan = plan(&members(path)?);
+    if plan.is_empty() {
+        return Err(anyhow!("no game files in {}", path.display()));
+    }
+    Ok(Pack { path: path.to_path_buf(), slug: slug(path), files: plan.len() })
+}
+
 /// Every member name and size.
 fn members(path: &Path) -> Result<Vec<(String, u64)>> {
     match kind(path).ok_or_else(|| anyhow!("not an archive"))? {

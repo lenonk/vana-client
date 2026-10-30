@@ -870,9 +870,10 @@ fn gauge(gu: &mut GameUi, x: f32, y: f32, f: f32, ghost: bool) {
 fn info(gu: &mut GameUi, name: &str, sw: f32, sh: f32, left: bool, size: Option<(f32, f32)>) -> Option<(f32, f32, f32)> {
     let [_, ly, lw, lh] = gu.window_rect(name, sw, sh)?;
     let (w, h) = size.unwrap_or((lw, lh));
-    // Right: 496 - width from the right edge (as the layout's 384 for 112 wide).
-    let x = if left { 16.0 } else { sw - 16.0 - w };
-    gu.window_sized(name, x, ly, w, h).then_some((x, ly, w))
+    // Right: 496 - width from the right edge (as the layout's 384 for 112 wide); in by the modern frame's margin.
+    let g = gu.modern_margin();
+    let (x, y) = (if left { 16.0 + g } else { sw - 16.0 - w - g }, ly + g);
+    gu.window_sized(name, x, y, w, h).then_some((x, y, w))
 }
 
 /// The map image once loaded (FUN_101cc620).

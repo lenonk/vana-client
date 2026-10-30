@@ -210,7 +210,6 @@ struct Line {
 struct Mouse {
     tab: Option<Tab>,
     nav: Option<usize>,
-    hover: Option<usize>,
     click: Option<usize>,
 }
 
@@ -232,10 +231,9 @@ fn nav_row(ui: &mut Ui, m: &super::Modern, text: &str, count: &str, on: bool, ke
     resp
 }
 
-/// The rows, the cursor's kept in view as it moves (lit while the rows have the keys); hover moves the cursor, a click
-/// takes the row.
+/// The rows, the cursor's kept in view as it moves (lit while the rows have the keys); a click takes the row.
 #[allow(clippy::too_many_arguments)]
-fn list(ui: &mut Ui, m: &super::Modern, lines: &[Line], cursor: usize, keys: bool, follow: bool, moved: bool, mouse: &mut Mouse) {
+fn list(ui: &mut Ui, m: &super::Modern, lines: &[Line], cursor: usize, keys: bool, follow: bool, mouse: &mut Mouse) {
     egui::ScrollArea::vertical().id_salt("journal list").max_height(ROWS as f32 * ROW).min_scrolled_height(ROWS as f32 * ROW).auto_shrink([false, false]).show(ui, |ui| {
         ui.set_width(LIST_W);
         for (k, l) in lines.iter().enumerate() {
@@ -268,9 +266,6 @@ fn list(ui: &mut Ui, m: &super::Modern, lines: &[Line], cursor: usize, keys: boo
             }
             if k == cursor && follow {
                 ui.scroll_to_rect(r, None);
-            }
-            if resp.hovered() && moved {
-                mouse.hover = Some(k);
             }
             if resp.clicked() {
                 mouse.click = Some(k);
@@ -315,7 +310,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let Some(gu) = p.gu else { return };
     settle(w);
     let m = p.m;
-    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let (white, muted, gold) = (m.theme.color("text"), m.theme.color("muted"), m.theme.color("gold"));
     let search = if listsearch::can_run(w) { lists::search_hits(p, w) } else { None };
     let mut mouse = Mouse::default();
@@ -473,8 +467,13 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             ui.vertical(|ui| {
                 ui.set_width(NAV_W);
                 egui::ScrollArea::vertical().id_salt("journal nav").max_height(ROWS as f32 * ROW + DESC_H + 40.0).min_scrolled_height(ROWS as f32 * ROW + DESC_H + 40.0).auto_shrink([false, true]).show(ui, |ui| {
+                    let follow = m.moved("journal nav", chosen);
                     for (k, (text, count, off)) in nav.iter().enumerate() {
-                        if nav_row(ui, m, text, count, k == chosen, !on_list, *off).clicked() {
+                        let resp = nav_row(ui, m, text, count, k == chosen, !on_list, *off);
+                        if k == chosen && follow {
+                            ui.scroll_to_rect(resp.rect, None);
+                        }
+                        if resp.clicked() {
                             mouse.nav = Some(k);
                         }
                     }
@@ -484,7 +483,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             ui.vertical(|ui| {
                 ui.set_width(LIST_W);
                 if let Some((text, sel, hits, icons)) = &search {
-                    found = Some(lists::search_rows(ui, m, w, icons, text, *sel, hits, moved));
+                    found = Some(lists::search_rows(ui, m, w, icons, text, *sel, hits));
                     return;
                 }
                 ui.label(egui::RichText::new(&heading).size(m.theme.title).family(FontFamily::Name(super::STRONG.into())).color(gold));
@@ -493,7 +492,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                     ui.label(egui::RichText::new("Preparing data...").size(m.theme.small).color(muted));
                     return;
                 }
-                list(ui, m, &lines, cursor, on_list, follow, moved, &mut mouse);
+                list(ui, m, &lines, cursor, on_list, follow, &mut mouse);
                 match &desc {
                     Some((name, text)) => description(ui, m, name, text),
                     None => {
@@ -532,9 +531,8 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         }
         return;
     }
-    // A row under the pointer: hover moves the cursor there, a click too (and marks a new key item seen).
-    let row = mouse.click.or(mouse.hover);
-    let Some(k) = row else { return };
+    // A row clicked: the cursor goes there (and a new key item is marked seen).
+    let Some(k) = mouse.click else { return };
     let at = match t {
         Tab::Quests => p.m.journal_rows.borrow().iter().position(|&x| x == k),
         _ => Some(k),
@@ -542,9 +540,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let Some(at) = at else { return };
     if t == Tab::Roe {
         if roe_list.is_some() {
-            if mouse.hover.is_some_and(|k| roe::set_cursor(w, k)) {
-                w.sounds.push(Se::Cursor as u32);
-            }
             if let Some(k) = mouse.click {
                 roe::set_cursor(w, k);
                 roe::modern_key(w, egui::Key::Enter, false);

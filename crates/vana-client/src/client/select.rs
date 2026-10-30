@@ -431,6 +431,8 @@ pub enum Focus {
     Ok(String, Box<Focus>),
     /// chmkname for a rename (help 0x18 = group 0x1b 4).
     Rename(String),
+    /// Ours (the modern layer): the Settings button under the list, its stop for the keys.
+    Button,
 }
 
 pub enum Action {
@@ -483,6 +485,8 @@ pub struct View {
     pub prompt: Option<(String, bool)>,
     pub ok: Option<String>,
     pub rename: Option<String>,
+    /// The Settings button has the keys.
+    pub button: bool,
 }
 
 /// What the modern layer's mouse did: a list row hovered / clicked, a window child (chfwin's, chswin's, the prompt's
@@ -509,11 +513,13 @@ pub struct SelectUi {
     rects: Rects,
     /// When a used row was pressed (the generic handler's window +0x5e = 9; empty rows get none).
     press: Option<std::time::Instant>,
+    /// The modern layer draws the screen (its Settings button is a stop under the list).
+    modern: bool,
 }
 
 impl Default for SelectUi {
     fn default() -> Self {
-        Self { cursor: 0, focus: Focus::List, rects: Rects::default(), press: None }
+        Self { cursor: 0, focus: Focus::List, rects: Rects::default(), press: None, modern: false }
     }
 }
 
@@ -554,6 +560,7 @@ impl SelectUi {
     pub fn step(&mut self, gu: &mut GameUi, input: &Input, list: &List, chars: &[Character], deleting: bool, w: f32, h: f32, status: Option<(&str, [u8; 4])>) -> Out {
         let mut out = Out::default();
         self.cursor = self.cursor.min(SLOTS - 1);
+        self.modern = input.modern;
         for ev in input.events {
             match ev {
                 egui::Event::Key { key, pressed: true, modifiers, .. } => self.key(gu, *key, *modifiers, list, chars, deleting, input.busy, &mut out),
@@ -606,6 +613,29 @@ impl SelectUi {
     fn key(&mut self, gu: &GameUi, key: egui::Key, mods: egui::Modifiers, list: &List, chars: &[Character], deleting: bool, busy: bool, out: &mut Out) {
         use egui::Key::*;
         match self.focus.clone() {
+            // Modern: the Settings button is the stop after the last character (Down from it, Up from the first).
+            Focus::List if self.modern && !deleting && !list.entries.is_empty() && (key == ArrowDown && self.cursor + 1 >= list.entries.len() || key == ArrowUp && self.cursor == 0) => {
+                out.input = true;
+                out.sounds.push(Se::Cursor);
+                self.focus = Focus::Button;
+            }
+            Focus::Button => {
+                out.input = true;
+                match key {
+                    ArrowUp | ArrowDown => {
+                        let to = if key == ArrowUp { list.entries.len().saturating_sub(1) } else { 0 };
+                        self.focus = Focus::List;
+                        self.move_cursor(to, out);
+                        out.sounds.push(Se::Cursor);
+                    }
+                    Enter | Plus => self.open_options(list, out),
+                    Escape => {
+                        out.sounds.push(Se::Cancel);
+                        out.action = Some(Action::Back);
+                    }
+                    _ => {}
+                }
+            }
             Focus::List => {
                 out.input = true;
                 if let Some(c) = Self::link(gu, "menu    dbnamese", self.cursor as u16 + 1, key) {
@@ -652,13 +682,15 @@ impl SelectUi {
                     self.focus = Focus::Options(mode as u16 + 1);
                 }
             }
-            // ptc6yesn (FUN_1023d050): Left / Right 0001 every time; Up / Down and Escape do nothing.
+            // ptc6yesn (FUN_1023d050): Left / Right 0001 every time; Up / Down and Escape do nothing (in the modern layer
+            // Escape is No, as every prompt there).
             Focus::Prompt(p, yes) => match key {
                 ArrowLeft | ArrowRight => {
                     out.sounds.push(Se::Cursor);
                     self.focus = Focus::Prompt(p, !yes);
                 }
                 Enter => self.answer(gu, p, yes, list, out),
+                Escape if self.modern => self.answer(gu, p, false, list, out),
                 _ => {}
             },
             Focus::Ok(_, next) => {
@@ -842,6 +874,7 @@ impl SelectUi {
             prompt: if let Focus::Prompt(p, yes) = &self.focus { Some((prompt_text(gu, p, name), *yes)) } else { None },
             ok: if let Focus::Ok(t, _) = &self.focus { Some(t.clone()) } else { None },
             rename: if let Focus::Rename(n) = &self.focus { Some(n.clone()) } else { None },
+            button: self.focus == Focus::Button,
         }
     }
 
@@ -851,11 +884,14 @@ impl SelectUi {
         let mut out = Out::default();
         if p.options {
             match self.focus {
-                Focus::List if !deleting => self.open_options(list, &mut out),
+                Focus::List | Focus::Button if !deleting => self.open_options(list, &mut out),
                 Focus::Options(_) => self.close_options(&mut out),
                 _ => {}
             }
             return out;
+        }
+        if matches!(self.focus, Focus::List | Focus::Button) && p.row.0.or(p.row.1).is_some() {
+            self.focus = Focus::List;
         }
         if self.focus == Focus::List {
             for i in p.row.0.into_iter().chain(p.row.1).filter(|&i| i < list.entries.len()) {

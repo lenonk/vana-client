@@ -333,6 +333,11 @@ pub struct ConfigUi {
     pub m_row: usize,
     /// The modern page's category (Log, Font Colors).
     pub m_cat: usize,
+    /// The modern page's key assignment list (k1assign / k2assign) open over its page, and its row.
+    pub m_keys: Option<&'static str>,
+    pub m_key_row: usize,
+    /// The modern Font Colors' colour being edited and its hue / saturation / value steps (a grey keeps its hue).
+    pub m_hsv: Option<(u16, [usize; 3])>,
 }
 
 impl ConfigUi {

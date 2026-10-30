@@ -24,6 +24,7 @@ mod hud;
 mod inspect;
 mod items;
 mod journal;
+mod kit;
 mod lobby;
 mod lists;
 mod loot;
@@ -49,6 +50,8 @@ use egui::{Color32, Context, FontFamily, FontId, Id, LayerId, Order, Pos2, Rect,
 pub use command::{BarFocus, CmdMenu, bar_focus, key as command_key};
 pub use config::{key as config_key, lobby_key as lobby_config_key, lobby_settings as lobby_config_settings};
 pub use journal::key as journal_key;
+pub use lists::key as magic_key;
+pub use macros::key as macro_key;
 pub use status::key as status_key;
 pub use storage::key as storage_key;
 pub use theme::{Theme, frame_image};
@@ -110,8 +113,6 @@ pub struct Modern {
     /// The Journal's tab and cursor last drawn (a moved cursor is scrolled into view), and the quest list's line of
     /// each quest (headings between them).
     journal_seen: std::cell::Cell<(u8, usize)>,
-    /// The Config page and row last drawn (a moved row is scrolled into view).
-    config_seen: std::cell::Cell<(usize, usize)>,
     journal_rows: std::cell::RefCell<Vec<usize>>,
     /// egui's text styles enlarged (put back when the layer goes off).
     styled: bool,
@@ -121,6 +122,8 @@ pub struct Modern {
     edge_ghost: std::cell::RefCell<Option<(String, Vec2)>>,
     /// The skillchain helper's chains shown with all their ways.
     sc_open: std::cell::RefCell<std::collections::HashSet<u8>>,
+    /// Each keyboard list's cursor last frame (`moved`).
+    cursors: std::cell::RefCell<HashMap<&'static str, usize>>,
     /// The chat window's mouse selection (chatsel.rs): over the lines and its text this frame, the chat line's caret /
     /// anchor asked, whether the line has a selection, and the right-click menu and its pick.
     log_sel: std::cell::RefCell<Option<chatsel::LogSel>>,
@@ -169,13 +172,13 @@ impl Modern {
             wheel: Default::default(),
             charlnk_at: Default::default(),
             journal_seen: Default::default(),
-            config_seen: Default::default(),
             journal_rows: Default::default(),
             styled: false,
             retail: Default::default(),
             edge_grip: Default::default(),
             edge_ghost: Default::default(),
             sc_open: Default::default(),
+            cursors: Default::default(),
             log_sel: Default::default(),
             log_text: Default::default(),
             line_req: Default::default(),
@@ -207,6 +210,7 @@ impl Modern {
         }
         // egui's own text (tooltips, the few labels without a size) a little larger than its defaults.
         if !self.styled {
+            let (bronze, gold, track) = (self.theme.color("bronze"), self.theme.color("gold"), self.theme.color("charcoal"));
             ctx.all_styles_mut(|s| {
                 use egui::TextStyle as T;
                 for (t, size) in [(T::Body, 14.5), (T::Button, 14.5), (T::Small, 12.5), (T::Monospace, 14.0)] {
@@ -214,6 +218,13 @@ impl Modern {
                         f.size = size;
                     }
                 }
+                // Scroll bars always shown where a list is longer than its room (egui's float hidden until hovered),
+                // in the pack's colours.
+                s.spacing.scroll = egui::style::ScrollStyle { bar_width: 8.0, handle_min_length: 24.0, foreground_color: false, ..egui::style::ScrollStyle::solid() };
+                s.visuals.widgets.inactive.bg_fill = bronze;
+                s.visuals.widgets.hovered.bg_fill = gold;
+                s.visuals.widgets.active.bg_fill = gold;
+                s.visuals.extreme_bg_color = track;
             });
             self.styled = true;
         }
@@ -327,8 +338,14 @@ pub fn off(ctx: &Context, m: Option<&mut Modern>) {
         m.zoom = 0.0;
     }
     if m.styled {
-        let defaults = egui::Style::default().text_styles;
-        ctx.all_styles_mut(|s| s.text_styles = defaults.clone());
+        let defaults = egui::Style::default();
+        ctx.all_styles_mut(|s| {
+            s.text_styles = defaults.text_styles.clone();
+            s.spacing.scroll = defaults.spacing.scroll;
+        });
+        // The visuals back as the theme had them (dark or light).
+        ctx.set_visuals_of(egui::Theme::Dark, egui::Visuals::dark());
+        ctx.set_visuals_of(egui::Theme::Light, egui::Visuals::light());
         m.styled = false;
     }
 }
@@ -491,8 +508,8 @@ fn default_place(id: &str) -> Place {
     }
 }
 
-/// The yes / no prompt (retail's comyn, stacked on the log): the question and Yes / No, the cursor's lit; its keys stay
-/// retail's (Left / Right, Enter, Escape is No). A click answers; hovering moves the cursor.
+/// The yes / no prompt (retail's comyn, stacked on the log): the kit's prompt; its keys stay retail's (Left / Right,
+/// Enter, Escape is No). A click answers.
 fn confirm(p: &mut Panels, w: &mut World) {
     let Some((_, yes)) = w.confirm else { return };
     let m = p.m;
@@ -504,45 +521,20 @@ fn confirm(p: &mut Panels, w: &mut World) {
     let text = w.confirm_text.clone();
     let h = m.rects.borrow().get("confirm").map_or(110.0, |r| r.height());
     let at = pos2(screen.width() * 0.0121, edge - h - 6.0);
-    let (mut hover, mut click) = (None, None);
-    p.panel_at("confirm", None, 380.0, at, |ui| {
-        ui.label(egui::RichText::new(&text).size(m.theme.ui).color(m.theme.color("text")));
-        ui.add_space(10.0);
-        ui.horizontal(|ui| {
-            for (val, label) in [(true, &y_label), (false, &n_label)] {
-                let (r, resp) = ui.allocate_exact_size(vec2(120.0, 30.0), Sense::click());
-                let on = val == yes;
-                let face = if on { "controls/button_selected" } else if resp.hovered() { "controls/button_hover" } else { "controls/button_normal" };
-                if let Some(s) = m.art.sprite(face) {
-                    ui.painter().add(paint::nine_slice(&s, r, 0.5, Color32::WHITE));
-                }
-                ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, label, FontId::proportional(m.theme.ui), if on { m.theme.color("gold") } else { m.theme.color("text") });
-                if resp.hovered() && ui.ctx().input(|i| i.pointer.delta() != Vec2::ZERO) {
-                    hover = Some(val);
-                }
-                if resp.clicked() {
-                    click = Some(val);
-                }
-                ui.add_space(8.0);
-            }
-        });
-    });
-    if let Some(v) = hover.or(click)
-        && let Some(c) = w.confirm.as_mut()
-        && c.1 != v
-    {
-        c.1 = v;
-        w.sounds.push(crate::audio::Ui::Cursor as u32);
-    }
+    let mut click = None;
+    p.panel_at("confirm", None, 380.0, at, |ui| click = kit::yes_no(ui, m, &text, [&y_label, &n_label], yes, m.theme.ui));
     if let Some(v) = click {
+        if let Some(c) = w.confirm.as_mut() {
+            c.1 = v;
+        }
         w.confirm_click = Some(v);
         w.sounds.push(crate::audio::Ui::Select as u32);
     }
 }
 
 /// A list stacked on the log as comyn is (an event's choice, the Mog House door menu): the question and every row in
-/// its colour (in-line colour codes as the log's), the cursor's lit and kept in view. (hovered, clicked).
-fn log_list(p: &mut Panels, id: &str, question: &str, rows: &[(String, [u8; 4])], cursor: usize, free: bool) -> (Option<usize>, Option<usize>) {
+/// its colour (in-line colour codes as the log's), the cursor's lit and kept in view; the row clicked.
+fn log_list(p: &mut Panels, id: &str, question: &str, rows: &[(String, [u8; 4])], cursor: usize, free: bool) -> Option<usize> {
     const W: f32 = 460.0;
     const ROW: f32 = 28.0;
     let m = p.m;
@@ -550,8 +542,7 @@ fn log_list(p: &mut Panels, id: &str, question: &str, rows: &[(String, [u8; 4])]
     let edge = m.chat_edge.get().filter(|c| !c.1).map_or(screen.max.y, |(r, _)| r.min.y).min(screen.max.y);
     let h = m.rects.borrow().get(id).map_or(160.0, |r| r.height());
     let at = pos2(screen.width() * 0.0121, edge - h - 6.0);
-    let moved = p.ctx.input(|i| i.pointer.delta() != Vec2::ZERO);
-    let (mut hover, mut click) = (None, None);
+    let mut click = None;
     p.panel_at(id, None, W, at, |ui| {
         let font = FontId::proportional(m.theme.ui);
         let job = |t: &str, base: [u8; 4], wrap: f32| chat::line_job(("", Color32::WHITE), t, base, &font, wrap);
@@ -577,9 +568,6 @@ fn log_list(p: &mut Panels, id: &str, question: &str, rows: &[(String, [u8; 4])]
                 if k == cursor && follow {
                     ui.scroll_to_rect(r, None);
                 }
-                if free && resp.hovered() && moved {
-                    hover = Some(k);
-                }
                 if free && resp.clicked() {
                     click = Some(k);
                 }
@@ -587,34 +575,27 @@ fn log_list(p: &mut Panels, id: &str, question: &str, rows: &[(String, [u8; 4])]
             }
         });
     });
-    (hover, click)
+    click
 }
 
-/// An event's choice (retail's query): its keys stay retail's (event.rs). Hovering moves the cursor, a click picks.
+/// An event's choice (retail's query): its keys stay retail's (event.rs); a click picks.
 fn choice(p: &mut Panels, w: &mut World) {
     let Some(c) = super::event::choice(w) else { return };
     let rows: Vec<(String, [u8; 4])> = c.options.iter().map(|o| (o.1.clone(), [0x80; 4])).collect();
     let (question, cursor) = (c.question.clone(), c.cursor);
-    let (hover, click) = log_list(p, "choice", &question, &rows, cursor, w.confirm.is_none());
-    for k in hover.into_iter().chain(click) {
-        if super::event::set_choice(w, k) {
-            w.sounds.push(crate::audio::Ui::Cursor as u32);
-        }
-    }
-    if click.is_some() {
+    if let Some(k) = log_list(p, "choice", &question, &rows, cursor, w.confirm.is_none()) {
+        super::event::set_choice(w, k);
         super::event::key(w, egui::Key::Enter);
     }
 }
 
-/// A GM prompt (retail's gmtell, the query's class): its keys stay gmtell.rs's. Hovering moves the cursor, a click
-/// picks.
+/// A GM prompt (retail's gmtell, the query's class): its keys stay gmtell.rs's; a click picks.
 fn gm_prompt(p: &mut Panels, w: &mut World) {
     let Some(g) = w.gmtell.open.as_ref() else { return };
     let rows: Vec<(String, [u8; 4])> = g.options.iter().map(|o| (o.clone(), [0x80; 4])).collect();
     let (question, cursor) = (g.question.clone(), g.cursor);
-    let (hover, click) = log_list(p, "gm prompt", &question, &rows, cursor, w.confirm.is_none());
-    if let Some(k) = click.or(hover) {
-        super::gmtell::pointer(w, k, click.is_some());
+    if let Some(k) = log_list(p, "gm prompt", &question, &rows, cursor, w.confirm.is_none()) {
+        super::gmtell::pointer(w, k, true);
     }
 }
 
@@ -634,15 +615,11 @@ fn event_input(p: &mut Panels, w: &World) {
     let edge = m.chat_edge.get().filter(|c| !c.1).map_or(screen.max.y, |(r, _)| r.min.y).min(screen.max.y);
     let h = m.rects.borrow().get("event input").map_or(80.0, |r| r.height());
     let at = pos2(screen.width() * 0.0121, edge - h - 6.0);
+    let caret = text[..caret].chars().count();
     p.panel_at("event input", None, 460.0, at, |ui| {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(&title).size(m.theme.ui).color(m.theme.color("gold")));
-            let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
-            if let Some(s) = m.art.sprite("controls/input_focused") {
-                ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
-            }
-            let shown = format!("{}|{}", &text[..caret], &text[caret..]);
-            ui.painter().text(pos2(r.min.x + 10.0, r.center().y), egui::Align2::LEFT_CENTER, shown, FontId::monospace(m.theme.ui), m.theme.color("text"));
+            kit::field(ui, m, &text, Some(caret), ui.available_width(), FontId::monospace(m.theme.ui), None);
         });
     });
 }
@@ -652,14 +629,10 @@ fn mogdoor(p: &mut Panels, w: &mut World) {
     let Some(sel) = w.mogdoor.as_ref().map(|m| m.sel) else { return };
     let (title, rows) = super::mogdoor_rows(w);
     let rows: Vec<(String, [u8; 4])> = rows.into_iter().map(|r| (r.1, r.2)).collect();
-    let (hover, click) = log_list(p, "mogdoor", &title, &rows, sel, w.confirm.is_none());
-    if let Some(m) = w.mogdoor.as_mut()
-        && let Some(k) = hover.or(click).filter(|&k| k != m.sel)
-    {
-        m.sel = k;
-        w.sounds.push(crate::audio::Ui::Cursor as u32);
-    }
-    if click.is_some() {
+    if let Some(k) = log_list(p, "mogdoor", &title, &rows, sel, w.confirm.is_none()) {
+        if let Some(m) = w.mogdoor.as_mut() {
+            m.sel = k;
+        }
         super::mogdoor_pick(w);
     }
 }
@@ -937,6 +910,12 @@ impl<'a> Panels<'a> {
 }
 
 impl Modern {
+    /// Whether keyboard list `key`'s cursor moved to `at` since last frame: the row then scrolls into view (only then,
+    /// so the wheel stays free).
+    pub(super) fn moved(&self, key: &'static str, at: usize) -> bool {
+        self.cursors.borrow_mut().insert(key, at) != Some(at)
+    }
+
     /// A tooltip (ours) while the pointer rests on `r` and `ui`'s layer is the one under it: `title` in gold over `body`
     /// in the pack's tooltip frame.
     pub fn tip(&self, ui: &Ui, r: Rect, title: &str, body: &str) {

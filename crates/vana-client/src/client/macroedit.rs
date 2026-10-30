@@ -44,6 +44,8 @@ struct Edit {
     bopt: Option<u16>,
     hold: f32,
     editor: Option<Editor>,
+    /// The modern page: the set strip has the cursor.
+    tabs: bool,
 }
 
 /// "menu    macro": macro `i` (0..19), the cursor child (1 Prev, 2 Next, 3 title, 4..9 lines), the working copy
@@ -342,7 +344,7 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
                             m.switch(book, set);
                         }
                         let b = w.macroedit.as_mut().and_then(|m| m.book.as_mut()).unwrap();
-                        b.edit = Some(Edit { focus: 1, cols: [0, 0], bopt: None, hold: 0.0, editor: None });
+                        b.edit = Some(Edit { focus: 1, cols: [0, 0], bopt: None, hold: 0.0, editor: None, tabs: false });
                     }
                     2 => {
                         let name = w.macros.as_ref().map_or(Vec::new(), |m| m.raw_book_title(book).to_vec());
@@ -755,6 +757,8 @@ pub(super) struct Palettes {
     pub book: String,
     pub set: usize,
     pub focused: bool,
+    /// The modern page's set strip has the cursor.
+    pub tabs: bool,
 }
 
 /// "menu    macro": "Ctrl 1" or the like, the title and six lines (the edited one live), the cursor, mcrledit's.
@@ -797,7 +801,8 @@ pub(super) fn view(w: &World, gu: &GameUi) -> Option<View> {
         paste_ok: if set_mode(e) { m.set_copied } else { m.macro_copied() },
         book: m.book_title(m.book),
         set: m.set,
-        focused: free && e.bopt.is_none(),
+        focused: free && e.bopt.is_none() && !e.tabs,
+        tabs: e.tabs,
     });
     let editor = edit.and_then(|e| e.editor.as_ref()).map(|d| {
         let (alt, n) = (d.i >= 10, (d.i % 10 + 1) % 10);
@@ -841,11 +846,21 @@ pub(super) fn set_opt(w: &mut World, o: u16) -> bool {
     moved
 }
 
+/// The modern page's set strip given the cursor (or taken it).
+pub(super) fn set_tabs(w: &mut World, on: bool) {
+    if let Some(e) = edit_mut(w).filter(|e| e.editor.is_none()) {
+        e.tabs = on;
+        if on {
+            e.bopt = None;
+        }
+    }
+}
+
 /// The palettes' cursor onto palette `p` (1 Ctrl, 2 Alt) at cell `col` (0..9), mcrbedit closed.
 pub(super) fn set_cell(w: &mut World, p: u8, col: u16) -> bool {
     let Some(e) = edit_mut(w).filter(|e| e.editor.is_none()) else { return false };
-    let moved = e.focus != p || e.cols[p as usize - 1] != col || e.bopt.is_some();
-    (e.focus, e.bopt) = (p, None);
+    let moved = e.focus != p || e.cols[p as usize - 1] != col || e.bopt.is_some() || e.tabs;
+    (e.focus, e.bopt, e.tabs) = (p, None, false);
     e.cols[p as usize - 1] = col;
     moved
 }
@@ -853,7 +868,7 @@ pub(super) fn set_cell(w: &mut World, p: u8, col: u16) -> bool {
 /// mcrbedit opened (as Num+ does) with its cursor on `o`.
 pub(super) fn set_bopt(w: &mut World, o: u16) {
     if let Some(e) = edit_mut(w).filter(|e| e.editor.is_none()) {
-        e.bopt = Some(o);
+        (e.bopt, e.tabs) = (Some(o), false);
     }
 }
 

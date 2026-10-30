@@ -8,7 +8,6 @@ use super::super::game_ui::GameUi;
 use super::super::{World, aepoints, jobpoints, unity};
 use super::craft::{button, caption, tint};
 use super::{MenuWin, Panels, Title, hud, social};
-use crate::audio::Ui as Se;
 use crate::inventory::TINT_WHITE;
 use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
 
@@ -19,19 +18,18 @@ const LIST_W: f32 = 460.0;
 const SIDE_W: f32 = 250.0;
 const COL_W: f32 = 230.0;
 
-/// What the mouse did on a list: (row hovered, row clicked).
-type Got = (Option<usize>, Option<usize>);
+/// What the mouse did on a list: the row clicked.
+type Got = Option<usize>;
 
 /// A list's rows: the name in its colour (a group header as its caption), the level and the NEXT cost at the right;
-/// the cursor kept in view. (hovered, clicked) while it has the keys.
+/// the cursor kept in view. The row clicked while it has the keys.
 fn rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, salt: &str, l: &PointList, width: f32, cost_col: bool) -> Got {
     let ctx = ui.ctx().clone();
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let seen = egui::Id::unique((salt, "points cursor seen"));
     let follow = ctx.data(|d| d.get_temp::<usize>(seen)) != Some(l.cursor);
     ctx.data_mut(|d| d.insert_temp(seen, l.cursor));
     let next = gu.lobby_msg(0xc, 0x5a, "NEXT");
-    let (mut hover, mut click) = (None, None);
+    let mut click = None;
     egui::ScrollArea::vertical().id_salt(salt).max_height(TALL).auto_shrink([false, true]).show(ui, |ui| {
         for (k, r) in l.rows.iter().enumerate() {
             let (rect, resp) = ui.allocate_exact_size(vec2(width - 14.0, ROW), if l.focused { Sense::click() } else { Sense::hover() });
@@ -62,16 +60,13 @@ fn rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, salt: &str, l: &PointList, 
             if k == l.cursor && follow {
                 ui.scroll_to_rect(rect, None);
             }
-            if l.focused && resp.hovered() && moved {
-                hover = Some(k);
-            }
             if l.focused && resp.clicked() {
                 click = Some(k);
             }
             ui.add_space(2.0);
         }
     });
-    (hover, click)
+    click
 }
 
 /// The cursor row's name and description (retail's bluehelp).
@@ -100,14 +95,9 @@ fn gauge(ui: &mut Ui, m: &super::Modern, f: f32, label: &str, value: &str, full:
     ui.add_space(8.0);
 }
 
-/// A list's mouse: hover moves its cursor (SE 0001), a click moves it and is Enter.
+/// A list's mouse: a click moves its cursor and is Enter.
 fn act(w: &mut World, got: Got, set: impl Fn(&mut World, usize) -> bool, enter: impl Fn(&mut World)) {
-    if let Some(k) = got.0
-        && set(w, k)
-    {
-        w.sounds.push(Se::Cursor as u32);
-    }
-    if let Some(k) = got.1 {
+    if let Some(k) = got {
         set(w, k);
         enter(w);
     }
@@ -134,15 +124,14 @@ fn unity_panel(p: &mut Panels, w: &mut World) {
     let Some(gu) = p.gu else { return };
     let Some(v) = unity::look(w, gu) else { return };
     let m = p.m;
-    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let free = w.confirm.is_none() && w.arealist.is_none();
     let note = format!("{}/99999", v.accolades);
     let width = COL_W + if v.info.is_some() { 16.0 + LIST_W } else { 0.0 } + 44.0;
-    let (mut menu, mut rows_got, mut ranks_got) = ((None, None), (None, None), (None, None));
+    let (mut menu, mut rows_got, mut ranks_got) = (None, None, None);
     p.panel("window", Some(Title { icon: Some("icons/status"), text: "Unity", note: Some(&note) }), width, |ui| {
         ui.horizontal_top(|ui| {
             let col = MenuWin { name: unity::MENU, sel: v.sel, off: Vec::new(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
-            menu = social::column(ui, m, gu, &col, free && v.info.is_none(), moved);
+            menu = social::column(ui, m, gu, &col, free && v.info.is_none());
             let Some(i) = &v.info else { return };
             ui.add_space(16.0);
             ui.vertical(|ui| {
@@ -193,15 +182,15 @@ fn unity_panel(p: &mut Panels, w: &mut World) {
     }
     let enter = |w: &mut World, gu: &GameUi| unity::key(w, gu, egui::Key::Enter, false);
     social::act(w, gu, menu, unity::set_menu, enter);
-    social::act(w, gu, (rows_got.0.map(|k| k as u16 + 1), rows_got.1.map(|k| k as u16 + 1)), unity::set_info, enter);
+    social::act(w, gu, rows_got.map(|k| k as u16 + 1), unity::set_info, enter);
     act(w, ranks_got, unity::set_rank, |_| {});
 }
 
 /// What the mouse did on the Merit Points windows.
 #[derive(Default)]
 struct MeritMouse {
-    menu: (Option<u16>, Option<u16>),
-    mode: (Option<u16>, Option<u16>),
+    menu: Option<u16>,
+    mode: Option<u16>,
     list: Got,
     edit: Option<u16>,
     yes: Option<bool>,
@@ -212,7 +201,6 @@ fn merit_points(p: &mut Panels, w: &mut World) {
     let Some(gu) = p.gu else { return };
     let Some(v) = merits::look(w) else { return };
     let m = p.m;
-    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let free = w.confirm.is_none();
     let note = v.points.map(|(n, max)| format!("{n}/{max} P"));
     let cols = 1.0 + v.mode.is_some() as u8 as f32;
@@ -225,11 +213,11 @@ fn merit_points(p: &mut Panels, w: &mut World) {
         ui.horizontal_top(|ui| {
             let top = v.mode.is_none() && v.list.is_none() && v.edit.is_none();
             let menu = MenuWin { name: merits::MENU, sel: v.menu.0, off: v.menu.1.clone(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
-            mouse.menu = social::column(ui, m, gu, &menu, free && top, moved);
+            mouse.menu = social::column(ui, m, gu, &menu, free && top);
             if let Some((sel, off)) = v.mode {
                 ui.add_space(16.0);
                 let mode = MenuWin { name: merits::MODE, sel, off: vec![off], labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
-                mouse.mode = social::column(ui, m, gu, &mode, free && v.list.is_none(), moved);
+                mouse.mode = social::column(ui, m, gu, &mode, free && v.list.is_none());
             }
             let Some(l) = &v.list else { return };
             ui.add_space(16.0);
@@ -291,7 +279,7 @@ fn job_points(p: &mut Panels, w: &mut World) {
     let free = w.confirm.is_none();
     let note = v.points.map(|[_, cur, _]| format!("{cur}/500 P"));
     let width = SIDE_W + if v.page.is_some() { 16.0 + LIST_W } else { 0.0 } + 44.0;
-    let (mut jobs, mut page, mut tab) = ((None, None), (None, None), None);
+    let (mut jobs, mut page, mut tab) = (None, None, None);
     p.panel("window", Some(Title { icon: Some("icons/status"), text: "Job Points", note: note.as_deref() }), width, |ui| {
         let cap = v.points.map_or(0, |q| q[0]);
         let value = v.points.map_or(String::new(), |q| format!("{}/30000", q[0]));
@@ -346,7 +334,7 @@ fn alter_ego(p: &mut Panels, w: &mut World) {
     let free = w.confirm.is_none();
     let note = v.points.map(|n| format!("{n}/1000 P"));
     let width = SIDE_W + if v.attrs.is_some() { 16.0 + LIST_W } else { 0.0 } + 44.0;
-    let (mut cats, mut attrs) = ((None, None), (None, None));
+    let (mut cats, mut attrs) = (None, None);
     p.panel("window", Some(Title { icon: Some("icons/status"), text: "Alter Ego Points", note: note.as_deref() }), width, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {

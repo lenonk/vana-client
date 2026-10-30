@@ -7,7 +7,6 @@ use super::super::magic::Kind;
 use super::super::suggest::Action;
 use super::super::{World, combat, listsearch, magic, monstrosity, suggest};
 use super::{Panels, Title, paint};
-use crate::audio::Ui as Se;
 use egui::{Align2, Color32, FontFamily, FontId, Sense, pos2, vec2};
 
 /// A command's label (the retail label sprites, LABELS at 0x103634f8) and the pack's icon.
@@ -72,12 +71,11 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             (label, icon, off)
         })
         .collect();
-    let (mut s_hover, mut s_click) = (None, None);
+    let mut s_click = None;
     let engaged = w.my_motion.status == 1;
     let target = w.target.and_then(|t| if t == w.my_id { Some(monstrosity::my_name(w).to_string()) } else { w.entities.get(&t).map(|e| monstrosity::name(e).to_string()) });
     let title = if engaged { "Battle" } else { "Commands" };
-    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
-    let (mut hovered, mut clicked, mut arrow) = (None, None, None);
+    let (mut clicked, mut arrow) = (None, None);
     let width = if sugg.is_empty() { 270.0 } else { 360.0 };
     p.panel("combat", Some(Title { icon: Some("icons/attack"), text: title, note: target.as_deref() }), width, |ui| {
         if !sugg.is_empty() {
@@ -104,9 +102,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                 painter.galley(pos2(r.min.x + 50.0, r.min.y + 5.0), label, Color32::WHITE);
                 let reason = super::one_line(painter, &s.reason, FontId::proportional(m.theme.small), m.theme.color("muted"), room);
                 painter.galley(pos2(r.min.x + 50.0, r.min.y + 27.0), reason, Color32::WHITE);
-                if resp.hovered() {
-                    s_hover = Some(k);
-                }
                 if resp.clicked() {
                     s_click = Some(k);
                 }
@@ -142,9 +137,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                 let a = super::rows::more_mark(painter, m, r, on);
                 on_arrow = resp.hover_pos().is_some_and(|p| a.expand(4.0).contains(p));
             }
-            if resp.hovered() {
-                hovered = Some(k);
-            }
             if resp.clicked() {
                 if on_arrow { arrow = Some(k) } else { clicked = Some(k) }
             }
@@ -157,20 +149,13 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         listsearch::pick_root(w, s.action, s.target.as_deref());
         return;
     }
-    if let Some(k) = s_hover.filter(|&k| moved && on_sugg != Some(k)) {
-        w.suggest_sel = Some(k);
-        w.sounds.push(Se::Cursor as u32);
-    }
     let Some(am) = w.action_menu.as_mut() else { return };
-    if let Some(k) = hovered.filter(|&k| moved && (k != am.sel || on_sugg.is_some())) {
-        am.sel = k;
-        w.suggest_sel = None;
-        w.sounds.push(Se::Cursor as u32);
-    }
     if let Some(k) = arrow {
         am.sel = k;
+        w.suggest_sel = None;
         combat::right(w);
     } else if let Some(k) = clicked {
+        w.suggest_sel = None;
         w.action_click = Some(k);
     }
 }

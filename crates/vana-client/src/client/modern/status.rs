@@ -5,7 +5,7 @@
 
 use super::super::status::{self, STATCOM};
 use super::super::{World, currencies, items as gitems, monstrosity};
-use super::{Panels, Title, equip, hud, paint};
+use super::{Panels, Title, equip, hud, kit, paint};
 use crate::audio::Ui as Se;
 use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
 
@@ -124,7 +124,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     }
     let Some(s) = w.status.clone() else { return };
     let m = p.m;
-    let ctx = p.ctx;
     let mut persona = gitems::persona(w);
     if monstrosity::active(w) {
         persona.name = w.my_mon_name.as_ref().map_or(String::new(), |n| n.1.clone());
@@ -191,8 +190,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let help = gu.focus_text(STATCOM, sel)[0].clone().unwrap_or_default();
     let mut held_only = m.held_only.get();
 
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
-    let (mut hover, mut click) = (None, None);
+    let mut click = None;
     let mut open = false;
     p.panel("window", Some(Title { icon: Some("icons/status"), text: "Status", note: None }), SIDE_W + 18.0 + PAGE_W, |ui| {
         equip::persona_row(ui, m, &persona, &stats);
@@ -220,9 +218,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                     };
                     super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
                     ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, *label, FontId::proportional(m.theme.ui), if off { muted } else { white });
-                    if resp.hovered() && moved {
-                        hover = Some(k);
-                    }
                     if resp.clicked() {
                         click = Some(k);
                     }
@@ -297,7 +292,10 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                             ui.label(egui::RichText::new("Asking for the currencies...").size(m.theme.small).color(muted));
                             return;
                         }
-                        ui.checkbox(&mut held_only, egui::RichText::new("Only those held").size(m.theme.small).color(white));
+                        let s = kit::Btn { lit: held_only, ..Default::default() };
+                        if kit::button(ui, m, "Only those held", 0.0, s).clicked() {
+                            held_only = !held_only;
+                        }
                         ui.add_space(4.0);
                         for (label, v, tip) in money.iter().filter(|x| !held_only || x.1 != 0) {
                             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), LINE), Sense::hover());
@@ -314,7 +312,8 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                         ui.add_space(10.0);
                         let off = s.off.contains(&sel);
                         let what = if sel == 9 { "Show" } else { "Open" };
-                        if ui.add_enabled(!off, egui::Button::new(egui::RichText::new(what).size(m.theme.ui))).clicked() {
+                        let b = kit::Btn { off, ..Default::default() };
+                        if kit::clicked(&kit::button(ui, m, what, 120.0, b), b) {
                             open = true;
                         }
                         if off {
@@ -330,10 +329,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     m.held_only.set(held_only);
     if let Some(st) = w.status.as_mut() {
         st.m_page = 0;
-    }
-    if let Some(k) = hover.filter(|&k| k != row) {
-        moved_to(w, k);
-        w.sounds.push(Se::Cursor as u32);
     }
     if let Some(k) = click {
         if k != row {

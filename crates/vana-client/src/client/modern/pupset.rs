@@ -6,7 +6,6 @@ use super::super::World;
 use super::super::pupset;
 use super::craft::tint;
 use super::{Panels, STRONG, Title};
-use crate::audio::Ui as Se;
 use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
 
 const COL_W: f32 = 280.0;
@@ -21,15 +20,14 @@ fn heading(ui: &mut Ui, m: &super::Modern, text: &str) {
     ui.add_space(4.0);
 }
 
-/// A list's rows: the item's icon, the text in its tint; the cursor kept in view. Hover only on the side with the keys
-/// (`focused`), clicks where `clicks`. (hovered, clicked).
-fn rows(ui: &mut Ui, m: &super::Modern, w: &World, salt: &str, rows: &[(String, Option<u16>, u32)], cursor: usize, (focused, clicks): (bool, bool)) -> (Option<usize>, Option<usize>) {
+/// A list's rows: the item's icon, the text in its tint; the cursor kept in view. The face lit only on the side with the keys
+/// (`focused`), clicks where `clicks` The row clicked.
+fn rows(ui: &mut Ui, m: &super::Modern, w: &World, salt: &str, rows: &[(String, Option<u16>, u32)], cursor: usize, (focused, clicks): (bool, bool)) -> Option<usize> {
     let ctx = ui.ctx().clone();
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let seen = egui::Id::unique((salt, "pupset cursor seen"));
     let follow = ctx.data(|d| d.get_temp::<usize>(seen)) != Some(cursor);
     ctx.data_mut(|d| d.insert_temp(seen, cursor));
-    let (mut hover, mut click) = (None, None);
+    let mut click = None;
     egui::ScrollArea::vertical().id_salt(salt).max_height(TALL).auto_shrink([false, true]).show(ui, |ui| {
         for (k, (text, item, t)) in rows.iter().enumerate() {
             let (rect, resp) = ui.allocate_exact_size(vec2(COL_W - 14.0, ROW), if clicks { Sense::click() } else { Sense::hover() });
@@ -49,16 +47,13 @@ fn rows(ui: &mut Ui, m: &super::Modern, w: &World, salt: &str, rows: &[(String, 
             if k == cursor && follow {
                 ui.scroll_to_rect(rect, None);
             }
-            if focused && resp.hovered() && moved {
-                hover = Some(k);
-            }
             if clicks && resp.clicked() {
                 click = Some(k);
             }
             ui.add_space(2.0);
         }
     });
-    (hover, click)
+    click
 }
 
 fn status(ui: &mut Ui, m: &super::Modern, v: &pupset::Look) {
@@ -94,7 +89,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let free = w.confirm.is_none();
     let open = free && v.sibo.is_none();
     let title = gu.title_msg(0x14).unwrap_or_else(|| "Equipment".into());
-    let (mut grid, mut list, mut sibo) = ((None, None), (None, None), (None, None));
+    let (mut grid, mut list, mut sibo) = (None, None, None);
     p.panel("window", Some(Title { icon: Some("icons/equipment"), text: &title, note: None }), STAT_W + 2.0 * COL_W + 32.0 + 44.0, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
@@ -139,24 +134,13 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     if !free {
         return;
     }
-    let cursor = |w: &mut World| w.sounds.push(Se::Cursor as u32);
-    if let Some(k) = sibo.0
-        && pupset::set_sibo(w, k as u16 + 1)
-    {
-        cursor(w);
-    }
-    if let Some(k) = sibo.1 {
+    if let Some(k) = sibo {
         pupset::set_sibo(w, k as u16 + 1);
         pupset::key(w, gu, egui::Key::Enter);
         return;
     }
     for (side, on_grid) in [(grid, true), (list, false)] {
-        if let Some(k) = side.0
-            && pupset::set_row(w, on_grid, k)
-        {
-            cursor(w);
-        }
-        if let Some(k) = side.1 {
+        if let Some(k) = side {
             pupset::set_row(w, on_grid, k);
             pupset::key(w, gu, egui::Key::Enter);
             return;

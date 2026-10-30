@@ -1,10 +1,12 @@
 //! Settings' Mods page (not retail; the mod manager, XIPivot's job built in): the installed packs in priority order,
 //! each ON / OFF and movable (Move, then Up / Down, Enter to place, Escape to put it back, as the item list's Manual
 //! sort), then the packs found in archives with an Install button. The archives are read and unpacked off the UI
-//! thread (crate::modpack). Changes take effect on restart.
+//! thread (crate::modpack). Changes take effect on restart. The modern page also installs an archive picked by hand
+//! (`Browse`) and removes a pack's folder.
 
 use crate::config::ModRef;
 use crate::modpack::{self, Pack};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{Receiver, channel};
@@ -20,6 +22,8 @@ pub struct Mods {
     pub error: Option<String>,
     /// The first row shown.
     pub top: usize,
+    /// The modern page's file picker, while open.
+    pub browse: Option<Browse>,
 }
 
 /// Rows shown at once (a page of 296 px from y 36, 34 px apart).
@@ -32,13 +36,13 @@ impl Mods {
         std::thread::spawn(move || {
             let _ = tx.send(modpack::scan(&modpack::pack_dirs(), &crate::config::mods_dir()));
         });
-        Self { packs: Vec::new(), scan: Some(rx), installing: None, held: None, error: None, top: 0 }
+        Self { packs: Vec::new(), scan: Some(rx), installing: None, held: None, error: None, top: 0, browse: None }
     }
 
     /// No archives and no scan (tests).
     #[cfg(test)]
     pub fn empty() -> Self {
-        Self { packs: Vec::new(), scan: None, installing: None, held: None, error: None, top: 0 }
+        Self { packs: Vec::new(), scan: None, installing: None, held: None, error: None, top: 0, browse: None }
     }
 
     /// Waits for the scan (offscreen shots).
@@ -91,6 +95,27 @@ impl Mods {
         true
     }
 
+    /// Reads and unpacks the archive at `path` off the UI thread; false while another one is being installed.
+    pub fn install_file(&mut self, path: PathBuf) -> bool {
+        if self.installing.is_some() {
+            return false;
+        }
+        let slug = modpack::slug(&path);
+        let progress = Arc::new(AtomicU32::new(0));
+        let (tx, rx) = channel();
+        let pr = progress.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(modpack::pack_of(&path).and_then(|p| modpack::install(&p, &crate::config::mods_dir(), &pr)));
+        });
+        self.installing = Some((slug, progress, rx));
+        true
+    }
+
+    /// The pack being installed and its per mille done.
+    pub fn installing(&self) -> Option<(String, u32)> {
+        self.installing.as_ref().map(|i| (i.0.clone(), i.1.load(Ordering::Relaxed)))
+    }
+
     /// The per mille done when pack `slug` is being installed.
     pub fn progress(&self, slug: &str) -> Option<u32> {
         self.installing.as_ref().filter(|i| i.0 == slug).map(|i| i.1.load(Ordering::Relaxed))
@@ -107,5 +132,81 @@ impl Mods {
         } else {
             self.top = 0;
         }
+    }
+}
+
+/// Deletes installed pack `name`'s folder off the UI thread; false when the name is not a folder of the mods folder.
+pub fn remove_folder(name: &str) -> bool {
+    let root = crate::config::mods_dir();
+    let dir = root.join(name);
+    if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') || dir.parent() != Some(root.as_path()) || !dir.is_dir() {
+        return false;
+    }
+    std::thread::spawn(move || {
+        if let Err(e) = std::fs::remove_dir_all(&dir) {
+            log::warn!("mods: removing {}: {e}", dir.display());
+        } else {
+            log::info!("mods: removed {}", dir.display());
+        }
+    });
+    true
+}
+
+/// A file picker for an archive: a folder's sub-folders and archives (zip, 7z, rar), ".." first.
+pub struct Browse {
+    pub dir: PathBuf,
+    /// (name, is a folder).
+    pub entries: Vec<(String, bool)>,
+    pub cursor: usize,
+}
+
+impl Browse {
+    /// At the Downloads folder (else home).
+    pub fn open() -> Self {
+        let dir = dirs::download_dir().or_else(dirs::home_dir).unwrap_or_else(|| PathBuf::from("/"));
+        let mut b = Self { dir, entries: Vec::new(), cursor: 0 };
+        b.read();
+        b
+    }
+
+    fn read(&mut self) {
+        let mut dirs = Vec::new();
+        let mut files = Vec::new();
+        if let Ok(rd) = std::fs::read_dir(&self.dir) {
+            for e in rd.flatten() {
+                let name = e.file_name().to_string_lossy().into_owned();
+                if name.starts_with('.') {
+                    continue;
+                }
+                let p = e.path();
+                if p.is_dir() {
+                    dirs.push(name);
+                } else if modpack::is_archive(&p) {
+                    files.push(name);
+                }
+            }
+        }
+        dirs.sort_by_key(|n| n.to_lowercase());
+        files.sort_by_key(|n| n.to_lowercase());
+        self.entries = self.dir.parent().map(|_| ("..".to_string(), true)).into_iter().chain(dirs.into_iter().map(|d| (d, true))).chain(files.into_iter().map(|f| (f, false))).collect();
+        self.cursor = 0;
+    }
+
+    /// Enter on the cursor's entry: a folder is opened, an archive is the pick.
+    pub fn enter(&mut self) -> Option<PathBuf> {
+        let (name, dir) = self.entries.get(self.cursor)?.clone();
+        if !dir {
+            return Some(self.dir.join(name));
+        }
+        let from = self.dir.file_name().map(|f| f.to_string_lossy().into_owned());
+        self.dir = if name == ".." { self.dir.parent()?.to_path_buf() } else { self.dir.join(&name) };
+        self.read();
+        // Back up a level onto the folder left.
+        if name == ".."
+            && let Some(f) = from
+        {
+            self.cursor = self.entries.iter().position(|e| e.0 == f).unwrap_or(0);
+        }
+        None
     }
 }

@@ -4,6 +4,7 @@
 
 use super::super::game_ui::GameUi;
 use super::super::{World, esedit, esmenu, macroedit};
+use super::kit::{self, At, Btn, Stop};
 use super::{MenuWin, Panels, Title, paint, social};
 use egui::{Align2, Color32, FontId, Rect, Sense, Ui, pos2, vec2};
 
@@ -13,16 +14,16 @@ const ROW: f32 = 28.0;
 const BOOK_W: f32 = 300.0;
 const LINE_W: f32 = 560.0;
 
-/// What the mouse did this frame (hovered when the pointer moved, or clicked).
+/// What the mouse clicked this frame.
 #[derive(Default)]
 struct Mouse {
-    menu: (Option<u16>, Option<u16>),
-    book: (Option<usize>, Option<usize>),
-    opt: (Option<u16>, Option<u16>),
-    cell: (Option<(u8, u16)>, Option<(u8, u16)>),
+    menu: Option<u16>,
+    book: Option<usize>,
+    opt: Option<u16>,
+    cell: Option<(u8, u16)>,
     bopt: Option<u16>,
     set: Option<usize>,
-    field: (Option<u16>, Option<u16>),
+    field: Option<u16>,
     lopt: Option<u16>,
 }
 
@@ -38,8 +39,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         }
         return;
     };
-    let (m, ctx) = (p.m, p.ctx);
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
+    let m = p.m;
     let mut mouse = Mouse::default();
     let width = if v.editor.is_some() {
         LINE_W + 44.0
@@ -52,43 +52,30 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     };
     p.panel("window", Some(Title { icon: Some("icons/macro"), text: "Macros", note: None }), width, |ui| {
         if let Some(e) = &v.editor {
-            editor(ui, m, gu, e, moved, &mut mouse);
+            editor(ui, m, gu, e, &mut mouse);
         } else if let Some(pv) = &v.palettes {
-            palettes(ui, m, gu, pv, moved, &mut mouse);
+            palettes(ui, m, gu, pv, &mut mouse);
         } else if let Some(b) = &v.books {
-            books(ui, m, gu, b, moved, &mut mouse);
+            books(ui, m, gu, b, &mut mouse);
         } else {
             let (sel, monstrosity, focused) = v.menu;
             let mw = MenuWin { name: macroedit::MENU, sel, off: if monstrosity { vec![2] } else { Vec::new() }, labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
-            mouse.menu = social::stack(ui, m, gu, std::slice::from_ref(&mw), focused, moved);
+            mouse.menu = social::stack(ui, m, gu, std::slice::from_ref(&mw), focused);
         }
     });
     act(w, gu, mouse);
 }
 
-/// The mouse's moves through the module's own setters and keys: hover moves the cursor, a click moves it and is Enter.
+/// The mouse's clicks through the module's own setters and keys: a click moves the cursor and is Enter.
 fn act(w: &mut World, gu: &GameUi, mouse: Mouse) {
     let enter = |w: &mut World| macroedit::key(w, gu, egui::Key::Enter);
-    let cursor = |w: &mut World, moved: bool| {
-        if moved {
-            w.sounds.push(crate::audio::Ui::Cursor as u32);
-        }
-    };
     social::act(w, gu, mouse.menu, macroedit::set_menu, |w, gu| macroedit::key(w, gu, egui::Key::Enter));
-    if let Some(k) = mouse.book.0 {
-        let moved = macroedit::set_book(w, k);
-        cursor(w, moved);
-    }
-    if let Some(k) = mouse.book.1 {
+    if let Some(k) = mouse.book {
         macroedit::set_book(w, k);
         enter(w);
     }
     social::act(w, gu, mouse.opt, macroedit::set_opt, |w, gu| macroedit::key(w, gu, egui::Key::Enter));
-    if let Some((pal, col)) = mouse.cell.0 {
-        let moved = macroedit::set_cell(w, pal, col);
-        cursor(w, moved);
-    }
-    if let Some((pal, col)) = mouse.cell.1 {
+    if let Some((pal, col)) = mouse.cell {
         macroedit::set_cell(w, pal, col);
         enter(w);
     }
@@ -99,11 +86,7 @@ fn act(w: &mut World, gu: &GameUi, mouse: Mouse) {
     if let Some(s) = mouse.set {
         macroedit::set_set(w, s);
     }
-    if let Some(c) = mouse.field.0 {
-        let moved = macroedit::set_field(w, c);
-        cursor(w, moved);
-    }
-    if let Some(c) = mouse.field.1 {
+    if let Some(c) = mouse.field {
         macroedit::set_field(w, c);
         enter(w);
     }
@@ -113,25 +96,116 @@ fn act(w: &mut World, gu: &GameUi, mouse: Mouse) {
     }
 }
 
+/// The palettes' and the editor's keys in the kit's model (the rest stay macroedit.rs's): the sets a tab strip over the
+/// Ctrl and Alt keys with Copy / Paste / Delete under them, Tab turning the set; the editor's Prev / Next, title and
+/// lines, then Copy / Paste / Delete Line, which Tab or Down from the last line reach. True when taken.
+pub fn key(w: &mut World, gu: &GameUi, key: egui::Key, shift: bool) -> bool {
+    use egui::Key as K;
+    if !w.modern || w.confirm.is_some() || !matches!(key, K::ArrowUp | K::ArrowDown | K::ArrowLeft | K::ArrowRight | K::Enter | K::Escape | K::Tab) {
+        return false;
+    }
+    let Some(v) = macroedit::view(w, gu) else { return false };
+    let enter = |w: &mut World| macroedit::key(w, gu, K::Enter);
+    let sound = |w: &mut World, a: kit::Act| w.sounds.extend(a.sound().map(|s| s as u32));
+    if let Some(pv) = &v.palettes {
+        let stops = [Stop::Tabs { n: 10, at: pv.set }, Stop::Buttons { n: 10, off: 0 }, Stop::Buttons { n: 10, off: 0 }, Stop::Buttons { n: 3, off: (!pv.paste_ok as u64) << 1 }];
+        let mut at = match pv.bopt {
+            _ if pv.tabs => At::new(0, 0),
+            Some(o) => At::new(3, o as usize - 1),
+            None => At::new(pv.focus as usize, pv.cols[pv.focus as usize - 1] as usize),
+        };
+        match kit::key(&stops, &mut at, key, shift) {
+            kit::Act::Set(_, s) => macroedit::set_set(w, s),
+            a @ kit::Act::Moved => {
+                match at.stop {
+                    0 => macroedit::set_tabs(w, true),
+                    3 => macroedit::set_bopt(w, at.sub as u16 + 1),
+                    p => _ = macroedit::set_cell(w, p as u8, at.sub as u16),
+                }
+                sound(w, a);
+            }
+            kit::Act::Press(3, o) => {
+                macroedit::set_bopt(w, o as u16 + 1);
+                enter(w);
+            }
+            kit::Act::Press(p, c) => {
+                macroedit::set_cell(w, p as u8, c as u16);
+                enter(w);
+            }
+            kit::Act::Back => {
+                macroedit::set_tabs(w, false);
+                if pv.bopt.is_some() {
+                    macroedit::set_cell(w, pv.focus, pv.cols[pv.focus as usize - 1]);
+                }
+                macroedit::key(w, gu, K::Escape);
+            }
+            a => sound(w, a),
+        }
+        return true;
+    }
+    let Some(e) = v.editor.as_ref().filter(|e| e.editing.is_none()) else { return false };
+    let line = (4..=9).contains(&e.sel);
+    // Tab (as retail's Num+) between the cursor's line and its operations; Up from them back to that line.
+    if key == K::Tab || key == K::ArrowUp && e.lopt.is_some() {
+        if e.lopt.is_some() {
+            macroedit::set_field(w, e.sel);
+        } else if line {
+            macroedit::set_lopt(w, 1);
+        } else {
+            return true;
+        }
+        w.sounds.push(crate::audio::Ui::Cursor as u32);
+        return true;
+    }
+    let stops = [Stop::Buttons { n: 2, off: 0 }, Stop::List { n: 7, page: 7 }, Stop::Buttons { n: 3, off: if line { (!e.paste_ok as u64) << 1 } else { 0b111 } }];
+    let mut at = match e.lopt {
+        Some(o) => At::new(2, o as usize - 1),
+        None if e.sel <= 2 => At::new(0, e.sel as usize - 1),
+        None => At::new(1, e.sel as usize - 3),
+    };
+    if at.stop == 1 && matches!(key, K::ArrowLeft | K::ArrowRight) {
+        return true;
+    }
+    match kit::key(&stops, &mut at, key, shift) {
+        a @ kit::Act::Moved => {
+            match at.stop {
+                0 => _ = macroedit::set_field(w, at.sub as u16 + 1),
+                1 => _ = macroedit::set_field(w, at.sub as u16 + 3),
+                _ if line => macroedit::set_lopt(w, at.sub as u16 + 1),
+                // No line to act on: past the operations, round to Prev.
+                _ => _ = macroedit::set_field(w, 1),
+            }
+            sound(w, a);
+        }
+        kit::Act::Press(0, k) => {
+            macroedit::set_field(w, k as u16 + 1);
+            enter(w);
+        }
+        kit::Act::Press(1, k) => {
+            macroedit::set_field(w, k as u16 + 3);
+            enter(w);
+        }
+        kit::Act::Press(_, o) => {
+            macroedit::set_lopt(w, o as u16 + 1);
+            enter(w);
+        }
+        kit::Act::Back if e.lopt.is_some() => {
+            macroedit::set_field(w, e.sel);
+            w.sounds.push(crate::audio::Ui::Cancel as u32);
+        }
+        kit::Act::Back => macroedit::key(w, gu, K::Escape),
+        a => sound(w, a),
+    }
+    true
+}
+
 fn caption(gu: &GameUi, menu: &str, child: u16, fallback: &str) -> String {
     gu.child_caption(menu, child).unwrap_or_else(|| fallback.to_string())
 }
 
-/// A button in the pack's frame: lit under the cursor, grey when off; true when clicked.
-fn button(ui: &mut Ui, m: &super::Modern, label: &str, width: f32, lit: bool, off: bool) -> bool {
-    let (r, resp) = ui.allocate_exact_size(vec2(width, 28.0), Sense::click());
-    let face = match () {
-        _ if off => "controls/button_disabled",
-        _ if lit => "controls/button_selected",
-        _ if resp.hovered() => "controls/button_hover",
-        _ => "controls/button_normal",
-    };
-    if let Some(s) = m.art.sprite(face) {
-        ui.painter().add(paint::nine_slice(&s, r, 0.5, Color32::WHITE));
-    }
-    let c = if off { m.theme.color("muted") } else if lit { m.theme.color("gold") } else { m.theme.color("text") };
-    ui.painter().text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(m.theme.small), c);
-    resp.clicked() && !off
+/// The kit's button `width` wide; true when clicked (and not off).
+fn button(ui: &mut Ui, m: &super::Modern, label: &str, width: f32, s: Btn) -> bool {
+    kit::clicked(&kit::button(ui, m, label, width, s), s)
 }
 
 /// A list row in the pack's frame: selected under a focused cursor, else lit under it or the pointer.
@@ -145,7 +219,7 @@ fn row_face(ui: &Ui, m: &super::Modern, r: Rect, cursor: bool, focused: bool, ho
 }
 
 /// mcrselec over both pages (the active book starred, the name field in its row) and mcrselop beside it.
-fn books(ui: &mut Ui, m: &super::Modern, gu: &GameUi, b: &macroedit::Books, moved: bool, mouse: &mut Mouse) {
+fn books(ui: &mut Ui, m: &super::Modern, gu: &GameUi, b: &macroedit::Books, mouse: &mut Mouse) {
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
             ui.set_width(BOOK_W);
@@ -161,7 +235,7 @@ fn books(ui: &mut Ui, m: &super::Modern, gu: &GameUi, b: &macroedit::Books, move
                     ui.painter().text(pos2(r.min.x + 40.0, r.center().y), Align2::RIGHT_CENTER, format!("{}", k + 1), font.clone(), m.theme.color("muted"));
                     let at = pos2(r.min.x + 52.0, r.center().y);
                     match &b.rename {
-                        Some(t) if k == b.cur => caret_text(ui, m, at, t, b.rename_caret, font, r.max.x),
+                        Some(t) if k == b.cur => kit::caret_text(ui, m, at, t, Some(b.rename_caret), font, r.max.x),
                         _ => _ = ui.painter().text(at, Align2::LEFT_CENTER, name, font, m.theme.color("text")),
                     }
                     if k == b.active {
@@ -170,11 +244,8 @@ fn books(ui: &mut Ui, m: &super::Modern, gu: &GameUi, b: &macroedit::Books, move
                     if k == b.cur && follow {
                         ui.scroll_to_rect(r, None);
                     }
-                    if b.focused && resp.hovered() && moved {
-                        mouse.book.0 = Some(k);
-                    }
                     if b.focused && resp.clicked() {
-                        mouse.book.1 = Some(k);
+                        mouse.book = Some(k);
                     }
                     ui.add_space(2.0);
                 }
@@ -184,7 +255,7 @@ fn books(ui: &mut Ui, m: &super::Modern, gu: &GameUi, b: &macroedit::Books, move
             ui.add_space(12.0);
             let off = if b.paste_ok { Vec::new() } else { vec![4] };
             let mw = MenuWin { name: macroedit::SELOP, sel: o, off, labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
-            mouse.opt = social::stack(ui, m, gu, std::slice::from_ref(&mw), true, moved);
+            mouse.opt = social::stack(ui, m, gu, std::slice::from_ref(&mw), true);
         }
     });
 }
@@ -192,19 +263,17 @@ fn books(ui: &mut Ui, m: &super::Modern, gu: &GameUi, b: &macroedit::Books, move
 /// A keycap: its key's digit, the macro's title, the cursor's ring; dimmed when `off` (nothing in it can be used now).
 fn keycap(ui: &mut Ui, m: &super::Modern, digit: usize, title: &str, cursor: Option<bool>, off: bool) -> egui::Response {
     let (r, resp) = ui.allocate_exact_size(vec2(KEY_W, KEY_H), Sense::click());
-    let face = match () {
-        _ if cursor.is_some() => "controls/item_slot_selected",
-        _ if resp.hovered() => "controls/item_slot_hover",
-        _ => "controls/item_slot_normal",
+    // A plain key: no corner ornaments (user, 2026-10-30), lighter under the pointer, ringed for the cursor.
+    let fill = if resp.hovered() { m.theme.color("surface") } else { m.theme.color("charcoal") };
+    let fill = if off { fill.gamma_multiply(0.6) } else { fill };
+    let edge = match cursor {
+        Some(true) => m.theme.color("focus"),
+        Some(false) => m.theme.color("gold").gamma_multiply(0.7),
+        None => m.theme.color("bronze").gamma_multiply(0.8),
     };
-    if let Some(s) = m.art.sprite(face) {
-        ui.painter().add(paint::nine_slice(&s, r, 0.5, if off { Color32::from_gray(130) } else { Color32::WHITE }));
-    }
-    if let Some(focus) = cursor {
-        let c = if focus { m.theme.color("focus") } else { m.theme.color("bronze") };
-        ui.painter().rect_stroke(r.shrink(1.0), 6.0, egui::Stroke::new(2.5, c), egui::StrokeKind::Inside);
-    }
-    ui.painter().text(r.min + vec2(8.0, 6.0), Align2::LEFT_TOP, format!("{}", (digit + 1) % 10), FontId::monospace(m.theme.small), m.theme.color("muted"));
+    ui.painter().rect(r.shrink(1.0), 6.0, fill, egui::Stroke::new(if cursor.is_some() { 2.5 } else { 1.5 }, edge), egui::StrokeKind::Inside);
+    // Its key's number in the top right corner.
+    ui.painter().text(pos2(r.max.x - 8.0, r.min.y + 5.0), Align2::RIGHT_TOP, format!("{}", (digit + 1) % 10), FontId::monospace(m.theme.small), Color32::WHITE);
     let clip = r.shrink(4.0);
     let colour = m.theme.color(if off { "muted" } else { "text" });
     ui.painter().with_clip_rect(clip).text(pos2(r.center().x, r.center().y + 6.0), Align2::CENTER_CENTER, title, FontId::proportional(m.theme.small), colour);
@@ -212,17 +281,14 @@ fn keycap(ui: &mut Ui, m: &super::Modern, digit: usize, title: &str, cursor: Opt
 }
 
 /// The book and its sets as tabs, the Ctrl and Alt palettes, mcrbedit's rows as buttons for the cursor's macro.
-fn palettes(ui: &mut Ui, m: &super::Modern, gu: &GameUi, pv: &macroedit::Palettes, moved: bool, mouse: &mut Mouse) {
+fn palettes(ui: &mut Ui, m: &super::Modern, gu: &GameUi, pv: &macroedit::Palettes, mouse: &mut Mouse) {
     ui.label(egui::RichText::new(&pv.book).size(m.theme.ui).color(m.theme.color("gold")));
     ui.add_space(4.0);
     let sets: Vec<String> = (1..=10).map(|s| format!("Set {s}")).collect();
     let labels: Vec<&str> = sets.iter().map(String::as_str).collect();
-    for (s, resp) in super::tabs::strip(ui, m, "macro sets", &labels, Some(pv.set), None).into_iter().enumerate() {
-        if resp.clicked() {
-            mouse.set = Some(s);
-        }
+    if let Some(s) = kit::tab_strip(ui, m, "macro sets", &labels, pv.set, pv.tabs) {
+        mouse.set = Some(s);
     }
-    ui.add_space(8.0);
     for (pal, label) in [(1u8, caption(gu, "menu    mcr1edit", 1, "Ctrl")), (2, caption(gu, "menu    mcr2edit", 1, "Alt"))] {
         ui.horizontal(|ui| {
             ui.allocate_ui(vec2(40.0, KEY_H), |ui| {
@@ -232,11 +298,8 @@ fn palettes(ui: &mut Ui, m: &super::Modern, gu: &GameUi, pv: &macroedit::Palette
                 let i = col as usize + 10 * (pal as usize - 1);
                 let cursor = (pv.cols[pal as usize - 1] == col && pv.focus == pal).then_some(pv.focused);
                 let resp = keycap(ui, m, col as usize, pv.titles.get(i).map_or("", |t| t.as_str()), cursor, false);
-                if resp.hovered() && moved && pv.focused {
-                    mouse.cell.0 = Some((pal, col));
-                }
                 if resp.clicked() {
-                    mouse.cell.1 = Some((pal, col));
+                    mouse.cell = Some((pal, col));
                 }
             }
         });
@@ -245,7 +308,7 @@ fn palettes(ui: &mut Ui, m: &super::Modern, gu: &GameUi, pv: &macroedit::Palette
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         for (o, fallback) in [(1u16, "Copy"), (2, "Paste"), (3, "Delete")] {
-            if button(ui, m, &caption(gu, macroedit::BEDIT, o, fallback), 110.0, pv.bopt == Some(o), o == 2 && !pv.paste_ok) {
+            if button(ui, m, &caption(gu, macroedit::BEDIT, o, fallback), 110.0, Btn { cursor: pv.bopt == Some(o), off: o == 2 && !pv.paste_ok, ..Default::default() }) {
                 mouse.bopt = Some(o);
             }
         }
@@ -253,13 +316,13 @@ fn palettes(ui: &mut Ui, m: &super::Modern, gu: &GameUi, pv: &macroedit::Palette
 }
 
 /// The macro: its key, Prev / Next, the title and six lines (the edited one live), mcrledit's rows as buttons.
-fn editor(ui: &mut Ui, m: &super::Modern, gu: &GameUi, e: &macroedit::EditorView, moved: bool, mouse: &mut Mouse) {
+fn editor(ui: &mut Ui, m: &super::Modern, gu: &GameUi, e: &macroedit::EditorView, mouse: &mut Mouse) {
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(&e.label).size(m.theme.ui).color(m.theme.color("gold")));
         ui.add_space(12.0);
         for (c, fallback) in [(1u16, "Prev"), (2, "Next")] {
-            if button(ui, m, &caption(gu, macroedit::MACRO, c, fallback), 80.0, e.sel == c && e.focused, false) {
-                mouse.field.1 = Some(c);
+            if button(ui, m, &caption(gu, macroedit::MACRO, c, fallback), 80.0, Btn { cursor: e.sel == c && e.focused, ..Default::default() }) {
+                mouse.field = Some(c);
             }
         }
     });
@@ -272,16 +335,13 @@ fn editor(ui: &mut Ui, m: &super::Modern, gu: &GameUi, e: &macroedit::EditorView
         ui.painter().text(pos2(r.min.x + 50.0, r.center().y), Align2::RIGHT_CENTER, label, FontId::proportional(m.theme.small), m.theme.color("muted"));
         let (at, font) = (pos2(r.min.x + 60.0, r.center().y), FontId::monospace(m.theme.small));
         if e.editing == Some(f) {
-            caret_text(ui, m, at, text, e.caret, font, r.max.x - 8.0);
+            kit::caret_text(ui, m, at, text, Some(e.caret), font, r.max.x - 8.0);
         } else {
             let clip = Rect::from_min_max(r.min, pos2(r.max.x - 8.0, r.max.y));
             ui.painter().with_clip_rect(clip).text(at, Align2::LEFT_CENTER, text, font, m.theme.color("text"));
         }
-        if e.focused && resp.hovered() && moved {
-            mouse.field.0 = Some(child);
-        }
         if resp.clicked() && e.editing.is_none() {
-            mouse.field.1 = Some(child);
+            mouse.field = Some(child);
         }
         ui.add_space(2.0);
     }
@@ -289,29 +349,11 @@ fn editor(ui: &mut Ui, m: &super::Modern, gu: &GameUi, e: &macroedit::EditorView
     let on_line = (4..=9).contains(&e.sel) && e.editing.is_none();
     ui.horizontal(|ui| {
         for (o, fallback) in [(1u16, "Copy Line"), (2, "Paste Line"), (3, "Delete Line")] {
-            if button(ui, m, &caption(gu, macroedit::LEDIT, o, fallback), 120.0, e.lopt == Some(o), !on_line || (o == 2 && !e.paste_ok)) {
+            if button(ui, m, &caption(gu, macroedit::LEDIT, o, fallback), 120.0, Btn { cursor: e.lopt == Some(o), off: !on_line || (o == 2 && !e.paste_ok), ..Default::default() }) {
                 mouse.lopt = Some(o);
             }
         }
     });
-}
-
-/// A field being typed in: its text from `at` (left, centred on y), the blinking caret before char `caret`; a line
-/// longer than the room up to `right` is scrolled so the caret stays in view.
-fn caret_text(ui: &Ui, m: &super::Modern, at: egui::Pos2, text: &str, caret: usize, font: FontId, right: f32) {
-    let colour = m.theme.color("text");
-    let width = |s: &str| ui.painter().layout_no_wrap(s.to_string(), font.clone(), colour).size().x;
-    let pre: String = text.chars().take(caret).collect();
-    let dx = width(&pre);
-    let shift = (dx + 4.0 - (right - at.x)).max(0.0);
-    let clip = Rect::from_min_max(pos2(at.x - 2.0, at.y - 20.0), pos2(right, at.y + 20.0));
-    let p = ui.painter().with_clip_rect(clip.intersect(ui.clip_rect()));
-    p.text(pos2(at.x - shift, at.y), Align2::LEFT_CENTER, text, font.clone(), colour);
-    if (ui.ctx().input(|i| i.time) * 1.5) as u64 % 2 == 0 {
-        let x = at.x - shift + dx;
-        let h = font.size * 0.6;
-        p.line_segment([pos2(x, at.y - h), pos2(x, at.y + h)], egui::Stroke::new(1.5, colour));
-    }
 }
 
 /// The palette while Ctrl or Alt is held (FUN_101a3b20): its ten keys over the chat window, the cursor's cell lit.
@@ -349,12 +391,11 @@ const TILE: f32 = 52.0;
 /// slots (an item's icon, Remove's cross, Keep the slot's name) beside the storage as tabs and its list.
 fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
     let (m, ctx) = (p.m, p.ctx);
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let Some(info) = w.item_info.clone() else { return };
     let title = gu.title_msg(0xac).unwrap_or_else(|| "Equipment Sets".into());
     let enter = |w: &mut World| macroedit::key(w, gu, egui::Key::Enter);
     if let Some(e) = &v.editor {
-        let (mut tile_click, mut row) = (None, (None, None));
+        let (mut tile_click, mut row) = (None, None);
         let mut store = None;
         let mut done = false;
         p.panel("window", Some(Title { icon: Some("icons/equip_set"), text: &title, note: v.names.get(v.row).map(|s| s.as_str()) }), 4.0 * (TILE + 8.0) + 380.0 + 60.0, |ui| {
@@ -401,7 +442,7 @@ fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
                         }
                     }
                     ui.add_space(8.0);
-                    if button(ui, m, "Done", 120.0, false, false) {
+                    if button(ui, m, "Done", 120.0, Btn::default()) {
                         done = true;
                     }
                 });
@@ -418,9 +459,13 @@ fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
                     }
                     ui.add_space(6.0);
                     let tall = 10.0 * (ROW + 4.0);
+                    let follow = m.moved("equip set list", e.cur.unwrap_or(usize::MAX));
                     egui::ScrollArea::vertical().id_salt("set list").max_height(tall).min_scrolled_height(tall).auto_shrink([false, true]).show(ui, |ui| {
                         for (k, (id, name, count, tint)) in e.rows.iter().enumerate() {
                             let (r, resp) = ui.allocate_exact_size(vec2(366.0, ROW + 2.0), Sense::click());
+                            if e.cur == Some(k) && follow {
+                                ui.scroll_to_rect(r, None);
+                            }
                             row_face(ui, m, r, e.cur == Some(k), e.on_list, resp.hovered());
                             if *id != 0
                                 && let Some(t) = m.item_icon(ctx, &info, *id)
@@ -432,11 +477,8 @@ fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
                             if *count > 1 {
                                 ui.painter().text(pos2(r.max.x - 12.0, r.center().y), Align2::RIGHT_CENTER, count.to_string(), FontId::proportional(m.theme.small), m.theme.color("text"));
                             }
-                            if resp.hovered() && moved && e.on_list {
-                                row.0 = Some(k);
-                            }
                             if resp.clicked() {
-                                row.1 = Some(k);
+                                row = Some(k);
                             }
                             ui.add_space(2.0);
                         }
@@ -447,12 +489,7 @@ fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
         if let Some(c) = store {
             esedit::set_container(w, c);
         }
-        if let Some(k) = row.0
-            && esedit::set_row(w, k)
-        {
-            w.sounds.push(crate::audio::Ui::Cursor as u32);
-        }
-        if let Some(k) = row.1 {
+        if let Some(k) = row {
             esedit::set_row(w, k);
             enter(w);
         }
@@ -468,7 +505,7 @@ fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
         }
         return;
     }
-    let (mut page, mut row, mut opt) = (None, (None, None), (None, None));
+    let (mut page, mut row, mut opt) = (None, None, None);
     p.panel("window", Some(Title { icon: Some("icons/equip_set"), text: &title, note: None }), BOOK_W + social::width(1) + 12.0, |ui| {
         let pages: Vec<String> = (1..=10).map(|k| k.to_string()).collect();
         let labels: Vec<&str> = pages.iter().map(String::as_str).collect();
@@ -488,14 +525,11 @@ fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
                     ui.painter().text(pos2(r.min.x + 40.0, r.center().y), Align2::RIGHT_CENTER, format!("{}", v.page * 20 + k + 1), font.clone(), m.theme.color("muted"));
                     let at = pos2(r.min.x + 52.0, r.center().y);
                     match &v.rename {
-                        Some(t) if k == v.row => caret_text(ui, m, at, t, v.rename_caret, font, r.max.x),
+                        Some(t) if k == v.row => kit::caret_text(ui, m, at, t, Some(v.rename_caret), font, r.max.x),
                         _ => _ = ui.painter().text(at, Align2::LEFT_CENTER, name, font, m.theme.color("text")),
                     }
-                    if v.focused && resp.hovered() && moved {
-                        row.0 = Some(k);
-                    }
                     if v.focused && resp.clicked() {
-                        row.1 = Some(k);
+                        row = Some(k);
                     }
                     ui.add_space(2.0);
                 }
@@ -503,19 +537,14 @@ fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
             if let Some(o) = v.opt {
                 ui.add_space(12.0);
                 let mw = MenuWin { name: "menu    mcresmn", sel: o, off: v.off.clone(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
-                opt = social::stack(ui, m, gu, std::slice::from_ref(&mw), true, moved);
+                opt = social::stack(ui, m, gu, std::slice::from_ref(&mw), true);
             }
         });
     });
     if let Some(k) = page {
         esmenu::go_page(w, k);
     }
-    if let Some(k) = row.0
-        && esmenu::set_row(w, k)
-    {
-        w.sounds.push(crate::audio::Ui::Cursor as u32);
-    }
-    if let Some(k) = row.1 {
+    if let Some(k) = row {
         esmenu::set_row(w, k);
         enter(w);
     }

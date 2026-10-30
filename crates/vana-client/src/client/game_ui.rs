@@ -19,6 +19,9 @@ pub const WHITE: [u8; 4] = [0x80; 4];
 pub const YELLOW: [u8; 4] = [0x30, 0x78, 0x80, 0x80];
 pub const GREY: [u8; 4] = [0x58, 0x58, 0x58, 0x80];
 
+/// The modern window frame's corner in egui points (the pack's nine-slice, as the panels draw it).
+const MODERN_CORNER: f32 = 24.0;
+
 /// Parsed resources; loaded off the UI thread.
 pub struct GameUiData {
     lobby: UiFile,
@@ -203,6 +206,8 @@ pub struct GameUi {
     /// The modern frame for the retail windows (made on first use; None inside when the pack has none).
     modern_frame: Option<Option<crate::render::ui::ModernFrame>>,
     skin_on: bool,
+    /// UI pixels per modern (egui) point: the retail windows' modern frame is drawn at the panels' size.
+    pub modern_scale: f32,
     /// The lobby's help line for the modern layer's help bar (the login form sets it).
     pub modern_help: Option<(String, [u8; 4])>,
     started: Instant,
@@ -326,7 +331,7 @@ pub struct WorldView<'a> {
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
         crate::render::ui::set_caption_words(caption_words(&data));
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), modern_frame: None, skin_on: false, modern_help: None, started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), modern_order: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, log_bottom: None, target_up: false, walk: Walk::default(), focus: (None, None), presses: Default::default() }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), modern_frame: None, skin_on: false, modern_scale: 1.0, modern_help: None, started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), modern_order: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, log_bottom: None, target_up: false, walk: Walk::default(), focus: (None, None), presses: Default::default() }
     }
 
     /// FUN_1015e530 / FUN_101177d0 for a window drawn this frame with frame rect `r`: false while it opens (only the
@@ -1283,12 +1288,25 @@ impl GameUi {
         if on && self.modern_frame.is_none() {
             let f = super::modern::frame_image("window_normal").map(|fi| {
                 self.image("modern frame", fi.size[0] as u32, fi.size[1] as u32, fi.rgba);
-                crate::render::ui::ModernFrame { texture: "modern frame".into(), corner_uv: fi.corner_uv, corner: 6.0, top: fi.top, bottom: fi.bottom, inset: fi.inset }
+                crate::render::ui::ModernFrame { texture: "modern frame".into(), corner_uv: fi.corner_uv, corner: MODERN_CORNER, top: fi.top, bottom: fi.bottom, inset: fi.inset }
             });
             self.modern_frame = Some(f);
         }
         self.skin_on = on;
-        self.batch.modern = if on { self.modern_frame.clone().flatten() } else { None };
+        self.batch.modern = self.skin();
+    }
+
+    /// How far the modern frame stands out past a retail window (0 with the skin off): windows placed by an edge keep
+    /// that far in.
+    pub fn modern_margin(&self) -> f32 {
+        self.skin().map_or(0.0, |f| f.grow())
+    }
+
+    /// The modern frame at the panels' size (its corner in UI pixels), while the skin is on.
+    fn skin(&self) -> Option<crate::render::ui::ModernFrame> {
+        let mut f = self.modern_frame.clone().flatten().filter(|_| self.skin_on)?;
+        f.corner = MODERN_CORNER * self.modern_scale;
+        Some(f)
     }
 
     /// The retail windows' frames drawn this frame in the modern skin (UI pixels).
@@ -1299,7 +1317,7 @@ impl GameUi {
     /// Starts an empty frame (the HUD frame: name plates, then the windows).
     pub fn clear(&mut self) {
         self.batch = UiBatch::default();
-        self.batch.modern = if self.skin_on { self.modern_frame.clone().flatten() } else { None };
+        self.batch.modern = self.skin();
         self.log_top = None;
         self.log_bottom = None;
         self.target_up = false;

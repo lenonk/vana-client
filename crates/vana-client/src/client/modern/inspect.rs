@@ -6,7 +6,6 @@
 use super::super::{World, inspect, linkshell, mannequin, textcmd};
 use super::craft::{button, list, tile};
 use super::{Panels, Title};
-use crate::audio::Ui as Se;
 use crate::inventory::SLOT_CHILD;
 use egui::{Color32, Rect, Sense, pos2, vec2};
 
@@ -24,7 +23,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let Some(cursor) = w.inspect.win.as_ref().map(|x| x.cursor) else { return };
     let m = p.m;
     let ctx = p.ctx;
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let free = w.confirm.is_none();
     let name = textcmd::display_name(w, w.inspect.expect.0);
     // The help bar's line (inspect::bars): "Lv.75 Ninja / Lv.37 Thief", or ? ? ? when anonymous.
@@ -33,7 +31,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let jobs = bars.help[2].clone();
     let (view, enabled) = inspect::view_wares(w);
     let ls = w.inspect.info.as_ref().filter(|g| g.ls_item != 0).map(|g| (linkshell::ls_name(&g.ls_name), g.ls_item, g.ls_colour));
-    let (mut hover, mut click) = (None, None);
+    let mut click = None;
     p.panel("check", Some(Title { icon: Some("icons/find"), text: &name, note: None }), GRID_W + 44.0, |ui| {
         if !jobs.is_empty() {
             ui.label(egui::RichText::new(&jobs).size(m.theme.ui).color(m.theme.color("gold")));
@@ -45,9 +43,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             let r = Rect::from_min_size(area.min + vec2(col as f32 * PITCH, row as f32 * PITCH), vec2(SLOT, SLOT));
             let icon = w.inspect.slots[slot].and_then(|(item, _)| m.item_icon(ctx, &info, item));
             let resp = tile(ui, m, r, egui::Id::unique(("check slot", slot)), icon, 0, (cursor == child).then_some(true), false);
-            if free && resp.hovered() && moved {
-                hover = Some(child);
-            }
             if free && resp.clicked() {
                 click = Some(child);
             }
@@ -81,11 +76,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             }
         }
     });
-    if let Some(k) = hover
-        && inspect::set_cursor(w, k)
-    {
-        w.sounds.push(Se::Cursor as u32);
-    }
     if let Some(k) = click {
         inspect::set_cursor(w, k);
         inspect::key(w, gu, egui::Key::Enter);
@@ -104,10 +94,9 @@ pub fn dress(p: &mut Panels, w: &mut World) {
     let Some(v) = mannequin::look(w) else { return };
     let m = p.m;
     let ctx = p.ctx;
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let free = w.confirm.is_none();
     let title = gu.title_msg(4).filter(|t| !t.is_empty()).unwrap_or_else(|| "Layout".into());
-    let (mut grid, mut rows) = ((None, None), (None, None));
+    let (mut grid, mut rows) = (None, None);
     p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None }), GRID_W + 16.0 + LIST_W + 44.0, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
@@ -122,19 +111,14 @@ pub fn dress(p: &mut Panels, w: &mut World) {
                     let resp = tile(ui, m, r, egui::Id::unique(("dress slot", child)), icon, 0, lit, false);
                     if v.off.contains(&child) {
                         ui.painter().rect_filled(r.shrink(4.0), 6.0, Color32::from_black_alpha(140));
-                    } else {
-                        if free && resp.hovered() && moved {
-                            grid.0 = Some(child);
-                        }
-                        if free && resp.clicked() {
-                            grid.1 = Some(child);
-                        }
+                    } else if free && resp.clicked() {
+                        grid = Some(child);
                     }
                 }
                 ui.add_space(8.0);
                 let label = gu.sprite_caption("menu    windowps", 545).unwrap_or_else(|| "Remove all".into());
                 if button(ui, m, &label, GRID_W, v.on_grid && v.cursor == mannequin::REMOVE, !v.any_worn) && free {
-                    grid.1 = Some(mannequin::REMOVE);
+                    grid = Some(mannequin::REMOVE);
                 }
             });
             ui.add_space(16.0);
@@ -147,23 +131,12 @@ pub fn dress(p: &mut Panels, w: &mut World) {
     if !free {
         return;
     }
-    let cursor = |w: &mut World| w.sounds.push(Se::Cursor as u32);
-    if let Some(k) = grid.0
-        && mannequin::set_grid(w, k)
-    {
-        cursor(w);
-    }
-    if let Some(k) = grid.1 {
+    if let Some(k) = grid {
         mannequin::set_grid(w, k);
         mannequin::key(w, gu, egui::Key::Enter);
         return;
     }
-    if let Some(k) = rows.0
-        && mannequin::set_list(w, k)
-    {
-        cursor(w);
-    }
-    if let Some(k) = rows.1 {
+    if let Some(k) = rows {
         mannequin::set_list(w, k);
         mannequin::key(w, gu, egui::Key::Enter);
     }

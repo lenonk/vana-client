@@ -21,8 +21,8 @@ const TALL: f32 = 12.0 * (ROW + 2.0);
 /// What the mouse did on the top pane, the price and shopsell this frame.
 #[derive(Default)]
 struct Mouse {
-    menu: (Option<u16>, Option<u16>),
-    row: (Option<usize>, Option<usize>),
+    menu: Option<u16>,
+    row: Option<usize>,
     key: Option<egui::Key>,
     money: Option<u32>,
     shopsell: Option<u16>,
@@ -42,15 +42,14 @@ fn heading(ui: &mut Ui, m: &super::Modern, text: &str) {
 }
 
 /// Item rows (the list, the inventory for sale): icon, the stack size, the name in its tint, the cell at the right; the
-/// cursor's kept in view. (hovered, clicked) on the pane with the keys.
+/// cursor's kept in view. The row clicked on the pane with the keys.
 #[allow(clippy::too_many_arguments)]
-fn item_rows(ui: &mut Ui, m: &super::Modern, info: &ItemCache, salt: &str, rows: &[PaneRow], cur: usize, focused: bool, note: Option<&str>) -> (Option<usize>, Option<usize>) {
+fn item_rows(ui: &mut Ui, m: &super::Modern, info: &ItemCache, salt: &str, rows: &[PaneRow], cur: usize, focused: bool, note: Option<&str>) -> Option<usize> {
     let ctx = ui.ctx().clone();
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let seen = egui::Id::unique((salt, "auction cursor seen"));
     let follow = ctx.data(|d| d.get_temp::<usize>(seen)) != Some(cur);
     ctx.data_mut(|d| d.insert_temp(seen, cur));
-    let (mut hover, mut click) = (None, None);
+    let mut click = None;
     egui::ScrollArea::vertical().id_salt(salt).max_height(TALL).auto_shrink([false, true]).show(ui, |ui| {
         for (k, r) in rows.iter().enumerate() {
             let (rect, resp) = ui.allocate_exact_size(vec2(LIST_W - 14.0, ROW), Sense::click());
@@ -73,9 +72,6 @@ fn item_rows(ui: &mut Ui, m: &super::Modern, info: &ItemCache, salt: &str, rows:
             if k == cur && follow {
                 ui.scroll_to_rect(rect, None);
             }
-            if focused && resp.hovered() && moved {
-                hover = Some(k);
-            }
             if focused && resp.clicked() {
                 click = Some(k);
             }
@@ -85,15 +81,18 @@ fn item_rows(ui: &mut Ui, m: &super::Modern, info: &ItemCache, salt: &str, rows:
             ui.label(egui::RichText::new(n).size(m.theme.small).color(m.theme.color("muted")));
         }
     });
-    (hover, click)
+    click
 }
 
 /// The price history: date, seller → buyer, price per sale.
-fn history_rows(ui: &mut Ui, m: &super::Modern, rows: &[[String; 4]], cur: usize, focused: bool, note: Option<&str>) -> (Option<usize>, Option<usize>) {
-    let moved = ui.ctx().input(|i| i.pointer.delta() != egui::Vec2::ZERO);
-    let (mut hover, mut click) = (None, None);
-    for (k, r) in rows.iter().enumerate() {
+fn history_rows(ui: &mut Ui, m: &super::Modern, rows: &[[String; 4]], cur: usize, focused: bool, note: Option<&str>) -> Option<usize> {
+    let mut click = None;
+    let follow = m.moved("auction history", cur);
+    super::kit::scroll(ui, "auction history", TALL, |ui| for (k, r) in rows.iter().enumerate() {
         let (rect, resp) = ui.allocate_exact_size(vec2(HIST_W - 14.0, ROW - 4.0), Sense::click());
+        if k == cur && follow {
+            ui.scroll_to_rect(rect, None);
+        }
         let face = match () {
             _ if k == cur && focused => "controls/list_row_selected",
             _ if resp.hovered() => "controls/list_row_hover",
@@ -105,18 +104,15 @@ fn history_rows(ui: &mut Ui, m: &super::Modern, rows: &[[String; 4]], cur: usize
         ui.painter().text(pos2(rect.min.x + 10.0, y), Align2::LEFT_CENTER, &r[0], font.clone(), m.theme.color("muted"));
         ui.painter().text(pos2(rect.min.x + 150.0, y), Align2::LEFT_CENTER, format!("{}  →  {}", r[1], r[2]), font.clone(), text);
         ui.painter().text(pos2(rect.max.x - 10.0, y), Align2::RIGHT_CENTER, &r[3], font, text);
-        if focused && resp.hovered() && moved {
-            hover = Some(k);
-        }
         if focused && resp.clicked() {
             click = Some(k);
         }
         ui.add_space(2.0);
-    }
+    });
     if let Some(n) = note {
         ui.label(egui::RichText::new(n).size(m.theme.small).color(m.theme.color("muted")));
     }
-    (hover, click)
+    click
 }
 
 /// The idle search field: "Search the auction house" until it is clicked or typed into. True when clicked.
@@ -135,13 +131,12 @@ fn search_box(ui: &mut Ui, m: &super::Modern) -> bool {
 
 /// One pane as a column.
 fn pane(ui: &mut Ui, m: &super::Modern, gu: &GameUi, info: &ItemCache, p: &Pane, focused: bool, mouse: &mut Mouse) {
-    let moved = ui.ctx().input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     ui.vertical(|ui| {
         ui.set_width(width(p));
         match p {
             Pane::Menu { name, sel, off, labels } => {
                 let v = MenuWin { name, sel: *sel, off: off.clone(), labels: labels.clone(), marked: Vec::new(), values: Vec::new() };
-                let got = social::column(ui, m, gu, &v, focused, moved);
+                let got = social::column(ui, m, gu, &v, focused);
                 if focused {
                     mouse.menu = got;
                 }
@@ -196,7 +191,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     }
     let loading = auction::index(w).is_none();
     let (mut found, mut start) = (super::lists::Mouse::default(), false);
-    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let wide = if search.is_some() { LIST_W + 44.0 } else { 0.0 };
     p.panel("window", Some(Title { icon: Some("icons/currency"), text: &title, note: Some(&gil) }), total.max(MENU_W + 44.0).max(wide), |ui| {
         if let Some((text, sel, hits, icons)) = search.as_ref().filter(|s| !s.0.is_empty()) {
@@ -207,7 +201,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                 ui.label(egui::RichText::new(format!("Searching{dots}")).size(m.theme.ui).color(m.theme.color("muted")));
                 return;
             }
-            found = super::lists::search_rows(ui, m, w, icons, text, *sel, hits, moved);
+            found = super::lists::search_rows(ui, m, w, icons, text, *sel, hits);
             return;
         }
         if searchable {
@@ -276,22 +270,12 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         auction::key(w, k);
         return;
     }
-    if let Some(sel) = mouse.menu.0
-        && auction::set_menu(w, sel)
-    {
-        cursor(w);
-    }
-    if let Some(sel) = mouse.menu.1 {
+    if let Some(sel) = mouse.menu {
         auction::set_menu(w, sel);
         auction::key(w, egui::Key::Enter);
         return;
     }
-    if let Some(k) = mouse.row.0
-        && auction::set_row(w, k)
-    {
-        cursor(w);
-    }
-    if let Some(k) = mouse.row.1 {
+    if let Some(k) = mouse.row {
         auction::set_row(w, k);
         auction::key(w, egui::Key::Enter);
     }

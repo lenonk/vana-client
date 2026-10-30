@@ -1949,7 +1949,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.pupset.is_some() && world.confirm.is_none() => pupset::key(world, gu, *key),
                 _ if world.moncustom.is_some() && world.confirm.is_none() => moncustom::key(world, gu, *key),
                 _ if world.prompt.is_none() && world.confirm.is_none() && (world.cats.is_some() || world.magic.is_some() || world.ability.is_some()) => {
-                    magic::key(world, *key);
+                    if !modern::magic_key(world, *key) {
+                        magic::key(world, *key);
+                    }
                 }
                 egui::Key::H if modifiers.ctrl || modifiers.alt => {
                     world.sounds.push(crate::audio::Ui::Select as u32);
@@ -1964,16 +1966,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     world.timers.toggle();
                     world.sounds.push(crate::audio::Ui::Cursor as u32);
                 }
-                // Our settings screen, then the Config windows, take the keys while open (in the modern Config, while
-                // its page is open there; its Escape goes back to the list).
-                _ if world.settings.is_some() && !(world.modern && world.config.as_ref().is_some_and(|c| !c.m_open)) => {
+                // Our settings screen, then the Config windows, take the keys while open (in the modern Config ours is
+                // one of its pages, keyed there).
+                _ if world.settings.is_some() && !(world.modern && world.config.is_some()) => {
                     let mut s = world.settings.take().unwrap();
                     let closes = s.key_mod(*key, modifiers.ctrl || modifiers.alt);
-                    let inline = world.modern && world.config.is_some();
-                    if closes && let Some(c) = world.config.as_mut().filter(|_| inline) {
-                        c.m_open = false;
-                    }
-                    if !closes || inline {
+                    if !closes {
                         world.settings = Some(s);
                     }
                     if closes {
@@ -1984,7 +1982,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     }
                 }
                 // The modern Config page takes them while it shows.
-                _ if world.config.is_some() && modern::config_key(world, *key) => {}
+                _ if world.config.is_some() && modern::config_key(world, *key, modifiers.shift) => {}
                 _ if world.config.is_some() => {
                     let out = world.config.as_mut().unwrap().key(gu, &mut world.game, *key, sw);
                     config_out(world, out);
@@ -2044,7 +2042,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.keyitems.is_some() => keyitems::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.primer.is_some() => primer::key(world, *key, modifiers.ctrl || modifiers.alt),
                 _ if helpdesk::focused(world) => helpdesk::key(world, *key),
-                _ if world.macroedit.is_some() => macroedit::key(world, gu, *key),
+                _ if world.macroedit.is_some() => {
+                    if !modern::macro_key(world, gu, *key, modifiers.shift) {
+                        macroedit::key(world, gu, *key);
+                    }
+                }
                 _ if world.blklist.is_some() => blklist::key(world, *key),
                 _ if world.linklist.is_some() => linklist::key(world, gu, *key),
                 _ if world.linkshell.is_some() => linkshell::key(world, gu, *key),
@@ -10545,6 +10547,10 @@ impl App {
                         }
                         match act {
                             Some(twofa::Act::Close) => self.twofa = None,
+                            Some(twofa::Act::Copy(code)) => {
+                                log::info!("clipboard: copied {} chars", code.chars().count());
+                                ctx.copy_text(code);
+                            }
                             Some(twofa::Act::Send(command, otp)) => {
                                 let p = password.clone();
                                 action = Some(Box::new(move |app: &mut App| app.twofa_send(command, p, otp)));
@@ -10736,7 +10742,7 @@ impl App {
                                 let mut outs = Vec::new();
                                 for ev in &input.events {
                                     if let egui::Event::Key { key, pressed: true, modifiers, .. } = ev {
-                                        outs.push(modern::lobby_config_key(c, &mut self.lobby_values, self.lobby_settings.as_mut(), *key, modifiers.ctrl || modifiers.alt, sw));
+                                        outs.push(modern::lobby_config_key(c, &mut self.lobby_values, self.lobby_settings.as_mut(), *key, modifiers.shift, sw));
                                     }
                                 }
                                 let mo = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
@@ -11440,6 +11446,7 @@ impl App {
                 }
                 if let Some(gu) = self.game_ui.as_mut() {
                     self.ui_drawn = true;
+                    gu.modern_scale = ctx.pixels_per_point() * self.ui_k.1;
                     gu.set_style(world.game.get(0x12) as usize);
                     window_closes(world, &input.events);
                     self.hud_blockers = world_hud(gu, world, &input, screen_size, &mut self.keys, view_proj, self.numpad_slash);

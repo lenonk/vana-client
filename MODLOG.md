@@ -12440,3 +12440,50 @@ since "Ship voyages: the moving world" listed them as not done.
 - Also: the skillchain helper's height no longer follows the room down to the panel under it (it grew and shrank as
   it slid); it scrolls past 60% of the screen's height. Edge windows are kept whole on the screen by their own height.
   Seen live: four heights along the right edge, the same window each time.
+
+## The modern UI's widget kit and one key model (ours, 2026-10-30)
+- User: "explain to me why we're not creating reusable widgets in the UI so that similar elements are guaranteed to
+  behave the same way?", then "build the widget kit". The pages each drew and keyed their own rows, sliders, lists and
+  frames, so like controls behaved differently (sliders needing Enter on one page only, lists not following the
+  cursor, hover moving the cursor on some pages, four button copies, eight yes / no copies).
+- modern/kit.rs. A page lists its stops top to bottom: Tabs (Left / Right turn them, Tab / Shift+Tab from anywhere on
+  the page), Value (options as buttons, a toggle or a slider: Left / Right change it at once, Enter steps an option;
+  options off are passed over), Buttons (Left / Right along the row, Enter presses, one off refuses with 0004), List
+  (Up / Down walk it and leave at its ends, Left / Right or Page Up / Down a page, Home / End). Up / Down go round the
+  stops; a list's last row's Down goes to the stop after it; a row of buttons keeps its column only from another row
+  of buttons. `kit::key(stops, &mut at, key, shift)` returns Moved / Set / Press / Refused / Back.
+- The widgets: button (one look: lit, off, the cursor's ring), setting (heading over its control, ringed and kept in
+  view when the cursor comes to it), line (label left, control right), choice, buttons, slider (click or drag),
+  tab_strip (tabs.rs's look with the cursor), list (scroll area, row faces, follow), scroll (the bar shown whenever
+  the content is longer), yes_no, chevrons (stacked up / down), colour_picker (sRGB hue / saturation / value square
+  and strip), field / caret_text, frame / inset.
+- The mouse everywhere in the modern layer: hovering only lights a control (41 places moved the cursor on hover; all
+  gone, the command and battle menus, the lobby rows, the prompts, the lists, the 2FA window's buttons too); a click
+  puts the cursor there and takes it (the magic, ability, item and equipment lists took two clicks once hover no longer
+  pre-selected).
+- egui's scroll bars are solid (8 px, the pack's bronze on charcoal): its default floating bars were hidden until
+  hovered, so long lists looked like they had none.
+- On the kit: the Config pages (native pages, Chat Filters / Effects, Font Colors, Extras, Settings, Mods; the title's
+  Config too), the magic and ability lists' sort strip (a row of buttons above the rows: Up from the first row, retail
+  reaches it only by Num+), the macro palettes (the sets a tab strip, Tab turns them; Copy / Paste / Delete a row under
+  the keys) and editor (Prev / Next, title and lines, then Copy / Paste / Delete Line: Tab, as retail's Num+, or Down
+  from the last line), the comyn prompt, the "Sort them now?" question.
+- Config: the key assignment pages (k1assign / k2assign) and Misc. 2's "Reset keyboard assignment to default?" are the
+  page's own now (a list with each function's key, a key pressed assigns; the kit's yes / no), not retail's windows
+  over it. Font Colors: a colour row opens a picker with Hue / Saturation / Brightness sliders; the picker shows the
+  colours as they show on screen (a config channel of 0x80 is full: shown = 2 x value, capped).
+- Settings > Mods: each pack ON / OFF, up / down chevrons, Uninstall (asks; deletes the pack's folder under the mods
+  folder off the UI thread), Install from File at the top (a folder and archive picker from Downloads; zip, 7z, rar;
+  read and unpacked off the UI thread), the archives found in Downloads under it as before.
+- Character select (ours): the Settings button is a stop under the list (Down from the last character, Up from the
+  first) and stays shown while its options are open; Escape on the select prompts is No in the modern layer (retail's
+  ptc6yesn ignores it); the log-in prompt is the kit's, larger.
+- The retail windows still drawn in the modern layer (the conquest, Besieged and Colonization maps' windows ...) get
+  the modern frame at the panels' size (its corner 24 egui points in UI pixels: GameUi::modern_scale), standing out
+  past the window by its border and a margin (render/ui.rs push_modern_frame); the map's info windows keep that far
+  in from the screen's edges.
+- The command menu in the Mog House: retail's row 12 is Mog House there (FUN_1013ff90); it is a row of its own, and the
+  map's category keeps Region Info and Current Time.
+- Also: the 2FA recovery code has a Copy button (and Ctrl+C); the weather icon is centred in the whole location panel;
+  the compass's tracked target is larger and pulses; macro keys are plain (no corner ornaments) with their number in
+  white at the top right.

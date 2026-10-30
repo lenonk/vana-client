@@ -12,6 +12,20 @@ Retail limits that only existed because of 2002 hardware, like the 30 fps cap, b
 
 Linux is the current platform. Windows and macOS are planned.
 
+## Two interfaces
+
+The client has two interfaces, switched at any time in Config > Settings > Client > Interface:
+
+- **Classic**: the retail client's own windows, drawn from the game's menu files as the original draws them.
+- **Modern**: a new interface over the same game rules: movable windows, a command menu, mouse support everywhere,
+  tooltips, a minimap, a chat window with tabs, and one consistent set of controls and keys (see
+  [docs/modern-ui.md](docs/modern-ui.md)).
+
+| Modern | Classic |
+|---|---|
+| ![Items in the modern interface](docs/screenshots/modern-items.jpg) | ![Items in the classic interface](docs/screenshots/classic-items.jpg) |
+| ![Config in the modern interface](docs/screenshots/modern-config.jpg) | ![Config in the classic interface](docs/screenshots/classic-config.jpg) |
+
 ## Status
 
 Playable on a local LSB server. Working today:
@@ -31,15 +45,18 @@ Playable on a local LSB server. Working today:
   storage, the map, Party and Level Sync, Linkshell, Search, Missions, Quests, Key Items, Region Info, Bazaar, the
   Help Desk and the macro editor
 - Trading, NPC and guild shops, the Delivery Box and the treasure pool
-- The in-game and lobby Config menus, with an Extras page for additions such as a map overlay and chat timestamps
-- Game updates from the PlayOnline patch server, and HD texture packs through a built-in mod overlay
+- Alter Ego Points, automaton customization, blue magic sets, mounts, the Friend List and PlayOnline messages
+- Fishing, chocobo racing, Monstrosity, Mog House layout, gardening and mannequins
+- The in-game and lobby Config menus, with an Extras page for additions such as a map overlay, a minimap, timers, a
+  skillchain helper and chat timestamps
+- Game updates from the PlayOnline patch server, an Update button for the client itself, and a mod manager for HD
+  texture packs (install from an archive, order, enable, uninstall)
 - Music and sound effects
 
 Not done yet:
 
-- Alter Ego Points, automaton customization, blue magic sets, the mount under its rider and the Friend List
-- Some event script operations and chat log details (the block list among them)
-- An in-client update button, a settings page for mods, a minimap
+- Some event script operations (the mini-games on 0xb3 among them)
+- Gamepad support
 - macOS builds; Windows builds work through a MinGW cross build
 
 ## Requirements

@@ -21,23 +21,20 @@ const POST1: &str = "menu    post1";
 const POST2: &str = "menu    post2";
 const DELIVERY: &str = "menu    delivery";
 
-/// What the mouse asked this frame: a cursor move (hover) and a cursor move with Enter (click), a key from a button,
-/// the gil outright.
+/// What the mouse asked this frame: a cursor move with Enter (a click), a key from a button, the gil outright.
 #[derive(Default)]
 struct Mouse {
-    hover: Option<u16>,
     click: Option<u16>,
     key: Option<egui::Key>,
     money: Option<u32>,
 }
 
 /// The eight slots, two rows of four (child k + 1): the cursor's ring while the slots have the keys, dimmed slots
-/// shaded. (hovered, clicked).
-fn slots(ui: &mut Ui, m: &super::Modern, info: &ItemCache, salt: &str, slots: &[SlotLook; 8], cursor: Option<u16>, sense: bool) -> (Option<u16>, Option<u16>) {
+/// shaded; the slot clicked.
+fn slots(ui: &mut Ui, m: &super::Modern, info: &ItemCache, salt: &str, slots: &[SlotLook; 8], cursor: Option<u16>, sense: bool) -> Option<u16> {
     let ctx = ui.ctx().clone();
-    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let (area, _) = ui.allocate_exact_size(vec2(GRID_W, 2.0 * TILE + GAP), Sense::hover());
-    let (mut hover, mut click) = (None, None);
+    let mut click = None;
     for (k, &(item, count, shown, dim)) in slots.iter().enumerate() {
         let r = Rect::from_min_size(area.min + vec2((k % 4) as f32 * (TILE + GAP), (k / 4) as f32 * (TILE + GAP)), vec2(TILE, TILE));
         let icon = (shown && item != 0).then(|| m.item_icon(&ctx, info, item)).flatten();
@@ -46,14 +43,11 @@ fn slots(ui: &mut Ui, m: &super::Modern, info: &ItemCache, salt: &str, slots: &[
         if dim {
             ui.painter().rect_filled(r.shrink(4.0), 6.0, Color32::from_black_alpha(120));
         }
-        if sense && resp.hovered() && moved {
-            hover = Some(child);
-        }
         if sense && resp.clicked() {
             click = Some(child);
         }
     }
-    (hover, click)
+    click
 }
 
 /// The receive side: post1's slots, the cursor slot's sender, post2's choices while it has the keys.
@@ -62,7 +56,7 @@ fn receive(ui: &mut Ui, m: &super::Modern, gu: &GameUi, info: &ItemCache, look: 
     let (s, cursor, post2, no_return, sender) = look;
     let on_slots = free && post2.is_none();
     let got = slots(ui, m, info, "post1", s, on_slots.then_some(cursor), on_slots);
-    (mouse.hover, mouse.click) = got;
+    mouse.click = got;
     ui.add_space(8.0);
     if let Some(name) = sender {
         let label = gu.item_msg(9, 0x33).unwrap_or_else(|| "Sender:".into());
@@ -157,7 +151,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                         ui.horizontal_top(|ui| {
                             let got = slots(ui, m, &info, "delivery", s, on.then_some(*cursor), can && on);
                             if on {
-                                (mouse.hover, mouse.click) = (got.0.or(mouse.hover), got.1.or(mouse.click));
+                                mouse.click = got.or(mouse.click);
                             }
                             ui.add_space(GAP);
                             ui.vertical(|ui| {
@@ -174,8 +168,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                         ui.vertical(|ui| {
                             ui.set_width(LIST_W);
                             let got = list(ui, m, ctx, &info, "delivery picker", rows, tints, *row, can, &[]);
-                            mouse.hover = mouse.hover.or(got.0.map(|k| k as u16));
-                            mouse.click = mouse.click.or(got.1.map(|k| k as u16));
+                            mouse.click = mouse.click.or(got.map(|k| k as u16));
                         });
                     }
                 });
@@ -201,11 +194,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     if let Some(k) = mouse.key {
         post::key(w, gu, k);
         return;
-    }
-    if let Some(k) = mouse.hover
-        && post::set_cursor(w, k)
-    {
-        cursor(w);
     }
     if let Some(k) = mouse.click {
         post::set_cursor(w, k);
