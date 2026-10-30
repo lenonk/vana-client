@@ -12382,3 +12382,17 @@ since "Ship voyages: the moving world" listed them as not done.
 - Live (Lnxcsfix, 2026-10-30): the chat dragged sideways stays level (top 1297.7 px through the drag); held on the
   right edge it folds into its bottom, the location panel riding on it, and fades out as retail after idling; its left
   grip narrowed it 300 pt with the right side held; pulled 480 pt off, it landed free where its ghost was.
+
+## Escha - Zi'Tah: Affi and the Register of Deeds (2026-10-30; read for the LSB session)
+- User report: talking to Affi (17957449) or the Register of Deeds (17957450) in zone 288 did nothing, on the retail
+  client too. LSB defines both in data/zones/escha_zitah/npcs.yaml but has no scripts for them, so the talk gets a
+  bare release. Not ours: reported to the LSB session with the events below.
+- Their events (event DAT 85023): Affi 9700 (first talk), 9701 (later talks), 9702..9704 (pick a key item); the
+  Register 9708. The full read (start params, every server_update and the reply fields it reads, finish options,
+  the key item shop with its fixed prices, the temporary item table) is in ~/ffxi/lab/research/escha_affi_spec.md.
+- VM facts confirmed on the way (event_vm.rs already does them): message `{num1..7}` are Z3..Z9 and `{num8}` up are
+  G0 up (Affi's code table 0x27ba lists them); `table` sub 5 writes through such a table of register ids.
+- Silt / bead lines in the zone dialogs (LSB ids = installed ids, msgshift delta 0): kill-style "You receive {num0}
+  pinch[/es] of escha silt[ for a total of {num1}]." 288 7712 / 7713, 289 7831 / 7832, 291 7858 / 7859 (beads the next
+  two); chest 7632 / 7751 / 7681 and Domain Invasion 7644-7645 / 7763-7764 / 7693-7694 ("You obtain", colour 0x79).
+  No "can't hold more silt" line exists in any of them *(inf: retail caps silently)*.
