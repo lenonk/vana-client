@@ -192,7 +192,7 @@ fn native_stops(c: &ConfigUi, v: &Values, all: &[Shape], sw: f32) -> Vec<Stop> {
                 let off = s.ctls.iter().enumerate().filter(|(_, (k, _))| c.off(s.menu, *k, sw)).fold(0u64, |m, (j, _)| m | 1 << j);
                 Stop::Value { n: s.ctls.len(), at: s.ctls.iter().position(|(_, ctl)| holds(c, v, *ctl)).unwrap_or(0), slider: false, off }
             }
-            _ => Stop::Buttons { n: 1, off: c.off(s.menu, s.ctls[0].0, sw) as u64 },
+            _ => Stop::Buttons { n: 1, off: c.off(s.menu, s.ctls[0].0, sw) as u64, pair: None },
         })
         .collect()
 }
@@ -273,9 +273,9 @@ fn mods_stops(s: &SettingsUi) -> Vec<Stop> {
     let (packs, archives) = s.mods_rows();
     let busy = s.mods_state().is_some_and(|m| m.installing().is_some());
     let n = packs.len();
-    let mut out = vec![Stop::Tabs { n: s.view().tabs.len(), at: s.view().tab }, Stop::Buttons { n: 1, off: busy as u64 }];
-    out.extend((0..n).map(|i| Stop::Buttons { n: 4, off: ((i == 0) as u64) << 1 | ((i + 1 == n) as u64) << 2 }));
-    out.extend(archives.iter().map(|_| Stop::Buttons { n: 1, off: busy as u64 }));
+    let mut out = vec![Stop::Tabs { n: s.view().tabs.len(), at: s.view().tab }, Stop::Buttons { n: 1, off: busy as u64, pair: None }];
+    out.extend((0..n).map(|i| Stop::Buttons { n: 4, off: ((i == 0) as u64) << 1 | ((i + 1 == n) as u64) << 2, pair: Some(1) }));
+    out.extend(archives.iter().map(|_| Stop::Buttons { n: 1, off: busy as u64, pair: None }));
     out
 }
 
@@ -624,13 +624,18 @@ fn colour_rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, cu: &ConfigUi, v: &V
         let c = rgb(v.get(id));
         let col = super::chat::colour(crate::dat::battle::argb_bytes(v.get(id)));
         let open = focus.is_some_and(|f| f / 3 == i);
-        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
+        // The colour's name, its sample in the colour under it (side by side, long names ran into it); each wraps, the
+        // row as tall as they need.
+        let (font, room) = (FontId::proportional(m.theme.small), ui.available_width() - 50.0);
+        let name = ui.painter().layout(gu.group_b(label as usize).unwrap_or_default(), font.clone(), if open { m.theme.color("gold") } else { m.theme.color("text") }, room);
+        let line = ui.painter().layout(gu.group_b(sample as usize).unwrap_or_default(), font, col, room);
+        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), name.size().y + line.size().y + 14.0), Sense::click());
         let face = if open { "controls/list_row_selected" } else if resp.hovered() { "controls/list_row_hover" } else { "controls/list_row_normal" };
         super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
         let p = ui.painter();
         p.rect_filled(Rect::from_min_size(pos2(r.min.x + 12.0, r.center().y - 8.0), vec2(16.0, 16.0)), 3.0, Color32::from_rgb(c[0], c[1], c[2]));
-        p.text(pos2(r.min.x + 38.0, r.center().y), Align2::LEFT_CENTER, gu.group_b(label as usize).unwrap_or_default(), FontId::proportional(m.theme.small), if open { m.theme.color("gold") } else { m.theme.color("text") });
-        p.text(pos2(r.max.x - 12.0, r.center().y), Align2::RIGHT_CENTER, gu.group_b(sample as usize).unwrap_or_default(), FontId::proportional(m.theme.small), col);
+        p.galley(pos2(r.min.x + 38.0, r.min.y + 5.0), name.clone(), Color32::WHITE);
+        p.galley(pos2(r.min.x + 38.0, r.min.y + 9.0 + name.size().y), line, Color32::WHITE);
         if resp.clicked() && !open {
             *click = Some(Click::Focus(i * 3));
         }

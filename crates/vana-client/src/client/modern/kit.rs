@@ -14,8 +14,9 @@ pub enum Stop {
     /// A value of `n` steps (options as buttons, a toggle, a slider): Left / Right change it at once, Enter steps an
     /// option on; options in `off` (a bit each) are passed over.
     Value { n: usize, at: usize, slider: bool, off: u64 },
-    /// A row of `n` buttons: Left / Right move along it, Enter presses the cursor's (one in `off` refuses).
-    Buttons { n: usize, off: u64 },
+    /// A row of `n` buttons: Left / Right move along it, Enter presses the cursor's (one in `off` refuses). `pair`: the
+    /// first of two stacked one over the other (a pair of chevrons), Up / Down moving between them before leaving.
+    Buttons { n: usize, off: u64, pair: Option<usize> },
     /// A list of `n` rows, `page` in view: Up / Down walk it and leave at its ends, Left / Right a page, Enter takes the
     /// cursor's row.
     List { n: usize, page: usize },
@@ -112,6 +113,12 @@ pub fn key(stops: &[Stop], at: &mut At, key: Key, shift: bool) -> Act {
         },
         Key::ArrowUp | Key::ArrowDown => {
             let down = key == Key::ArrowDown;
+            if let Stop::Buttons { pair: Some(k), .. } = here
+                && at.sub == if down { k } else { k + 1 }
+            {
+                at.sub = if down { k + 1 } else { k };
+                return Act::Moved;
+            }
             if let Stop::List { n, .. } = here {
                 at.sub = at.sub.min(n.saturating_sub(1));
                 // Inside the list; at its end on to the stop beyond (itself again round the ends when it is alone).
@@ -261,14 +268,19 @@ pub fn setting<R>(ui: &mut Ui, m: &Modern, heading: &str, focus: bool, ring_it: 
     (out, r)
 }
 
-/// A one-line setting: `label` at the left, what `right` draws at the right, ringed while the cursor is on it and
-/// scrolled into view when it has just come there. What `right` gave and the line's rect.
+/// A one-line setting: what `right` draws at the right, `label` in the room left of it (wrapping there, never pushing
+/// the controls out), ringed while the cursor is on it and scrolled into view when it has just come there. What
+/// `right` gave and the line's rect.
 pub fn line<R>(ui: &mut Ui, m: &Modern, label: &str, focus: bool, follow: bool, right: impl FnOnce(&mut Ui) -> R) -> (R, Rect) {
     let inner = ui.horizontal(|ui| {
-        ui.set_min_height(30.0);
+        ui.set_min_height(34.0);
         let c = if focus { m.theme.color("gold") } else { m.theme.color("text") };
-        ui.label(egui::RichText::new(label).size(m.theme.small).color(c));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), right).inner
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let out = right(ui);
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| ui.add(egui::Label::new(egui::RichText::new(label).size(m.theme.small).color(c)).wrap()));
+            out
+        })
+        .inner
     });
     let r = inner.response.rect.expand2(vec2(6.0, 2.0));
     if focus {
@@ -277,7 +289,7 @@ pub fn line<R>(ui: &mut Ui, m: &Modern, label: &str, focus: bool, follow: bool, 
             ui.scroll_to_rect(r, None);
         }
     }
-    ui.add_space(4.0);
+    ui.add_space(10.0);
     (inner.inner, r)
 }
 
@@ -311,9 +323,18 @@ pub fn buttons(ui: &mut Ui, m: &Modern, labels: &[&str], cursor: Option<usize>, 
     out
 }
 
-/// A slider of `n` stops at `at` with its value shown at its right; the stop the pointer took (a click or a drag).
+/// A slider of `n` stops at `at` with its value shown at its right, or, when the value is too long for that room, on
+/// a line of its own over the track (wrapped, never cut); the stop the pointer took (a click or a drag).
 pub fn slider(ui: &mut Ui, m: &Modern, n: usize, at: usize, shown: &str) -> Option<usize> {
-    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width() - 110.0, 20.0), Sense::click_and_drag());
+    const ROOM: f32 = 110.0;
+    let avail = ui.available_width();
+    let value = ui.painter().layout(shown.to_string(), FontId::proportional(m.theme.small), m.theme.color("text"), avail);
+    let beside = value.rows.len() <= 1 && value.size().x + 12.0 <= ROOM;
+    if !beside {
+        let (vr, _) = ui.allocate_exact_size(vec2(avail, value.size().y), Sense::hover());
+        ui.painter().galley(pos2(vr.max.x - value.size().x, vr.min.y), value.clone(), Color32::WHITE);
+    }
+    let (r, resp) = ui.allocate_exact_size(vec2(avail - ROOM, 20.0), Sense::click_and_drag());
     let f = if n > 1 { at as f32 / (n - 1) as f32 } else { 1.0 };
     let track = r.shrink2(vec2(0.0, 6.0));
     let p = ui.painter();
@@ -321,7 +342,9 @@ pub fn slider(ui: &mut Ui, m: &Modern, n: usize, at: usize, shown: &str) -> Opti
     p.rect_filled(Rect::from_min_max(track.min, pos2(r.min.x + r.width() * f, track.max.y)), 4.0, m.theme.color("bronze"));
     let knob = if resp.hovered() || resp.dragged() { m.theme.color("text") } else { m.theme.color("gold") };
     p.circle(pos2(r.min.x + r.width() * f, r.center().y), 7.5, knob, Stroke::new(1.0, Color32::from_black_alpha(200)));
-    p.text(pos2(r.max.x + 12.0, r.center().y), Align2::LEFT_CENTER, shown, FontId::proportional(m.theme.small), m.theme.color("text"));
+    if beside {
+        p.galley(pos2(r.max.x + 12.0, r.center().y - value.size().y / 2.0), value, Color32::WHITE);
+    }
     if (resp.clicked() || resp.dragged())
         && let Some(x) = resp.interact_pointer_pos()
     {
@@ -617,7 +640,7 @@ mod tests {
 
     #[test]
     fn walks_stops_and_lists() {
-        let stops = [Stop::Buttons { n: 3, off: 0 }, Stop::List { n: 4, page: 2 }];
+        let stops = [Stop::Buttons { n: 3, off: 0, pair: None }, Stop::List { n: 4, page: 2 }];
         let mut at = At::new(1, 0);
         assert_eq!(key(&stops, &mut at, Key::ArrowUp, false), Act::Moved);
         assert_eq!(at, At::new(0, 0));
@@ -655,6 +678,23 @@ mod tests {
         for c in [[255, 0, 0], [12, 200, 90], [128, 128, 128], [0, 0, 0], [255, 255, 255], [30, 60, 250]] {
             assert_eq!(from_hsv(to_hsv(c)), c);
         }
+    }
+
+    #[test]
+    fn stacked_buttons_take_up_and_down() {
+        let stops = [Stop::List { n: 2, page: 2 }, Stop::Buttons { n: 4, off: 0, pair: Some(1) }, Stop::List { n: 2, page: 2 }];
+        let mut at = At::new(1, 1);
+        key(&stops, &mut at, Key::ArrowDown, false);
+        assert_eq!(at, At::new(1, 2));
+        key(&stops, &mut at, Key::ArrowUp, false);
+        assert_eq!(at, At::new(1, 1));
+        // From the lower one Down leaves the row; from the upper one Up does.
+        at = At::new(1, 2);
+        key(&stops, &mut at, Key::ArrowDown, false);
+        assert_eq!(at, At::new(2, 0));
+        at = At::new(1, 1);
+        key(&stops, &mut at, Key::ArrowUp, false);
+        assert_eq!(at, At::new(0, 1));
     }
 
     #[test]

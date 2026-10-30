@@ -4,7 +4,7 @@
 use super::chat::{self, ChatView, InputView};
 use super::super::combat::NO_MODE;
 use super::hud::{self, Effect, Icon, PartyRow, StatusView, TargetView, WhereView};
-use super::{Layout, Modern, Panels, paint};
+use super::{Layout, Modern, Panels, Title, kit, paint};
 use crate::render::Gpu;
 use anyhow::{Context as _, Result};
 use egui::{Color32, Id, LayerId, Order, Pos2, Rect, pos2, vec2};
@@ -41,6 +41,21 @@ fn list_sample(p: &mut Panels) {
 }
 
 /// The main menu as command.rs draws it, Journal open with its submenu: a hovered row, one disabled.
+/// The kit's controls as a Config page has them: sliders with a short and a long value, options, a long-labelled line.
+fn kit_sample(p: &mut Panels) {
+    let m = p.m;
+    p.panel("window", Some(Title { icon: Some("icons/config"), text: "Config", note: None }), 640.0, |ui| {
+        ui.set_width(440.0);
+        kit::setting(ui, m, "Resolution", false, true, false, |ui| kit::slider(ui, m, 17, 16, "2560x1440"));
+        kit::setting(ui, m, "GPU", true, true, false, |ui| kit::slider(ui, m, 3, 1, "AMD Radeon RX 6800 XT (RADV NAVI21)"));
+        kit::setting(ui, m, "3D Aspect", false, true, false, |ui| kit::choice(ui, m, &["Window".to_string(), "Config".to_string()], 1, 0));
+        kit::line(ui, m, "1. a-pack-with-a-rather-long-folder-name-from-an-archive-2019-final", false, false, |ui| {
+            kit::button(ui, m, "Uninstall", 0.0, kit::Btn::default());
+            kit::button(ui, m, "ON", 64.0, kit::Btn { lit: true, ..Default::default() });
+        });
+    });
+}
+
 fn menu_sample(p: &mut Panels) {
     let m = p.m;
     let [top, journal] = super::command::sample();
@@ -170,6 +185,9 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     if opts.list {
         list_sample(&mut p);
     }
+    if opts.kit {
+        kit_sample(&mut p);
+    }
     if opts.rows.is_some() || opts.borders.is_some() {
         menu_sample(&mut p);
     }
@@ -178,7 +196,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
         edge_sample(m, ctx);
         skillchain_sample(m, ctx);
     }
-    if opts.list || opts.rows.is_some() || opts.borders.is_some() {
+    if opts.list || opts.kit || opts.rows.is_some() || opts.borders.is_some() {
         return;
     }
     // Every frame at a few sizes: nine-slice corners, tiled edges, the stretched gradient.
@@ -209,6 +227,8 @@ pub struct Opts {
     pub borders: Option<String>,
     /// The windows' background opacity.
     pub opacity: f32,
+    /// A panel of the kit's controls.
+    pub kit: bool,
 }
 
 pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &Path, opts: &Opts) -> Result<()> {

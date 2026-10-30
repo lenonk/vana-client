@@ -108,7 +108,7 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key, shift: bool) -> bool {
     let enter = |w: &mut World| macroedit::key(w, gu, K::Enter);
     let sound = |w: &mut World, a: kit::Act| w.sounds.extend(a.sound().map(|s| s as u32));
     if let Some(pv) = &v.palettes {
-        let stops = [Stop::Tabs { n: 10, at: pv.set }, Stop::Buttons { n: 10, off: 0 }, Stop::Buttons { n: 10, off: 0 }, Stop::Buttons { n: 3, off: (!pv.paste_ok as u64) << 1 }];
+        let stops = [Stop::Tabs { n: 10, at: pv.set }, Stop::Buttons { n: 10, off: 0, pair: None }, Stop::Buttons { n: 10, off: 0, pair: None }, Stop::Buttons { n: 3, off: (!pv.paste_ok as u64) << 1, pair: None }];
         let mut at = match pv.bopt {
             _ if pv.tabs => At::new(0, 0),
             Some(o) => At::new(3, o as usize - 1),
@@ -157,7 +157,7 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key, shift: bool) -> bool {
         w.sounds.push(crate::audio::Ui::Cursor as u32);
         return true;
     }
-    let stops = [Stop::Buttons { n: 2, off: 0 }, Stop::List { n: 7, page: 7 }, Stop::Buttons { n: 3, off: if line { (!e.paste_ok as u64) << 1 } else { 0b111 } }];
+    let stops = [Stop::Buttons { n: 2, off: 0, pair: None }, Stop::List { n: 7, page: 7 }, Stop::Buttons { n: 3, off: if line { (!e.paste_ok as u64) << 1 } else { 0b111 }, pair: None }];
     let mut at = match e.lopt {
         Some(o) => At::new(2, o as usize - 1),
         None if e.sel <= 2 => At::new(0, e.sel as usize - 1),

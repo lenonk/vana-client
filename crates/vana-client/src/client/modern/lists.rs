@@ -402,7 +402,7 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
         return true;
     }
     let n = win.rows.len();
-    let stops = [kit::Stop::Buttons { n: sort_labels(menu).len(), off: 0 }, kit::Stop::List { n, page: VISIBLE }];
+    let stops = [kit::Stop::Buttons { n: sort_labels(menu).len(), off: 0, pair: None }, kit::Stop::List { n, page: VISIBLE }];
     let mut at = match win.sort_focus {
         Some(c) => kit::At::new(0, c as usize - 1),
         None => kit::At::new(1, win.scroll + win.cursor),
