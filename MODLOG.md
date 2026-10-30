@@ -12267,3 +12267,12 @@ since "Ship voyages: the moving world" listed them as not done.
 - Qulun Dome (148), for the LSB walkthrough: arrival A (337.9, 20.1) reaches the Quadav Crest ??? only through _441;
   the Magicite reaches arrival C (2.9, 60.0) only through _440 (from the Magicite out: its raised floor is not entered
   by this walk's 1.2 step); arrival B is a closed pocket (533 cells) even with every door open.
+
+## map-borders: where a zone's maps meet (2026-10-30; tool)
+
+- `map-borders ZONE A B`: floor triangles (|normal y| > 0.6) of sub-map key A whose corners lie within 0.6 of key-B
+  floor corners (Ground::key_borders), clustered within 8, each with its square on both maps; also each key's floor
+  triangle count.
+- Beadeaux (147): keys 1 (map 1, lower; 114,776 floor triangles) and 15 (map 2, upper; 45,027) meet at four ramps,
+  all near y 11.5: (230.5, 6.6) K-8, (-193.4, 30.5) F-8, (-33.4, 89.5) H-7, (153.4, 150.5) J-6 (the same squares on
+  both maps). zone-path from the Pashhow arrival reaches only the H-7 one.

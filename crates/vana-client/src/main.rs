@@ -145,6 +145,12 @@ enum Cmd {
         #[arg(long, allow_hyphen_values = true)]
         closed: Option<String>,
     },
+    /// Where the floors of two sub-map keys meet (the walks between a zone's maps), each with its square on both maps.
+    MapBorders {
+        zone: u32,
+        a: u8,
+        b: u8,
+    },
     /// Each ground position's map (the sub-map key under it, its map number) and grid square, as the location panel
     /// shows it (FUN_101f7600).
     MapGrid {
@@ -1406,6 +1412,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         Cmd::ZonePath { zone, from, to, open_doors, closed } => zone_path(zone, &from, &to, open_doors, closed.as_deref()),
+        Cmd::MapBorders { zone, a, b } => client::map_borders(zone, a, b),
         Cmd::MapGrid { zone, points } => {
             let pts: Vec<[f32; 3]> = points.iter().map(|s| -> Result<[f32; 3]> {
                 let v: Vec<f32> = s.split(',').map(|v| Ok(v.trim().parse::<f32>()?)).collect::<Result<_>>()?;

@@ -390,6 +390,44 @@ impl Ground {
         kept.into_iter().collect()
     }
 
+    /// Where floor of sub-map key `a` meets floor of key `b` (a corner of one within 0.6 of a corner of the other),
+    /// clustered within 8: each meeting's centre and how many corners touch (map-borders). Also the keys present.
+    pub fn key_borders(&self, a: u8, b: u8) -> (Vec<(Vec3, usize)>, Vec<(u8, usize)>) {
+        let floor = |i: usize| self.normals.get(i).is_some_and(|n| n.y.abs() > 0.6);
+        let mut keys: std::collections::BTreeMap<u8, usize> = Default::default();
+        for (i, k) in self.map_keys.iter().enumerate().filter(|(i, _)| floor(*i)) {
+            *keys.entry(*k).or_default() += i.min(1).max(1);
+        }
+        let cell = |p: Vec3| (p.x.floor() as i32, p.z.floor() as i32);
+        let mut grid: HashMap<(i32, i32), Vec<Vec3>> = HashMap::new();
+        for i in (0..self.tris.len()).filter(|&i| self.map_keys[i] == b && floor(i)) {
+            for p in self.tris[i] {
+                grid.entry(cell(p)).or_default().push(p);
+            }
+        }
+        let mut hits: Vec<Vec3> = Vec::new();
+        for i in (0..self.tris.len()).filter(|&i| self.map_keys[i] == a && floor(i)) {
+            for p in self.tris[i] {
+                let (cx, cz) = cell(p);
+                let near = (-1..=1).any(|dx| (-1..=1).any(|dz| grid.get(&(cx + dx, cz + dz)).is_some_and(|v| v.iter().any(|q| q.distance(p) < 0.6))));
+                if near {
+                    hits.push(p);
+                }
+            }
+        }
+        let mut clusters: Vec<(Vec3, usize)> = Vec::new();
+        for p in hits {
+            match clusters.iter_mut().find(|(c, n)| (*c / *n as f32).distance(p) < 8.0) {
+                Some((c, n)) => {
+                    *c += p;
+                    *n += 1;
+                }
+                None => clusters.push((p, 1)),
+            }
+        }
+        (clusters.into_iter().map(|(c, n)| (c / n as f32, n)).collect(), keys.into_iter().collect())
+    }
+
     /// Each door's id and the centre of its box (zone-path's listing).
     pub fn door_boxes(&self) -> Vec<(u32, Vec3)> {
         let mut sum: std::collections::BTreeMap<u32, (Vec3, f32)> = Default::default();

@@ -13746,3 +13746,25 @@ pub fn map_grid(zone: u32, points: &[[f32; 3]]) -> Result<()> {
     }
     Ok(())
 }
+
+/// `map-borders`: where the floors of sub-map keys `a` and `b` meet, with each meeting's grid square on both maps.
+pub fn map_borders(zone: u32, a: u8, b: u8) -> Result<()> {
+    let cfg = Config::load();
+    let index = crate::dat::DatIndex::open(&cfg.ffxi_dir())?;
+    let dll = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?;
+    let keys = crate::dat::zone::Keys::from_ffximain(&dll)?;
+    let g = ground::Ground::build(&crate::dat::zone::load_scene(&keys, &index.read(crate::dat::zone::file_id(zone))?)?);
+    let regions = map::regions(&dll);
+    let (meets, present) = g.key_borders(a, b);
+    println!("floor triangles by sub-map key: {present:?}");
+    let square = |k: u8, p: Vec3| {
+        map::Region::find_key(&regions, zone as u16, k).map_or("(no map)".to_string(), |r| {
+            let (px, py) = r.px(p.x, p.z);
+            format!("map {} {}", r.num, r.grid(px, py))
+        })
+    };
+    for (p, n) in meets {
+        println!("({:.1}, {:.1}, {:.1}) {n} corners: key {a} {}, key {b} {}", p.x, p.y, p.z, square(a, p), square(b, p));
+    }
+    Ok(())
+}
