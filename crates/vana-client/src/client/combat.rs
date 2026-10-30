@@ -302,7 +302,7 @@ pub(super) fn who(w: &World, id: u32) -> Option<Who> {
         return Some(Who { name: super::monstrosity::my_name(w).to_string(), pc: true, female: matches!(w.my_race, 2 | 4 | 6 | 7), ..Default::default() });
     }
     // A Monipulator's shown name (FUN_100c1190 slots 0 / 1); still a PC id: no article.
-    w.entities.get(&id).map(|e| Who { name: super::monstrosity::name(e).to_string(), pc: id < 0x0100_0000, named: e.named, plural: e.plural, female: e.female })
+    w.entities.get(&id).map(|e| Who { name: super::monstrosity::name(e).to_string(), pc: id < 0x0100_0000, named: e.named, plural: e.plural, female: e.female, ..Default::default() })
 }
 
 /// s2c 0x05A (LAB_100a06e0): dropped for emote 0x61+ or a caster / target not here. The caster plays it (FUN_100a0b90)
@@ -484,9 +484,29 @@ fn targets_text(g: &Targets) -> String {
     g.template.replacen(NAME, &names, 1).replacen(&SLOT.to_string(), &join(&values), 1)
 }
 
-/// A target as a merged line names it: "the" before a common noun, as the messages do.
+/// A target as a merged line names it: "the" before a common noun, as the messages do (in its colour, when it has one).
 fn target_name(t: &Who) -> String {
-    if t.pc || t.named { t.name.clone() } else { format!("the {}", t.name) }
+    let name = if t.colour == 0 { t.name.clone() } else { format!("{}{}{}", crate::dat::font::colour_code(t.colour), t.name, crate::dat::font::colour_code(1)) };
+    if t.pc || t.named { name } else { format!("the {name}") }
+}
+
+/// Ours (Extras' Battle Names, client/battlemod.rs): a name's colour by who it is: us, our party (trusts and pets in
+/// it too), the alliance, a monster our party claimed or someone else's claim; others keep the line's colour.
+fn name_colour(w: &World, id: u32) -> u8 {
+    use super::battlemod::colour;
+    let party = |id: u32| w.party.party().any(|m| m.id == id);
+    let ours = |claim: u32| claim == w.my_id || party(claim);
+    if id == w.my_id || (w.my_pet != 0 && w.entities.get(&id).is_some_and(|e| e.index == w.my_pet)) {
+        colour::ME
+    } else if party(id) {
+        colour::PARTY
+    } else if w.party.members().any(|m| m.id == id) {
+        colour::ALLIANCE
+    } else if let Some(e) = w.entities.get(&id).filter(|e| e.mob && e.claim != 0) {
+        if ours(e.claim) { colour::OUR_CLAIM } else { colour::OTHER_CLAIM }
+    } else {
+        0
+    }
 }
 
 /// A record of an action on several targets: its target line (the one naming the target, the number all else that
@@ -506,7 +526,7 @@ fn condense_targets(w: &mut World, bt: &battle::BattleText, m: &Msg, lines: &[(S
         (single.len() == lines.len() && lines[k].0 == own).then(|| (tc, k, single[k].0.clone()))
     });
     let Some((mut tc, k, single)) = found else { return false };
-    tc.target = Some(Who { name: NAME.into(), pc: true, named: true, plural: true, female: false });
+    tc.target = Some(Who { name: NAME.into(), pc: true, named: true, plural: true, colour: target.colour, ..Default::default() });
     let Some(mut template) = render(bt, m.id, rel, &tc, &w.game).get(k).map(|l| l.0.clone()).filter(|t| t.contains(NAME)) else { return false };
     // A possessive ("X's attacks"): each name keeps its own ("Lnxcsfix's and Aurelie's"), not the plural's "X'".
     let mut name = target_name(&target);
@@ -632,16 +652,22 @@ fn print(w: &mut World, m: Msg) {
     if bt.off_channel(m.id, 0, &w.game) {
         return;
     }
-    let ctx = Ctx { actor: who(w, m.actor), target: who(w, m.target), me: w.name.clone(), work: m.work, keys: keys(w), ..Default::default() };
-    let lines = render(&bt, m.id, relation(w, m.actor, m.target), &ctx, &w.game);
-    if w.modern && w.condense && m.which == Some(0) && condense_crit(w, &bt, &m, &ctx) {
+    let coloured = |w: &World, id: u32| who(w, id).map(|x| Who { colour: if w.name_colours { name_colour(w, id) } else { 0 }, ..x });
+    let ctx = Ctx { actor: coloured(w, m.actor), target: coloured(w, m.target), me: w.name.clone(), work: m.work, keys: keys(w), ..Default::default() };
+    let mut lines = render(&bt, m.id, relation(w, m.actor, m.target), &ctx, &w.game);
+    // Extras' Battle Text: Short replaces the message with its short line; such lines are not condensed.
+    let short = w.short_battle.then(|| super::battlemod::shorten(&lines.iter().map(|l| l.0.clone()).collect::<Vec<_>>(), ctx.actor.as_ref(), ctx.target.as_ref())).flatten();
+    let condense_on = w.modern && w.condense && short.is_none();
+    if let (Some(s), Some(c)) = (short, lines.first().map(|l| l.1)) {
+        lines = vec![(s, c)];
+    }
+    if condense_on && m.which == Some(0) && condense_crit(w, &bt, &m, &ctx) {
         return;
     }
-    if w.modern && w.condense && m.which == Some(0) && m.multi && condense_targets(w, &bt, &m, &lines, &ctx) {
+    if condense_on && m.which == Some(0) && m.multi && condense_targets(w, &bt, &m, &lines, &ctx) {
         return;
     }
-    if w.modern
-        && w.condense
+    if condense_on
         && let (Some(which), [(line, _)]) = (m.which, lines.as_slice())
         && condense(w, &bt, &m, which, line, &ctx)
     {
@@ -1960,7 +1986,7 @@ mod tests {
     #[test]
     fn targets_merged() {
         let Some(bt) = load() else { return };
-        let plural = Who { name: NAME.into(), pc: true, named: true, plural: true, female: false };
+        let plural = Who { name: NAME.into(), pc: true, named: true, plural: true, ..Default::default() };
         let ctx = Ctx { actor: who(ME), target: Some(plural), me: "Tuxedo".into(), work: [0, SLOT, 0, 0, 0], ..Default::default() };
         let t = render(&bt, 264, Relation::Other, &ctx, &Default::default())[0].0.clone();
         assert_eq!(t, format!("{NAME} take {SLOT} points of damage."));

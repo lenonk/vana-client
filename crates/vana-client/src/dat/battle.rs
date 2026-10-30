@@ -50,6 +50,16 @@ pub struct Who {
     pub plural: bool,
     /// 0x00D u32 @0x20 bit 15 clear (our own: the race): [his/her] (7f 90 / 91).
     pub female: bool,
+    /// Ours (Extras' Battle Names): the name drawn in this `1e` colour code, 0 none (client/battlemod.rs).
+    pub colour: u8,
+}
+
+impl Who {
+    /// The name as the text takes it: in `1e colour` .. `1e 01` when it has a colour.
+    fn coded(&self) -> Vec<u8> {
+        let name = encode_sjis(&self.name);
+        if self.colour == 0 { name } else { [&[0x1e, self.colour][..], &name, &[0x1e, 1]].concat() }
+    }
 }
 
 /// What the codes read: the two actors, our own name and work[5] (message object +0xc50).
@@ -487,8 +497,8 @@ impl BattleText {
                     match body.first() {
                         // Kinds 1 / 2 (FUN_1025a400(0 / 1)): an article for the next noun.
                         Some(&k @ (0x01 | 0x02)) => pending = Some((line_no, out.len(), k == 0x02)),
-                        Some(0x10) => out.extend(encode_sjis(&ctx.actor.as_ref().map_or(String::new(), |w| w.name.clone()))),
-                        Some(0x11) => out.extend(encode_sjis(&ctx.target.as_ref().map_or(String::new(), |w| w.name.clone()))),
+                        Some(0x10) => out.extend(ctx.actor.as_ref().map_or(Vec::new(), Who::coded)),
+                        Some(0x11) => out.extend(ctx.target.as_ref().map_or(Vec::new(), Who::coded)),
                         // FUN_1021d5f0 / FUN_1021d650: the status noun (field 0, "stun") / adjective (field 1, "stunned").
                         Some(0x13) => out.extend(Self::msg_of(&self.statuses, work(slot))),
                         Some(0x14) => out.extend(self.statuses.as_ref().and_then(|m| m.raw_field(work(slot).max(0) as usize, 1)).unwrap_or_default()),
@@ -589,11 +599,11 @@ impl BattleText {
                 // 1c n (FUN_100c1650, 0x100c24f7): string slot n.
                 0x1c => {
                     let s = match a {
-                        0 => ctx.actor.as_ref().map(|w| w.name.clone()),
-                        1 => ctx.target.as_ref().map(|w| w.name.clone()),
-                        n => ctx.strings.get(n as usize - 2).cloned(),
+                        0 => ctx.actor.as_ref().map(Who::coded),
+                        1 => ctx.target.as_ref().map(Who::coded),
+                        n => ctx.strings.get(n as usize - 2).map(|s| encode_sjis(s)),
                     };
-                    out.extend(encode_sjis(&s.unwrap_or_default()));
+                    out.extend(s.unwrap_or_default());
                     2
                 }
                 // 0a n (0x100c24aa): num[n] as "%d" (the queue entry +0xc64; equal to work for FUN_100a1ab0 lines).
@@ -929,7 +939,7 @@ mod tests {
         assert_eq!(b.expand(15, &back).unwrap().plain(), ["The Wild Rabbit misses Tuxedo."]);
         assert_eq!(b.expand(6, &ctx).unwrap().plain(), ["Tuxedo defeats the Wild Rabbit."]);
         // Named (proper noun) and plural monsters: "Ding Bats hit".
-        let bats = Ctx { actor: Some(Who { name: "Ding Bats".into(), named: true, plural: true, pc: false, female: false }), target: pc("Tuxedo"), ..ctx.clone() };
+        let bats = Ctx { actor: Some(Who { name: "Ding Bats".into(), named: true, plural: true, ..Default::default() }), target: pc("Tuxedo"), ..ctx.clone() };
         assert_eq!(b.expand(1, &bats).unwrap().plain(), ["Ding Bats hit Tuxedo for 5 points of damage."]);
         // Experience (0x02D work[0]) and level up, which sets mode 0x79 with 1f 'y'.
         let exp = Ctx { actor: pc("Tuxedo"), target: pc("Tuxedo"), work: [50, 0, 0, 0, 0], ..Default::default() };

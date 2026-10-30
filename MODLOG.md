@@ -12180,3 +12180,23 @@ since "Ship voyages: the moving world" listed them as not done.
   the n lamps in its buffer). Offscreen: a small warm pool by the airship's engines, nothing else moved.
 - The scan log line now also prints when its counts change (glows, data lights, shells), so zone-shot shows zones
   whose glows are all lit already.
+
+## Extras: Battle Text (short) and Battle Names (coloured) (2026-10-29; ours, Battlemod's simplify and colours)
+
+- Two Extras rows, off by default: Battle Text Retail / Short (config `short_battle`), Battle Names Plain / Coloured
+  (`battle_name_colours`). Both UIs.
+- Names: dat::battle::Who.colour; the expander wraps the actor / target name (grammar kinds 0x10 / 0x11, code 1c 0 / 1)
+  in `1e colour` .. `1e 01`, after any article. combat::name_colour for battle messages only (print): us and our pet
+  7 (pale yellow), our party (trusts and pets in it) 6 (cyan), the alliance 3 (blue), a monster our party claimed 8
+  (orange), anyone else's claim 5 (magenta), others the line's colour (table 0x103353c8, x2 as drawn). The condensed
+  target lists keep each name's colour.
+- Short (client/battlemod.rs): the message's retail lines read back with the actor's and target's printed forms ("The
+  Wild Rabbit", "the Wild Rabbit", "Wild Rabbit") as tokens, then matched: "A hits T for N points of damage." / "A
+  misses T." / "A uses X, but misses T." / "A uses X on T." on one line; "A uses / casts X." or "A scores a critical
+  hit!" or "Skillchain: S." over a target line (takes N points of damage, recovers N HP / MP, gains / receives the
+  effect of E, E effect wears off, N HP / MP drained, resists, no effect, evades, a Magic Burst! prefix); a target line
+  alone. Out: "A [X] → T: R" (R: N, N! for a critical, miss, +N HP, +E, -E, resisted, ...), "T: R" alone. Anything else
+  prints as retail. Short lines are not condensed (the modern chat's repeat fold still counts equal lines).
+- `battle-dump [ids]`: every basic battle message's English text with sample names and its raw codes.
+- Live (Lnxtest at a Snipper, modern UI): "Snipper → Lnxtest: 17", "Lnxtest → Snipper: miss (x2)", "32!" for a
+  critical, the claimed Snipper orange; "uses Provoke on the Snipper" then added as a form.

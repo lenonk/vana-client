@@ -108,6 +108,10 @@ pub struct Config {
     pub hide_trust_speech: bool,
     /// Extra (Battlemod's filters): "readies" / "starts casting" lines only for us and monsters.
     pub hide_ready_lines: bool,
+    /// Extras (Battlemod's simplify and colours, client/battlemod.rs): battle lines in their short form; names in
+    /// battle lines coloured by who they are.
+    pub short_battle: bool,
+    pub battle_name_colours: bool,
     /// Extra (the text auto-advance add-ons): an event message waiting for a key goes on by itself after this many
     /// seconds; 0 off.
     pub auto_advance: u32,
@@ -289,6 +293,8 @@ impl Default for Config {
             lamp_lights: true,
             hide_trust_speech: false,
             hide_ready_lines: false,
+            short_battle: false,
+            battle_name_colours: false,
             auto_advance: 0,
             timers: false,
             timers_dock: 0,

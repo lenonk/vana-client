@@ -218,6 +218,11 @@ enum Cmd {
         #[arg(value_parser = parse_num)]
         ids: Vec<u32>,
     },
+    /// Battle messages (the basic message file): each id's raw codes and its English text with sample names and numbers.
+    BattleDump {
+        #[arg(value_parser = parse_num)]
+        ids: Vec<u32>,
+    },
     /// The opening movie's frames (mov/mov999.pmv, config 0022) as PNGs, by display index, and the decode speed; with
     /// --size WxH each one drawn through the GPU pass into a window of that size, as the client shows it.
     MovieShot {
@@ -1526,6 +1531,7 @@ fn main() -> Result<()> {
         }
         Cmd::UiDump { id, out } => uishot::ui_dump(id, &out),
         Cmd::TexDump { ids, random, file, out } => tex_dump(&ids, random, &file, &out),
+        Cmd::BattleDump { ids } => battle_dump(&ids),
         Cmd::MovieShot { frames, out, size } => movie_shot(&frames, &out, size.as_deref()),
         Cmd::TexExport { out } => texpack::export(&out),
         Cmd::StatusDump { out } => texpack::status_dump(&out),
@@ -2318,6 +2324,23 @@ fn movie_shot(frames: &[u32], out: &std::path::Path, size: Option<&str>) -> Resu
         enc.write_header()?.write_image_data(&rgb)?;
     }
     println!("{} frames in {:.2} s ({}x{} at {:.2} fps)", last + 1, t.elapsed().as_secs_f32(), d.width, d.height, d.fps);
+    Ok(())
+}
+
+/// `battle-dump`: raw codes (printable bytes as text, the rest as <xx>) and the text with Actor / Target, work 11..15.
+fn battle_dump(ids: &[u32]) -> Result<()> {
+    let cfg = config::Config::load();
+    let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
+    let bt = dat::battle::BattleText::load(&index, &std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?)?;
+    let who = |n: &str, pc| Some(dat::battle::Who { name: n.into(), pc, ..Default::default() });
+    let ctx = dat::battle::Ctx { actor: who("Actor", true), target: who("Wild Rabbit", false), me: "Actor".into(), work: [11, 12, 13, 14, 15], ..Default::default() };
+    let all: Vec<u32> = if ids.is_empty() { (0..2000).collect() } else { ids.to_vec() };
+    for id in all {
+        let Some(raw) = bt.raw(id as u16).filter(|r| !r.is_empty()) else { continue };
+        let codes: String = raw.iter().map(|&b| if (0x20..0x7f).contains(&b) { (b as char).to_string() } else { format!("<{b:02x}>") }).collect();
+        let text = bt.expand(id as u16, &ctx).map(|l| l.lines.iter().map(|t| dat::font::strip_codes(t)).collect::<Vec<_>>().join(" / ")).unwrap_or_default();
+        println!("{id}\t{text}\t{codes}");
+    }
     Ok(())
 }
 

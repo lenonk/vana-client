@@ -3,6 +3,7 @@
 pub mod ground;
 pub mod combat;
 mod actmotion;
+mod battlemod;
 pub mod opening;
 mod flyover;
 mod resttick;
@@ -5654,6 +5655,9 @@ struct World {
     earth_clock: bool,
     hide_trust_speech: bool,
     hide_ready_lines: bool,
+    /// Config `short_battle` / `battle_name_colours` (extras, client/battlemod.rs).
+    short_battle: bool,
+    name_colours: bool,
     key_items: Vec<u32>,
     /// "Downloading data ..." (menu chdummy in mode 2, FUN_1022eca0): when it opened; up from the lobby's
     /// world entry or the server's zone change until the zone has loaded (FUN_100135c0 closes it).
@@ -6589,6 +6593,7 @@ impl App {
             w.stamp_all_lines = self.cfg.stamp_all_lines;
             (w.target_distance, w.target_hpp, w.auto_advance) = (self.cfg.target_distance, self.cfg.target_hpp, self.cfg.auto_advance);
             (w.earth_clock, w.hide_trust_speech, w.hide_ready_lines) = (self.cfg.earth_clock, self.cfg.hide_trust_speech, self.cfg.hide_ready_lines);
+            (w.short_battle, w.name_colours) = (self.cfg.short_battle, self.cfg.battle_name_colours);
             w.extra_timers = self.cfg.timers;
             w.extra_regime = self.cfg.regime;
             w.extra_skillchain = self.cfg.skillchain_helper;
@@ -7232,6 +7237,8 @@ impl App {
                             shadow_slots: Default::default(),
                             hide_trust_speech: self.cfg.hide_trust_speech,
                             hide_ready_lines: self.cfg.hide_ready_lines,
+                            short_battle: self.cfg.short_battle,
+                            name_colours: self.cfg.battle_name_colours,
                             target_since: Instant::now(),
                             cam_turn: (0.0, 0.0),
                             sounds: Vec::new(),
