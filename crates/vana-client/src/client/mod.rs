@@ -12516,6 +12516,8 @@ impl App {
                 let leads: HashMap<u32, f32> = w.actors.iter().filter_map(|(id, a)| Some((*id, frame_of(w.actors.get(&a.motion_link?)?)?))).collect();
                 let me = w.my_id;
                 let mut far_out: HashSet<u32> = HashSet::new();
+                // The event's actors log their motion changes as ours do (cutscene reports).
+                let event_ids: HashSet<u32> = w.event.as_ref().map(|l| l.st.bound.clone()).unwrap_or_default();
                 let mut seen: HashMap<u32, shadows::Seen> = HashMap::new();
                 for (id, a) in w.actors.iter_mut() {
                     let Some(ch) = a.character.clone() else { continue };
@@ -12552,7 +12554,13 @@ impl App {
                         (None, None) if a.jump >= 0.0 && matches!(status, 0 | 1) => ("jmp".to_string(), 1.0, false, crate::motion::BLEND_TICKS),
                         (None, None) => {
                             let (n, r) = crate::motion::choose(&a.motion_names.unwrap_or(ch.motions), status, ratio);
-                            (n.to_string(), r * a.rate_scale, false, crate::motion::BLEND_TICKS)
+                            // FUN_100c6380: a status motion the model lacks is not queued (FUN_100cb8e0 fails, +0x1f6
+                            // stays), so what plays goes on: the walk of an NPC without a run.
+                            if !has(n) && !a.motion.is_empty() && has(&a.motion) {
+                                (a.motion.clone(), a.rate_now, a.once, crate::motion::BLEND_TICKS)
+                            } else {
+                                (n.to_string(), r * a.rate_scale, false, crate::motion::BLEND_TICKS)
+                            }
                         }
                     };
                     a.rate_now = rate;
@@ -12576,6 +12584,8 @@ impl App {
                         // Our own actor's at info (the user's runs log it), the others' at debug.
                         if *id == me {
                             log::info!(target: "motion_me", "{line}");
+                        } else if event_ids.contains(id) {
+                            log::info!(target: "motion_event", "{line}");
                         } else {
                             log::debug!(target: "motion", "{line}");
                         }

@@ -12326,3 +12326,15 @@ since "Ship voyages: the moving world" listed them as not done.
 - Now an event area brings its own SubArea (its RID regions, collision, light and area keys) and the zone's is kept
   in AreaSwitch.home_sub until op 0x35 brings the zone back; while an area shows only the event's requests load
   (no trigger under the player *(inf)*) and an unload sends no 0x0F2 (FUN_10178900 from an event sends none).
+
+## A status motion the model lacks: what plays goes on (2026-10-30)
+- User report: in the Altar Room (152) Verena (event 0x2710, model 79) and Hooknox (event 0x2e, model 85) glided
+  across the floor. Their opening moves are fast (op 0x32 set_speed #23 / #40: 2.3 / 4.0 u/s, ratio 0.58 / 1.0 against
+  0.8 x +0x16c 5.0), so FUN_100c6b70 picks the run (`run?`, model +0x7d0, set by FUN_100c3d20 for every NPC), and
+  neither model has one. Ours fell back to the idle (frames_of's chain), so the body moved in its standing pose.
+- FUN_100c6380: FUN_100cb8e0 fails for a motion the model lacks; +0x1f6 (the status motion playing) and its rate stay,
+  so what plays goes on (only "id1 " -> "idl " and "df1 " -> "dft0" are tried in its place). The ratio eases in
+  (x 0.25 a tick), so these bodies start in the walk below 1/2 and keep walking at that rate through the run.
+- Ours now keeps the current motion (and rate) when the status pick is missing from the model. Live (Lnxcsfix, !cs 46
+  and !cs 10000 in the Altar Room): Hooknox idl -> wlk at ratio 0.25 and walks to his stop; Verena idl -> wlk at
+  0.14, then sits. Event-bound actors now log their motion changes at info (target motion_event), as ours do.
