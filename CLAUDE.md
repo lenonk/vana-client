@@ -213,7 +213,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     start): game files (src/patch.rs, the PlayOnline patch protocol) and vana-client itself (the latest GitHub
     release, downloaded, installed, the client restarted). Later candidates: mod packs, the client version string
     LSB checks.
-  - First start with no game files (client/firstrun.rs): a small window of our own offers to download the retail
+  - First start with no game files (client/firstrun.rs): a small window (not retail) offers to download the retail
     client from SE, installs its game files, patches them and deletes the download.
   - No command line for any of it.
   - Releases (user, 2026-10-24): the Linux binary is built with the Steam Runtime "sniper" toolchain so one build

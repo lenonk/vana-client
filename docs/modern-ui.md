@@ -69,7 +69,7 @@ pacing, decisions and atmosphere of Vana'diel.
 - **Exploration:** NPCs, doors, objects, party members, targets, menu entries and equipment clickable where sensible;
   tooltips, right-click context actions, hover and focus feedback, configurable bindings. Windows movable, optionally
   resizable, dockable / pinnable, layouts saved per character. Nothing needs the mouse.
-- **Combat:** a compact HUD (own HP / MP / TP and effects, target / focus / sub-target, party, cast bars, a restrained
+- **Combat:** a compact HUD (your HP / MP / TP and effects, target / focus / sub-target, party, cast bars, a restrained
   log) and a keyboard command palette (Attack, Magic, Abilities, Weapon Skills, Items, Check, Disengage ...): arrows
   move, Enter acts, Escape backs out; a separate fuzzy search ("has" finds Haste); recent picks remembered.
 - **Spells and abilities:** one searchable action registry: categories, favourites, recent, job filters, costs,
@@ -195,7 +195,7 @@ Milestone 1:
   (config `modern_chat_font`, 10 .. 32, default 15). User's call (2026-10-26): no lock button, no other resizing.
 - The top bar: retail's titlewin, helpwind (marquee, busy strip, "Help" legend) and netstat (meter, %, S / R) in
   their places and by their fade rule (hudtop.rs fills a TopView), in the pack's frames on a layer that takes no input.
-- The chat window runs the retail log's rule (logwin::LogAnim, shared with the retail log) on its own wrapped rows:
+- The chat window runs the retail log's rule (logwin::LogAnim, shared with the retail log) on its wrapped rows:
   a period per new row up to the lines its room holds, a row off every period down to the min lines, Escape, the
   chat line's two rows (the line in the bottom row, an empty row above it), the eased height, the slide-in, the full
   log closing it. With no lines it goes on folding down through its tab row until it is gone, at the same rate
@@ -273,7 +273,7 @@ Milestone 1:
   tabs and one list; the palette while Ctrl or Alt is held over the chat window. Seen live.
 - Rest ticks (ours, user 2026-10-27): resting, the party window shows a strip under its title: "Timing rest ticks..."
   until the first clean rest has been timed (config `rest_tick`), then "Next tick", a bar and the seconds left, on the
-  server's own clock as learnt (client/resttick.rs). Seen live.
+  server's clock as learnt (client/resttick.rs). Seen live.
 - Name plates (modern/plates.rs): the name in Inter Bold Italic with a dark outline, retail's size (capitals a little
   taller than retail's letters, set wide as retail's are; the user's pick, 2026-10-26), place, colours, target pulse and depth test (walls hide them; drawn in the same UI pass as
   quads). Each name is rasterized once per size bucket (16 / 28 / 48 / 80 px em) and uploaded as a UI image. Retail's
@@ -293,7 +293,7 @@ Milestone 1:
   from their glyph cells ("font    font" and "menu    menu2fon") and drawn as text; the lobby's too when Modern is
   chosen.
 - Config (modern/config.rs): retail's list without Windows, Misc. 1..4 as one page; Gameplay, Misc., Mouse/Cam.
-  and Global drawn natively (rows from the pages' controls, named with their layouts' own captions, help lines);
+  and Global drawn natively (rows from the pages' controls, named with their layouts' captions, help lines);
   the list pages open retail's windows over it.
 - Storage (modern/storage.rs): the bags as tabs, Mog Safe / Safe 2 and Mog Wardrobe 1..8 merged; the bag beside the
   inventory; a click moves a stack (right click one), into a merged bag the first part with room that takes it;
@@ -307,7 +307,7 @@ Milestone 1:
   status_map.tsv (status id -> icon); Modern::status_icon draws them everywhere (effects, party rows, Timers, Level
   Sync), the game's icons only for an id without one. Sources ~/ffxi/lab/scratch/uiupdate/vc/status.
 - Weather icons and target markers (2026-10-27, bare): weather/w00..w19 by weather id (the location panel shows one
-  icon, Clear and the skies too, a double weather drawn as its own stronger icon); the target arrow, subtarget arrow
+  icon, Clear and the skies too, a double weather drawn as a stronger icon); the target arrow, subtarget arrow
   and the five relation rings redrawn under their indicators/ ids; indicators/party_invite_pending in place of
   retail's keytops3 69 on the party window. Atlases weather_0 / markers_0. Sources vc/weather, vc/markers.
 - Status (modern/status.rs): the persona, the level gauge, retail's rows on the left with the page under the cursor
@@ -319,7 +319,7 @@ Milestone 1:
   completed together), the cursor row's description under them at once; a new key item is marked seen by Enter or a
   click (no "Examine?" question); the Records of Eminence values and buttons under Quests open retail's lists. Typing
   searches every key item, quest or mission there is (listsearch.rs).
-- Social (modern/social.rs): the Party menu, Search and Linkshell windows drawn from retail's own menus (their rows
+- Social (modern/social.rs): the Party menu, Search and Linkshell windows drawn from retail's menus (their rows
   named by their label sprites, retail's disabled rows and swaps, a window opened over another shown beside it);
   link11 / link12 stay retail's. Set Bazaar the same way. View House is the storage view itself, opened on the Mog
   Safe, with every bag its menu allows as a tab (each opened as its row would).
@@ -378,10 +378,10 @@ Milestone 1:
   restored after): every list, Raise up to the confirm (declined) in the Mog House, an alter ego row by the mouse.
 - Unity (2026-10-27, points.rs over unity.rs): ut_menu as a column with the accolades in the title, quest00 beside it
   (Unity Information's lines and the chat setting with a dot on the current one, or the two weeks), quest01's ranking
-  of every unity under its rows; Unity Lists opens the area list's own panel. Live: both pages, a week's ranking, a
+  of every unity under its rows; Unity Lists opens the area list's panel. Live: both pages, a week's ranking, a
   row and Unity Lists by the mouse.
 - Level Sync (2026-10-27, social.rs over levelsync.rs): the party's members as the search results' people rows beside
-  the party menu, Level Sync's own status icon on the synced one, grey under level 10 or anonymous.
+  the party menu, Level Sync's status icon on the synced one, grey under level 10 or anonymous.
 - The block list and the chat mode window (2026-10-27, modern/minor.rs over blklist.rs and chatctrl.rs): the names
   with blkmain's Delete as a button while it is up; chatctrl's seven rows as a column on the combat window with the tell
   name, the shells ("No Linkshell") and the Unity at the right, subwindo's range under them. Retail's engaged gauge
@@ -405,7 +405,7 @@ Milestone 1:
   waits under it, as retail's window walk suspends it): the points used / total in the title, the slots (their numbers
   in the band colours, the spell's icon and name) beside the known spells (Type, Remove All, every spell in its tint:
   picked orange, set green, too dear or too high grey), the cursor spell's help under them; Refine by Type's families
-  (the layout's own captions) in the spells' place while it is open. A row of the other list takes a click while
+  (the layout's captions) in the spells' place while it is open. A row of the other list takes a click while
   nothing is picked (its focus moves first, as Num+). Live on Lnxcsfix as BLU 75 (back to WAR 22 after): the lists,
   the help, Undead filtered, a spell picked and dropped; nothing set.
 - Layout mode's windows (2026-10-27, minor.rs over layout.rs): the rmlo window as a column with its dim rows, bankmenu
@@ -439,7 +439,7 @@ Milestone 1:
 - The panel with the keys (2026-10-27, modern/mod.rs focus_panel): worked out each frame as the key dispatch routes
   them (the prompt, the chat line, an event's choice or input, the magic / ability lists, /check, the comment editor,
   the chat mode window, the treasure pool, the people lists, the windows the menus open, the main menu or its
-  submenu, the action menu); that panel draws in the pack's window_focused frame (blue edge), the rest in their own.
+  submenu, the action menu); that panel draws in the pack's window_focused frame (blue edge), the rest in their usual frames.
   Live: the main menu, Status, the chat line while typing, the action menu.
 - Character select (2026-10-27, modern/lobby.rs over select.rs, which keeps every rule and key; select::Input.modern
   skips the retail draw and mouse): over the 3D scene, a list of every character (the name in its colour, the job and
@@ -448,7 +448,7 @@ Milestone 1:
   window and the rename field below; the mouse as retail's (a row moves the cursor, a click is Enter). Live: the list
   by keys, the login prompt (No), Settings by the mouse.
 - The title's buttons (2026-10-27, modern/lobby.rs title_buttons over render/screens.rs TitleState.modern): the pack's
-  buttons on retail's own rects (loby2win's backing and button sprites skipped), the cursor's lit, the disabled dimmed,
+  buttons on retail's rects (loby2win's backing and button sprites skipped), the cursor's lit, the disabled dimmed,
   the Update button as retail places it; retail's keys and mouse untouched (hover moves the cursor, a click is Enter).
   The labels are sized to the buttons (half their height; user, 2026-10-27: the panel-sized font was far too small). The
   logo, the expansion banners and the help bar stay. Live: hover, Select Character by the mouse, back by Escape.
@@ -462,7 +462,7 @@ Milestone 1:
   text stay opaque.
 - The creator (2026-10-27, modern/lobby.rs creator_screen over client/creator.rs and client/mod.rs, which keep every
   step's rules and keys): one panel where the select list sits, the step's help line and "n/7"; the step's choices as
-  rows (the race by its group 6 name, Face / Hair as the stats line's words, the size, job and nation rows' own
+  rows (the race by its group 6 name, Face / Hair as the stats line's words, the size, job and nation rows'
   captions); on the name step the name field, Random (Num+) and OK (Enter), then the world list (worldsel) and the
   pass (chmkpass) with its OK; up to the name the race, its STR..CHR for the job and the Face / Hair / Size line; on
   the nation step the nation's title and description (they were centred on the screen). The confirm (ptc6yesn) and
@@ -472,13 +472,13 @@ Milestone 1:
   confirm's No, Escape out to the title.
 - The Battle tab (2026-10-27, not retail; the BattleMod / rChat way of keeping battle text apart): battle messages
   (combat.rs print) are tagged BATTLE_MODE; the chat's Battle tab shows them alone, and the chat settings' "Battle in
-  All: Shown / Hidden" (config modern_battle_in_all, Shown by default) takes them out of All. Retail's own Chat
+  All: Shown / Hidden" (config modern_battle_in_all, Shown by default) takes them out of All. Retail's Chat
   Filters (Config, 0x32 / 0x33) still decide which battle messages print at all. The settings popup opens above the
   gear when the chat window sits in the screen's lower half (it opened off-screen before). Live: Cure and a say line,
   the Battle tab with the cast lines alone, Hidden leaving All to the chat.
 - From rChat (pChat in ESO; 2026-10-27): unread counts on the chat tabs (Say ... Shout; not All or Battle): the lines a
   tab shows since it, or All showing them, was last on screen, "9+" past nine; a line from another player naming you
-  (a whole word, any case; retail's incoming modes only, never our own echoes) gets a gold wash and a gold bar at its
+  (a whole word, any case; retail's incoming modes only, never the echoes of our lines) gets a gold wash and a gold bar at its
   left. Live: two /say lines on the Battle tab counted on Say, cleared by opening it. The log across logins: the
   session's last 200 lines saved at logout (the data dir's chat/<name>.json, or beside an FFXI_CONFIG copy) and shown
   dimmed under "------ last session ------" at the next login (modern UI only; restored lines are not saved again).
@@ -504,8 +504,8 @@ Milestone 1:
   frame; then "the menu should just draw on top of edge windows"): the edge windows (Timers, minimap, Wide Scan) no
   longer step aside for anything; the menu column (command, its submenu, the command window) is kept on top of them
   (move_to_top each frame). Nothing docks on an edge window (their left moves as they fold, and a dock on Wide Scan's
-  tab made the menu jump 270 px when it opened), and a dock saved on one gives way to the panel's own place. A dock on
-  a panel placed from the right counts from its right side (ModernDock.right). Retail's strip right of its own minimap
+  tab made the menu jump 270 px when it opened), and a dock saved on one gives way to the panel's default place. A dock on
+  a panel placed from the right counts from its right side (ModernDock.right). Retail's strip right of its minimap
   is not kept clear. Live: the user's layout copied in, frames alike, the menu over the minimap.
 - Row look (user, 2026-10-27: the framed rows "too busy", but not plain; Gilt picked from five rendered by
   `modern-shot --rows`): every list and menu row goes through rows.rs (face for a row face, menu_row for the main
@@ -531,8 +531,8 @@ Milestone 1:
   rounds the target is held while its round has swings left (combat::held), so its death and "defeats" no longer
   print before the killing swing (seen live before the fix). An action on several targets (BattleMod's
   condensetargets): each target's line that differs only in the name and number joins the first in the message
-  table's own plural ("Nine, Raven, and Koru take 50, 48, and 45 points of damage."; Who.plural), each name with its
-  article; a possessive keeps every name's own ("Lnxcsfix's and Aurelie's attacks are enhanced."); a value the line
+  table's plural ("Nine, Raven, and Koru take 50, 48, and 45 points of damage."; Who.plural), each name with its
+  article; a possessive goes on every name ("Lnxcsfix's and Aurelie's attacks are enhanced."); a value the line
   names (a status id) rather than prints is kept as it is. Live: Warcry with a bot in the party.
 - The target panel's name in retail's name colour (FUN_1008db40 as the plates: unclaimed monster pale yellow, our
   party's claim red, another's magenta).

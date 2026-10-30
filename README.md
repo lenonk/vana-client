@@ -103,7 +103,7 @@ target/release/vana-client update
 target/release/vana-client play
 ```
 
-You log in on the game's own login screen. The server address and ports come from the config file.
+You log in on the game's login screen. The server address and ports come from the config file.
 
 To add it to your desktop's application menu with its icon, put the binary on your `PATH` and install the desktop
 entry. Wayland compositors find the icon through this entry rather than through the window:
