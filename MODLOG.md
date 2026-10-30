@@ -12316,3 +12316,13 @@ since "Ship voyages: the moving world" listed them as not done.
   tick; drawn_pos (the cameras, plates, borders) is the event pose while one holds us. Live (Lnxcsfix, the _m70 torch,
   godmode / sneak / invisible against the Yagudo): the camera walks through the door with her, `event 0xb: we stay
   where it left us (-100.07, 24.25, -112.69)`, and the user confirmed the door works.
+
+## Event areas: their own sub-areas (2026-10-30)
+- User report: the Altar Room's Magicite event 44 (with both other stones, param 3: the Shadow Lord scene) hung on a
+  white screen with the cutscene's name plates over nothing. After 'who1' it shows Heavens Tower (op 0x34 242, DAT
+  342) and then op 0x75 sub 0 asks for sub-area 427 (that area's interior) and sub 1 waits for it. Ours took sub-area
+  requests only while the zone's own scene showed (update_sub_area returned while an event area was up), so the
+  request was never taken and the wait never ended.
+- Now an event area brings its own SubArea (its RID regions, collision, light and area keys) and the zone's is kept
+  in AreaSwitch.home_sub until op 0x35 brings the zone back; while an area shows only the event's requests load
+  (no trigger under the player *(inf)*) and an unload sends no 0x0F2 (FUN_10178900 from an event sends none).

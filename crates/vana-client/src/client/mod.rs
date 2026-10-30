@@ -5194,6 +5194,8 @@ struct AreaSwitch {
     shown: Option<u16>,
     /// The zone's own renderer, collision, weather keys and effect library while another area is shown.
     home: Option<(Option<ZoneRenderer>, Option<ground::Ground>, Option<crate::dat::weather::ZoneWeather>, Option<usize>)>,
+    /// The zone's sub-area state meanwhile (the shown area's own takes the event's op 0x75 requests).
+    home_sub: Option<subarea::SubArea>,
 }
 
 struct World {
@@ -7742,6 +7744,16 @@ impl App {
                         if world.area.home.is_none() {
                             world.area.home = Some((world.renderer.take(), world.ground.take(), world.zone_weather.take(), world.effects.zone_lib()));
                         }
+                        // The area's sub-areas (its interiors) for the event's op 0x75.
+                        let asked = world.sub.asked.take();
+                        let sub = subarea::SubArea::new(scene.regions.clone(), scene.collision.take(), geometry.light_keys.clone(), geometry.area_keys.clone());
+                        let old = std::mem::replace(&mut world.sub, sub);
+                        if world.area.home_sub.is_none() {
+                            world.area.home_sub = Some(old);
+                        } else if old.current.is_some() {
+                            world.effects.drop_sub_area();
+                        }
+                        world.sub.asked = asked;
                         world.zone_weather = weather;
                         (world.light_ease, world.light_acc) = (Default::default(), 0.0);
                         world.area_ease.clear();
@@ -7901,7 +7913,12 @@ impl App {
     /// interior in the background, or 0 unloads it.
     fn update_sub_area(&mut self) {
         let Phase::World(w) = &mut self.phase else { return };
-        if w.zone != Some(w.pos_zone) || w.loading.is_some() || w.area.shown.is_some() || w.ground.is_none() {
+        if w.zone != Some(w.pos_zone) || w.loading.is_some() || w.area.loading || w.ground.is_none() {
+            return;
+        }
+        // Another area an event shows: only the event's requests (op 0x75), against that area's sub-areas.
+        let in_area = w.area.shown.is_some();
+        if in_area && w.sub.asked.is_none() {
             return;
         }
         // Our actor's model position (vtable +0x1bc, +0x404): an event that moves us there moves the trigger point too.
@@ -7924,7 +7941,9 @@ impl App {
                 }
                 doors::reapply(w);
                 (w.sub.current, w.sub.weather) = (None, None);
-                let _ = w.net.commands.send(NetCommand::SubMap { state: 1, id: 0 });
+                if !in_area {
+                    let _ = w.net.commands.send(NetCommand::SubMap { state: 1, id: 0 });
+                }
             }
             Some(subarea::Step::Load(id, from_event)) => {
                 let Some(zone_id) = w.zone else { return };
@@ -7966,6 +7985,12 @@ impl App {
             && let Some((renderer, ground, weather, fx)) = w.area.home.take()
         {
             (w.renderer, w.ground, w.zone_weather) = (renderer, ground, weather);
+            if let Some(sub) = w.area.home_sub.take() {
+                if w.sub.current.is_some() {
+                    w.effects.drop_sub_area();
+                }
+                w.sub = sub;
+            }
             (w.light_ease, w.light_acc) = (Default::default(), 0.0);
             w.area_ease.clear();
             if let Some(l) = fx {
