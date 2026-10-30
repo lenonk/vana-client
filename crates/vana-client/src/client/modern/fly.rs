@@ -23,7 +23,7 @@ pub enum Attach {
 pub enum Open {
     None,
     Edge { right: bool },
-    Side { t: Rect, right: bool },
+    Side { t: Rect, right: bool, band: [Color32; 3] },
 }
 
 impl Open {
@@ -144,7 +144,13 @@ impl Panels<'_> {
                 let t = self.shown_rect(to)?;
                 let top = side_top(t, *along, size.y);
                 let x = if *right { t.max.x } else { t.min.x - size.x };
-                let open = if fits(t, size.y) { Open::Side { t, right: *right } } else { Open::None };
+                // Joined only to a framed panel's side, in the band it was drawn in.
+                let tf = self.m.frames.borrow().get(to.as_str()).copied().unwrap_or("window_normal");
+                let band = self.m.art.frame(tf).filter(|_| tf != "none").map(|f| f.band);
+                let open = match band {
+                    Some(band) if fits(t, size.y) => Open::Side { t, right: *right, band },
+                    _ => Open::None,
+                };
                 Some((Rect::from_min_size(pos2(x, top), size), open))
             }
         }

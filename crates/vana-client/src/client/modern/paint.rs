@@ -164,8 +164,8 @@ pub fn joint_clip(t: Rect, right: bool) -> Rect {
 
 /// Where flyout `fr` joins window `t` on its right side (`right`) or left: the interior carried across between the
 /// two (`span` the gradient's, t's), and the fillets where the flyout's top and bottom bands curve into t's side band,
-/// drawn as the frames' band (dark, middle, bright).
-pub fn joint(f: &Frame, t: Rect, fr: Rect, right: bool, opacity: f32, span: (f32, f32)) -> Shape {
+/// drawn as the bands (dark, middle, bright), t's (`band`) turning into the flyout's along the arc.
+pub fn joint(f: &Frame, band: [Color32; 3], t: Rect, fr: Rect, right: bool, opacity: f32, span: (f32, f32)) -> Shape {
     let (s, r) = (if right { 1.0 } else { -1.0 }, FILLET);
     // The side band's middle, the fillets' centres' x, the interior's edge in t.
     let x_band = if right { t.max.x - BAND_MID } else { t.min.x + BAND_MID };
@@ -211,9 +211,15 @@ pub fn joint(f: &Frame, t: Rect, fr: Rect, right: bool, opacity: f32, span: (f32
             .collect()
     };
     let mut v = vec![Shape::mesh(m)];
-    for pts in [arc(c0, true), arc(c1, false)] {
-        for (w, col) in [(5.0, f.band[0]), (2.0, f.band[1]), (1.0, f.band[2])] {
-            v.push(Shape::line(pts.clone(), egui::Stroke::new(w, col)));
+    for (c, pts) in [(c0, arc(c0, true)), (c1, arc(c1, false))] {
+        for (w, i) in [(5.0, 0), (2.0, 1), (1.0, 2)] {
+            let (from, to) = (band[i], f.band[i]);
+            // The angle round the arc's centre: 0 at t's band, a quarter turn at the flyout's.
+            let blend = move |_: Rect, p: Pos2| {
+                let a = (p.y - c.y).abs().atan2(-s * (p.x - c.x)).clamp(0.0, std::f32::consts::FRAC_PI_2);
+                from.lerp_to_gamma(to, a / std::f32::consts::FRAC_PI_2)
+            };
+            v.push(Shape::line(pts.clone(), egui::epaint::PathStroke::new_uv(w, blend)));
         }
     }
     Shape::Vec(v)

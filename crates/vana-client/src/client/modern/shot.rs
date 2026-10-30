@@ -85,8 +85,10 @@ fn fly_sample(m: &Modern, ctx: &egui::Context) {
     let f = Rect::from_min_size(pos2(t.max.x, t.min.y + 60.0), vec2(220.0, 140.0));
     let g = Rect::from_min_size(pos2(t.min.x - 180.0, t.min.y + 130.0), vec2(180.0, 100.0));
     p.add(super::borders::fly(m, "window_normal", t, Open::None, &[(true, f), (false, g)]));
-    p.add(super::borders::fly(m, "window_normal", f, Open::Side { t, right: true }, &[]));
-    p.add(super::borders::fly(m, "window_normal", g, Open::Side { t, right: false }, &[]));
+    // The right one focused: its blue band turns into the target's gold along the fillets.
+    let Some(band) = m.art.frame("window_normal").map(|f| f.band) else { return };
+    p.add(super::borders::fly(m, "window_focused", f, Open::Side { t, right: true, band }, &[]));
+    p.add(super::borders::fly(m, "window_normal", g, Open::Side { t, right: false, band }, &[]));
     let e = Rect::from_min_size(pos2(0.0, 420.0), vec2(220.0, 160.0));
     p.add(super::borders::fly(m, "window_normal", e, Open::Edge { right: false }, &[]));
     let font = egui::FontId::new(m.theme.small + 1.0, egui::FontFamily::Name(super::STRONG.into()));

@@ -158,11 +158,11 @@ pub fn fly(m: &Modern, frame: &str, r: Rect, open: super::fly::Open, joined: &[(
     let (ext, extra) = match open {
         Open::None => (r, None),
         Open::Edge { right } => (toward(right), None),
-        Open::Side { t, right } => {
+        Open::Side { t, right, band } => {
             let span = (t.min.y + f.inset, t.max.y - f.inset);
             cut.clip = Some(paint::joint_clip(t, right));
             cut.grad = Some(span);
-            (toward(!right), Some(paint::joint(f, t, r, right, op, span)))
+            (toward(!right), Some(paint::joint(f, band, t, r, right, op, span)))
         }
     };
     let mut v = vec![paint::window_cut(f, ext, 1.0, op, &cut)];

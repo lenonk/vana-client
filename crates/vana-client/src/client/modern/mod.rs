@@ -86,6 +86,8 @@ pub struct Modern {
     /// (the chat window then shows its full room, something to dock on), and the chat window's rect and fade for the
     /// game's stacked windows.
     rects: std::cell::RefCell<HashMap<String, Rect>>,
+    /// The frame each panel was last drawn in (a flyout's joint takes its band).
+    frames: std::cell::RefCell<HashMap<String, &'static str>>,
     arranging: std::cell::Cell<bool>,
     chat_edge: std::cell::Cell<Option<(Rect, bool)>>,
     zoom: f32,
@@ -151,6 +153,7 @@ impl Modern {
             scan_picking: Default::default(),
             scan_area: Default::default(),
             rects: Default::default(),
+            frames: Default::default(),
             arranging: Default::default(),
             chat_edge: Default::default(),
             zoom: 0.0,
@@ -656,7 +659,7 @@ struct Show<'s> {
     size: Vec2,
     resizable: bool,
     at: Option<Pos2>,
-    frame: &'s str,
+    frame: &'static str,
     height: Option<f32>,
     alpha: f32,
     fold: f32,
@@ -679,7 +682,7 @@ impl<'a> Panels<'a> {
     }
 
     /// A panel in one of the pack's other frames (window_alert ...).
-    fn framed(&mut self, id: &str, title: Option<Title>, width: f32, frame: &str, add: impl FnOnce(&mut Ui)) -> Option<Rect> {
+    fn framed(&mut self, id: &str, title: Option<Title>, width: f32, frame: &'static str, add: impl FnOnce(&mut Ui)) -> Option<Rect> {
         self.show(id, Show { title, size: vec2(width, 0.0), frame, ..Default::default() }, |ui, _| add(ui))
     }
 
@@ -830,6 +833,7 @@ impl<'a> Panels<'a> {
         let (title, frame, alpha, fold) = (o.title, o.frame, o.alpha, o.fold.clamp(0.0, 1.0));
         // The panel with the keys in the focused frame.
         let frame = if frame == "window_normal" && self.focus == Some(id) { "window_focused" } else { frame };
+        m.frames.borrow_mut().insert(id.to_string(), frame);
         // A panel at a fixed point may stand partly off screen (the Timers slid in).
         let shown = egui::Area::new(Id::unique(("modern panel", id))).order(Order::Middle).current_pos(pos).movable(o.at.is_none()).constrain(o.at.is_none()).show(ctx, |ui| {
             // An area offers its contents only last frame's size: room to the screen's bottom, or a page grown taller
@@ -957,6 +961,7 @@ impl<'a> Panels<'a> {
         let joined = self.joined(id, rect);
         let margin = if o.resizable { ROOM_MARGIN } else { MARGIN };
         let frame = if o.frame == "window_normal" && self.focus == Some(id) { "window_focused" } else { o.frame };
+        m.frames.borrow_mut().insert(id.to_string(), frame);
         let (title, alpha) = (o.title, o.alpha);
         let mut fold = false;
         let shown = egui::Area::new(Id::unique(("modern panel", id))).order(Order::Middle).current_pos(rect.min).movable(false).constrain(false).show(ctx, |ui| {

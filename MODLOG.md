@@ -12365,4 +12365,7 @@ since "Ship voyages: the moving world" listed them as not done.
 - Live (Lnxcsfix, 2026-10-30): Wide Scan slid down its edge with no ghost; pulled into the middle (ghost), let go free;
   the Items window docked onto its right side joined, followed it, pulled to the screen's right edge (snap ghost),
   folded to a tab and back; Wide Scan back onto the left edge; the chat nudged stays free, the location panel on it.
-  Not done: top / bottom joints; a focused flyout's fillets take its blue band against the panel's gold.
+  Not done: top / bottom joints.
+- The frames differ only in their band (normal gold, focused blue, alert red; the interiors are the same rows), so the
+  fillets run from the band the target was drawn in (Modern.frames, Open::Side.band) to the flyout's, blended by the
+  angle round the arc (PathStroke::new_uv); a frameless target ("none": the status icons) takes no joint.
