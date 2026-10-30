@@ -259,7 +259,7 @@ pub fn status_panel(p: &mut Panels, v: &StatusView, small: bool) {
     // Retail's icons are layer 0, under every window: a retail window over where they stand (the hand-over, the item
     // pickers at the top left) hides them until it closes.
     if let Some(r) = p.m.rects.borrow().get("status").copied()
-        && super::extras::under_retail(p.m, r)
+        && super::fly::under_retail(p.m, r)
     {
         p.this.insert("status".into(), r);
         return;

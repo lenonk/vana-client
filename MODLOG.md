@@ -12338,3 +12338,31 @@ since "Ship voyages: the moving world" listed them as not done.
 - Ours now keeps the current motion (and rate) when the status pick is missing from the model. Live (Lnxcsfix, !cs 46
   and !cs 10000 in the Altar Room): Hooknox idl -> wlk at ratio 0.25 and walks to his stop; Verena idl -> wlk at
   0.14, then sits. Event-bound actors now log their motion changes at info (target motion_event), as ours do.
+
+## Modern UI: flyouts anywhere (2026-10-30; ours, not retail; client/modern/fly.rs)
+- User request: flyouts pulled off their edge stand free in the middle; sliding one along its edge shows no ghost (only
+  a drag well off it does); any window can be a flyout on a screen edge; any window can dock onto another's side as a
+  flyout, the two frames joined (no border where they meet, the docked one's band curving into the other's).
+- Holds (fly::Attach): Free, Edge (screen left / right, its top a fraction of the screen), Side (another panel's left
+  or right, `along` points below its top). Saved in ModernPlace: `fly` (to "" = the screen) and `float` (an edge
+  window let go free); the edge windows keep their old x / y encoding while on the edge.
+- Dragging: a held window slides along its hold within PULL (64 pt) of it, the window itself (no ghost); pulled further,
+  its ghost follows the pointer, or sits where it would be held, and it lands there when let go (a screen edge within
+  10 pt, a panel's side within 28, else free). A free window moves live; near a hold its ghost shows the held place. The
+  grab is taken at the press origin, so the window does not trail the pointer by egui's drag threshold.
+- A panel's side takes a flyout only where it fits clear of its corners (flyout height + 2 x (24 + fillet 8) <= its
+  height); the flyout's top is clamped there. What it rides not shown, it stands where it last stood.
+- Frames (pack style; borders::fly, paint::window_cut / joint): a screen-edge flyout is the frame drawn 24 pt (the corner)
+  past the edge, its band running into it. A joined pair: the panel's side band is left out over the joint (Cut.gaps),
+  the flyout's frame is drawn 24 pt into the panel and clipped at the fillets (Cut.clip), both interiors on the panel's
+  gradient span (Cut.grad), and a patch of that gradient fills between them; the fillets are quarter circles (r 8) from
+  the panel's band middle (3 pt in: the band is 0.5 clear, dark 1.5, mid 0.5, bright 1, mid 0.5, dark 1.5) to the
+  flyout's, stroked dark 5 / mid 2 / bright 1 in the frame's band colours (read from the frame image). The interior
+  gradient now interpolates between the image's rows.
+- Generic panels (Panels::show) held: fixed where the hold puts them, a background drag; on a screen edge a round knob
+  on the inner side folds them into a tab (cfg.modern_folded "fly <id>"), the tab's click opens it. The edge windows
+  (extras.rs) use the same holds, tabs and drags, now in the pack frame with the jewel on an edge.
+- Live (Lnxcsfix, 2026-10-30): Wide Scan slid down its edge with no ghost; pulled into the middle (ghost), let go free;
+  the Items window docked onto its right side joined, followed it, pulled to the screen's right edge (snap ghost),
+  folded to a tab and back; Wide Scan back onto the left edge; the chat nudged stays free, the location panel on it.
+  Not done: top / bottom joints; a focused flyout's fillets take its blue band against the panel's gold.

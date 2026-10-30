@@ -6,6 +6,7 @@ use super::super::map::MapImage;
 use super::super::timers::{self, Group, Icon, SECTIONS};
 use super::super::{World, event, minimap};
 use super::Panels;
+use super::fly::{Open, TAB_H, chevron, under_retail};
 use egui::{Align2, Color32, FontFamily, FontId, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2, pos2, vec2};
 
 pub fn draw(p: &mut Panels, w: &mut World) {
@@ -273,218 +274,85 @@ fn skillchain_panel(p: &mut Panels, w: &mut World) {
 /// The skillchain helper's width.
 const WIDTH_SC: f32 = 320.0;
 
-/// A window on the screen's left or right edge (its place: x 0 or above the left, below 0 the right; y its top): its
-/// frame open on that side; folded, a small tab out of the edge with `label` running down it beside a double chevron.
-/// It stays where it was put: the menu's windows draw over it (user, 2026-10-27). Dragged it moves up and down, and let
-/// go on the screen's other half it goes to that edge. `add` draws the contents (told the side) and says whether its
-/// fold button was clicked; the tab's click counts too. Returns that.
-#[allow(clippy::too_many_arguments)]
+/// A window held by a screen edge or another panel's side, or let go free (fly.rs): its frame open on its hold (its
+/// band running into the edge, or joined to the panel); folded, a tab out of its hold with `label` running along it. It
+/// stays where it was put: the menu's windows draw over it (user, 2026-10-27). A drag on its background or heading
+/// slides it along its hold; pulled well off it, it lands where it is let go. `add` draws the contents (told whether
+/// it is held by its left side) and says whether its fold button was clicked; the tab's click counts too. Returns that.
 fn edge_window(p: &mut Panels, key: &str, width: f32, folded: bool, label: &str, add: impl FnOnce(&mut Ui, bool) -> bool) -> bool {
+    if folded {
+        return p.fly_tab(key, label);
+    }
     let (m, ctx) = (p.m, p.ctx);
     let screen = ctx.content_rect();
-    let mut place = p.place(key);
-    let left = place.x >= 0.0;
-    let top = (screen.height() * place.y).clamp(screen.min.y, screen.max.y - TAB_H);
-    let id = egui::Id::unique(("modern edge", key));
-    let mut toggle = false;
-    if folded {
-        // The label runs down the tab by the screen's edge; the double chevron points into the screen.
-        let font = FontId::new(m.theme.small + 1.5, FontFamily::Name(super::STRONG.into()));
-        let galley = ctx.fonts_mut(|f| f.layout_no_wrap(label.to_string(), font, Color32::WHITE));
-        let gw = galley.size().x;
-        let size = vec2(TAB_W, (gw + 28.0).max(TAB_H));
-        let r = if left { Rect::from_min_size(pos2(screen.min.x, top), size) } else { Rect::from_min_size(pos2(screen.max.x - TAB_W, top), size) };
-        // A retail window over it (they draw under every panel): it steps aside until that closes.
-        if under_retail(m, r) {
-            p.this.insert(key.to_string(), r);
-            return false;
-        }
-        let mut rect = r;
-        let mut dy = None;
-        egui::Area::new(id).order(egui::Order::Middle).fixed_pos(r.min).constrain(false).show(ctx, |ui| {
-            // A click opens it; a drag slides it along the edge, and to the other edge past the screen's middle.
-            let (rr, resp) = ui.allocate_exact_size(r.size(), Sense::click_and_drag());
-            if resp.dragged() {
-                dy = Some((resp.drag_delta().y, resp.interact_pointer_pos()));
-            }
-            rect = rr;
-            ui.painter().add(edge_frame_shape(rr, left, true, m, false, 7));
-            feedback(ui, m, rr, &resp, 7);
-            let c = if resp.hovered() { m.theme.color("text") } else { m.theme.color("gold") };
-            // The word turned toward the screen: a quarter counter-clockwise on the left (read bottom up), clockwise on
-            // the right (read top down).
-            let (at, angle) = if left { (pos2(rr.min.x + 4.0, rr.center().y + gw / 2.0), -std::f32::consts::FRAC_PI_2) } else { (pos2(rr.max.x - 4.0, rr.center().y - gw / 2.0), std::f32::consts::FRAC_PI_2) };
-            ui.painter().add(egui::epaint::TextShape::new(at, galley, c).with_angle(angle));
-            let cx = if left { rr.max.x - 10.0 } else { rr.min.x + 10.0 };
-            for d in [-3.0, 3.0] {
-                chevron(ui.painter(), pos2(cx + d, rr.center().y), !left, c);
-            }
-            toggle = resp.clicked();
-        });
-        p.this.insert(key.to_string(), rect);
-        ghost(m, ctx, key, rect, dy.and_then(|d| d.1), 7);
-        if let Some((dy, at)) = dy {
-            place.y = ((top + dy) / screen.height().max(1.0)).clamp(0.0, 0.95);
-            if let Some(at) = at {
-                place.x = side(at, screen, place.x);
-            }
-            m.arranging.set(true);
-            p.layout.insert(key.to_string(), place);
-            *p.changed = true;
-        }
-        return toggle;
-    }
+    let a = p.attach(key);
     let h = m.rects.borrow().get(key).map_or(TAB_H, |r| r.height());
-    let edge_x = if left { screen.min.x } else { screen.max.x - width };
-    let x = edge_x;
-    if under_retail(m, Rect::from_min_size(pos2(x, top), vec2(width, h))) {
-        p.this.insert(key.to_string(), Rect::from_min_size(pos2(x, top), vec2(width, h)));
+    let size = vec2(width, h);
+    let (rect, open) = p.fly_rect(&a, size).unwrap_or_else(|| (p.free_rect(key, size), Open::None));
+    // A retail window over it (they draw under every panel): it steps aside until that closes.
+    if under_retail(m, rect) {
+        p.this.insert(key.to_string(), rect);
         return false;
     }
-    let margin = egui::Margin { left: if left { 12 } else { 18 }, right: if !left { 12 } else { 18 }, top: 12, bottom: 14 };
-    let mut moved: Option<(f32, Option<Pos2>)> = None;
-    let shown = egui::Area::new(id).order(egui::Order::Middle).fixed_pos(pos2(x, top)).constrain(false).show(ctx, |ui| {
+    let left = open.by_left().unwrap_or(rect.center().x < screen.center().x);
+    let joined = p.joined(key, rect);
+    // Narrower on the held side (no band there).
+    let margin = match open {
+        Open::None => egui::Margin { left: 16, right: 16, top: 12, bottom: 14 },
+        _ => egui::Margin { left: if left { 12 } else { 18 }, right: if left { 18 } else { 12 }, top: 12, bottom: 14 },
+    };
+    let id = egui::Id::unique(("modern edge", key));
+    let mut toggle = false;
+    let shown = egui::Area::new(id).order(egui::Order::Middle).fixed_pos(rect.min).constrain(false).show(ctx, |ui| {
         // Room to the screen's bottom (an area offers only last frame's size).
-        ui.set_max_height((screen.max.y - top).max(ui.min_rect().height()));
+        ui.set_max_height((screen.max.y - rect.min.y).max(ui.min_rect().height()));
         let bg = ui.painter().add(Shape::Noop);
         // The background moves it: sensed under the contents (last frame's size), so they keep their clicks.
-        let drag = ui.interact(Rect::from_min_size(pos2(x, top), vec2(width, h)), id.with("drag"), Sense::drag());
-        if drag.dragged() {
-            moved = Some((drag.drag_delta().y, drag.interact_pointer_pos()));
-        }
-        m.edge_grip.set(None);
+        let drag = ui.interact(rect, id.with("drag"), Sense::drag());
+        m.edge_grip.replace(None);
         let inner = egui::Frame::NONE.inner_margin(margin).show(ui, |ui| {
             ui.set_width(width - margin.sum().x);
             ui.visuals_mut().override_text_color = Some(m.theme.color("text"));
             toggle = add(ui, left);
         });
-        if let Some(g) = m.edge_grip.take() {
-            moved = Some(g);
-        }
+        let resp = m.edge_grip.take().unwrap_or(drag);
         let r = inner.response.rect;
-        ui.painter().set(bg, edge_frame_shape(r, left, true, m, true, 16));
-        if moved.is_some() {
-            ui.painter().rect_stroke(r.expand(1.0), 16, Stroke::new(2.5, m.theme.color("gold")), egui::StrokeKind::Outside);
+        ui.painter().set(bg, super::borders::fly(m, "window_normal", r, open, &joined));
+        if matches!(open, Open::Edge { .. }) {
+            jewel(ui.painter(), m, r, left);
+        }
+        if resp.dragged() {
+            ui.painter().rect_stroke(r.expand(1.0), 6, Stroke::new(2.0, m.theme.color("gold")), egui::StrokeKind::Outside);
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-        } else if drag.hovered() {
+        } else if resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
         }
-        r
+        (r, resp)
     });
-    p.this.insert(key.to_string(), shown.inner);
-    ghost(m, ctx, key, shown.inner, moved.and_then(|d| d.1), 16);
-    if let Some((dy, at)) = moved {
-        place.y = ((top + dy) / screen.height().max(1.0)).clamp(0.0, 0.95);
-        if let Some(at) = at {
-            place.x = side(at, screen, place.x);
-        }
-        m.arranging.set(true);
-        p.layout.insert(key.to_string(), place);
-        *p.changed = true;
-    }
+    let (r, resp) = shown.inner;
+    p.this.insert(key.to_string(), r);
+    p.fly_drag(key, &a, r, &resp);
     toggle
 }
 
-/// The edge for a pointer at `at`: the left one on the screen's left half (a place's x 0), else the right (below 0);
-/// the current one kept within a band around the middle.
-fn side(at: Pos2, screen: Rect, x: f32) -> f32 {
-    let band = screen.width() * 0.05;
-    if at.x < screen.center().x - band {
-        0.0
-    } else if at.x > screen.center().x + band {
-        -0.001
-    } else {
-        x
-    }
+/// The small diamond on an edge window's inner side, on its band.
+fn jewel(painter: &egui::Painter, m: &super::Modern, r: Rect, left: bool) {
+    let c = pos2(if left { r.max.x - 3.0 } else { r.min.x + 3.0 }, r.center().y);
+    let d = 5.0;
+    painter.add(Shape::convex_polygon(vec![pos2(c.x, c.y - d), pos2(c.x + d, c.y), pos2(c.x, c.y + d), pos2(c.x - d, c.y)], m.theme.color("gold"), Stroke::new(1.0, Color32::from_black_alpha(200))));
 }
 
 /// A heading's drag moves its edge window (as its background's does); the hand says it can.
 fn grip(m: &super::Modern, resp: &egui::Response) {
-    if resp.dragged() {
-        m.edge_grip.set(Some((resp.drag_delta().y, resp.interact_pointer_pos())));
+    if resp.dragged() || resp.drag_stopped() {
+        m.edge_grip.replace(Some(resp.clone()));
     } else if resp.hovered() {
         resp.ctx.set_cursor_icon(egui::CursorIcon::Grab);
     }
 }
 
-/// While an edge window or its tab is dragged (`at` the pointer), a see-through copy of it follows the pointer where
-/// it was taken; let go, the window lands on that side's edge.
-fn ghost(m: &super::Modern, ctx: &egui::Context, key: &str, r: Rect, at: Option<Pos2>, radius: u8) {
-    let mut g = m.edge_ghost.borrow_mut();
-    let Some(at) = at else {
-        if g.as_ref().is_some_and(|(k, _)| k == key) {
-            *g = None;
-        }
-        return;
-    };
-    let off = match g.as_ref() {
-        Some((k, off)) if k == key => *off,
-        _ => {
-            let off = at - r.min;
-            *g = Some((key.to_string(), off));
-            off
-        }
-    };
-    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique(("edge ghost", key))));
-    let gr = Rect::from_min_size(at - off, r.size());
-    painter.rect(gr, radius, m.theme.color("surface").gamma_multiply(0.45), Stroke::new(2.0, m.theme.color("gold")), egui::StrokeKind::Inside);
-}
-
-/// While a tab is dragged: a gold outline and the grabbing hand; hovered, the open hand.
-fn feedback(ui: &Ui, m: &super::Modern, r: Rect, resp: &egui::Response, radius: u8) {
-    if resp.dragged() {
-        ui.painter().rect_stroke(r.expand(1.0), radius, Stroke::new(2.5, m.theme.color("gold")), egui::StrokeKind::Outside);
-        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-    } else if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
-    }
-}
-
-/// A retail window drawn this frame overlaps `r`.
-pub(super) fn under_retail(m: &super::Modern, r: Rect) -> bool {
-    m.retail.borrow().iter().any(|f| f.intersects(r.shrink(2.0)))
-}
-
-/// The window's width and its folded tab's size.
+/// The window's width.
 const WIDTH: f32 = 250.0;
-const TAB_W: f32 = 40.0;
-const TAB_H: f32 = 56.0;
-
-/// A chevron at `c` pointing left or right.
-fn chevron(p: &egui::Painter, c: Pos2, left: bool, col: Color32) {
-    let pts = if left { vec![pos2(c.x + 3.5, c.y - 6.0), pos2(c.x + 3.5, c.y + 6.0), pos2(c.x - 3.5, c.y)] } else { vec![pos2(c.x - 3.5, c.y - 6.0), pos2(c.x - 3.5, c.y + 6.0), pos2(c.x + 3.5, c.y)] };
-    p.add(Shape::convex_polygon(pts, col, Stroke::NONE));
-}
-
-/// The edge window's frame over `r`: no border on the anchored side (it runs past the screen's edge), the other
-/// corners rounded, a bronze line with a thin gold one inside it, and on the inner side a small diamond when `jewel`.
-pub(super) fn edge_frame_shape(r: Rect, left: bool, attached: bool, m: &super::Modern, jewel: bool, radius: u8) -> Shape {
-    let ext = match (attached, left) {
-        (false, _) => r,
-        (true, true) => Rect::from_min_max(pos2(r.min.x - 10.0, r.min.y), r.max),
-        (true, false) => Rect::from_min_max(r.min, pos2(r.max.x + 10.0, r.max.y)),
-    };
-    let round = |k: u8| match (attached, left) {
-        (false, _) => egui::CornerRadius::same(k),
-        (true, true) => egui::CornerRadius { nw: 0, sw: 0, ne: k, se: k },
-        (true, false) => egui::CornerRadius { nw: k, sw: k, ne: 0, se: 0 },
-    };
-    // The other border styles draw their own (borders.rs), without the jewel.
-    if let Some(s) = super::borders::edge(m, ext, round(radius)) {
-        return s;
-    }
-    let mut v = vec![
-        Shape::Rect(egui::epaint::RectShape::filled(ext, round(radius), m.bg(m.theme.color("surface")))),
-        Shape::Rect(egui::epaint::RectShape::stroke(ext, round(radius), Stroke::new(2.0, m.theme.color("bronze")), egui::StrokeKind::Inside)),
-        Shape::Rect(egui::epaint::RectShape::stroke(ext.shrink(4.0), round(radius.saturating_sub(4)), Stroke::new(1.0, m.theme.color("gold").gamma_multiply(0.45)), egui::StrokeKind::Inside)),
-    ];
-    if jewel {
-        let c = pos2(if left { ext.max.x - 1.0 } else { ext.min.x + 1.0 }, ext.center().y);
-        let d = 5.0;
-        v.push(Shape::convex_polygon(vec![pos2(c.x, c.y - d), pos2(c.x + d, c.y), pos2(c.x, c.y + d), pos2(c.x - d, c.y)], m.theme.color("gold"), Stroke::new(1.0, Color32::from_black_alpha(200))));
-    }
-    Shape::Vec(v)
-}
 
 /// The Timers heading: the title, and on the inner side a chevron toward the edge (a click folds it there).
 fn flyout_header(ui: &mut Ui, m: &super::Modern, text: &str, left: bool) -> egui::Response {

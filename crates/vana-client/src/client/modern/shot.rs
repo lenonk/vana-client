@@ -66,13 +66,32 @@ fn edge_sample(m: &Modern, ctx: &egui::Context) {
     let screen = ctx.content_rect();
     let r = Rect::from_min_max(pos2(screen.max.x - 290.0, 560.0), pos2(screen.max.x, 800.0));
     let p = ctx.layer_painter(LayerId::new(Order::Middle, Id::unique("edge sample")));
-    p.add(super::extras::edge_frame_shape(r, false, true, m, true, 16));
+    p.add(super::borders::fly(m, "window_normal", r, super::fly::Open::Edge { right: true }, &[]));
     let font = egui::FontId::new(m.theme.small + 1.0, egui::FontFamily::Name(super::STRONG.into()));
     p.text(pos2(r.min.x + 36.0, r.min.y + 22.0), egui::Align2::LEFT_CENTER, "Wide Scan (37)", font, m.theme.color("gold"));
     for (k, (name, d)) in [("Rumoie", 0), ("Fulchia", 15), ("Home Point #3", 29), ("Trail Markings", 31), ("Artisan Moogle", 45), ("Lotte", 62), ("Valderotaux", 64)].iter().enumerate() {
         let y = r.min.y + 52.0 + 22.0 * k as f32;
         p.text(pos2(r.min.x + 22.0, y), egui::Align2::LEFT_CENTER, *name, egui::FontId::proportional(m.theme.small), Color32::from_rgb(0x7c, 0xe0, 0x8a));
         p.text(pos2(r.max.x - 30.0, y), egui::Align2::RIGHT_CENTER, d.to_string(), egui::FontId::proportional(m.theme.small), m.theme.color("muted"));
+    }
+}
+
+/// Flyouts in their frames (fly.rs): a panel with one joined to each side (its band left out there, fillets into it),
+/// and one held by the screen's left edge.
+fn fly_sample(m: &Modern, ctx: &egui::Context) {
+    use super::fly::Open;
+    let p = ctx.layer_painter(LayerId::new(Order::Middle, Id::unique("fly sample")));
+    let t = Rect::from_min_size(pos2(760.0, 380.0), vec2(320.0, 300.0));
+    let f = Rect::from_min_size(pos2(t.max.x, t.min.y + 60.0), vec2(220.0, 140.0));
+    let g = Rect::from_min_size(pos2(t.min.x - 180.0, t.min.y + 130.0), vec2(180.0, 100.0));
+    p.add(super::borders::fly(m, "window_normal", t, Open::None, &[(true, f), (false, g)]));
+    p.add(super::borders::fly(m, "window_normal", f, Open::Side { t, right: true }, &[]));
+    p.add(super::borders::fly(m, "window_normal", g, Open::Side { t, right: false }, &[]));
+    let e = Rect::from_min_size(pos2(0.0, 420.0), vec2(220.0, 160.0));
+    p.add(super::borders::fly(m, "window_normal", e, Open::Edge { right: false }, &[]));
+    let font = egui::FontId::new(m.theme.small + 1.0, egui::FontFamily::Name(super::STRONG.into()));
+    for (r, text) in [(t, "Panel"), (f, "Joined right"), (g, "Joined left"), (e, "Left edge")] {
+        p.text(pos2(r.min.x + 24.0, r.min.y + 22.0), egui::Align2::LEFT_CENTER, text, font.clone(), m.theme.color("gold"));
     }
 }
 
@@ -135,6 +154,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     *m.rects.borrow_mut() = std::mem::take(&mut p.this);
     if opts.borders.is_some() {
         edge_sample(m, ctx);
+        fly_sample(m, ctx);
     }
     if opts.list || opts.rows.is_some() || opts.borders.is_some() {
         return;
