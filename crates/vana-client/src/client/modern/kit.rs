@@ -250,8 +250,22 @@ pub fn clicked(resp: &Response, s: Btn) -> bool {
 /// (`ring_it` false: a row of buttons rings its cursor's button instead), scrolled into view when the cursor has just
 /// come to it. What `add` gave and the block's rect.
 pub fn setting<R>(ui: &mut Ui, m: &Modern, heading: &str, focus: bool, ring_it: bool, follow: bool, add: impl FnOnce(&mut Ui) -> R) -> (R, Rect) {
+    setting_noted(ui, m, heading, "", focus, ring_it, follow, add)
+}
+
+/// `setting` with `note` at the heading's right (wrapping in the room beside it).
+fn setting_noted<R>(ui: &mut Ui, m: &Modern, heading: &str, note: &str, focus: bool, ring_it: bool, follow: bool, add: impl FnOnce(&mut Ui) -> R) -> (R, Rect) {
     let top = ui.cursor().min;
-    if !heading.is_empty() {
+    if !note.is_empty() {
+        let c = if focus { m.theme.color("gold") } else { m.theme.color("muted") };
+        let w = ui.available_width();
+        let head = ui.painter().layout_no_wrap(heading.to_string(), FontId::new(m.theme.small, FontFamily::Name(super::STRONG.into())), c);
+        let note = ui.painter().layout(note.to_string(), FontId::proportional(m.theme.small), m.theme.color("text"), (w - head.size().x - 16.0).max(60.0));
+        let (r, _) = ui.allocate_exact_size(vec2(w, head.size().y.max(note.size().y)), Sense::hover());
+        ui.painter().galley(r.min, head, Color32::WHITE);
+        ui.painter().galley(pos2(r.max.x - note.size().x, r.min.y), note, Color32::WHITE);
+        ui.add_space(2.0);
+    } else if !heading.is_empty() {
         let c = if focus { m.theme.color("gold") } else { m.theme.color("muted") };
         ui.label(egui::RichText::new(heading).size(m.theme.small).family(FontFamily::Name(super::STRONG.into())).color(c));
         ui.add_space(2.0);
@@ -323,18 +337,23 @@ pub fn buttons(ui: &mut Ui, m: &Modern, labels: &[&str], cursor: Option<usize>, 
     out
 }
 
-/// A slider of `n` stops at `at` with its value shown at its right, or, when the value is too long for that room, on
-/// a line of its own over the track (wrapped, never cut); the stop the pointer took (a click or a drag).
-pub fn slider(ui: &mut Ui, m: &Modern, n: usize, at: usize, shown: &str) -> Option<usize> {
-    const ROOM: f32 = 110.0;
-    let avail = ui.available_width();
-    let value = ui.painter().layout(shown.to_string(), FontId::proportional(m.theme.small), m.theme.color("text"), avail);
-    let beside = value.rows.len() <= 1 && value.size().x + 12.0 <= ROOM;
-    if !beside {
-        let (vr, _) = ui.allocate_exact_size(vec2(avail, value.size().y), Sense::hover());
-        ui.painter().galley(pos2(vr.max.x - value.size().x, vr.min.y), value.clone(), Color32::WHITE);
+/// A slider setting (see `setting`) of `n` stops at `at`: its value shown at the track's right or, too long for that
+/// room, at the heading's right (wrapped there, never cut); the stop the pointer took (a click or a drag).
+pub fn slider_setting(ui: &mut Ui, m: &Modern, heading: &str, focus: bool, follow: bool, n: usize, at: usize, shown: &str) -> (Option<usize>, Rect) {
+    let w = ui.fonts_mut(|f| f.layout_no_wrap(shown.to_string(), FontId::proportional(m.theme.small), Color32::WHITE).size().x);
+    if w + 12.0 <= SLIDER_ROOM {
+        setting(ui, m, heading, focus, true, follow, |ui| slider(ui, m, n, at, shown))
+    } else {
+        setting_noted(ui, m, heading, shown, focus, true, follow, |ui| slider(ui, m, n, at, ""))
     }
-    let (r, resp) = ui.allocate_exact_size(vec2(avail - ROOM, 20.0), Sense::click_and_drag());
+}
+
+const SLIDER_ROOM: f32 = 110.0;
+
+fn slider(ui: &mut Ui, m: &Modern, n: usize, at: usize, shown: &str) -> Option<usize> {
+    let avail = ui.available_width();
+    let value = ui.painter().layout_no_wrap(shown.to_string(), FontId::proportional(m.theme.small), m.theme.color("text"));
+    let (r, resp) = ui.allocate_exact_size(vec2(avail - SLIDER_ROOM, 20.0), Sense::click_and_drag());
     let f = if n > 1 { at as f32 / (n - 1) as f32 } else { 1.0 };
     let track = r.shrink2(vec2(0.0, 6.0));
     let p = ui.painter();
@@ -342,9 +361,7 @@ pub fn slider(ui: &mut Ui, m: &Modern, n: usize, at: usize, shown: &str) -> Opti
     p.rect_filled(Rect::from_min_max(track.min, pos2(r.min.x + r.width() * f, track.max.y)), 4.0, m.theme.color("bronze"));
     let knob = if resp.hovered() || resp.dragged() { m.theme.color("text") } else { m.theme.color("gold") };
     p.circle(pos2(r.min.x + r.width() * f, r.center().y), 7.5, knob, Stroke::new(1.0, Color32::from_black_alpha(200)));
-    if beside {
-        p.galley(pos2(r.max.x + 12.0, r.center().y - value.size().y / 2.0), value, Color32::WHITE);
-    }
+    p.galley(pos2(r.max.x + 12.0, r.center().y - value.size().y / 2.0), value, Color32::WHITE);
     if (resp.clicked() || resp.dragged())
         && let Some(x) = resp.interact_pointer_pos()
     {

@@ -46,8 +46,8 @@ fn kit_sample(p: &mut Panels) {
     let m = p.m;
     p.panel("window", Some(Title { icon: Some("icons/config"), text: "Config", note: None }), 640.0, |ui| {
         ui.set_width(440.0);
-        kit::setting(ui, m, "Resolution", false, true, false, |ui| kit::slider(ui, m, 17, 16, "2560x1440"));
-        kit::setting(ui, m, "GPU", true, true, false, |ui| kit::slider(ui, m, 3, 1, "AMD Radeon RX 6800 XT (RADV NAVI21)"));
+        kit::slider_setting(ui, m, "Resolution", false, false, 17, 16, "2560x1440");
+        kit::slider_setting(ui, m, "GPU", true, false, 3, 1, "AMD Radeon RX 6800 XT (RADV NAVI21)");
         kit::setting(ui, m, "3D Aspect", false, true, false, |ui| kit::choice(ui, m, &["Window".to_string(), "Config".to_string()], 1, 0));
         kit::line(ui, m, "1. a-pack-with-a-rather-long-folder-name-from-an-archive-2019-final", false, false, |ui| {
             kit::button(ui, m, "Uninstall", 0.0, kit::Btn::default());

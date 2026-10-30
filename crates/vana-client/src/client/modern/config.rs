@@ -543,17 +543,19 @@ fn native_rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, c: &ConfigUi, v: &Va
     for (i, s) in shapes.iter().enumerate() {
         let focus = focus_row == Some(i);
         let (_, r) = match (s.ctls[0].1, stops[i]) {
-            (Ctl::Slider(id, ..), Stop::Value { n, at, .. }) => kit::setting(ui, m, &t.heads[i], focus, true, follow, |ui| {
+            (Ctl::Slider(id, ..), Stop::Value { n, at, .. }) => {
                 // The aspect ratios by name, as retail's text under the slider.
                 let val = v.get_i(id);
                 let shown = match id {
                     0x43 | 0xab => configui::ASPECTS.get(val.max(0) as usize).map_or(String::new(), |a| a.0.trim_matches(['(', ')']).to_string()),
                     _ => val.to_string(),
                 };
-                if let Some(x) = kit::slider(ui, m, n, at, &shown) {
+                let (x, r) = kit::slider_setting(ui, m, &t.heads[i], focus, follow, n, at, &shown);
+                if let Some(x) = x {
                     *click = Some(Click::Slide(i, x));
                 }
-            }),
+                ((), r)
+            }
             (_, Stop::Value { at, off, .. }) => kit::setting(ui, m, &t.heads[i], focus, true, follow, |ui| {
                 if let Some(x) = kit::choice(ui, m, &t.labels[i], at, off) {
                     *click = Some(Click::Opt(i, x));
@@ -618,24 +620,38 @@ fn list_rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, rows: &[(u16, usize)],
 /// Font Colors: each colour's name, sample line and swatch; the cursor's colour open with the picker and its hue,
 /// saturation and brightness sliders (the cursor's ringed).
 #[allow(clippy::too_many_arguments)]
-fn colour_rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, cu: &ConfigUi, v: &Values, rows: &[(u16, u16, u16)], focus: Option<usize>, follow: bool, click: &mut Option<Click>) {
+/// Font Colors' columns: the swatch's, the widest name's and the widest sample's of category `cat`; the page is made
+/// as wide as they need.
+const SWATCH_W: f32 = 38.0;
+const COL_GAP: f32 = 24.0;
+
+fn colour_columns(ctx: &egui::Context, m: &super::Modern, gu: &GameUi, cat: usize) -> (f32, f32) {
+    let font = FontId::proportional(m.theme.small);
+    let width = |id: u16| ctx.fonts_mut(|f| f.layout_no_wrap(gu.group_b(id as usize).unwrap_or_default(), font.clone(), Color32::WHITE).size().x);
+    configui2::colour_rows(cat).iter().fold((0.0f32, 0.0f32), |(a, b), &(label, sample, _)| (a.max(width(label)), b.max(width(sample))))
+}
+
+fn colour_rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, cu: &ConfigUi, v: &Values, rows: &[(u16, u16, u16)], name_w: f32, focus: Option<usize>, follow: bool, click: &mut Option<Click>) {
     const NAMES: [&str; 3] = ["Hue", "Saturation", "Brightness"];
     for (i, &(label, sample, id)) in rows.iter().enumerate() {
         let c = rgb(v.get(id));
         let col = super::chat::colour(crate::dat::battle::argb_bytes(v.get(id)));
         let open = focus.is_some_and(|f| f / 3 == i);
-        // The colour's name, its sample in the colour under it (side by side, long names ran into it); each wraps, the
-        // row as tall as they need.
-        let (font, room) = (FontId::proportional(m.theme.small), ui.available_width() - 50.0);
-        let name = ui.painter().layout(gu.group_b(label as usize).unwrap_or_default(), font.clone(), if open { m.theme.color("gold") } else { m.theme.color("text") }, room);
-        let line = ui.painter().layout(gu.group_b(sample as usize).unwrap_or_default(), font, col, room);
-        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), name.size().y + line.size().y + 14.0), Sense::click());
+        // The name, then its sample in the colour in a column of its own (the page sized for both; on a screen too
+        // narrow for that each wraps in its column, the row as tall as it needs).
+        let font = FontId::proportional(m.theme.small);
+        let full = ui.available_width();
+        let name_room = name_w.min(full * 0.5);
+        let sample_room = (full - SWATCH_W - name_room - COL_GAP - 8.0).max(40.0);
+        let name = ui.painter().layout(gu.group_b(label as usize).unwrap_or_default(), font.clone(), if open { m.theme.color("gold") } else { m.theme.color("text") }, name_room);
+        let line = ui.painter().layout(gu.group_b(sample as usize).unwrap_or_default(), font, col, sample_room);
+        let (r, resp) = ui.allocate_exact_size(vec2(full, name.size().y.max(line.size().y) + 14.0), Sense::click());
         let face = if open { "controls/list_row_selected" } else if resp.hovered() { "controls/list_row_hover" } else { "controls/list_row_normal" };
         super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
         let p = ui.painter();
         p.rect_filled(Rect::from_min_size(pos2(r.min.x + 12.0, r.center().y - 8.0), vec2(16.0, 16.0)), 3.0, Color32::from_rgb(c[0], c[1], c[2]));
-        p.galley(pos2(r.min.x + 38.0, r.min.y + 5.0), name.clone(), Color32::WHITE);
-        p.galley(pos2(r.min.x + 38.0, r.min.y + 9.0 + name.size().y), line, Color32::WHITE);
+        p.galley(pos2(r.min.x + SWATCH_W, r.center().y - name.size().y / 2.0), name.clone(), Color32::WHITE);
+        p.galley(pos2(r.min.x + SWATCH_W + name_room + COL_GAP, r.center().y - line.size().y / 2.0), line, Color32::WHITE);
         if resp.clicked() && !open {
             *click = Some(Click::Focus(i * 3));
         }
@@ -654,14 +670,12 @@ fn colour_rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, cu: &ConfigUi, v: &V
         let steps = steps_of(cu, v, id);
         for (ch, name) in NAMES.iter().enumerate() {
             let k = i * 3 + ch;
-            kit::setting(ui, m, name, focus == Some(k), true, follow, |ui| {
-                let shown = format!("{}%", steps[ch] * 100 / kit::STEPS);
-                if let Some(x) = kit::slider(ui, m, kit::STEPS + 1, steps[ch], &shown) {
-                    let mut s = steps;
-                    s[ch] = x;
-                    *click = Some(Click::Hsv(i, s));
-                }
-            });
+            let shown = format!("{}%", steps[ch] * 100 / kit::STEPS);
+            if let (Some(x), _) = kit::slider_setting(ui, m, name, focus == Some(k), follow, kit::STEPS + 1, steps[ch], &shown) {
+                let mut s = steps;
+                s[ch] = x;
+                *click = Some(Click::Hsv(i, s));
+            }
         }
     }
 }
@@ -684,19 +698,21 @@ fn settings_page(ui: &mut Ui, m: &super::Modern, v: &settings::View, open: bool,
     for (k, r) in v.rows.iter().enumerate() {
         let row = k + 1;
         let focus = open && v.row == row;
-        kit::setting(ui, m, &r.label, focus, true, follow, |ui| match &r.ctl {
+        match &r.ctl {
             settings::VCtl::Buttons(bs) => {
-                let labels: Vec<String> = bs.iter().map(|b| b.0.clone()).collect();
-                if let Some(c) = kit::choice(ui, m, &labels, bs.iter().position(|b| b.1).unwrap_or(usize::MAX), 0) {
-                    act.push(Do::Click(row, c));
-                }
+                kit::setting(ui, m, &r.label, focus, true, follow, |ui| {
+                    let labels: Vec<String> = bs.iter().map(|b| b.0.clone()).collect();
+                    if let Some(c) = kit::choice(ui, m, &labels, bs.iter().position(|b| b.1).unwrap_or(usize::MAX), 0) {
+                        act.push(Do::Click(row, c));
+                    }
+                });
             }
             settings::VCtl::Slider { n, at, shown } => {
-                if let Some(i) = kit::slider(ui, m, *n, *at, shown) {
+                if let (Some(i), _) = kit::slider_setting(ui, m, &r.label, focus, follow, *n, *at, shown) {
                     act.push(Do::Slide(row, i));
                 }
             }
-        });
+        }
     }
 }
 
@@ -1048,13 +1064,19 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let (keys, ask) = (c.m_keys, c.extra.ask_keys);
     let (mut click, mut hover) = (None, None);
     let mut help = String::new();
-    p.panel("window", Some(Title { icon: Some("icons/config"), text: "Config", note: None }), 640.0, |ui| {
+    // Font Colors is as wide as its names and samples side by side need (within the screen).
+    let colours = if matches!(ENTRIES[entry].1, Entry::Colors) { colour_columns(p.ctx, m, gu, cat) } else { (0.0, 0.0) };
+    let page_w = match ENTRIES[entry].1 {
+        Entry::Colors => (SWATCH_W + colours.0 + COL_GAP + colours.1 + 20.0).clamp(PAGE_W, (p.ctx.content_rect().width() - 260.0).max(PAGE_W)),
+        _ => PAGE_W,
+    };
+    p.panel("window", Some(Title { icon: Some("icons/config"), text: "Config", note: None }), 640.0 - PAGE_W + page_w, |ui| {
         ui.horizontal_top(|ui| {
             entry_list(ui, m, ENTRIES.map(|e| e.0).as_slice(), entry, open, &mut click);
             ui.add_space(16.0);
             let tall = ui.ctx().content_rect().height() * TALL;
             egui::ScrollArea::vertical().id_salt("config page").max_height(tall).min_scrolled_height(tall).auto_shrink([false, true]).show(ui, |ui| ui.vertical(|ui| {
-                ui.set_width(PAGE_W);
+                ui.set_width(page_w);
                 if let Some(yes) = ask {
                     let q = gu.group_b(0x8f).unwrap_or_else(|| "Reset keyboard assignment to default?".into());
                     if let Some(a) = kit::yes_no(ui, m, &q, ["Yes", "No"], yes, m.theme.small) {
@@ -1089,7 +1111,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                         if let Some(k) = kit::tab_strip(ui, m, "config cats", &labels, cat, open && row == 0) {
                             click = Some(Click::Cat(k));
                         }
-                        colour_rows(ui, m, gu, c, v, configui2::colour_rows(cat), (open && row >= 1).then(|| row - 1), follow, &mut click);
+                        colour_rows(ui, m, gu, c, v, configui2::colour_rows(cat), colours.0, (open && row >= 1).then(|| row - 1), follow, &mut click);
                         help = "Up / Down: a colour and its hue, saturation and brightness; Left / Right change them. The mouse: the square and the strip.".into();
                         return;
                     }
