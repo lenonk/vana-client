@@ -139,6 +139,14 @@ enum Cmd {
         #[arg(long, allow_hyphen_values = true)]
         to: String,
     },
+    /// Each ground position's map (the sub-map key under it, its map number) and grid square, as the location panel
+    /// shows it (FUN_101f7600).
+    MapGrid {
+        zone: u32,
+        /// Positions as x,y,z (feet).
+        #[arg(allow_hyphen_values = true)]
+        points: Vec<String>,
+    },
     /// List the scenery models whose triangles cover a ground position (x, z).
     ZoneProbe {
         zone: u32,
@@ -1392,6 +1400,14 @@ fn main() -> Result<()> {
             Ok(())
         }
         Cmd::ZonePath { zone, from, to } => zone_path(zone, &from, &to),
+        Cmd::MapGrid { zone, points } => {
+            let pts: Vec<[f32; 3]> = points.iter().map(|s| -> Result<[f32; 3]> {
+                let v: Vec<f32> = s.split(',').map(|v| Ok(v.trim().parse::<f32>()?)).collect::<Result<_>>()?;
+                anyhow::ensure!(v.len() == 3, "want x,y,z: {s}");
+                Ok([v[0], v[1], v[2]])
+            }).collect::<Result<_>>()?;
+            client::map_grid(zone, &pts)
+        }
         Cmd::ZoneProbe { zone, x, z } => {
             use glam::{Mat4, Vec3};
             let cfg = config::Config::load();

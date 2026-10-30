@@ -13723,3 +13723,26 @@ mod page_tests {
         assert_eq!(super::cut_pages("one", false, spans, wrap), [["one"]]);
     }
 }
+
+/// `map-grid`: each position's sub-map key, the map record it shows (number) and its grid square, as the location
+/// panel's grid_text reads them.
+pub fn map_grid(zone: u32, points: &[[f32; 3]]) -> Result<()> {
+    let cfg = Config::load();
+    let index = crate::dat::DatIndex::open(&cfg.ffxi_dir())?;
+    let dll = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?;
+    let keys = crate::dat::zone::Keys::from_ffximain(&dll)?;
+    let g = ground::Ground::build(&crate::dat::zone::load_scene(&keys, &index.read(crate::dat::zone::file_id(zone))?)?);
+    let regions = map::regions(&dll);
+    for p in points {
+        let v = Vec3::from(*p);
+        let key = g.map_key(v);
+        match map::Region::find_key(&regions, zone as u16, key).or_else(|| map::Region::find(&regions, zone as u16)) {
+            Some(r) => {
+                let (px, py) = r.px(v.x, v.z);
+                println!("({}, {}, {}): key {key}, map {} (record key {}), {}", p[0], p[1], p[2], r.num, r.key, r.grid(px, py));
+            }
+            None => println!("({}, {}, {}): key {key}, no map record", p[0], p[1], p[2]),
+        }
+    }
+    Ok(())
+}

@@ -12236,3 +12236,9 @@ since "Ship voyages: the moving world" listed them as not done.
 - LSB facts (not patched): chair 12's key item check uses 2837, the real one is 3343; its "sitting" checks stop at
   chair 10; the toggle-with-another-id case above. Others' chairs need a second player (not seen live).
 - Not done: trusts ignoring chair / sit / heal statuses in 0x00E (asm 0x1009c148).
+
+## map-grid: a position's map grid square (2026-10-29; tool)
+
+- `vana-client map-grid ZONE x,y,z ...`: the sub-map key under each position (Ground::map_key), the map record it
+  shows (Region::find_key, else the zone's key 0) and its square by FUN_101f1a60 as the location panel's grid_text.
+  Checked: East Ronfaure (86, -62, 268) gives (G-6), as the panel live.
