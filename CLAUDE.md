@@ -77,19 +77,12 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   R14, R16..R18, R21, R11 / R12 / R15 toggles (spec `~/ffxi/lab/research/event_toggles_spec.md`; MODLOG "Event
   toggles, part 2"), R9 (MODLOG "The control lock"), 0xb6 0x11 (client/ships.rs swap_model, MODLOG "Extras: target
   distance ..."). Left: 0xb3 mini-game (its actors in zones 104, 109, 119, 243, 244, 248, 249 are not on LSB; 0xd8 and 0x46/3 done).
-- New-character flow, one nation at a time (create, opening cutscenes, first zone):
-  - San d'Oria: under review;
-  - Windurst and Bastok: the openings looked right to the user (2026-10-23; Windurst Waters 531, Bastok Markets);
-    left: Windurst's water (too dark; the world blends in gamma space since, MODLOG "The world scene blends in gamma
-    space", not seen by the user yet; the lobby scenes always did, MODLOG "Correction: the lobby scenes"), the other openings (Port
-    Windurst, Windurst Woods, Bastok Mines, Port Bastok) not seen by the user. They play to the end (2026-10-28:
-    Lnxcsfix with char var HQuest[newCharacterCS]notSeen = 1 and her zone set; contact sheets in
-    ~/ffxi/lab/scratch/openings).
+- New-character flow (create, opening cutscenes, first zone): done for all three nations, every opening verified
+  (user, 2026-10-30). To replay one: Lnxcsfix with char var HQuest[newCharacterCS]notSeen = 1 and her zone set;
+  contact sheets in ~/ffxi/lab/scratch/openings.
 - Other known gaps:
-  - after the move to FFXiMain 30261006_0 (MODLOG "Tables copied from FFXiMain"): the creator backdrop drew black
-    (on zone 133 too; not reproduced 2026-10-23: the lobby and the creator race step draw it live and
-    offscreen); the gamepad rows (Misc. 4 0xce, the external gamepad
-    tool);
+  - after the move to FFXiMain 30261006_0 (MODLOG "Tables copied from FFXiMain"): the gamepad rows (Misc. 4 0xce,
+    the external gamepad tool);
   - magic and ability menus (done: lists, prompt, <st> tags, cast bar, mouse in the lists, the sort windows and the
     order files, cursor memory, the mount list, the emote list, mouse in the prompt, blue magic sets (bluset.rs,
     MODLOG "Blue magic sets"; live on Lnxcsfix as BLU 75, now back to WAR 21); the mount model under the rider
@@ -184,7 +177,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     pins, the weapon after-image (fx/trail.rs), the view gate, the party roster for the filter, moving-part lights,
     actor refraction (ops 0x48 / 0x49), op 0xac (the death pick), attach modes 0x14 / 0x15 (voyages) done;
     real lamp lights in place of the baked shells and soft glows done (Settings' Lamp Lights; MODLOG "Lamp
-    Lights"; left: interiors); actor ground shadows (client/shadows.rs, render/shadow.rs, config 0x3a; MODLOG "Actor
+    Lights", interiors too); actor ground shadows (client/shadows.rs, render/shadow.rs, config 0x3a; MODLOG "Actor
     ground shadows") done;
   - fishing (client/fishing.rs, fishrod.rs, MODLOG "Fishing"): done and caught live, the +1 rods' glow too; left
     other anglers not seen live;
@@ -215,17 +208,16 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - parked (user, 2026-10-25, "we'll come back to it"): the logout destination (title Config 0xac, MODLOG "The gray
     select screen after a relog"; a logout goes back to the lobby without the password, as retail). The login
     screen's Remember password is done (MODLOG "Remember password").
-- Updates (user's design, 2026-10-22). Never required, always offered:
-  - After login, character select gets an "Update" button above Select Character when anything is out of date
-    (checked in the background at start). Pressing it opens a window asking what to update, each with its size:
-    game files (src/patch.rs, the PlayOnline patch protocol, done as `vana-client update`), vana-client itself
-    (GitHub releases), and later others (candidates: mod packs, the client version string LSB checks).
-  - First start with no game files: download the retail installer from SE, unpack it, take what we need, then
-    patch. While no DATs exist every other title button is disabled. Open question: the title and login screens
-    are drawn from the DATs, so a first start needs some screen of its own before them.
+- Updates (user's design, 2026-10-22). Never required, always offered. Done:
+  - The "Update" button (client/updater.rs), shown when anything is out of date (checked in the background at
+    start): game files (src/patch.rs, the PlayOnline patch protocol) and vana-client itself (the latest GitHub
+    release, downloaded, installed, the client restarted). Later candidates: mod packs, the client version string
+    LSB checks.
+  - First start with no game files (client/firstrun.rs): a small window of our own offers to download the retail
+    client from SE, installs its game files, patches them and deletes the download.
   - No command line for any of it.
-  - Releases (user, 2026-10-24): build the Linux binary with the Steam Runtime "sniper" toolchain so one build runs
-    on every distro; the Update button downloads the release from GitHub, installs it and restarts the client.
+  - Releases (user, 2026-10-24): the Linux binary is built with the Steam Runtime "sniper" toolchain so one build
+    runs on every distro.
   - The install was behind the server's data (NPC models 2957+ missing: the level-5 crystal scene's set was
     blank): 5321 files, 452 MB as of 30261006_0. Updates go to the base files, never to mods.
 - Mod manager (XIPivot built in). Done: dat/overlay.rs. Mods are folders under ~/.local/share/vana-client/mods in
@@ -249,9 +241,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   "Training regime window"), target distance and HP %, text auto-advance, /find, /dps (MODLOG "Extras: target
   distance ..."), the skillchain helper (LSB's properties bundled; client/skillchain.rs, both UIs) and the battle
   menu's suggestions (suggest.rs; MODLOG "Skillchain helper and the battle menu's suggestions"), the Clock, Trust
-  Speech and Ready Lines (MODLOG "Extras: Clock and Trust Speech"); party TP and buffs were already there.
-  - candidates: more Battlemod-style filtering (retail's chat filters already split by caster / target; what is
-    left is its message simplifying and name colours).
+  Speech and Ready Lines (MODLOG "Extras: Clock and Trust Speech"), Battlemod's short battle text and coloured
+  names (MODLOG "Extras: Battle Text (short) and Battle Names (coloured)"); party TP and buffs were already there.
 - Chat log (user, 2026-10-23: "needs a lot of love"; audit `~/ffxi/lab/research/chat_audit/`): done the server side
   (treasure pool, MsgShift gaps, 0x017 kinds and echoes, 0x027 / 0x043, 0x009 keys, lines held until the message
   tables load, the server message and /servmes, zone text colours) and /emote, /recast, talk range / mounted, /party
