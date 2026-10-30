@@ -122,15 +122,13 @@ pub struct Sprite {
 }
 
 /// A window frame for any size: its border on a texture of its own (transparent inside), the interior's vertical
-/// gradient (top to bottom), its logical size, corner insets and the interior's inset; its edge band's dark, middle
-/// and bright colours (for the joints drawn in their likeness).
+/// gradient (top to bottom), its logical size, corner insets and the interior's inset.
 pub struct Frame {
     pub border: TextureHandle,
     pub gradient: Vec<Color32>,
     pub size: f32,
     pub corner: f32,
     pub inset: f32,
-    pub band: [Color32; 3],
 }
 
 /// The atlases on the GPU, the sprites by manifest id, the window frames by name.
@@ -233,19 +231,13 @@ impl Art {
                 let inside: Vec<usize> = (0..h).filter(|&y| rgba[(y * w + cx) * 4 + 3] > 0 && alpha[y * w + cx] == 0).collect();
                 let (Some(&top), Some(&bottom)) = (inside.first(), inside.last()) else { continue };
                 let gradient = (top..=bottom).map(|y| Color32::from_rgb(rgba[(y * w + cx) * 4], rgba[(y * w + cx) * 4 + 1], rgba[(y * w + cx) * 4 + 2])).collect();
-                let px = it.png_size[0] / it.size[0];
-                // The top band down the middle column: dark from 0.5 pt, the middle line at 2, the bright one at 3.
-                let at = |pt: f32| {
-                    let y = ((pt * px).round() as usize).min(h - 1);
-                    Color32::from_rgb(rgba[(y * w + cx) * 4], rgba[(y * w + cx) * 4 + 1], rgba[(y * w + cx) * 4 + 2])
-                };
-                let band = [at(1.0), at(2.0), at(3.0)];
                 for (p, a) in rgba.chunks_mut(4).zip(&alpha) {
                     p[3] = *a;
                 }
+                let px = it.png_size[0] / it.size[0];
                 let border = ctx.load_texture(format!("modern/{name}"), ColorImage::from_rgba_unmultiplied([w, h], &rgba), TextureOptions::LINEAR);
                 let corner = it.nine_slice.map_or(24.0, |n| n[0]);
-                frames.insert(name.to_string(), Frame { border, gradient, size: it.size[0], corner, inset: top as f32 / px, band });
+                frames.insert(name.to_string(), Frame { border, gradient, size: it.size[0], corner, inset: top as f32 / px });
             }
         }
         Self { _textures: textures, sprites, frames }

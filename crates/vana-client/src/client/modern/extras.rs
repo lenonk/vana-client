@@ -6,7 +6,6 @@ use super::super::map::MapImage;
 use super::super::timers::{self, Group, Icon, SECTIONS};
 use super::super::{World, event, minimap};
 use super::Panels;
-use super::fly::{Open, TAB_H, chevron, under_retail};
 use egui::{Align2, Color32, FontFamily, FontId, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2, pos2, vec2};
 
 pub fn draw(p: &mut Panels, w: &mut World) {
@@ -129,140 +128,24 @@ fn regime_panel(p: &mut Panels, w: &mut World) {
     }
 }
 
-/// The skillchain helper (skillchain.rs) on a screen edge, in a party: on our target the open resonance (its
-/// properties, the wait before a closer counts and the time left, or the chain made and its burst elements) and what in
-/// the party closes it; then every chain two members can make with what they have, the strongest first.
+/// The skillchain helper (skillchain.rs's view) on a screen edge, in a party: on our target the open resonance (its
+/// properties or the chain made with its burst elements, the wait before a closer counts and the time left) and
+/// everything in the party that closes it; then every chain the party can make, the strongest first, with its ways.
+/// Lines wrap; what does not fit above the next panel on its edge scrolls.
 fn skillchain_panel(p: &mut Panels, w: &mut World) {
-    use super::super::skillchain as sk;
-    use crate::dat::skillchains::{self as sc, Prop};
     if !w.extra_skillchain || hidden(w) {
         return;
     }
-    let members = sk::members(w);
-    if members.len() < 2 {
-        return;
-    }
+    let Some(v) = super::super::skillchain::view(w) else { return };
     let m = p.m;
-    let focus = sk::focus(w);
-    let res = focus.and_then(|t| w.skillchain.on.get(&t).cloned()).filter(|r| r.left() > 0.0);
-    let mob = focus.and_then(|t| w.entities.get(&t)).map(|e| super::super::monstrosity::name(e).to_string()).unwrap_or_default();
-    let combos = sk::combos(&members);
-    let names: Vec<String> = members.iter().map(|x| if x.me { "You".to_string() } else { x.name.clone() }).collect();
-    let skill_names: std::collections::HashMap<sc::Skill, String> = members.iter().flat_map(|x| x.skills.iter().map(|&s| (s, sk::name(w, s)))).collect();
-    let sname = |s: sc::Skill| skill_names.get(&s).cloned().unwrap_or_else(|| sk::name(w, s));
-    let ready = |k: usize| members[k].tp >= 1000;
-    let level_colour = |c: Prop| match sc::level(c) {
-        3 | 4 => m.theme.color("text"),
-        2 => m.theme.color("gold"),
-        _ => m.theme.color("muted"),
-    };
-    let small = FontId::proportional(m.theme.small);
-    let strong = FontId::new(m.theme.small + 1.0, FontFamily::Name(super::STRONG.into()));
-    // It ends above the first panel under it on its edge (the target and party windows), or at the screen's bottom.
+    // Room down to the first panel under it (the target and party windows), or the screen's bottom.
     let screen = p.ctx.content_rect();
-    let place = p.place("skillchains");
-    let top = screen.height() * place.y;
-    let (x0, x1) = if place.x >= 0.0 { (screen.min.x, screen.min.x + WIDTH_SC) } else { (screen.max.x - WIDTH_SC, screen.max.x) };
-    let limit = m.rects.borrow().iter().filter(|(k, r)| k.as_str() != "skillchains" && r.min.y > top + 40.0 && r.max.x > x0 && r.min.x < x1).map(|(_, r)| r.min.y).fold(screen.max.y, f32::min) - 30.0;
-    let fits = |ui: &Ui, h: f32| ui.cursor().min.y + h <= limit;
-    // The chain's name, then its elements' icons.
-    let chain_line = |ui: &mut Ui, c: Prop, lead: &str| {
-        let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
-        let r = ui.painter().text(pos2(rect.min.x, rect.center().y), Align2::LEFT_CENTER, format!("{lead}{}", sc::NAMES[c as usize]), strong.clone(), if lead.is_empty() { level_colour(c) } else { m.theme.color("gold") });
-        let mut x = r.max.x + 6.0;
-        for e in sc::elements(c) {
-            if let Some(s) = m.art.sprite(super::gametext::ELEMENTS[*e as usize]) {
-                ui.painter().add(super::paint::image(&s, pos2(x, rect.center().y - 7.0), 14.0, Color32::WHITE));
-            }
-            x += 16.0;
-        }
-    };
+    let at = m.rects.borrow().get("skillchains").copied().unwrap_or(Rect::from_min_size(pos2(screen.max.x - WIDTH_SC, screen.height() * p.place("skillchains").y), vec2(WIDTH_SC, 0.0)));
+    let limit = m.rects.borrow().iter().filter(|(k, r)| k.as_str() != "skillchains" && r.min.y > at.min.y + 40.0 && r.max.x > at.min.x && r.min.x < at.max.x).map(|(_, r)| r.min.y).fold(screen.max.y, f32::min) - 16.0;
     let toggle = edge_window(p, "skillchains", WIDTH_SC, w.skillchain.folded, "Skillchains", |ui, left| {
         let toggle = flyout_header(ui, m, "Skillchains", left).clicked();
-        if let Some(r) = &res {
-            ui.add_space(4.0);
-            let age = r.age();
-            match r.chain {
-                Some(c) => {
-                    chain_line(ui, c, "Skillchain: ");
-                    let els: Vec<&str> = sc::elements(c).iter().map(|e| e.name()).collect();
-                    ui.label(egui::RichText::new(format!("Burst {} on {mob}: {:.1} s", els.join(" / "), r.left())).size(m.theme.small).color(m.theme.color("text")));
-                }
-                None => {
-                    ui.label(egui::RichText::new(format!("Open on {mob}: {}", sk::props_text(&r.props))).size(m.theme.small + 1.0).color(m.theme.color("text")));
-                }
-            }
-            let by = members.iter().position(|x| x.me && r.by == w.my_id).map(|k| names[k].clone()).or_else(|| w.party.party().find(|x| x.id == r.by).map(|x| x.name.clone())).unwrap_or_default();
-            let by = if by.is_empty() { sname(r.skill) } else { format!("{by}: {}", sname(r.skill)) };
-            ui.label(egui::RichText::new(by).size(m.theme.small).color(m.theme.color("muted")));
-            // The wait (a closer before it does not count), then the window draining.
-            let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 6.0), Sense::hover());
-            ui.painter().rect_filled(bar, 2.0, m.theme.color("charcoal"));
-            let (f, col, note) = if age < sk::WAIT {
-                (age / sk::WAIT, m.theme.color("muted"), format!("wait {:.1} s", sk::WAIT - age))
-            } else {
-                (r.left() / (r.life - sk::WAIT).max(0.1), m.theme.color("gold"), format!("close within {:.1} s", r.left()))
-            };
-            ui.painter().rect_filled(Rect::from_min_max(bar.min, pos2(bar.min.x + bar.width() * f.clamp(0.0, 1.0), bar.max.y)), 2.0, col);
-            ui.label(egui::RichText::new(note).size(m.theme.small).color(m.theme.color("muted")));
-            let close = sk::closers(&members, r);
-            if close.is_empty() {
-                ui.label(egui::RichText::new("Nothing known in the party closes it.").size(m.theme.small).color(m.theme.color("muted")));
-            }
-            for &(k, s, c) in close.iter().take(6) {
-                if !fits(ui, 34.0) {
-                    break;
-                }
-                let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::hover());
-                let colour = if ready(k) { m.theme.color("text") } else { m.theme.color("muted") };
-                let g = super::one_line(ui.painter(), &format!("{}: {}", names[k], sname(s)), small.clone(), colour, rect.width());
-                ui.painter().galley(pos2(rect.min.x, rect.min.y + 1.0), g, Color32::WHITE);
-                let r2 = ui.painter().text(pos2(rect.min.x + 10.0, rect.min.y + 17.0), Align2::LEFT_TOP, format!("\u{2192} {}", sc::NAMES[c as usize]), small.clone(), level_colour(c));
-                let mut x = r2.max.x + 6.0;
-                for e in sc::elements(c) {
-                    if let Some(sp) = m.art.sprite(super::gametext::ELEMENTS[*e as usize]) {
-                        ui.painter().add(super::paint::image(&sp, pos2(x, rect.min.y + 18.0), 13.0, Color32::WHITE));
-                    }
-                    x += 15.0;
-                }
-            }
-            ui.add_space(6.0);
-        }
-        ui.add_space(2.0);
-        if !fits(ui, 60.0) {
-            return toggle;
-        }
-        ui.label(egui::RichText::new("Party chains").size(m.theme.small + 1.0).color(m.theme.color("gold")));
-        if combos.is_empty() {
-            ui.label(egui::RichText::new("None known yet: the party's skills show here as they are used.").size(m.theme.small).color(m.theme.color("muted")));
-        }
-        // Each chain once, its ways under it (ours first, those whose opener has the TP brighter).
-        let mut chains: Vec<Prop> = Vec::new();
-        for cb in &combos {
-            if !chains.contains(&cb.chain) {
-                chains.push(cb.chain);
-            }
-        }
-        for (n, &c) in chains.iter().enumerate() {
-            if !fits(ui, 40.0) {
-                ui.label(egui::RichText::new(format!("and {} more chains", chains.len() - n)).size(m.theme.small - 1.0).color(m.theme.color("muted")));
-                break;
-            }
-            chain_line(ui, c, "");
-            let mut ways: Vec<&sk::Combo> = combos.iter().filter(|cb| cb.chain == c).collect();
-            ways.sort_by_key(|cb| (!(members[cb.opener.0].me || members[cb.closer.0].me), !ready(cb.opener.0)));
-            for cb in ways.iter().take(2) {
-                let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 16.0), Sense::hover());
-                let colour = if ready(cb.opener.0) { m.theme.color("text") } else { m.theme.color("muted") };
-                let text = format!("{}: {}  \u{2192}  {}: {}", names[cb.opener.0], sname(cb.opener.1), names[cb.closer.0], sname(cb.closer.1));
-                let g = super::one_line(ui.painter(), &text, small.clone(), colour, rect.width() - 8.0);
-                ui.painter().galley(pos2(rect.min.x + 8.0, rect.min.y), g, Color32::WHITE);
-            }
-            if ways.len() > 2 {
-                ui.label(egui::RichText::new(format!("    and {} more", ways.len() - 2)).size(m.theme.small - 1.0).color(m.theme.color("muted")));
-            }
-            ui.add_space(3.0);
-        }
+        let room = (limit - ui.cursor().min.y - 14.0).max(80.0);
+        egui::ScrollArea::vertical().id_salt("skillchains").max_height(room).auto_shrink([false, true]).show(ui, |ui| skillchain_body(ui, m, &v));
         toggle
     });
     if toggle {
@@ -271,88 +154,368 @@ fn skillchain_panel(p: &mut Panels, w: &mut World) {
     }
 }
 
-/// The skillchain helper's width.
-const WIDTH_SC: f32 = 320.0;
-
-/// A window held by a screen edge or another panel's side, or let go free (fly.rs): its frame open on its hold (its
-/// band running into the edge, or joined to the panel); folded, a tab out of its hold with `label` running along it. It
-/// stays where it was put: the menu's windows draw over it (user, 2026-10-27). A drag on its background or heading
-/// slides it along its hold; pulled well off it, it lands where it is let go. `add` draws the contents (told whether
-/// it is held by its left side) and says whether its fold button was clicked; the tab's click counts too. Returns that.
-fn edge_window(p: &mut Panels, key: &str, width: f32, folded: bool, label: &str, add: impl FnOnce(&mut Ui, bool) -> bool) -> bool {
-    if folded {
-        return p.fly_tab(key, label);
+/// The helper's contents (also offscreen in modern-shot).
+pub(super) fn skillchain_body(ui: &mut Ui, m: &super::Modern, v: &super::super::skillchain::View) {
+    use crate::dat::skillchains::{self as sc, Prop};
+    let small = FontId::proportional(m.theme.small);
+    let strong = FontId::new(m.theme.small + 1.0, FontFamily::Name(super::STRONG.into()));
+    let (text, muted, gold) = (m.theme.color("text"), m.theme.color("muted"), m.theme.color("gold"));
+    let level_colour = |c: Prop| match sc::level(c) {
+        3 | 4 => text,
+        2 => gold,
+        _ => m.theme.color("bronze"),
+    };
+    ui.spacing_mut().item_spacing.y = 2.0;
+    // Text wrapped to the room left after `indent`.
+    let wrapped = |ui: &mut Ui, s: &str, font: FontId, colour: Color32, indent: f32| {
+        let width = (ui.available_width() - indent).max(40.0);
+        let g = ui.ctx().fonts_mut(|f| f.layout(s.to_string(), font, colour, width));
+        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), g.size().y), Sense::hover());
+        ui.painter().galley(pos2(r.min.x + indent, r.min.y), g, colour);
+    };
+    // A chain's name and its elements' icons from `x`; the right end.
+    let chain_at = |ui: &Ui, c: Prop, x: f32, cy: f32, font: FontId| {
+        let r = ui.painter().text(pos2(x, cy), Align2::LEFT_CENTER, sc::NAMES[c as usize], font, level_colour(c));
+        let mut x = r.max.x + 5.0;
+        for e in sc::elements(c) {
+            if let Some(s) = m.art.sprite(super::gametext::ELEMENTS[*e as usize]) {
+                ui.painter().add(super::paint::image(&s, pos2(x, cy - 7.0), 14.0, Color32::WHITE));
+            }
+            x += 15.0;
+        }
+        x
+    };
+    if let Some(n) = &v.now {
+        // The monster and the clock: the wait before a closer counts, then the time left.
+        let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 16.0), Sense::hover());
+        ui.painter().text(pos2(row.min.x, row.center().y), Align2::LEFT_CENTER, &n.mob, small.clone(), muted);
+        let waiting = n.age < super::super::skillchain::WAIT;
+        let clock = if waiting { format!("wait {:.1} s", super::super::skillchain::WAIT - n.age) } else { format!("{:.1} s left", n.left) };
+        ui.painter().text(pos2(row.max.x, row.center().y), Align2::RIGHT_CENTER, clock, small.clone(), if waiting { muted } else { gold });
+        match n.chain {
+            Some(c) => {
+                let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
+                let r = ui.painter().text(pos2(row.min.x, row.center().y), Align2::LEFT_CENTER, "Skillchain:", strong.clone(), gold);
+                chain_at(ui, c, r.max.x + 6.0, row.center().y, strong.clone());
+                let els: Vec<&str> = sc::elements(c).iter().map(|e| e.name()).collect();
+                wrapped(ui, &format!("Magic burst: {}", els.join(", ")), small.clone(), text, 0.0);
+            }
+            None => {
+                let props: Vec<&str> = n.props.iter().map(|&p| sc::NAMES[p as usize]).collect();
+                wrapped(ui, &format!("Open: {}", props.join(" \u{b7} ")), strong.clone(), text, 0.0);
+            }
+        }
+        let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 5.0), Sense::hover());
+        ui.painter().rect_filled(bar, 2.0, m.theme.color("charcoal"));
+        let f = if waiting { n.age / super::super::skillchain::WAIT } else { n.left / (n.life - super::super::skillchain::WAIT).max(0.1) };
+        ui.painter().rect_filled(Rect::from_min_max(bar.min, pos2(bar.min.x + bar.width() * f.clamp(0.0, 1.0), bar.max.y)), 2.0, if waiting { muted } else { gold });
+        wrapped(ui, &format!("by {}", n.by), small.clone(), muted, 0.0);
+        ui.add_space(4.0);
+        if n.closers.is_empty() {
+            wrapped(ui, "Nothing the party knows closes it.", small.clone(), muted, 0.0);
+        } else {
+            ui.label(egui::RichText::new("Close with").size(m.theme.small).color(gold));
+        }
+        // The chain (and its icons) in a column, who closes with what beside it.
+        for c in &n.closers {
+            let colour = if c.ready { text } else { muted };
+            let top = ui.cursor().min.y;
+            let col = 128.0;
+            let width = (ui.available_width() - col).max(40.0);
+            let g = ui.ctx().fonts_mut(|f| f.layout(format!("{}: {}", c.who, c.skill), small.clone(), colour, width));
+            let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), g.size().y.max(18.0)), Sense::hover());
+            chain_at(ui, c.chain, r.min.x, top + 9.0, small.clone());
+            ui.painter().galley(pos2(r.min.x + col, r.min.y + 1.0), g, colour);
+        }
+        ui.add_space(8.0);
     }
+    ui.label(egui::RichText::new("Party chains").size(m.theme.small + 1.0).color(gold));
+    if v.chains.is_empty() {
+        wrapped(ui, "None known yet: the party's skills show here as they are used.", small.clone(), muted, 0.0);
+    }
+    // Each chain with its two best ways; a click on it shows them all.
+    for ch in &v.chains {
+        let open = m.sc_open.borrow().contains(&ch.chain);
+        let (row, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::click());
+        chain_at(ui, ch.chain, row.min.x, row.center().y, strong.clone());
+        if ch.ways.len() > 2 {
+            let note = if open { "fewer".to_string() } else { format!("{} ways", ch.ways.len()) };
+            ui.painter().text(pos2(row.max.x, row.center().y), Align2::RIGHT_CENTER, note, small.clone(), if resp.hovered() { text } else { muted });
+            if resp.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            if resp.clicked() {
+                let mut o = m.sc_open.borrow_mut();
+                if !o.remove(&ch.chain) {
+                    o.insert(ch.chain);
+                }
+            }
+        }
+        for way in ch.ways.iter().take(if open { usize::MAX } else { 2 }) {
+            let s = format!("{}: {}  \u{2192}  {}: {}", way.opener.0, way.opener.1, way.closer.0, way.closer.1);
+            wrapped(ui, &s, small.clone(), if way.ready { text } else { muted }, 10.0);
+        }
+        ui.add_space(3.0);
+    }
+}
+
+/// The skillchain helper's width.
+const WIDTH_SC: f32 = 360.0;
+
+/// A window on the screen's left or right edge (its place: x 0 or above the left, below 0 the right; y its top): its
+/// frame open on that side; folded, a small tab out of the edge with `label` running down it beside a double chevron.
+/// It stays where it was put: the menu's windows draw over it (user, 2026-10-27). Dragged it moves up and down, and let
+/// go on the screen's other half it goes to that edge. `add` draws the contents (told the side) and says whether its
+/// fold button was clicked; the tab's click counts too. Returns that.
+#[allow(clippy::too_many_arguments)]
+fn edge_window(p: &mut Panels, key: &str, width: f32, folded: bool, label: &str, add: impl FnOnce(&mut Ui, bool) -> bool) -> bool {
     let (m, ctx) = (p.m, p.ctx);
     let screen = ctx.content_rect();
-    let a = p.attach(key);
-    let h = m.rects.borrow().get(key).map_or(TAB_H, |r| r.height());
-    let size = vec2(width, h);
-    let (rect, open) = p.fly_rect(key, &a, size).unwrap_or_else(|| (p.free_rect(key, size), Open::None));
-    // A retail window over it (they draw under every panel): it steps aside until that closes.
-    if under_retail(m, rect) {
-        p.this.insert(key.to_string(), rect);
-        return false;
-    }
-    let left = open.by_left().unwrap_or(rect.center().x < screen.center().x);
-    let joined = p.joined(key, rect);
-    // Narrower on the held side (no band there).
-    let margin = match open {
-        Open::None => egui::Margin { left: 16, right: 16, top: 12, bottom: 14 },
-        _ => egui::Margin { left: if left { 12 } else { 18 }, right: if left { 18 } else { 12 }, top: 12, bottom: 14 },
-    };
+    let place = p.place(key);
+    // Let go away from the edges it stands free (x / y its top left), its whole frame drawn.
+    let float = place.float;
+    let fx = (screen.width() * place.x).max(screen.min.x);
+    let left = if float { fx + width / 2.0 < screen.center().x } else { place.x >= 0.0 };
+    let top = (screen.height() * place.y).clamp(screen.min.y, screen.max.y - TAB_H);
     let id = egui::Id::unique(("modern edge", key));
     let mut toggle = false;
-    let shown = egui::Area::new(id).order(egui::Order::Middle).fixed_pos(rect.min).constrain(false).show(ctx, |ui| {
+    if folded {
+        // The label runs down the tab by the screen's edge; the double chevron points into the screen.
+        let font = FontId::new(m.theme.small + 1.5, FontFamily::Name(super::STRONG.into()));
+        let galley = ctx.fonts_mut(|f| f.layout_no_wrap(label.to_string(), font, Color32::WHITE));
+        let gw = galley.size().x;
+        let size = vec2(TAB_W, (gw + 28.0).max(TAB_H));
+        let r = if float {
+            Rect::from_min_size(pos2(fx.min(screen.max.x - TAB_W), top), size)
+        } else if left {
+            Rect::from_min_size(pos2(screen.min.x, top), size)
+        } else {
+            Rect::from_min_size(pos2(screen.max.x - TAB_W, top), size)
+        };
+        // A retail window over it (they draw under every panel): it steps aside until that closes.
+        if under_retail(m, r) {
+            p.this.insert(key.to_string(), r);
+            return false;
+        }
+        let mut rect = r;
+        let mut drag = None;
+        egui::Area::new(id).order(egui::Order::Middle).fixed_pos(r.min).constrain(false).show(ctx, |ui| {
+            // A click opens it; a drag moves it as its window would.
+            let (rr, resp) = ui.allocate_exact_size(r.size(), Sense::click_and_drag());
+            drag = EdgeDrag::of(&resp);
+            rect = rr;
+            ui.painter().add(edge_frame_shape(rr, left, !float, m, false, 7));
+            feedback(ui, m, rr, &resp, 7);
+            let c = if resp.hovered() { m.theme.color("text") } else { m.theme.color("gold") };
+            // The word turned toward the screen: a quarter counter-clockwise on the left (read bottom up), clockwise on
+            // the right (read top down).
+            let (at, angle) = if left { (pos2(rr.min.x + 4.0, rr.center().y + gw / 2.0), -std::f32::consts::FRAC_PI_2) } else { (pos2(rr.max.x - 4.0, rr.center().y - gw / 2.0), std::f32::consts::FRAC_PI_2) };
+            ui.painter().add(egui::epaint::TextShape::new(at, galley, c).with_angle(angle));
+            let cx = if left { rr.max.x - 10.0 } else { rr.min.x + 10.0 };
+            for d in [-3.0, 3.0] {
+                chevron(ui.painter(), pos2(cx + d, rr.center().y), !left, c);
+            }
+            toggle = resp.clicked();
+        });
+        p.this.insert(key.to_string(), rect);
+        if let Some(d) = drag {
+            edge_drag(p, key, rect, 7, d);
+        }
+        return toggle;
+    }
+    let h = m.rects.borrow().get(key).map_or(TAB_H, |r| r.height());
+    let x = if float { fx.min(screen.max.x - width) } else if left { screen.min.x } else { screen.max.x - width };
+    if under_retail(m, Rect::from_min_size(pos2(x, top), vec2(width, h))) {
+        p.this.insert(key.to_string(), Rect::from_min_size(pos2(x, top), vec2(width, h)));
+        return false;
+    }
+    let margin = if float {
+        egui::Margin { left: 16, right: 16, top: 12, bottom: 14 }
+    } else {
+        egui::Margin { left: if left { 12 } else { 18 }, right: if !left { 12 } else { 18 }, top: 12, bottom: 14 }
+    };
+    let mut moved: Option<EdgeDrag> = None;
+    let shown = egui::Area::new(id).order(egui::Order::Middle).fixed_pos(pos2(x, top)).constrain(false).show(ctx, |ui| {
         // Room to the screen's bottom (an area offers only last frame's size).
-        ui.set_max_height((screen.max.y - rect.min.y).max(ui.min_rect().height()));
+        ui.set_max_height((screen.max.y - top).max(ui.min_rect().height()));
         let bg = ui.painter().add(Shape::Noop);
         // The background moves it: sensed under the contents (last frame's size), so they keep their clicks.
-        let drag = ui.interact(rect, id.with("drag"), Sense::drag());
-        m.edge_grip.replace(None);
+        let drag = ui.interact(Rect::from_min_size(pos2(x, top), vec2(width, h)), id.with("drag"), Sense::drag());
+        moved = EdgeDrag::of(&drag);
+        m.edge_grip.set(None);
         let inner = egui::Frame::NONE.inner_margin(margin).show(ui, |ui| {
             ui.set_width(width - margin.sum().x);
             ui.visuals_mut().override_text_color = Some(m.theme.color("text"));
             toggle = add(ui, left);
         });
-        let resp = m.edge_grip.take().unwrap_or(drag);
-        let r = inner.response.rect;
-        ui.painter().set(bg, super::borders::fly(m, "window_normal", r, open, &joined));
-        if matches!(open, Open::Edge { .. }) {
-            jewel(ui.painter(), m, r, left);
+        if let Some(g) = m.edge_grip.take() {
+            moved = Some(g);
         }
-        if resp.dragged() {
-            ui.painter().rect_stroke(r.expand(1.0), 6, Stroke::new(2.0, m.theme.color("gold")), egui::StrokeKind::Outside);
+        let r = inner.response.rect;
+        ui.painter().set(bg, edge_frame_shape(r, left, !float, m, !float, 16));
+        if moved.is_some_and(|d| !d.stopped) {
+            ui.painter().rect_stroke(r.expand(1.0), 16, Stroke::new(2.5, m.theme.color("gold")), egui::StrokeKind::Outside);
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-        } else if resp.hovered() {
+        } else if drag.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
         }
-        (r, resp)
+        r
     });
-    let (r, resp) = shown.inner;
-    p.this.insert(key.to_string(), r);
-    p.fly_drag(key, &a, r, &resp);
+    p.this.insert(key.to_string(), shown.inner);
+    if let Some(d) = moved {
+        edge_drag(p, key, shown.inner, 16, d);
+    }
     toggle
 }
 
-/// The small diamond on an edge window's inner side, on its band.
-fn jewel(painter: &egui::Painter, m: &super::Modern, r: Rect, left: bool) {
-    let c = pos2(if left { r.max.x - 3.0 } else { r.min.x + 3.0 }, r.center().y);
-    let d = 5.0;
-    painter.add(Shape::convex_polygon(vec![pos2(c.x, c.y - d), pos2(c.x + d, c.y), pos2(c.x, c.y + d), pos2(c.x - d, c.y)], m.theme.color("gold"), Stroke::new(1.0, Color32::from_black_alpha(200))));
+/// An edge window's drag this frame: where the pointer is, and whether it was let go.
+#[derive(Clone, Copy)]
+pub(super) struct EdgeDrag {
+    at: Pos2,
+    stopped: bool,
+}
+
+impl EdgeDrag {
+    fn of(resp: &egui::Response) -> Option<EdgeDrag> {
+        let stopped = resp.drag_stopped();
+        if !(resp.dragged() || stopped) {
+            return None;
+        }
+        let at = resp.interact_pointer_pos().or_else(|| resp.ctx.input(|i| i.pointer.latest_pos()))?;
+        Some(EdgeDrag { at, stopped })
+    }
+}
+
+/// Pulled this far off its edge an edge window's ghost shows; let go this near a screen edge it is held there.
+const PULL: f32 = 64.0;
+const EDGE_SNAP: f32 = 10.0;
+
+/// An edge window (or its tab) standing at `rect` dragged: held by its edge it slides along it, the window itself;
+/// pulled more than PULL off, its ghost follows the pointer (or sits on an edge it is let go near), and let go it
+/// lands there, on that edge or standing free. A free one moves with the pointer.
+fn edge_drag(p: &mut Panels, key: &str, rect: Rect, radius: u8, d: EdgeDrag) {
+    let (m, ctx) = (p.m, p.ctx);
+    let screen = ctx.content_rect();
+    let (sw, sh) = (screen.width().max(1.0), screen.height().max(1.0));
+    let mut place = p.place(key);
+    // Held where it was pressed (egui starts the drag a few points later).
+    let off = {
+        let mut g = m.edge_ghost.borrow_mut();
+        match g.as_ref() {
+            Some((k, o)) if k == key => *o,
+            _ => {
+                let o = ctx.input(|i| i.pointer.press_origin()).unwrap_or(d.at) - rect.min;
+                *g = Some((key.to_string(), o));
+                o
+            }
+        }
+    };
+    if d.stopped {
+        *m.edge_ghost.borrow_mut() = None;
+    }
+    let would = Rect::from_min_size(d.at - off, rect.size());
+    let top = would.min.y.clamp(screen.min.y, (screen.max.y - rect.height()).max(screen.min.y));
+    m.arranging.set(true);
+    *p.changed = true;
+    let held_left = place.x >= 0.0;
+    if !place.float && (if held_left { would.min.x - screen.min.x } else { screen.max.x - would.max.x }) < PULL {
+        place.y = (top / sh).clamp(0.0, 0.95);
+        p.layout.insert(key.to_string(), place);
+        return;
+    }
+    // A screen edge it would be held by (true the right), pushed past it too.
+    let near = if would.min.x - screen.min.x < EDGE_SNAP {
+        Some(false)
+    } else if screen.max.x - would.max.x < EDGE_SNAP {
+        Some(true)
+    } else {
+        None
+    };
+    let free = Rect::from_min_size(pos2(would.min.x.clamp(screen.min.x, (screen.max.x - rect.width()).max(screen.min.x)), top), rect.size());
+    if !d.stopped {
+        let at_edge = near.map(|right| Rect::from_min_size(pos2(if right { screen.max.x - rect.width() } else { screen.min.x }, top), rect.size()));
+        let float = place.float;
+        if float {
+            (place.x, place.y) = (free.min.x / sw, free.min.y / sh);
+            p.layout.insert(key.to_string(), place);
+        }
+        if let Some(g) = at_edge.or((!float).then_some(free)) {
+            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique(("edge ghost", key))));
+            painter.rect(g, radius, m.theme.color("surface").gamma_multiply(0.45), Stroke::new(2.0, m.theme.color("gold")), egui::StrokeKind::Inside);
+        }
+        return;
+    }
+    match near {
+        Some(right) => (place.float, place.x, place.y) = (false, if right { -0.001 } else { 0.0 }, (top / sh).clamp(0.0, 0.95)),
+        None => (place.float, place.x, place.y) = (true, free.min.x / sw, free.min.y / sh),
+    }
+    p.layout.insert(key.to_string(), place);
 }
 
 /// A heading's drag moves its edge window (as its background's does); the hand says it can.
 fn grip(m: &super::Modern, resp: &egui::Response) {
-    if resp.dragged() || resp.drag_stopped() {
-        m.edge_grip.replace(Some(resp.clone()));
+    if let Some(d) = EdgeDrag::of(resp) {
+        m.edge_grip.set(Some(d));
     } else if resp.hovered() {
         resp.ctx.set_cursor_icon(egui::CursorIcon::Grab);
     }
 }
 
-/// The window's width.
+/// While a tab is dragged: a gold outline and the grabbing hand; hovered, the open hand.
+fn feedback(ui: &Ui, m: &super::Modern, r: Rect, resp: &egui::Response, radius: u8) {
+    if resp.dragged() {
+        ui.painter().rect_stroke(r.expand(1.0), radius, Stroke::new(2.5, m.theme.color("gold")), egui::StrokeKind::Outside);
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+    } else if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+    }
+}
+
+/// A retail window drawn this frame overlaps `r`.
+pub(super) fn under_retail(m: &super::Modern, r: Rect) -> bool {
+    m.retail.borrow().iter().any(|f| f.intersects(r.shrink(2.0)))
+}
+
+/// The window's width and its folded tab's size.
 const WIDTH: f32 = 250.0;
+const TAB_W: f32 = 40.0;
+const TAB_H: f32 = 56.0;
+
+/// A chevron at `c` pointing left or right.
+fn chevron(p: &egui::Painter, c: Pos2, left: bool, col: Color32) {
+    let pts = if left { vec![pos2(c.x + 3.5, c.y - 6.0), pos2(c.x + 3.5, c.y + 6.0), pos2(c.x - 3.5, c.y)] } else { vec![pos2(c.x - 3.5, c.y - 6.0), pos2(c.x - 3.5, c.y + 6.0), pos2(c.x + 3.5, c.y)] };
+    p.add(Shape::convex_polygon(pts, col, Stroke::NONE));
+}
+
+/// The edge window's frame over `r`: no border on the anchored side (it runs past the screen's edge), the other
+/// corners rounded, a bronze line with a thin gold one inside it, and on the inner side a small diamond when `jewel`.
+pub(super) fn edge_frame_shape(r: Rect, left: bool, attached: bool, m: &super::Modern, jewel: bool, radius: u8) -> Shape {
+    let ext = match (attached, left) {
+        (false, _) => r,
+        (true, true) => Rect::from_min_max(pos2(r.min.x - 10.0, r.min.y), r.max),
+        (true, false) => Rect::from_min_max(r.min, pos2(r.max.x + 10.0, r.max.y)),
+    };
+    let round = |k: u8| match (attached, left) {
+        (false, _) => egui::CornerRadius::same(k),
+        (true, true) => egui::CornerRadius { nw: 0, sw: 0, ne: k, se: k },
+        (true, false) => egui::CornerRadius { nw: k, sw: k, ne: 0, se: 0 },
+    };
+    // The other border styles draw their own (borders.rs), without the jewel.
+    if let Some(s) = super::borders::edge(m, ext, round(radius)) {
+        return s;
+    }
+    let mut v = vec![
+        Shape::Rect(egui::epaint::RectShape::filled(ext, round(radius), m.bg(m.theme.color("surface")))),
+        Shape::Rect(egui::epaint::RectShape::stroke(ext, round(radius), Stroke::new(2.0, m.theme.color("bronze")), egui::StrokeKind::Inside)),
+        Shape::Rect(egui::epaint::RectShape::stroke(ext.shrink(4.0), round(radius.saturating_sub(4)), Stroke::new(1.0, m.theme.color("gold").gamma_multiply(0.45)), egui::StrokeKind::Inside)),
+    ];
+    if jewel {
+        let c = pos2(if left { ext.max.x - 1.0 } else { ext.min.x + 1.0 }, ext.center().y);
+        let d = 5.0;
+        v.push(Shape::convex_polygon(vec![pos2(c.x, c.y - d), pos2(c.x + d, c.y), pos2(c.x, c.y + d), pos2(c.x - d, c.y)], m.theme.color("gold"), Stroke::new(1.0, Color32::from_black_alpha(200))));
+    }
+    Shape::Vec(v)
+}
 
 /// The Timers heading: the title, and on the inner side a chevron toward the edge (a click folds it there).
 fn flyout_header(ui: &mut Ui, m: &super::Modern, text: &str, left: bool) -> egui::Response {
@@ -612,7 +775,7 @@ fn widescan_panel(p: &mut Panels, w: &mut World) {
         && let Some(r) = p.this.get("minimap").copied()
     {
         let mp = p.place("minimap");
-        p.retail.insert("widescan".into(), super::Place { x: mp.x, y: (r.max.y + 6.0) / ctx.content_rect().height().max(1.0), ..Default::default() });
+        p.retail.insert("widescan".into(), super::Place { x: mp.x, y: (r.max.y + 6.0) / ctx.content_rect().height().max(1.0), float: mp.float, ..Default::default() });
     }
     if w.scan.busy && w.scan.list_state == 2 {
         w.scan.busy = false;

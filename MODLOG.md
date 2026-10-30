@@ -12396,3 +12396,21 @@ since "Ship voyages: the moving world" listed them as not done.
   pinch[/es] of escha silt[ for a total of {num1}]." 288 7712 / 7713, 289 7831 / 7832, 291 7858 / 7859 (beads the next
   two); chest 7632 / 7751 / 7681 and Domain Invasion 7644-7645 / 7763-7764 / 7693-7694 ("You obtain", colour 0x79).
   No "can't hold more silt" line exists in any of them *(inf: retail caps silently)*.
+
+## Modern UI: flyouts anywhere taken out again; edge windows float; the skillchain helper reworked (2026-10-30)
+- User: "I hate the new interface. Put it back the way it was" (making any window a flyout and joining windows'
+  frames, "Modern UI: flyouts anywhere" and its two follow-ups). The modern UI files are back as they were at 456ddaa;
+  that code stays at tag `modern-ui-flyouts-anywhere`. Kept from the same request, as the user quoted only from its
+  third point: edge windows (Timers, the map, Wide Scan, the training regime, the skillchain helper) slide along their
+  edge with no ghost while within 64 pt of it, pulled further their ghost follows the pointer, and let go away from
+  the edges they stand free (ModernPlace.float) with their whole frame; a free one moves with the pointer and lands
+  on a screen edge it is let go within 10 pt of (or pushed past). Wide Scan under a free map stands free under it.
+  Kept fixes: a bottom-placed panel (chat, party) dragged no longer creeps down (its bottom from its top plus its
+  placed height); the drag is held where it was pressed.
+- The skillchain helper (user: "half the information is cut off, and it's fairly useless"): skillchain::view builds
+  what it shows (the open resonance on the focus monster with every closer, and every chain the party makes with all
+  its ways); modern/extras.rs draws it 360 pt wide with every line wrapped (no ellipses), the closers as a column of
+  chain and element icons beside who closes with what, each party chain with its two best ways (ours first, then
+  those whose opener has the TP) and a click on its row for the rest; it scrolls instead of dropping lines when it
+  runs into the next panel on its edge. `modern-shot --borders pack` draws a sample. Seen live with Naji and Ayame in
+  South Gustaberg (nine chains, each way whole); the resonance part only in the sample (no chain made in that run).

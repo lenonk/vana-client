@@ -193,19 +193,8 @@ pub struct ModernPlace {
     pub h: f32,
     pub b: f32,
     pub dock: Option<ModernDock>,
-    /// A flyout: held by one side to the screen's edge or another panel's side.
-    pub fly: Option<ModernFly>,
     /// An edge window let go away from the edges: it stands at x / y with its whole frame.
     pub float: bool,
-}
-
-/// A flyout's hold: `to` "" the screen (`along` its top as a fraction of the screen's height), else the panel it rides
-/// (`along` points below that panel's top); on the right side of `to` (`right`) or its left.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct ModernFly {
-    pub to: String,
-    pub right: bool,
-    pub along: f32,
 }
 
 /// A panel sitting on another: `gap` points between its bottom and the other's top, `dx` from the other's left, or

@@ -66,7 +66,7 @@ fn edge_sample(m: &Modern, ctx: &egui::Context) {
     let screen = ctx.content_rect();
     let r = Rect::from_min_max(pos2(screen.max.x - 290.0, 560.0), pos2(screen.max.x, 800.0));
     let p = ctx.layer_painter(LayerId::new(Order::Middle, Id::unique("edge sample")));
-    p.add(super::borders::fly(m, "window_normal", r, super::fly::Open::Edge { right: true }, &[]));
+    p.add(super::extras::edge_frame_shape(r, false, true, m, true, 16));
     let font = egui::FontId::new(m.theme.small + 1.0, egui::FontFamily::Name(super::STRONG.into()));
     p.text(pos2(r.min.x + 36.0, r.min.y + 22.0), egui::Align2::LEFT_CENTER, "Wide Scan (37)", font, m.theme.color("gold"));
     for (k, (name, d)) in [("Rumoie", 0), ("Fulchia", 15), ("Home Point #3", 29), ("Trail Markings", 31), ("Artisan Moogle", 45), ("Lotte", 62), ("Valderotaux", 64)].iter().enumerate() {
@@ -76,25 +76,43 @@ fn edge_sample(m: &Modern, ctx: &egui::Context) {
     }
 }
 
-/// Flyouts in their frames (fly.rs): a panel with one joined to each side (its band left out there, fillets into it),
-/// and one held by the screen's left edge.
-fn fly_sample(m: &Modern, ctx: &egui::Context) {
-    use super::fly::Open;
-    let p = ctx.layer_painter(LayerId::new(Order::Middle, Id::unique("fly sample")));
-    let t = Rect::from_min_size(pos2(760.0, 380.0), vec2(320.0, 300.0));
-    let f = Rect::from_min_size(pos2(t.max.x, t.min.y + 60.0), vec2(220.0, 140.0));
-    let g = Rect::from_min_size(pos2(t.min.x - 180.0, t.min.y + 130.0), vec2(180.0, 100.0));
-    p.add(super::borders::fly(m, "window_normal", t, Open::None, &[(true, f), (false, g)]));
-    // The right one focused: its blue band turns into the target's gold along the fillets.
-    let Some(band) = m.art.frame("window_normal").map(|f| f.band) else { return };
-    p.add(super::borders::fly(m, "window_focused", f, Open::Side { t, right: true, band }, &[]));
-    p.add(super::borders::fly(m, "window_normal", g, Open::Side { t, right: false, band }, &[]));
-    let e = Rect::from_min_size(pos2(0.0, 420.0), vec2(220.0, 160.0));
-    p.add(super::borders::fly(m, "window_normal", e, Open::Edge { right: false }, &[]));
-    let font = egui::FontId::new(m.theme.small + 1.0, egui::FontFamily::Name(super::STRONG.into()));
-    for (r, text) in [(t, "Panel"), (f, "Joined right"), (g, "Joined left"), (e, "Left edge")] {
-        p.text(pos2(r.min.x + 24.0, r.min.y + 22.0), egui::Align2::LEFT_CENTER, text, font.clone(), m.theme.color("gold"));
-    }
+/// The skillchain helper on the left edge: a Liquefaction just made, three trusts and long names.
+fn skillchain_sample(m: &Modern, ctx: &egui::Context) {
+    use crate::client::skillchain::{ChainWays, Closer, Now, View, Way};
+    let way = |a: &str, sa: &str, b: &str, sb: &str, ready: bool| Way { opener: (a.into(), sa.into()), closer: (b.into(), sb.into()), ready };
+    let closer = |who: &str, skill: &str, chain, ready| Closer { who: who.into(), skill: skill.into(), chain, ready };
+    let v = View {
+        now: Some(Now {
+            mob: "Bloodthirsty Troll".into(),
+            props: vec![3],
+            chain: Some(3),
+            by: "Shantotto II: Final Exquisite Exquisite".into(),
+            age: 4.2,
+            left: 4.8,
+            life: 9.0,
+            closers: vec![closer("You", "Blade: Retsu", 11, true), closer("Ayame", "Tachi: Kasha", 11, false), closer("Naji", "Vorpal Blade", 4, true), closer("Apururu (UC)", "Nott", 8, false)],
+        }),
+        chains: vec![
+            ChainWays { chain: 13, ways: vec![way("You", "Blade: Chi", "Ayame", "Tachi: Yukikaze", true), way("Naji", "Vorpal Blade", "You", "Blade: Ten", false), way("Ayame", "Tachi: Gekko", "Naji", "Burning Blade", false)] },
+            ChainWays { chain: 11, ways: vec![way("You", "Blade: Retsu", "Shantotto II", "Final Exquisite Exquisite", true), way("Naji", "Red Lotus Blade", "Ayame", "Tachi: Kasha", false)] },
+            ChainWays { chain: 12, ways: vec![way("Ayame", "Tachi: Enpi", "You", "Blade: Jin", false)] },
+            ChainWays { chain: 3, ways: vec![way("Naji", "Fast Blade", "You", "Blade: Teki", true), way("You", "Blade: Rin", "Naji", "Burning Blade", true), way("Shantotto II", "Shantotto Pson", "You", "Blade: To", false), way("Ayame", "Tachi: Hobaku", "Naji", "Red Lotus Blade", false)] },
+        ],
+    };
+    m.sc_open.borrow_mut().insert(3);
+    let screen = ctx.content_rect();
+    let at = pos2(screen.min.x, 120.0);
+    let shown = egui::Area::new(Id::unique("skillchain sample")).order(Order::Middle).fixed_pos(at).constrain(false).show(ctx, |ui| {
+        let bg = ui.painter().add(egui::Shape::Noop);
+        let inner = egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 18, top: 12, bottom: 14 }).show(ui, |ui| {
+            ui.set_width(360.0 - 30.0);
+            ui.visuals_mut().override_text_color = Some(m.theme.color("text"));
+            ui.label(egui::RichText::new("Skillchains").size(m.theme.small + 1.0).color(m.theme.color("gold")));
+            super::extras::skillchain_body(ui, m, &v);
+        });
+        ui.painter().set(bg, super::extras::edge_frame_shape(inner.response.rect, true, true, m, true, 16));
+    });
+    let _ = shown;
 }
 
 fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
@@ -156,7 +174,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     *m.rects.borrow_mut() = std::mem::take(&mut p.this);
     if opts.borders.is_some() {
         edge_sample(m, ctx);
-        fly_sample(m, ctx);
+        skillchain_sample(m, ctx);
     }
     if opts.list || opts.rows.is_some() || opts.borders.is_some() {
         return;

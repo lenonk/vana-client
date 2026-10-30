@@ -264,6 +264,77 @@ pub fn focus(w: &World) -> Option<u32> {
     w.target.filter(|t| w.entities.get(t).is_some_and(|e| e.mob)).or_else(|| w.skillchain.on.iter().max_by_key(|(_, r)| r.start).map(|(id, _)| *id))
 }
 
+/// What the helper shows, ready to draw: the open resonance on the focus monster, then every chain the party can make.
+#[derive(Clone, Debug, Default)]
+pub struct View {
+    pub now: Option<Now>,
+    pub chains: Vec<ChainWays>,
+}
+
+/// The resonance on the focus monster: its properties or the chain made, who did it, its timing and what closes it.
+#[derive(Clone, Debug, Default)]
+pub struct Now {
+    pub mob: String,
+    pub props: Vec<Prop>,
+    pub chain: Option<Prop>,
+    pub by: String,
+    pub age: f32,
+    pub left: f32,
+    pub life: f32,
+    pub closers: Vec<Closer>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Closer {
+    pub who: String,
+    pub skill: String,
+    pub chain: Prop,
+    pub ready: bool,
+}
+
+/// One chain and every way the party makes it: ours first, then those whose opener has the TP.
+#[derive(Clone, Debug)]
+pub struct ChainWays {
+    pub chain: Prop,
+    pub ways: Vec<Way>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Way {
+    pub opener: (String, String),
+    pub closer: (String, String),
+    pub ready: bool,
+}
+
+/// The helper's view, in a party of two or more with skills known.
+pub fn view(w: &World) -> Option<View> {
+    let members = members(w);
+    if members.len() < 2 {
+        return None;
+    }
+    let who = |k: usize| if members[k].me { "You".to_string() } else { members[k].name.clone() };
+    let ready = |k: usize| members[k].tp >= 1000;
+    let focus = focus(w);
+    let now = focus.and_then(|t| w.skillchain.on.get(&t)).filter(|r| r.left() > 0.0).map(|r| {
+        let mob = focus.and_then(|t| w.entities.get(&t)).map(|e| super::monstrosity::name(e).to_string()).unwrap_or_default();
+        let by = members.iter().position(|x| x.me && r.by == w.my_id).map(|k| who(k)).or_else(|| w.party.party().find(|x| x.id == r.by).map(|x| x.name.clone())).unwrap_or_default();
+        let closers = closers(&members, r).into_iter().map(|(k, s, c)| Closer { who: who(k), skill: name(w, s), chain: c, ready: ready(k) }).collect();
+        Now { mob, props: r.props.iter().copied().filter(|&p| p != 0).collect(), chain: r.chain, by: if by.is_empty() { name(w, r.skill) } else { format!("{by}: {}", name(w, r.skill)) }, age: r.age(), left: r.left(), life: r.life, closers }
+    });
+    let combos = combos(&members);
+    let mut chains: Vec<ChainWays> = Vec::new();
+    for cb in &combos {
+        if chains.iter().any(|c| c.chain == cb.chain) {
+            continue;
+        }
+        let mut ways: Vec<&Combo> = combos.iter().filter(|x| x.chain == cb.chain).collect();
+        ways.sort_by_key(|x| (!(members[x.opener.0].me || members[x.closer.0].me), !ready(x.opener.0)));
+        let ways = ways.into_iter().map(|x| Way { opener: (who(x.opener.0), name(w, x.opener.1)), closer: (who(x.closer.0), name(w, x.closer.1)), ready: ready(x.opener.0) }).collect();
+        chains.push(ChainWays { chain: cb.chain, ways });
+    }
+    Some(View { now, chains })
+}
+
 /// "Fusion (Light, Fire)".
 pub fn chain_text(p: Prop) -> String {
     let els: Vec<&str> = sc::elements(p).iter().map(|e| e.name()).collect();

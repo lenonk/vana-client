@@ -135,37 +135,9 @@ pub fn window(m: &Modern, frame: &str, r: Rect) -> Shape {
     Shape::Vec(shapes(m, frame, r, CornerRadius::same(6), style))
 }
 
-/// A panel's frame over `r` held as `open` (fly.rs): on a screen edge its band runs into the edge; on a panel's side
-/// the frames join (paint::joint), the two sharing that panel's gradient; `joined` the flyouts on its own sides (their
-/// side and rect), where its band is left out. The pack style only; the others draw their plain frames.
-pub fn fly(m: &Modern, frame: &str, r: Rect, open: super::fly::Open, joined: &[(bool, Rect)]) -> Shape {
-    use super::fly::Open;
-    let Some(f) = m.art.frame(frame) else { return Shape::Noop };
+/// An edge window's frame in the current style: `ext` runs past the screen's edge on the anchored side, whose corners
+/// `round` leaves square. None in the pack style (the edge windows draw their own there).
+pub fn edge(m: &Modern, ext: Rect, round: CornerRadius) -> Option<Shape> {
     let style = m.border_style.get();
-    if style != Style::Pack {
-        let round = |k: u8, right: bool| if right { CornerRadius { nw: k, sw: k, ne: 0, se: 0 } } else { CornerRadius { nw: 0, sw: 0, ne: k, se: k } };
-        return match open {
-            Open::Edge { right } => {
-                let ext = if right { Rect::from_min_max(r.min, pos2(r.max.x + 10.0, r.max.y)) } else { Rect::from_min_max(pos2(r.min.x - 10.0, r.min.y), r.max) };
-                Shape::Vec(shapes(m, frame, ext, round(6, right), style))
-            }
-            _ => window(m, frame, r),
-        };
-    }
-    let op = m.opacity.get();
-    let mut cut = paint::Cut { gaps: joined.iter().map(|(right, fr)| (*right, paint::joint_gap(*fr).0, paint::joint_gap(*fr).1)).collect(), ..Default::default() };
-    let toward = |right_open: bool| if right_open { Rect::from_min_max(r.min, pos2(r.max.x + f.corner, r.max.y)) } else { Rect::from_min_max(pos2(r.min.x - f.corner, r.min.y), r.max) };
-    let (ext, extra) = match open {
-        Open::None => (r, None),
-        Open::Edge { right } => (toward(right), None),
-        Open::Side { t, right, band } => {
-            let span = (t.min.y + f.inset, t.max.y - f.inset);
-            cut.clip = Some(paint::joint_clip(t, right));
-            cut.grad = Some(span);
-            (toward(!right), Some(paint::joint(f, band, t, r, right, op, span)))
-        }
-    };
-    let mut v = vec![paint::window_cut(f, ext, 1.0, op, &cut)];
-    v.extend(extra);
-    Shape::Vec(v)
+    (style != Style::Pack).then(|| Shape::Vec(shapes(m, "window_normal", ext, round, style)))
 }

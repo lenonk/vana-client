@@ -18,7 +18,6 @@ mod config;
 mod craft;
 mod equip;
 mod extras;
-mod fly;
 mod gametext;
 mod hud;
 mod inspect;
@@ -54,7 +53,7 @@ pub use storage::key as storage_key;
 pub use theme::{Theme, frame_image};
 use theme::{Art, LABEL, NAME, STRONG};
 
-pub use crate::config::{ModernDock as Dock, ModernFly as Fly, ModernLayout as Layout, ModernPlace as Place};
+pub use crate::config::{ModernDock as Dock, ModernLayout as Layout, ModernPlace as Place};
 use std::collections::HashMap;
 
 pub struct Modern {
@@ -86,8 +85,6 @@ pub struct Modern {
     /// (the chat window then shows its full room, something to dock on), and the chat window's rect and fade for the
     /// game's stacked windows.
     rects: std::cell::RefCell<HashMap<String, Rect>>,
-    /// The frame each panel was last drawn in (a flyout's joint takes its band).
-    frames: std::cell::RefCell<HashMap<String, &'static str>>,
     arranging: std::cell::Cell<bool>,
     chat_edge: std::cell::Cell<Option<(Rect, bool)>>,
     zoom: f32,
@@ -117,10 +114,12 @@ pub struct Modern {
     journal_rows: std::cell::RefCell<Vec<usize>>,
     /// egui's text styles enlarged (put back when the layer goes off).
     styled: bool,
-    /// An edge window's heading dragged this frame (its drag moves the window).
-    edge_grip: std::cell::RefCell<Option<egui::Response>>,
-    /// The window being dragged by a flyout's handle and where the pointer holds it (fly.rs).
-    fly_grab: std::cell::RefCell<Option<(String, Vec2)>>,
+    /// An edge window's heading dragged (or let go) this frame.
+    edge_grip: std::cell::Cell<Option<extras::EdgeDrag>>,
+    /// The edge window being dragged and where the pointer holds it (its ghost follows the pointer).
+    edge_ghost: std::cell::RefCell<Option<(String, Vec2)>>,
+    /// The skillchain helper's chains shown with all their ways.
+    sc_open: std::cell::RefCell<std::collections::HashSet<u8>>,
     /// The retail windows drawn this frame: the edge windows give way to them (they draw under every panel).
     retail: std::cell::RefCell<Vec<Rect>>,
     /// A place changed during a drag: saved once the pointer is let go.
@@ -153,7 +152,6 @@ impl Modern {
             scan_picking: Default::default(),
             scan_area: Default::default(),
             rects: Default::default(),
-            frames: Default::default(),
             arranging: Default::default(),
             chat_edge: Default::default(),
             zoom: 0.0,
@@ -167,7 +165,8 @@ impl Modern {
             styled: false,
             retail: Default::default(),
             edge_grip: Default::default(),
-            fly_grab: Default::default(),
+            edge_ghost: Default::default(),
+            sc_open: Default::default(),
             dirty: false,
         }
     }
@@ -417,8 +416,8 @@ const BOTTOM: [&str; 2] = ["chat", "party"];
 /// The right edge's column (the main menu, its submenu and the windows it opens): the panels placed from the right
 /// keep left of it; the edge windows stay put under it.
 const COLUMN: [&str; 3] = ["command", "command sub", "window"];
-/// The windows on a screen edge (extras.rs edge_window): they slide along it, so nothing stacks on them.
-const EDGE: [&str; 5] = ["timers", "minimap", "widescan", "regime", "skillchains"];
+/// The windows on a screen edge (extras.rs edge_window): they slide along it, so nothing docks on them.
+const EDGE: [&str; 4] = ["timers", "minimap", "widescan", "regime"];
 
 impl Dock {
     /// The side of the panel it sits on that `dx` counts from.
@@ -659,7 +658,7 @@ struct Show<'s> {
     size: Vec2,
     resizable: bool,
     at: Option<Pos2>,
-    frame: &'static str,
+    frame: &'s str,
     height: Option<f32>,
     alpha: f32,
     fold: f32,
@@ -682,7 +681,7 @@ impl<'a> Panels<'a> {
     }
 
     /// A panel in one of the pack's other frames (window_alert ...).
-    fn framed(&mut self, id: &str, title: Option<Title>, width: f32, frame: &'static str, add: impl FnOnce(&mut Ui)) -> Option<Rect> {
+    fn framed(&mut self, id: &str, title: Option<Title>, width: f32, frame: &str, add: impl FnOnce(&mut Ui)) -> Option<Rect> {
         self.show(id, Show { title, size: vec2(width, 0.0), frame, ..Default::default() }, |ui, _| add(ui))
     }
 
@@ -716,15 +715,8 @@ impl<'a> Panels<'a> {
         vec2(if p.w > 0.0 { p.w } else { size.x }, if p.h > 0.0 { p.h } else { size.y })
     }
 
-    /// A panel's top left for its height `h`: where its hold puts it, on the panel it is docked on, else from its place.
+    /// A panel's top left for its height `h`: on the panel it is docked on, else from its place.
     fn resolve(&self, id: &str, place: &Place, h: f32) -> Pos2 {
-        // Held (fly.rs): where its hold puts it.
-        if place.fly.is_some() {
-            let w = if place.w > 0.0 { place.w } else { self.m.rects.borrow().get(id).map_or(0.0, |r| r.width()) };
-            if let Some((r, _)) = self.fly_rect(id, &self.attach(id), vec2(w, h)) {
-                return r.min;
-            }
-        }
         if let Some(d) = &place.dock
             && let Some(t) = self.target(&d.to, 0)
         {
@@ -809,10 +801,6 @@ impl<'a> Panels<'a> {
     /// The panel itself: the pack's window frame behind its title row and contents, moved by a drag on its background
     /// unless placed beside another; a resizable one has the resize glyph in its corner. Returns its rect.
     fn show(&mut self, id: &str, o: Show, add: impl FnOnce(&mut Ui, Vec2)) -> Option<Rect> {
-        // Held by a screen edge or another panel's side (fly.rs).
-        if o.at.is_none() && self.attach(id) != fly::Attach::Free {
-            return self.show_held(id, o, add);
-        }
         let (m, ctx) = (self.m, self.ctx);
         let screen = ctx.content_rect();
         let mut place = self.place(id);
@@ -835,12 +823,9 @@ impl<'a> Panels<'a> {
             pos.y = pos.y.min(screen.max.y - h).max(screen.min.y);
         }
         let margin = if o.resizable { ROOM_MARGIN } else { MARGIN };
-        // The flyouts on its sides, where its band is left out.
-        let joined = self.joined(id, Rect::from_min_size(pos, vec2(room.x, h)));
         let (title, frame, alpha, fold) = (o.title, o.frame, o.alpha, o.fold.clamp(0.0, 1.0));
         // The panel with the keys in the focused frame.
         let frame = if frame == "window_normal" && self.focus == Some(id) { "window_focused" } else { frame };
-        m.frames.borrow_mut().insert(id.to_string(), frame);
         // A panel at a fixed point may stand partly off screen (the Timers slid in).
         let shown = egui::Area::new(Id::unique(("modern panel", id))).order(Order::Middle).current_pos(pos).movable(o.at.is_none()).constrain(o.at.is_none()).show(ctx, |ui| {
             // An area offers its contents only last frame's size: room to the screen's bottom, or a page grown taller
@@ -865,11 +850,21 @@ impl<'a> Panels<'a> {
             });
             let r = inner.response.rect;
             let showing = Rect::from_min_max(pos2(r.min.x, r.max.y - r.height() * fold), r.max);
-            ui.painter().set(bg, paint::faded(borders::fly(m, frame, showing, fly::Open::None, &joined), alpha));
+            ui.painter().set(bg, paint::faded(borders::window(m, frame, showing), alpha));
             if !o.resizable {
                 return None;
             }
-            resize_grip(ui, m, r, false, alpha, id)
+            // The glyph sits left of the frame's corner ornament; the whole corner takes the drag.
+            let g = ui.interact(Rect::from_min_max(r.max - vec2(44.0, 28.0), r.max), Id::unique(("modern grip", id)), Sense::drag());
+            let lit = g.hovered() || g.dragged();
+            if let Some(s) = m.art.sprite("controls/resize") {
+                let c = if lit { Color32::WHITE } else { Color32::from_gray(170) };
+                ui.painter().add(paint::image(&s, r.max - vec2(40.0, 24.0), 16.0, c.gamma_multiply(alpha)));
+            }
+            if lit {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeNwSe);
+            }
+            g.dragged().then(|| g.drag_delta())
         });
         // The menu's windows draw over the edge windows (they stay where they were put).
         if COLUMN.contains(&id) {
@@ -891,7 +886,6 @@ impl<'a> Panels<'a> {
         let (sw, sh) = (screen.width().max(1.0), screen.height().max(1.0));
         // egui drags a movable window from the press: a click that never moves it leaves its place (and dock) alone.
         let moved = shown.response.total_drag_delta().is_some_and(|d| d.length() > 2.0);
-        let mut held = None;
         if shown.response.dragged() && (moved || m.dragging.borrow().as_deref() == Some(id)) {
             *m.dragging.borrow_mut() = Some(id.to_string());
             m.arranging.set(true);
@@ -904,17 +898,10 @@ impl<'a> Panels<'a> {
                 place.y = r.min.y / sh;
             }
             changed = true;
-            // Near a screen edge or a panel's side: where it would be held.
-            if let Some((_, g)) = self.snap(id, r) {
-                fly::ghost(m, ctx, id, g);
-            }
         }
         if shown.response.drag_stopped() && m.dragging.borrow().as_deref() == Some(id) {
             *m.dragging.borrow_mut() = None;
-            match self.snap(id, r) {
-                Some((a, _)) => held = Some(a),
-                None => place.dock = self.dock_for(id, r),
-            }
+            place.dock = self.dock_for(id, r);
             changed = true;
         }
         // A resize moves the bottom with the pointer: a bottom-placed panel keeps its top.
@@ -930,92 +917,7 @@ impl<'a> Panels<'a> {
             self.layout.insert(id.to_string(), place);
             *self.changed = true;
         }
-        if let Some(a) = held {
-            self.set_attach(id, a, r);
-        }
         Some(showing)
-    }
-
-    /// A held panel (fly.rs): where its hold puts it, its frame open there (joined to the panel it rides), moved by a
-    /// drag on its background; on a screen edge a knob on its inner side folds it into a tab. What it rides not shown,
-    /// it stands where it last stood.
-    fn show_held(&mut self, id: &str, o: Show, add: impl FnOnce(&mut Ui, Vec2)) -> Option<Rect> {
-        let (m, ctx) = (self.m, self.ctx);
-        let a = self.attach(id);
-        let room = if o.resizable { self.room(id, o.size) } else { o.size };
-        let h = o.height.or_else(|| m.rects.borrow().get(id).map(|r| r.height())).unwrap_or(60.0);
-        let label = o.title.as_ref().map_or_else(|| fly::name(id), |t| t.text.to_string());
-        if self.folded.get(&fly::fold_key(id)).copied().unwrap_or(false) {
-            if self.fly_tab(id, &label) {
-                self.folded.insert(fly::fold_key(id), false);
-                *self.changed = true;
-            }
-            return self.this.get(id).copied();
-        }
-        let Some((rect, open)) = self.fly_rect(id, &a, vec2(room.x, h)) else {
-            let at = self.free_rect(id, vec2(room.x, h)).min;
-            return self.show(id, Show { at: Some(at), ..o }, add);
-        };
-        let joined = self.joined(id, rect);
-        let margin = if o.resizable { ROOM_MARGIN } else { MARGIN };
-        let frame = if o.frame == "window_normal" && self.focus == Some(id) { "window_focused" } else { o.frame };
-        m.frames.borrow_mut().insert(id.to_string(), frame);
-        let (title, alpha, fold) = (o.title, o.alpha, o.fold.clamp(0.0, 1.0));
-        // The resize corner away from the hold.
-        let grip_left = open.by_left() == Some(false);
-        let mut tuck = false;
-        let shown = egui::Area::new(Id::unique(("modern panel", id))).order(Order::Middle).current_pos(rect.min).movable(false).constrain(false).show(ctx, |ui| {
-            let screen = ctx.content_rect();
-            if o.height.is_none() && !o.resizable {
-                ui.set_max_height((screen.max.y - rect.min.y).max(ui.min_rect().height()));
-            }
-            let top = rect.max.y - rect.height() * fold;
-            if fold < 1.0 {
-                ui.set_clip_rect(ui.clip_rect().intersect(Rect::from_min_max(pos2(f32::NEG_INFINITY, top), pos2(f32::INFINITY, f32::INFINITY))));
-            }
-            let bg = ui.painter().add(Shape::Noop);
-            // The background moves it: sensed under the contents (last frame's size), so they keep their clicks.
-            let drag = ui.interact(Rect::from_min_max(pos2(rect.min.x, top), rect.max), Id::unique(("modern held", id)), Sense::drag());
-            let inner = egui::Frame::NONE.inner_margin(margin).show(ui, |ui| {
-                ui.set_width(room.x - margin.sum().x);
-                ui.visuals_mut().override_text_color = Some(m.theme.color("text"));
-                if let Some(t) = &title {
-                    title_row(ui, m, t);
-                    ui.add_space(6.0);
-                }
-                add(ui, room);
-            });
-            let r = inner.response.rect;
-            let showing = Rect::from_min_max(pos2(r.min.x, r.max.y - r.height() * fold), r.max);
-            ui.painter().set(bg, paint::faded(borders::fly(m, frame, showing, open, &joined), alpha));
-            if let fly::Open::Edge { right } = open {
-                tuck = fly::fold_knob(ui, m, showing, !right, id);
-            }
-            let grow = if o.resizable { resize_grip(ui, m, r, grip_left, alpha, id) } else { None };
-            if drag.dragged() {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-            }
-            (showing, drag, grow)
-        });
-        if COLUMN.contains(&id) {
-            ctx.move_to_top(shown.response.layer_id);
-        }
-        let (r, drag, grow) = shown.inner;
-        self.this.insert(id.to_string(), r);
-        self.held_drag(id, &a, r, &drag);
-        // A resize from the corner away from the hold: the held side stays put.
-        if let Some(g) = grow {
-            let mut place = self.place(id);
-            (place.w, place.h) = ((room.x + g.x).max(240.0), (room.y + g.y).max(60.0));
-            self.layout.insert(id.to_string(), place);
-            m.arranging.set(true);
-            *self.changed = true;
-        }
-        if tuck {
-            self.folded.insert(fly::fold_key(id), true);
-            *self.changed = true;
-        }
-        Some(r)
     }
 }
 
@@ -1153,22 +1055,6 @@ fn status_art() -> &'static HashMap<u16, &'static str> {
 
 fn title_row(ui: &mut Ui, m: &Modern, t: &Title) {
     title_row_in(ui, m, t, m.theme.color("gold"));
-}
-
-/// A resizable panel's grip in its bottom right corner (`left`: its bottom left, mirrored): the glyph inside the frame's
-/// corner ornament, the whole corner taking the drag. Returns the drag, x outward.
-fn resize_grip(ui: &mut Ui, m: &Modern, r: Rect, left: bool, alpha: f32, id: &str) -> Option<Vec2> {
-    let corner = if left { Rect::from_min_max(pos2(r.min.x, r.max.y - 28.0), pos2(r.min.x + 44.0, r.max.y)) } else { Rect::from_min_max(r.max - vec2(44.0, 28.0), r.max) };
-    let g = ui.interact(corner, Id::unique(("modern grip", id)), Sense::drag());
-    let lit = g.hovered() || g.dragged();
-    if let Some(s) = m.art.sprite("controls/resize") {
-        let c = (if lit { Color32::WHITE } else { Color32::from_gray(170) }).gamma_multiply(alpha);
-        ui.painter().add(if left { paint::image_mirrored(&s, pos2(r.min.x + 24.0, r.max.y - 24.0), 16.0, c) } else { paint::image(&s, r.max - vec2(40.0, 24.0), 16.0, c) });
-    }
-    if lit {
-        ui.ctx().set_cursor_icon(if left { egui::CursorIcon::ResizeNeSw } else { egui::CursorIcon::ResizeNwSe });
-    }
-    g.dragged().then(|| g.drag_delta()).map(|d| vec2(if left { -d.x } else { d.x }, d.y))
 }
 
 /// A title row in another colour (the target's name in its retail name colour).

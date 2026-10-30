@@ -516,13 +516,7 @@ fn full(p: &mut Panels, w: &mut World) {
     let place = p.place("chat");
     // Retail's full log starts at 48 of the 448 layout; what rides on the chat window (the location panel ...) keeps
     // its room above it (last frame's stack).
-    let bottom = if place.fly.is_some() {
-        p.resolve("chat", &place, 0.0).y
-    } else if place.dock.is_none() && place.b > 0.0 {
-        place.b * sh
-    } else {
-        sh * 0.985
-    };
+    let bottom = if place.dock.is_none() && place.b > 0.0 { place.b * sh } else { sh * 0.985 };
     let riders = {
         let rects = m.rects.borrow();
         rects.get("chat").map_or(0.0, |c| rects.iter().filter(|(id, _)| id.as_str() != "chat" && p.rests_on(id, "chat")).map(|(_, r)| c.min.y - r.min.y).fold(0.0, f32::max))
