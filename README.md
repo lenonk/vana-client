@@ -3,11 +3,11 @@
 # vana-client
 
 A native client for FINAL FANTASY XI, written in Rust, for [LandSandBoat](https://github.com/LandSandBoat/server)
-(LSB) servers. It runs without Wine and without PlayOnline: it reads the game's own data files and talks to the
+(LSB) servers. It runs without Wine and without PlayOnline: it reads the game's data files and talks to the
 server directly.
 
 The goal is a faithful clone of the retail client first. Its menus, sprites, fonts, motions and cameras are rebuilt
-from the game's own files and from the behaviour of the original executable. Improvements come after that.
+from the game's files and from the behaviour of the original executable. Improvements come after that.
 Retail limits that only existed because of 2002 hardware, like the 30 fps cap, become settings.
 
 Linux is the current platform. Windows and macOS are planned.
@@ -16,7 +16,7 @@ Linux is the current platform. Windows and macOS are planned.
 
 The client has two interfaces, switched at any time in Config > Settings > Client > Interface:
 
-- **Classic**: the retail client's own windows, drawn from the game's menu files as the original draws them.
+- **Classic**: the retail client's windows, drawn from the game's menu files as the original draws them.
 - **Modern**: a new interface over the same game rules: movable windows, a command menu, mouse support everywhere,
   tooltips, a minimap, a chat window with tabs, and one consistent set of controls and keys (see
   [docs/modern-ui.md](docs/modern-ui.md)).
