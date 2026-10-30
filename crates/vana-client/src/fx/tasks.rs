@@ -2196,7 +2196,12 @@ impl Effects {
     /// A camera task's frame (FUN_1003be40 / FUN_1003d220 -> FUN_1003be10): payload word `w` of its path on the
     /// scheduler's actor and target.
     pub fn camera_frame(&self, w: u32, who: [Who; 2], actors: &dyn Actors) -> Option<Mat4> {
-        self.attach_frame(crate::dat::generator::attach_mode(w), w, who, (Vec3::ZERO, Vec3::ZERO), None, self.last_frame.as_ref(), actors)?.0
+        let mode = crate::dat::generator::attach_mode(w);
+        // FUN_1003be10's default (mode 0, and above 0x1b): vtable +0xc4 on the frame, the identity *(inf)*: world keys.
+        if mode == 0 || mode > 0x1b {
+            return Some(Mat4::IDENTITY);
+        }
+        self.attach_frame(mode, w, who, (Vec3::ZERO, Vec3::ZERO), None, self.last_frame.as_ref(), actors)?.0
     }
 
     /// At start (FUN_10052220 -> FUN_10052eb0).

@@ -60,7 +60,7 @@ pub fn cs_shot(zone: u32, n: u32, sched: &str, steps: u32, out_dir: &std::path::
         println!("op {op:?}");
         if let Op::Camera { path, ticks, .. } = op {
             let p = evte.path(path)?;
-            println!("camera {path}: {} keys, ease {}, flags {:#x}, {ticks} ticks", p.keys.len(), p.ease, p.flags);
+            println!("camera {path}: {} keys, ease {}, flags {:#x}, attach {:#x}, {ticks} ticks", p.keys.len(), p.ease, p.flags, p.attach);
             for i in 0..steps.max(1) {
                 let t = if steps <= 1 { 0.0 } else { i as f32 / (steps - 1) as f32 };
                 let k = sample(p, t);

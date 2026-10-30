@@ -12242,3 +12242,18 @@ since "Ship voyages: the moving world" listed them as not done.
 - `vana-client map-grid ZONE x,y,z ...`: the sub-map key under each position (Ground::map_key), the map record it
   shows (Region::find_key, else the zone's key 0) and its square by FUN_101f1a60 as the location panel's grid_text.
   Checked: East Ronfaure (86, -62, 268) gives (G-6), as the panel live.
+
+## Event cameras: one-key paths in world space (2026-10-30; correction to "Camera paths framed on actors")
+
+- User report: Lower Jeuno's Aldo cutscene (event 0x98, the Magicite mission) kept the camera on the player while
+  Aldo walked to Verena; Verena and Fickblix were never seen. They were shown (the log: npc008 at 00:39:44, npc01b at
+  00:40:11); the camera never moved. Its shots cm40..cm47 (camera file #145, DAT 30849) are one-key paths with attach
+  word 0 (world keys), run on the player.
+- Since 2026-10-28 a one-key path counts as framed and waits for its frame; Effects::camera_frame sent mode 0 to
+  attach_frame, whose switch has no mode 0 (None), so event::camera kept the last camera, the follow camera, for every
+  such shot in any cutscene. FUN_1003be10's default case (mode 0 and above 0x1b, jump table 0x1003c650 entry 0 ->
+  0x1003c5f0) calls the math object's vtable +0xc4 on the output: the identity *(inf: that slot's meaning)*. Ours:
+  camera_frame gives the identity for those modes.
+- cs-shot prints each path's attach word.
+- Live (Lnxcsfix, `!cs 152 0 1` by Aldo in sub-area 457): cm41 frames Aldo with Verena at the door, cm42 / cm43
+  Verena and Aldo, cm44 Fickblix with Verena.
