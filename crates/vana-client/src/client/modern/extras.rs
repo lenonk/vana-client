@@ -131,20 +131,16 @@ fn regime_panel(p: &mut Panels, w: &mut World) {
 /// The skillchain helper (skillchain.rs's view) on a screen edge, in a party: on our target the open resonance (its
 /// properties or the chain made with its burst elements, the wait before a closer counts and the time left) and
 /// everything in the party that closes it; then every chain the party can make, the strongest first, with its ways.
-/// Lines wrap; what does not fit above the next panel on its edge scrolls.
+/// Lines wrap; past 60% of the screen's height it scrolls (its height never follows where it stands).
 fn skillchain_panel(p: &mut Panels, w: &mut World) {
     if !w.extra_skillchain || hidden(w) {
         return;
     }
     let Some(v) = super::super::skillchain::view(w) else { return };
     let m = p.m;
-    // Room down to the first panel under it (the target and party windows), or the screen's bottom.
-    let screen = p.ctx.content_rect();
-    let at = m.rects.borrow().get("skillchains").copied().unwrap_or(Rect::from_min_size(pos2(screen.max.x - WIDTH_SC, screen.height() * p.place("skillchains").y), vec2(WIDTH_SC, 0.0)));
-    let limit = m.rects.borrow().iter().filter(|(k, r)| k.as_str() != "skillchains" && r.min.y > at.min.y + 40.0 && r.max.x > at.min.x && r.min.x < at.max.x).map(|(_, r)| r.min.y).fold(screen.max.y, f32::min) - 16.0;
+    let room = p.ctx.content_rect().height() * 0.6;
     let toggle = edge_window(p, "skillchains", WIDTH_SC, w.skillchain.folded, "Skillchains", |ui, left| {
         let toggle = flyout_header(ui, m, "Skillchains", left).clicked();
-        let room = (limit - ui.cursor().min.y - 14.0).max(80.0);
         egui::ScrollArea::vertical().id_salt("skillchains").max_height(room).auto_shrink([false, true]).show(ui, |ui| skillchain_body(ui, m, &v));
         toggle
     });
@@ -276,7 +272,9 @@ fn edge_window(p: &mut Panels, key: &str, width: f32, folded: bool, label: &str,
     let float = place.float;
     let fx = (screen.width() * place.x).max(screen.min.x);
     let left = if float { fx + width / 2.0 < screen.center().x } else { place.x >= 0.0 };
-    let top = (screen.height() * place.y).clamp(screen.min.y, screen.max.y - TAB_H);
+    // Kept whole on the screen: its top at least its own height (last frame's) above the bottom.
+    let tall = m.rects.borrow().get(key).map_or(TAB_H, |r| r.height().max(TAB_H));
+    let top = (screen.height() * place.y).clamp(screen.min.y, (screen.max.y - tall).max(screen.min.y));
     let id = egui::Id::unique(("modern edge", key));
     let mut toggle = false;
     if folded {

@@ -1769,6 +1769,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     for ev in input.events.iter().filter(|_| !input_open) {
         match ev {
+            // Ctrl+V with the chat line closed opens it with the text (ours).
+            egui::Event::Paste(t) if !world.typing && !opened => {
+                world.typing = true;
+                let t: String = t.chars().filter(|c| !c.is_control()).collect();
+                fep::insert(world, &t);
+            }
             egui::Event::Text(t) | egui::Event::Paste(t) if world.typing && !opened => {
                 world.line_hist.edited();
                 let t = if std::mem::take(&mut world.space_open) { t.strip_prefix(' ').unwrap_or(t) } else { t.as_str() };
@@ -1779,7 +1785,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             }
             // egui turns Ctrl+C / Ctrl+X into Copy / Cut instead of key events. In the chat line they copy / cut the
             // selection (ours; Ctrl+V pastes through egui-winit's clipboard), else /check and the /linkshell2 line.
-            egui::Event::Copy if world.typing => world.copied = fep::selected_text(world),
+            // The chat line's selection first, then the modern chat window's selected lines (chatsel.rs).
+            egui::Event::Copy if world.typing && fep::selection(world).is_some() => world.copied = fep::selected_text(world),
+            egui::Event::Copy if world.log_selection.is_some() => world.copied = world.log_selection.clone(),
+            egui::Event::Copy if world.typing => {}
             egui::Event::Copy if !event::active(world) => check_target(world),
             egui::Event::Cut if world.typing && fep::selection(world).is_some() => {
                 world.copied = fep::selected_text(world);
@@ -5324,6 +5333,10 @@ struct World {
     /// The other end of the chat line's selection (Shift + arrows; ours), and text for the clipboard this frame.
     chat_anchor: Option<usize>,
     copied: Option<String>,
+    /// The modern chat window's selected lines (Ctrl+C copies them), and a paste its menu asked for (the clipboard read
+    /// after the frame, given back as a paste).
+    log_selection: Option<String>,
+    paste_request: bool,
     /// The auto-translate candidate list (menu fep) while open.
     fep: Option<fep::Fep>,
     /// The log window's size and scroll state, and the top bar / Network / compass state.
@@ -7184,6 +7197,8 @@ impl App {
                             chat_caret: None,
                             chat_anchor: None,
                             copied: None,
+                            log_selection: None,
+                            paste_request: false,
                             fep: None,
                             log: Default::default(),
                             log2: logwin::LogWin::second(),
@@ -12167,7 +12182,15 @@ impl App {
         if let Phase::World(w) = &mut self.phase
             && let Some(t) = w.copied.take()
         {
+            log::info!("clipboard: copied {} chars", t.chars().count());
             platform.commands.push(egui::OutputCommand::CopyText(t));
+        }
+        // The chat menu's Paste: the clipboard read here, given to the next frame as a paste.
+        if let Phase::World(w) = &mut self.phase
+            && std::mem::take(&mut w.paste_request)
+            && let Some(t) = gfx.egui_state.clipboard_text()
+        {
+            gfx.egui_state.egui_input_mut().events.push(egui::Event::Paste(t));
         }
         if self.ui_drawn {
             platform.cursor_icon = if self.cfg.tool("0021") == 0 { egui::CursorIcon::None } else { egui::CursorIcon::Default };

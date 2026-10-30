@@ -12414,3 +12414,29 @@ since "Ship voyages: the moving world" listed them as not done.
   those whose opener has the TP) and a click on its row for the rest; it scrolls instead of dropping lines when it
   runs into the next panel on its edge. `modern-shot --borders pack` draws a sample. Seen live with Naji and Ayame in
   South Gustaberg (nine chains, each way whole); the resonance part only in the sample (no chain made in that run).
+
+## Modern chat: mouse selection, right-click copy, Ctrl+V into a closed line (ours, 2026-10-30)
+- User: "Text in the chat window or chat input needs to be selecting and copyable via ctrl+c or right click. Ctrl + v
+  should paste into chat input." Not retail (its log and line have no mouse selection; "Chat line: selection" above).
+- modern/chatsel.rs. The lines: a drag selects from the press, each end a line's log index and a char of its text as
+  drawn (timestamp included), so lines sliding in keep it; a wash behind the chars (galley rows); a click clears it.
+  Ctrl+C: client/mod.rs's Copy takes the chat line's selection first, then the lines' (World::log_selection, set each
+  frame), else it is /check as before. A right click on the lines opens Copy / Copy Line (the line under the pointer).
+- The chat line: a press puts the caret at the nearest char boundary (a phrase is one unit), a drag selects
+  (fep's chat_caret / chat_anchor, set after the frame); the selection now shows in the modern line too; a right click
+  opens Cut / Copy / Paste / Select All. Paste reads the clipboard after the frame (egui_winit State::clipboard_text)
+  and hands it back as a Paste event.
+- Ctrl+V (egui-winit's Paste) with the line closed opens it with the text; with another text field taking typing
+  (input_open) it goes there as before.
+- The chat window holds (logwin rule `stacked`) while the pointer is over it or its menu is open: it folded away
+  under the pointer while a line was aimed at (the drag then moved the window).
+- The menu: the pack's window frame by the pointer, rows lit under it; a pick or a press elsewhere closes it.
+- Script steps `copy` / `paste:TEXT` send egui-winit's Copy / Paste events; `rclick` now holds the button 50 ms (a
+  press and release in one frame is no click to egui). The client logs "clipboard: copied N chars".
+- Live (Lnxcsfix): a drag over three lines selected and Copy took 117 chars; Copy Line 62; in the line, a drag
+  selected "orld", a paste replaced it, Select All and Copy took 11, the menu's Paste put the clipboard's "from the
+  menu" in; Ctrl+V with the line closed opened it with the text. A driven window cannot set the Wayland clipboard
+  (no real input serial), so the copies were checked by the log, the menu's paste by a clipboard set with wl-copy.
+- Also: the skillchain helper's height no longer follows the room down to the panel under it (it grew and shrank as
+  it slid); it scrolls past 60% of the screen's height. Edge windows are kept whole on the screen by their own height.
+  Seen live: four heights along the right edge, the same window each time.

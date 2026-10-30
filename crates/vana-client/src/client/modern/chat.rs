@@ -5,7 +5,7 @@
 
 use super::super::combat::is_battle;
 use super::super::{World, cfgapply, event, fep};
-use super::{Modern, Panels, Show, paint};
+use super::{Modern, Panels, Show, chatsel, paint};
 use crate::dat::font::{CODE_BASE, code_table};
 use egui::text::{LayoutJob, TextFormat};
 use egui::{Color32, FontId, Id, Order, Rect, Sense, Ui, Vec2, pos2, vec2};
@@ -286,6 +286,8 @@ pub struct InputView {
     pub channel: &'static str,
     pub pieces: Vec<(String, bool)>,
     pub caret: usize,
+    /// The selection (Shift + arrows or the mouse): its first and last char.
+    pub sel: Option<(usize, usize)>,
     /// The auto-translate list (Tab): the candidates and the cursor.
     pub fep: Option<(Vec<String>, usize)>,
 }
@@ -325,7 +327,7 @@ fn view_keep(w: &World, keep: usize) -> ChatView<'_> {
     let all: Vec<_> = w.chat.iter_timed().zip(modes.iter().copied()).collect();
     let from = all.len().saturating_sub(keep);
     let lines = all[from..].iter().enumerate().map(|(i, (((line, c), (time, chat, _)), mode))| (stamp_of(stamps, *time, *chat), line.as_str(), *c, *mode, incoming(*mode) && mentions(line, &w.name), from + i)).collect();
-    let input = w.typing.then(|| InputView { channel: channel(super::super::chatctrl::line_mode(&w.chat_input, w.chat_mode)), pieces: fep::pieces(w, &w.chat_input), caret: fep::caret(w), fep: w.fep.as_ref().map(|f| (f.cands.iter().map(|c| c.text.clone()).collect(), f.sel)) });
+    let input = w.typing.then(|| InputView { channel: channel(super::super::chatctrl::line_mode(&w.chat_input, w.chat_mode)), pieces: fep::pieces(w, &w.chat_input), caret: fep::caret(w), sel: fep::selection(w), fep: w.fep.as_ref().map(|f| (f.cands.iter().map(|c| c.text.clone()).collect(), f.sel)) });
     ChatView { lines, input, waiting: event::prompt(w), unread: [0; 11] }
 }
 
@@ -346,6 +348,15 @@ fn input(ui: &mut Ui, m: &Modern, v: &InputView, t: f32, size: f32, r: Rect) {
     ui.painter().text(tab.center() + vec2(0.0, 1.0), egui::Align2::CENTER_CENTER, v.channel, tf, m.theme.color("gold"));
     let p = ui.painter().with_clip_rect(r.shrink(4.0));
     let mut x = r.min.x + 12.0;
+    // The mouse: a press puts the caret, a drag selects, a right click opens the menu (chatsel.rs).
+    let stops = chatsel::line_stops(ui, &v.pieces, &font, x);
+    let resp = ui.interact(r, Id::unique("modern chat line"), Sense::click_and_drag());
+    chatsel::line_mouse(m, &resp, &stops);
+    m.line_sel.set(v.sel.is_some());
+    if let Some((a, b)) = v.sel {
+        let at = |c: usize| stops.iter().find(|s| s.0 >= c).map_or(x, |s| s.1);
+        p.rect_filled(Rect::from_min_max(pos2(at(a), r.center().y - size * 0.62), pos2(at(b), r.center().y + size * 0.62)), 2.0, m.theme.color("focus").gamma_multiply(0.45));
+    }
     let (mut caret_x, mut chars) = (x, 0);
     for (text, phrase) in &v.pieces {
         let c = if *phrase { Color32::from_rgb(0x80, 0xb0, 0xff) } else { m.theme.color("text") };
@@ -436,8 +447,10 @@ pub fn panel(p: &mut Panels, w: &mut World) {
     rule.cfg.max = (room.y / row).floor().clamp(1.0, 24.0);
     rule.cfg.min = rule.cfg.min.min(rule.cfg.max);
     rule.focused |= m.arranging.replace(false);
-    // The settings popup holds the window as it is (it went with the window when that folded away).
-    rule.stacked |= m.chat_settings.get();
+    // The settings popup holds the window as it is (it went with the window when that folded away), and so do the
+    // pointer over it and its right-click menu (lines being selected must not fold away).
+    let over = p.ctx.pointer_hover_pos().is_some_and(|q| m.rects.borrow().get("chat").is_some_and(|r| r.contains(q)));
+    rule.stacked |= m.chat_settings.get() || over || m.chat_menu.borrow().is_some();
     let stamps = (w.game.get(0xb5), w.stamp_all_lines);
     let ml = &mut w.modern_log;
     if std::mem::take(&mut ml.fill) {
@@ -487,6 +500,23 @@ pub fn panel(p: &mut Panels, w: &mut World) {
     let mut v = view(w);
     v.unread = unread(m, w, *p.battle_in_all);
     draw(p, &v, shown, rule.line_open);
+    chatsel::apply(m, w);
+}
+
+/// A line's text as drawn (its timestamp, the game's glyphs as text, the auto-translate braces): what a selection
+/// counts chars in and copies.
+fn line_text(stamp: &str, line: &str) -> String {
+    line_job((stamp, Color32::WHITE), line, [0x80; 4], &FontId::default(), f32::INFINITY).text
+}
+
+/// The selected text of the lines shown on tab `tab`, for Ctrl+C and the menu.
+fn selected(m: &Modern, v: &ChatView, tab: u8, battle_in_all: bool) {
+    let sel = m.log_sel.borrow().filter(|s| !s.empty());
+    let text = sel.map(|s| {
+        let lines: Vec<(usize, String)> = v.lines.iter().filter(|l| shows(tab, l.3, battle_in_all) && s.span(l.5, usize::MAX).is_some()).map(|l| (l.5, line_text(&l.0, l.1))).collect();
+        s.text(&lines)
+    });
+    *m.log_text.borrow_mut() = text;
 }
 
 /// A line naming us (rChat's mentions): a faint gold wash behind it and a gold bar at its left.
@@ -540,9 +570,10 @@ fn full(p: &mut Panels, w: &mut World) {
         ui.spacing_mut().item_spacing.y = 0.0;
         button = tabs(ui, m, 1.0, &v.unread);
         ui.add_space(GAP);
-        let (area, resp) = ui.allocate_exact_size(vec2(ui.available_width(), lines_h), Sense::click());
+        let (area, resp) = ui.allocate_exact_size(vec2(ui.available_width(), lines_h), Sense::click_and_drag());
         hovered = resp.hovered();
-        clicked = resp.clicked().then(|| resp.interact_pointer_pos()).flatten();
+        let selecting = m.log_sel.borrow().is_some_and(|s| !s.empty());
+        clicked = (resp.clicked() && !selecting).then(|| resp.interact_pointer_pos()).flatten();
         let wrap = wrap_width(room);
         // The chat line in the bottom row while typing.
         let input_r = v.input.as_ref().map(|_| Rect::from_min_max(pos2(area.min.x, area.max.y - row - 5.0), pos2(area.max.x, area.max.y + 5.0)));
@@ -568,6 +599,8 @@ fn full(p: &mut Panels, w: &mut World) {
         let painter = ui.painter().with_clip_rect(Rect::from_min_max(lines.min - vec2(10.0, 0.0), lines.max + vec2(0.0, if input_r.is_some() { 0.0 } else { 4.0 })).intersect(ui.clip_rect()));
         let mut y = lines.max.y + fl.scroll as f32 * row;
         let open = w.charlnk.as_ref().map(|c| c.line);
+        let sel = *m.log_sel.borrow();
+        let mut drawn: chatsel::Drawn = Vec::new();
         for (st, line, c, mode, named, k) in v.lines.iter().rev() {
             if !shows(tab, *mode, battle_in_all) {
                 continue;
@@ -589,8 +622,14 @@ fn full(p: &mut Panels, w: &mut World) {
             if *named {
                 mention_mark(&painter, m, Rect::from_min_size(pos2(area.min.x, y), vec2(galley.size().x, galley.size().y)));
             }
-            painter.galley(pos2(area.min.x, y), galley, m.theme.color("text"));
+            let at = pos2(area.min.x, y);
+            if let Some(span) = sel.and_then(|s| s.span(*k, galley.text().chars().count())) {
+                chatsel::wash(&painter, m, &galley, at, span);
+            }
+            drawn.push((*k, at, galley.clone()));
+            painter.galley(at, galley, m.theme.color("text"));
         }
+        chatsel::log_mouse(m, &resp, &drawn);
         // The oldest line reached below the top: scrolled past it by this many rows.
         if tab != 0 && y >= lines.max.y + fl.scroll as f32 * row - 0.5 {
             empty_tab(&painter, m, tab, pos2(area.min.x, lines.max.y - row), size);
@@ -602,6 +641,8 @@ fn full(p: &mut Panels, w: &mut World) {
             input(ui, m, i, t, size, r);
         }
     });
+    selected(m, &v, tab, battle_in_all);
+    chatsel::draw_menu(p.ctx, m);
     if let Some(r) = r {
         m.chat_edge.set(Some((r, false)));
     }
@@ -634,6 +675,7 @@ fn full(p: &mut Panels, w: &mut World) {
     if r.is_some() && m.chat_settings.get() && settings(p.ctx, m, button.0, p.chat_font, p.battle_in_all, p.condense) {
         *p.changed = true;
     }
+    chatsel::apply(m, w);
 }
 
 /// The chat window for the rule's frame `s`: the tabs, the rows from the displayed one up, the chat line in the bottom
@@ -673,7 +715,7 @@ pub fn draw(p: &mut Panels, v: &ChatView, s: Shown, lift: bool) {
         ui.spacing_mut().item_spacing.y = 0.0;
         button = tabs(ui, m, 1.0, &v.unread);
         ui.add_space(GAP);
-        let (area, _) = ui.allocate_exact_size(vec2(ui.available_width(), lines_h), Sense::hover());
+        let (area, resp) = ui.allocate_exact_size(vec2(ui.available_width(), lines_h), Sense::click_and_drag());
         let wrap = wrap_width(room);
         let input_r = v.input.as_ref().map(|_| Rect::from_min_max(pos2(area.min.x, floor - row - 5.0), pos2(area.max.x, floor + 5.0)));
         let base = floor - if lift { 2.0 * row } else { 0.0 } + s.slide as f32 * row / 16.0;
@@ -683,7 +725,9 @@ pub fn draw(p: &mut Panels, v: &ChatView, s: Shown, lift: bool) {
         let painter = ui.painter().with_clip_rect(clip.intersect(ui.clip_rect()));
         let mut y = base + s.pending as f32 * row;
         let mut newest = None;
-        for (st, line, c, mode, named, _) in v.lines.iter().rev() {
+        let sel = *m.log_sel.borrow();
+        let mut drawn: chatsel::Drawn = Vec::new();
+        for (st, line, c, mode, named, k) in v.lines.iter().rev() {
             if !shows(tab, *mode, battle_in_all) {
                 continue;
             }
@@ -698,8 +742,17 @@ pub fn draw(p: &mut Panels, v: &ChatView, s: Shown, lift: bool) {
             if newest.is_none() {
                 newest = galley.rows.last().map(|r| pos2(area.min.x + r.rect().max.x, y + r.rect().center().y));
             }
-            painter.galley(pos2(area.min.x, y), galley, m.theme.color("text"));
+            let at = pos2(area.min.x, y);
+            if let Some(span) = sel.and_then(|s| s.span(*k, galley.text().chars().count())) {
+                chatsel::wash(&painter, m, &galley, at, span);
+            }
+            // Only lines inside the window's clip take the mouse.
+            if at.y + galley.size().y > clip.min.y {
+                drawn.push((*k, at, galley.clone()));
+            }
+            painter.galley(at, galley, m.theme.color("text"));
         }
+        chatsel::log_mouse(m, &resp, &drawn);
         if newest.is_none() && tab != 0 {
             empty_tab(&painter, m, tab, pos2(area.min.x, base - row), size);
         }
@@ -713,6 +766,8 @@ pub fn draw(p: &mut Panels, v: &ChatView, s: Shown, lift: bool) {
             input(ui, m, i, t, size, r);
         }
     });
+    selected(m, v, tab, battle_in_all);
+    chatsel::draw_menu(p.ctx, m);
     if let Some(r) = r {
         m.chat_edge.set(Some((r, false)));
     }

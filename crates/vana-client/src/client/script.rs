@@ -5,7 +5,8 @@
 //! `key:[shift+|ctrl+|alt+]NAME` (egui key names: Tab, Enter, Escape, Space, Minus, ArrowDown...),
 //! `move:X,Y`, `click:X,Y`, `rclick:X,Y`, `ldown:X,Y` / `lup` (physical pixels), `shot:PATH`, and `press:KEY,SECS,PHASE` (press KEY every
 //! SECS until the client reaches PHASE; event prompts), `every:KEY,SECS` (press KEY every SECS alongside the
-//! steps that follow; `every:off` stops it), `act:NAME` for keys egui cannot name (numpad*; `act:wheel:N` turns the wheel), and `follow:PATH`: lines
+//! steps that follow; `every:off` stops it), `act:NAME` for keys egui cannot name (numpad*; `act:wheel:N` turns the wheel), `copy` /
+//! `paste:TEXT` (what egui-winit makes of Ctrl+C / Ctrl+V), and `follow:PATH`: lines
 //! appended to PATH later each run as a script of their own, until a line `end`.
 
 use anyhow::{Result, anyhow, bail};
@@ -20,8 +21,11 @@ enum Step {
     Key(egui::Key, egui::Modifiers),
     Move(f32, f32),
     Button(bool),
-    /// A right-button press and release.
-    Right,
+    /// The right button pressed or released.
+    Right(bool),
+    /// egui-winit's Ctrl+C and Ctrl+V (with the clipboard's text).
+    Copy,
+    Paste(String),
     Shot(PathBuf),
     Repeat { key: egui::Key, every: f32, until: String, last: Option<Instant> },
     Action(String),
@@ -92,11 +96,14 @@ impl Script {
                     steps.extend([Step::Move(x, y), Step::Button(true)]);
                 }
                 "lup" => steps.push(Step::Button(false)),
+                // Held 50 ms as `click` is: a press and release in one frame is no click to egui.
                 "rclick" => {
                     let (x, y) = xy()?;
-                    steps.extend([Step::Move(x, y), Step::Right]);
+                    steps.extend([Step::Move(x, y), Step::Right(true), Step::Wait(0.05), Step::Right(false)]);
                 }
                 "shot" => steps.push(Step::Shot(PathBuf::from(arg))),
+                "copy" => steps.push(Step::Copy),
+                "paste" => steps.push(Step::Paste(arg.to_string())),
                 "follow" => steps.push(Step::Follow { path: PathBuf::from(arg), read: 0 }),
                 "act" => steps.push(Step::Action(arg.to_string())),
                 "every" if arg == "off" => steps.push(Step::Every(None)),
@@ -201,14 +208,20 @@ impl Script {
                 events.push(egui::Event::PointerButton { pos: self.pointer, button: egui::PointerButton::Primary, pressed: *pressed, modifiers: egui::Modifiers::NONE });
                 true
             }
-            Step::Right => {
-                for pressed in [true, false] {
-                    events.push(egui::Event::PointerButton { pos: self.pointer, button: egui::PointerButton::Secondary, pressed, modifiers: egui::Modifiers::NONE });
-                }
+            Step::Right(pressed) => {
+                events.push(egui::Event::PointerButton { pos: self.pointer, button: egui::PointerButton::Secondary, pressed: *pressed, modifiers: egui::Modifiers::NONE });
                 true
             }
             Step::Shot(p) => {
                 shot = Some(p.clone());
+                true
+            }
+            Step::Copy => {
+                events.push(egui::Event::Copy);
+                true
+            }
+            Step::Paste(t) => {
+                events.push(egui::Event::Paste(t.clone()));
                 true
             }
             Step::Follow { .. } => true,

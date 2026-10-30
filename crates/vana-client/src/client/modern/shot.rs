@@ -149,10 +149,12 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
         (String::new(), "Kupipi : A pre\u{FF5E}sent? Take this \u{100402}Fire Crystal\u{100401} to the \u{F87B2}Mog House\u{F87B3}.", wh, NO_MODE),
     ];
     let shown = chat::Shown { rows: 8.0, draw_n: 8, pending: 0, slide: 0 };
+    // A selection from the second line's middle into the fourth (chatsel.rs).
+    *m.log_sel.borrow_mut() = Some(super::chatsel::LogSel { anchor: (1, 14), head: (3, 22) });
     let mut unread = [0; 11];
     unread[2] = 3;
     let named = |l: &str, mode: u16| mode == 13 && chat::mentions(l, "Lenon");
-    chat::draw(&mut p, &ChatView { lines: lines.iter().enumerate().map(|(k, (a, b, c, d))| (a.clone(), *b, *c, *d, named(b, *d), k)).collect(), input: Some(InputView { channel: "Party", pieces: vec![("Pulling now ".into(), false), ("Thank you.".into(), true)], caret: 22, fep: None }), waiting: false, unread }, shown, true);
+    chat::draw(&mut p, &ChatView { lines: lines.iter().enumerate().map(|(k, (a, b, c, d))| (a.clone(), *b, *c, *d, named(b, *d), k)).collect(), input: Some(InputView { channel: "Party", sel: Some((0, 7)), pieces: vec![("Pulling now ".into(), false), ("Thank you.".into(), true)], caret: 22, fep: None }), waiting: false, unread }, shown, true);
     let fx = |icon, label: Option<&str>, ending| Effect { icon: Icon::Pack(icon), label: label.map(str::to_string), ending, tip: None };
     let mine = vec![fx("icons/protect", Some("25m"), false), fx("icons/haste", Some("2m"), false), fx("icons/refresh", Some("12"), true), fx("icons/poison", None, false)];
     hud::status_panel(&mut p, &StatusView { effects: mine, cursor: None }, false);

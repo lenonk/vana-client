@@ -12,6 +12,7 @@ mod maze;
 mod charlnk;
 mod borders;
 mod chat;
+mod chatsel;
 mod combat;
 mod command;
 mod config;
@@ -120,6 +121,14 @@ pub struct Modern {
     edge_ghost: std::cell::RefCell<Option<(String, Vec2)>>,
     /// The skillchain helper's chains shown with all their ways.
     sc_open: std::cell::RefCell<std::collections::HashSet<u8>>,
+    /// The chat window's mouse selection (chatsel.rs): over the lines and its text this frame, the chat line's caret /
+    /// anchor asked, whether the line has a selection, and the right-click menu and its pick.
+    log_sel: std::cell::RefCell<Option<chatsel::LogSel>>,
+    log_text: std::cell::RefCell<Option<String>>,
+    line_req: std::cell::Cell<Option<(usize, Option<usize>)>>,
+    line_sel: std::cell::Cell<bool>,
+    chat_menu: std::cell::RefCell<Option<chatsel::Menu>>,
+    chat_act: std::cell::RefCell<Option<chatsel::Act>>,
     /// The retail windows drawn this frame: the edge windows give way to them (they draw under every panel).
     retail: std::cell::RefCell<Vec<Rect>>,
     /// A place changed during a drag: saved once the pointer is let go.
@@ -167,6 +176,12 @@ impl Modern {
             edge_grip: Default::default(),
             edge_ghost: Default::default(),
             sc_open: Default::default(),
+            log_sel: Default::default(),
+            log_text: Default::default(),
+            line_req: Default::default(),
+            line_sel: Default::default(),
+            chat_menu: Default::default(),
+            chat_act: Default::default(),
             dirty: false,
         }
     }
