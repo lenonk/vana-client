@@ -1265,7 +1265,7 @@ pub(super) fn tick(w: &mut World) {
         }
     }
     w.loads.retain(|_, l| l.1 > now);
-    let released: Vec<(u32, u8)> = w.held_status.iter().filter(|(id, s)| !held(w, **id) && !super::fishrod::walking_hold(w, **id, **s)).map(|(id, s)| (*id, *s)).collect();
+    let released: Vec<(u32, u8)> = w.held_status.iter().filter(|(id, s)| !held(w, **id) && !super::fishrod::walking_hold(w, **id, **s) && !super::chair::holding(w, **id)).map(|(id, s)| (*id, *s)).collect();
     for (id, s) in released {
         w.held_status.remove(&id);
         apply_status(w, id, s);

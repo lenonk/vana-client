@@ -12211,3 +12211,28 @@ since "Ship voyages: the moving world" listed them as not done.
   reach (not pressed).
 - Lamp Lights correction: a lamp copying a data light carries no colour, and an own-light lamp keeps its first one, so
   the pulsing glows no longer change the list (and re-apply the lamps) every second; the counts log once per zone.
+
+## /sitchair: the chair under the sitter (2026-10-29; spec ~/ffxi/lab/research/chairs_spec.md)
+
+- Ours had the seated pose and no chair. Now client/chair.rs: the chair is the sitter's second actor (id CHAIR 0x8000_0000 |
+  sitter; retail entity +0xa4, kind status - 2), file 100507 + (status - 0x3f) (chairs 0..12 = statuses 0x3f..0x4b;
+  13..20 have no file: no chair), for PCs only (ActIndex <= 0x6ff, no NpcPetFlag / Flags3 bit 25; FUN_1008f740).
+- At the sitter's place and facing, untilted (FUN_100caf90); its own motion pick 'ci1' (its `ci10` is static); its
+  `init` on load (invisible 4 ticks, fade in over 86); per-axis scale (Actor::axes; FUN_100cf210): height the sitter's
+  size relative to medium, facing / side 1.0, Mithra 0.90 deep, Galka 1.20 deep with its side relative.
+- The sitter: the chair motion files (tag 9, ride::motion_files(pc, 4)) while seated; `chi0` once they are in (state
+  0x17 -> 0x18); wep0..8 hidden while seated (again after a model rebuild). A status leaving the chair starts the
+  stand-up (state 0x19): `chi2` on the sitter and the chair (it fades out after 90 ticks), the weapons shown with wep2
+  hidden, the new status held 186 ticks (chair::holding beside combat::held); then the chair goes and ours sends one
+  more c2s 0x113 {2, 0} (LAB_1008c376). A chair -> chair change keeps the first chair (3.3). Shadows: our chair a
+  silhouette, others' none; no bone-0 drop for the chair.
+- /sitchair (FUN_1007c390): status gate 0x50 and SendResRdy; "on" 1 / "off" 2 / a number 0..20 as mode 0; nothing while
+  sitting down, "on" while seated, "off" while standing. A toggle or "off" while seated starts our stand-up and is sent as
+  {2, 0} *(not retail: retail sends {0, n}; LSB 0x113_sitchair.cpp takes a toggle with another chair id as a move to
+  that chair, so "/sitchair" in chair 1 put us on the stool, seen live)*. The movement stand-up's "/sitchair off" now
+  goes as mode 2 (it went as a toggle of chair 0 before).
+- Live (Lnxcsfix, Mithra, East Ronfaure): `!addkeyitem 2826`, /sitchair 1 (the imperial chair fades in, chi0, seated
+  on it), /sitchair (chi2 on both, standing, chair gone), /sitchair 0 (the stool), /sitchair off.
+- LSB facts (not patched): chair 12's key item check uses 2837, the real one is 3343; its "sitting" checks stop at
+  chair 10; the toggle-with-another-id case above. Others' chairs need a second player (not seen live).
+- Not done: trusts ignoring chair / sit / heal statuses in 0x00E (asm 0x1009c148).

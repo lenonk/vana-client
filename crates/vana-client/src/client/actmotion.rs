@@ -500,7 +500,12 @@ pub(super) fn update(w: &mut World, dt: f32) {
         // The riding files, or a mannequin's pose bank (FUN_100d1f70; it never rides).
         let ride = match (w.furniture.mannequin_pose(id), ch.pc) {
             (Some((bank, _)), Some(pc)) => crate::dat::motionfile::mannequin_files(&pc, bank),
-            _ => ch.pc.map(|pc| Some(super::ride::files(w, id, &pc)).filter(|f| !f.is_empty()).unwrap_or_else(|| super::fishrod::files(w, id, &pc))).unwrap_or_default(),
+            _ => ch
+                .pc
+                .map(|pc| {
+                    [super::ride::files(w, id, &pc), super::fishrod::files(w, id, &pc), super::chair::files(w, id, &pc)].into_iter().find(|f| !f.is_empty()).unwrap_or_default()
+                })
+                .unwrap_or_default(),
         };
         let held = super::ride::fade_held(w, id);
         let mouth_off = w.entities.get(&id).is_some_and(|e| e.mouth_off);

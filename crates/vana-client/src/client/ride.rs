@@ -402,7 +402,7 @@ pub fn drop_for(status: u8, mount: Option<(u8, u8)>, race: u8) -> f32 {
 
 /// The drop of actor `id` this frame (none for the animals, kind 0x54 / 1..4).
 pub fn bone0_drop(w: &World, id: u32, status: u8) -> f32 {
-    if id & ANIMAL != 0 {
+    if id & (ANIMAL | super::chair::CHAIR) != 0 {
         return 0.0;
     }
     let mount = linked(w, id).and_then(|(r, mi)| match r.model {

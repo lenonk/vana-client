@@ -1936,7 +1936,7 @@ pub fn rebuild_models(w: &mut World) {
     log::info!("event: rebuilding {} models (op 0xab 0x11)", ids.len());
     for id in ids {
         let src = w.actors.get(&id).and_then(|a| a.source);
-        for gone in [id, super::ride::ANIMAL | id] {
+        for gone in [id, super::ride::ANIMAL | id, super::chair::CHAIR | id] {
             if w.actors.remove(&gone).is_some() {
                 w.effects.forget_actor(gone);
             }

@@ -3,6 +3,7 @@
 pub mod ground;
 pub mod combat;
 mod actmotion;
+mod chair;
 mod battlemod;
 pub mod opening;
 mod flyover;
@@ -4265,6 +4266,8 @@ struct Actor {
     base_ticks: f32,
     /// Event op 0xb6 0xf / 0x17: a scale set by a script (+0x204), over the model's own.
     event_scale: Option<f32>,
+    /// A per-axis scale (facing, height, side) over `scale` (a chair, client/chair.rs).
+    axes: Option<Vec3>,
     /// Event op 0x59: turn (+0xdc) and head-look (+0xe0) speed percents, used while an event runs; 0 = default.
     turn_pct: i32,
     look_pct: i32,
@@ -4403,6 +4406,7 @@ impl Actor {
             motion_names: None,
             rate_scale: 1.0,
             ride_on: Vec::new(),
+            axes: None,
             appear: 0.0,
             mouth_name: "mou4",
             ground_tilt: Default::default(),
@@ -4731,6 +4735,11 @@ fn actor_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
         let p = base_place(w, id & !indi::AURA, my_dir)?;
         return Some(Place { status: 0, tilt: [0.0; 2], ratio: 0.0, size: indi::size(w, id)?, ..p });
     }
+    // FUN_100caf90: the chair at its sitter's place and facing, untilted; its own pick of the sitter's status ('ci1').
+    if id & chair::CHAIR != 0 {
+        let p = base_place(w, id & !chair::CHAIR, my_dir)?;
+        return Some(Place { tilt: [0.0; 2], ..p });
+    }
     // FUN_1008f740: the rod at its angler's place, posing with the angler's status.
     if id & fishrod::ROD != 0 {
         return base_place(w, id & !fishrod::ROD, my_dir);
@@ -4793,7 +4802,7 @@ fn attach_point(w: &World, places: &HashMap<u32, Place>, id: u32, k: u16) -> Opt
     let p = places.get(&id)?;
     let a = w.actors.get(&id)?;
     let ch = a.character.as_ref()?;
-    let model = actor_frame(p, a) * glam::Mat4::from_scale(Vec3::splat(a.scale));
+    let model = actor_frame(p, a) * glam::Mat4::from_scale(a.axes.unwrap_or(Vec3::splat(a.scale)));
     let drop = |bone: u16| if bone == 0 { ride::bone0_drop(w, id, p.status) * a.scale } else { 0.0 };
     match ch.skeleton.points.get(k as usize).and_then(|(bone, off)| a.rest.get(*bone as usize).map(|(q, t)| (*bone, *t + *q * *off))) {
         Some((bone, local)) => Some(model.transform_point3(local) + Vec3::new(0.0, drop(bone), 0.0)),
@@ -5245,6 +5254,8 @@ struct World {
     rides: HashMap<u32, ride::Riding>,
     /// Anglers' status schedulers (client/fishrod.rs).
     anglers: HashMap<u32, fishrod::Angler>,
+    /// /sitchair sitters' chairs (client/chair.rs).
+    seats: HashMap<u32, chair::Seat>,
     /// Event music fades (ops 0x5d, 0x5c 0xa0 / 0xa1): volume, ticks.
     music_fades: Vec<(i32, i32)>,
     /// The audio still changing music (event op 0x9a waits), as of the last frame.
@@ -7389,6 +7400,7 @@ impl App {
                             my_reset_bases: false,
                             rides: HashMap::new(),
                             anglers: HashMap::new(),
+                            seats: HashMap::new(),
                             music_fades: Vec::new(),
                             music_changing: false,
                             typing: false,
@@ -8255,7 +8267,8 @@ impl App {
                         looks.push((e.id, Source::Npc(npc)));
                     }
                     let fresh = !world.entities.contains_key(&e.id);
-                    let held = combat::held(world, e.id) || fishrod::walking_hold(world, e.id, e.motion.status);
+                    let rising = e.hpp.is_some() && chair::rise(world, e.id, e.motion.status);
+                    let held = rising || combat::held(world, e.id) || fishrod::walking_hold(world, e.id, e.motion.status);
                     let entry = world.entities.entry(e.id).or_insert(Entity {
                         name: String::new(),
                         pos: Vec3::ZERO,
@@ -8811,7 +8824,8 @@ impl App {
                     }
                     world.my_pet = pet;
                     // Held mid-swing: applied when the hold ends (the disengage waits for the swing).
-                    if combat::held(world, world.my_id) || fishrod::walking_hold(world, world.my_id, status) {
+                    let rising = chair::rise(world, world.my_id, status);
+                    if rising || combat::held(world, world.my_id) || fishrod::walking_hold(world, world.my_id, status) {
                         world.held_status.insert(world.my_id, status);
                     } else {
                         world.held_status.remove(&world.my_id);
@@ -9358,6 +9372,7 @@ impl App {
         }
         ride::update(world, dt);
         fishrod::update(world, dt);
+        chair::update(world);
         indi::update(world, dt);
         border::update(world);
         racing::step(world, dt * 60.0);
@@ -12182,7 +12197,7 @@ impl App {
                 hidden.extend(pcs[cap..].iter().map(|p| p.1));
             }
             // A riding animal goes with its rider; a rider waits hidden for its mount.
-            let animals: Vec<u32> = hidden.iter().flat_map(|id| [ride::ANIMAL | id, indi::AURA | id, fishrod::ROD | id]).collect();
+            let animals: Vec<u32> = hidden.iter().flat_map(|id| [ride::ANIMAL | id, indi::AURA | id, fishrod::ROD | id, chair::CHAIR | id]).collect();
             hidden.extend(animals);
             hidden.extend(ride::hidden(w));
             let idles = event::idles(w);
@@ -12680,7 +12695,7 @@ impl App {
                         if ch.cib[0] == 2 && ch.cib[2] == 2
                             && let Some(g) = w.ground.as_ref()
                         {
-                            let m = actor_frame(&Place { pos, forward, tilt, status, ratio, size }, a) * glam::Mat4::from_scale(Vec3::splat(a.scale));
+                            let m = actor_frame(&Place { pos, forward, tilt, status, ratio, size }, a) * glam::Mat4::from_scale(a.axes.unwrap_or(Vec3::splat(a.scale)));
                             let pt = |k: usize| ch.skeleton.points.get(k).and_then(|(b, off)| a.rest.get(*b as usize).map(|(q, t)| m.transform_point3(*t + *q * *off)));
                             let snapped = |p: Vec3| g.snap(p.x, p.z, p.y).map(|y| Vec3::new(p.x, y, p.z));
                             if let (Some(p10), Some(p11), Some(p8), Some(p9)) = (pt(10), pt(11), pt(8), pt(9))
@@ -12695,7 +12710,7 @@ impl App {
                         a.tilt_rot = Some(a.ground_tilt.step(zf, Vec3::splat(a.scale), bx, tilt::rate(dt * 60.0)));
                     }
                     let frame = actor_frame(&Place { pos, forward, tilt, status, ratio, size }, a);
-                    let model = frame * glam::Mat4::from_scale(Vec3::splat(a.scale));
+                    let model = frame * glam::Mat4::from_scale(a.axes.unwrap_or(Vec3::splat(a.scale)));
                     // FUN_100cd040 (camera_collision_spec.md 2.2): the eye near posed point 12 fades the actor (not the
                     // player in first person, who fades on its own). A CPU pose only when the rest pose is close.
                     let cam_fade = if *id == w.my_id && w.camst.first {

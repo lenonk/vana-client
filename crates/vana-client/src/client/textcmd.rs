@@ -805,13 +805,18 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             }
             Ok(())
         }
-        // /sitchair [n]: c2s 0x113 {u32 mode 0 (toggle), u32 chair n (0 the stool)} (LSB's layout; the handler's own
-        // checks are not traced).
+        // /sitchair [on | off | n] (FUN_1007c390): after the status gate 0x50 and SendResRdy, c2s 0x113 {u32 mode (0 toggle,
+        // 1 on, 2 off), u32 chair}; a toggle or "off" while seated starts our stand-up (client/chair.rs).
         id::SITCHAIR => {
-            let n = arg(1).and_then(|a| a.parse::<u32>().ok()).unwrap_or(0);
-            let mut b = vec![0u8; 8];
-            b[4..8].copy_from_slice(&n.to_le_bytes());
-            send(w, NetCommand::Packet { id: 0x113, body: b });
+            if !w.res_rdy.sent || !status_gate(w, 0x50) {
+                return Ok(());
+            }
+            if let Some((mode, n)) = super::chair::command(w, arg(1)) {
+                let mut b = vec![0u8; 8];
+                b[0..4].copy_from_slice(&mode.to_le_bytes());
+                b[4..8].copy_from_slice(&n.to_le_bytes());
+                send(w, NetCommand::Packet { id: 0x113, body: b });
+            }
             Ok(())
         }
         // /jump: a client-only motion (not done here).
