@@ -12297,3 +12297,22 @@ since "Ship voyages: the moving world" listed them as not done.
   their slots right of ours in player trade).
 - The Wide Scan name filter and the full log's find count as a text field (text_field_open), so the input layer's
   typing flag turns off the W / A / S / D stick while they take letters.
+
+## Events: we stay where the event left us, and the camera follows the model (2026-10-30; correction)
+- User report: Castle Oztroja's torch stands (_m70 / _m71, event 11: walk_to twice through the door npc 0x1d6, no op
+  0x47 / 0xac, no camera op) walked Nine through the door, and at the end she stood back at the torch; the retail
+  client on the same LSB goes through. LSB sets no position (no onEventFinish for 11): it is the client's.
+- Correction to "End (FUN_100ac9c0, FUN_1008d710)" (the event chapter): "the server position is never touched" holds
+  for other actors only. FUN_10089a60, every frame on our own character (+0x120 bit 9; from the frame loop
+  0x100951e5 after FUN_100899f0, and at zone-in): +4 / +0x14 (place, facing) = the model's +0x34 / +0x44. It waits
+  while we are bound (+0x120 bit 7) and the event runs (DAT_1046ddf9), unless (DAT_1046df04 | Mode) & 4, or while
+  +300 bit 13. So once FUN_1008d710 clears bit 7 at the end, our place is where the event left the model, and the next
+  0x015 (FUN_10096c00: +4, or while bound with & 4 the body +0x140 / +0x150) tells the server. (DAT_1046df04 | Mode) & 1
+  still puts us back at +0x24 (the bind place). FUN_1008d710's copy of the body into +4 for every actor is only for
+  +0x138 bit 24 (op 0xac sub 2).
+- The free camera reads the player through the model's vt+0x1bc (FUN_1001e030 / FUN_1001ee60), so it follows the
+  model through an event that has no camera of its own.
+- Ours: event::finish keeps our pose as our place (place, steps, facing) unless & 1; with & 4 it follows the pose every
+  tick; drawn_pos (the cameras, plates, borders) is the event pose while one holds us. Live (Lnxcsfix, the _m70 torch,
+  godmode / sneak / invisible against the Yagudo): the camera walks through the door with her, `event 0xb: we stay
+  where it left us (-100.07, 24.25, -112.69)`, and the user confirmed the door works.

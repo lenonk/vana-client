@@ -1841,6 +1841,13 @@ fn sync(live: &mut Live, w: &mut World, ticks: f32, dt: f32) {
             pose.dir = b.dir;
         }
     }
+    // With & 4 our place follows the event's model as it moves (and goes out in 0x015, FUN_10096c00).
+    if live.st.flags() & 4 != 0
+        && live.st.bound.contains(&me)
+        && let Some(p) = live.st.poses.get(&me).copied()
+    {
+        keep_pose(w, p);
+    }
     for (id, name, ratio) in steps {
         if let Some(a) = w.actors.get_mut(&id)
             && let Some(ch) = a.character.clone()
@@ -1867,9 +1874,26 @@ fn motion_files(op: u8, file: i32, id: u32, a: &super::Actor) -> Vec<u32> {
     }
 }
 
+/// FUN_10089a60, each frame on our own character: its place (+4, facing +0x14) follows its model. Bound in an event it
+/// waits unless (DAT_1046df04 | Mode) & 4, so the model the event moved is where we stand once it ends.
+fn keep_pose(w: &mut World, p: Pose) {
+    (w.pos, w.step_hist, w.step_ticks, w.step_to, w.draw_pos) = (p.pos, [p.pos; 4], 0.0, p.pos, p.pos);
+    w.yaw = super::player_yaw(p.yaw);
+}
+
 /// FUN_100ac9c0 / FUN_100bb750 / FUN_1008d710: the bound actors go back to their own transforms and status
 /// bits, event motions and looks end, deferred despawns happen.
 fn finish(w: &mut World, live: Box<Live>) {
+    // We stay where the event left us (FUN_10089a60 once unbound), unless & 1 puts us back at the bind place (+0x24).
+    if live.st.bound.contains(&w.my_id)
+        && live.st.flags() & 1 == 0
+        && let Some(p) = live.st.poses.get(&w.my_id).copied()
+    {
+        if (p.pos - w.pos).length() > 0.5 {
+            log::info!("event {:#x}: we stay where it left us ({:.2}, {:.2}, {:.2})", live.st.start.event, p.pos.x, p.pos.y, p.pos.z);
+        }
+        keep_pose(w, p);
+    }
     // Menu broadcast 0x1000 (event end): what 0x93 / 0xcc opened closes.
     w.info_win = None;
     for a in w.actors.values_mut() {

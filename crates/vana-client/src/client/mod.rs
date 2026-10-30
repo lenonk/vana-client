@@ -4529,6 +4529,10 @@ fn window_icon() -> Option<winit::window::Icon> {
 
 /// Where the player is drawn: between the physics steps (drawn_between_steps), or where something else just put us.
 fn drawn_pos(w: &World) -> Vec3 {
+    // The model's place (vt+0x1bc, what the camera follows): an event's pose while one holds us.
+    if let Some(p) = event::own_pose(w) {
+        return p;
+    }
     if w.pos == w.step_to { w.draw_pos } else { w.pos }
 }
 
