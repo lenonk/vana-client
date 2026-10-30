@@ -3,24 +3,32 @@
 //! is lit already. Each other lamp gets a free slot of the light table, filled each frame from the nearest data light
 //! (its colour, range and live intensity, so dusk and fades follow the data) at a point 0.7 yalm out from the lamp's
 //! wall. The untextured mesh shells beside the glows (the baked lamplight, 'san_') are hidden (Effects::lamp_scan).
+//! In a zone with no data light at all a lamp takes its glow's colour at the gate tunnel lights' range and intensity.
 
 use super::ground::Ground;
 use crate::fx::Effects;
 use glam::Vec3;
 use std::time::Instant;
 
-/// A lamp's light: where it is, its table slot, and the data light's slot it copies.
+/// A lamp's light: where it is, its table slot, and the data light's slot it copies (OWN: its glow's colour).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Lamp {
     pub pos: Vec3,
     pub slot: u32,
     pub template: u32,
+    /// The glow's colour (BGRA, 0x80 = 1.0), for an OWN lamp.
+    pub colour: u32,
 }
+
+/// No data light to copy: the lamp's own light (render/effects.rs LAMP_WGSL).
+pub const OWN: u32 = 0xffff;
 
 #[derive(Default)]
 pub struct Lamps {
     pub list: Vec<Lamp>,
     at: Option<Instant>,
+    /// The last scan's glows, data lights and shells (logged when they change).
+    counts: (usize, usize, usize),
 }
 
 /// Glows closer than this are one lamp.
@@ -45,37 +53,43 @@ impl Lamps {
         let scan = fx.lamp_scan(on);
         let first = fx.reg.light_keys.len() as u32;
         let list = if on { build(&scan.glows, &scan.lights, first, |a, b| ground?.raycast(a, b)) } else { Vec::new() };
+        let counts = (scan.glows.len(), scan.lights.len(), scan.shells);
+        if list == self.list && counts == self.counts {
+            return None;
+        }
+        log::info!("lamps: {} glows, {} data lights, {} shells: {} lamp lights", counts.0, counts.1, counts.2, list.len());
+        self.counts = counts;
         if list == self.list {
             return None;
         }
-        log::info!("lamps: {} glows, {} data lights, {} shells: {} lamp lights", scan.glows.len(), scan.lights.len(), scan.shells, list.len());
         self.list = list.clone();
         Some(list)
     }
 }
 
 /// The lamps of `glows` not already lit by `lights` (position, slot), slots from `first`.
-fn build(glows: &[Vec3], lights: &[(Vec3, u32)], first: u32, ray: impl Fn(Vec3, Vec3) -> Option<f32>) -> Vec<Lamp> {
-    let mut groups: Vec<(Vec3, f32)> = Vec::new();
-    for &g in glows {
-        match groups.iter_mut().find(|(s, n)| (*s / *n).distance(g) < MERGE) {
-            Some((s, n)) => {
+fn build(glows: &[(Vec3, u32)], lights: &[(Vec3, u32)], first: u32, ray: impl Fn(Vec3, Vec3) -> Option<f32>) -> Vec<Lamp> {
+    // Merged glows: position sum, count, the first glow's colour.
+    let mut groups: Vec<(Vec3, f32, u32)> = Vec::new();
+    for &(g, colour) in glows {
+        match groups.iter_mut().find(|(s, n, _)| (*s / *n).distance(g) < MERGE) {
+            Some((s, n, _)) => {
                 *s += g;
                 *n += 1.0;
             }
-            None => groups.push((g, 1.0)),
+            None => groups.push((g, 1.0, colour)),
         }
     }
-    let mut lamps: Vec<Vec3> = groups.into_iter().map(|(s, n)| s / n).filter(|c| !lights.iter().any(|(p, _)| p.distance(*c) < LIT)).collect();
-    lamps.sort_by(|a, b| (a.x, a.z, a.y).partial_cmp(&(b.x, b.z, b.y)).unwrap_or(std::cmp::Ordering::Equal));
+    let mut lamps: Vec<(Vec3, u32)> = groups.into_iter().map(|(s, n, c)| (s / n, c)).filter(|(c, _)| !lights.iter().any(|(p, _)| p.distance(*c) < LIT)).collect();
+    lamps.sort_by(|a, b| (a.0.x, a.0.z, a.0.y).partial_cmp(&(b.0.x, b.0.z, b.0.y)).unwrap_or(std::cmp::Ordering::Equal));
     let mut out = Vec::new();
-    for (k, c) in lamps.into_iter().enumerate() {
+    for (k, (c, colour)) in lamps.into_iter().enumerate() {
         let slot = first + k as u32;
-        let Some(&(_, template)) = lights.iter().min_by(|a, b| a.0.distance(c).total_cmp(&b.0.distance(c))) else { break };
         if slot > LAST {
             break;
         }
-        out.push(Lamp { pos: off_wall(c, &ray), slot, template });
+        let template = lights.iter().min_by(|a, b| a.0.distance(c).total_cmp(&b.0.distance(c))).map_or(OWN, |l| l.1);
+        out.push(Lamp { pos: off_wall(c, &ray), slot, template, colour });
     }
     out
 }
@@ -116,7 +130,7 @@ mod tests {
     #[test]
     fn lamps_from_glows() {
         let lights = [(Vec3::new(88.6, -65.5, 262.7), 3), (Vec3::new(97.4, -65.5, 271.0), 1)];
-        let glows = [Vec3::new(86.0, -65.0, 264.0), Vec3::new(74.5, -65.0, 275.5), Vec3::new(74.9, -65.0, 275.5), Vec3::new(0.5, -65.0, 300.0)];
+        let glows = [Vec3::new(86.0, -65.0, 264.0), Vec3::new(74.5, -65.0, 275.5), Vec3::new(74.9, -65.0, 275.5), Vec3::new(0.5, -65.0, 300.0)].map(|g| (g, 0x80604020));
         let ray = |a: Vec3, b: Vec3| {
             let d = b - a;
             (d.x < 0.0 && a.x > 0.0 && a.x + d.x <= 0.0).then(|| a.x / -d.x * d.length())
@@ -129,5 +143,9 @@ mod tests {
         let mut f = [2u8, 0, 0, 0];
         offer(&l, Vec3::new(74.0, -65.0, 276.0), &mut f);
         assert_eq!(f, [2, 12, 0, 0]);
+        // No data light in the zone: each lamp its own light, with its glow's colour.
+        let own = build(&glows, &[], 10, ray);
+        assert_eq!(own.len(), 3);
+        assert!(own.iter().all(|l| l.template == OWN && l.colour == 0x80604020));
     }
 }

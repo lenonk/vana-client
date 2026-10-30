@@ -12882,7 +12882,7 @@ impl App {
                 // first shown frame.
                 let eg = self.effects_gpu.get_or_insert_with(|| crate::render::effects::EffectsGpu::new(&gfx.gpu, scene_fmt));
                 if let Some(l) = &new_lamps {
-                    eg.set_lamps(&gfx.gpu, &l.iter().map(|l| (l.pos, l.slot, l.template)).collect::<Vec<_>>());
+                    eg.set_lamps(&gfx.gpu, &l.iter().map(|l| (l.pos, l.slot, l.template, l.colour)).collect::<Vec<_>>());
                 }
                 if !eg.has_dmgnum()
                     && let Some((lib, image)) = self.game_ui.as_ref().and_then(|g| g.dmgnum())

@@ -12155,3 +12155,28 @@ since "Ship voyages: the moving world" listed them as not done.
   The creator's dancer shader writes gamma values for a plain target (render/dancer.rs), which is what it gets.
 - flash-shot rendered to Rgba8UnormSrgb, the last 3D tool doing so; now Rgba8Unorm like the client. char-shot's
   own single-model shader (render/character.rs) keeps its sRGB target: it draws one opaque model, no blending.
+
+## Our upscale pack: undithered images lost their colour under alpha 0 (2026-10-29)
+
+- User report: Lower Jeuno's floor around the Home Point drew black (decals over it fine). Not bump mapping (same
+  with 0017 off), not the renderer (fine with the mods off): vana-upscale's `model   ground_1` (zone 245, file 345)
+  had mean RGB 7 against stock 94, alpha mean 9 in both. The floor draws opaque, so the colour under alpha 0 shows.
+- Cause: the undither step ("dithered glows and DXT3 banding") took it for a translucent glow (alpha dither 0.59,
+  two thirds of its visible pixels partial); its premultiplied blur divided back to black where alpha is 0.
+- Fixed in all 2,270 undithered images (~/ffxi/lab/scratch/checker/fix_rgb.py): colour from the plain upscale
+  (upscale/up_dithered) where the undithered alpha is low, from the undithered one at alpha 48 and up, blended between;
+  the alpha stays undithered. Their encodings dropped and 4,218 DATs rebuilt by tex-pack.
+- Offscreen: Lower Jeuno's floor as stock (zone-shot 245 at 11:30 from (18, -6, 64)); zone 101's gate halo still smooth.
+
+## Lamp Lights: sub-area instances and zones with no data light (2026-10-29)
+
+- Sub-areas: the lamp slots now go into a loaded interior's instances too (its own buffer; SubGeometry keeps their
+  light slots and spheres; a sub-area loading after the lamps takes the last ones at once). Survey (zone-shot at 20:00,
+  every zone and Southern San d'Oria's / Lower Jeuno's interiors): glow meshes only in zones 32, 48, 50, 53, 70, 71,
+  100, 248 (and 101's gate), none in any interior tried, so nothing changes there today.
+- A lamp in a zone with no kind-0x47 data light (only Sealion's Den, 32: 37 engine glows) had no template and got no
+  light. It now takes its glow's colour (the element's readback colour, 0x80 = 1.0) at range 8 and intensity 20, the
+  gate tunnel lights' op 0x49 values *(inf: a stand-in)*; the lamp pass writes it (template 0xffff, the colours after
+  the n lamps in its buffer). Offscreen: a small warm pool by the airship's engines, nothing else moved.
+- The scan log line now also prints when its counts change (glows, data lights, shells), so zone-shot shows zones
+  whose glows are all lit already.

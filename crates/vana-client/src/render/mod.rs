@@ -369,6 +369,8 @@ pub struct ZoneRenderer {
     spheres: Vec<[f32; 4]>,
     lamp_patch: HashMap<u32, [u32; 4]>,
     lamps_wanted: Option<Vec<(Vec3, u32)>>,
+    /// The lamps last applied (a sub-area loading after them takes them too).
+    lamps_last: Vec<(Vec3, u32)>,
     /// The zone's instances' placements and camera lists (ZoneGeometry), and the list in force (MZB offset, 0 none).
     inst_placement: Vec<u32>,
     camera_lists: HashMap<u32, Vec<u32>>,
@@ -470,6 +472,11 @@ struct SubGeometry {
     tex_base: usize,
     link: u32,
     shown: bool,
+    /// Ours (Lamp Lights, a sub-area only): each instance's own light slots and world sphere, and the lamp slots
+    /// written over them now.
+    inst_lights: Vec<[u32; 4]>,
+    spheres: Vec<[f32; 4]>,
+    lamp_patch: HashMap<u32, [u32; 4]>,
 }
 
 /// A ship's model (FUN_100c4c20 -> FUN_101844c0, drawn as furniture is): its own buffers, one instance that moves with
@@ -1479,6 +1486,31 @@ impl ZoneGeometry {
     }
 }
 
+/// Each instance's free light places filled with the nearest lamps within LAMP_REACH of its sphere (instance -> slots,
+/// only the instances that take any).
+fn lamp_slots(own: &[[u32; 4]], spheres: &[[f32; 4]], lamps: &[(Vec3, u32)]) -> HashMap<u32, [u32; 4]> {
+    let mut next = HashMap::new();
+    for (i, (own, s)) in own.iter().zip(spheres).enumerate() {
+        let c = Vec3::new(s[0], s[1], s[2]);
+        let mut near: Vec<(f32, u32)> = lamps.iter().map(|(p, slot)| (p.distance(c) - s[3], *slot)).filter(|(d, slot)| *d < LAMP_REACH && !own.contains(&(slot + 1))).collect();
+        if near.is_empty() {
+            continue;
+        }
+        near.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut l = *own;
+        let mut more = near.into_iter();
+        for k in l.iter_mut().filter(|k| **k == 0) {
+            if let Some((_, slot)) = more.next() {
+                *k = slot + 1;
+            }
+        }
+        if l != *own {
+            next.insert(i as u32, l);
+        }
+    }
+    next
+}
+
 /// FUN_10169d10: corner a's tangent from the triangle's corners in their drawn order (a, b, c): d = (Pc - Pb)(ua - ub)
 /// - (Pa - Pb)(uc - ub) normalised ((0, 0, 1) when zero), tangent = d x Na.
 fn corner_tangent(a: &crate::dat::zone::Vertex, b: &crate::dat::zone::Vertex, c: &crate::dat::zone::Vertex) -> Vec3 {
@@ -1602,6 +1634,7 @@ impl ZoneRenderer {
             spheres: geo.spheres.clone(),
             lamp_patch: HashMap::new(),
             lamps_wanted: None,
+            lamps_last: Vec::new(),
             inst_placement: geo.inst_placement.clone(),
             camera_lists: geo.camera_lists.clone(),
             camera_list: 0,
@@ -1720,27 +1753,25 @@ impl ZoneRenderer {
 
     fn apply_lamps(&mut self, gpu: &Gpu) {
         let Some(lamps) = self.lamps_wanted.take() else { return };
-        let mut next: HashMap<u32, [u32; 4]> = HashMap::new();
-        for (i, (own, s)) in self.inst_lights.iter().zip(&self.spheres).enumerate() {
-            let c = Vec3::new(s[0], s[1], s[2]);
-            let mut near: Vec<(f32, u32)> = lamps.iter().map(|(p, slot)| (p.distance(c) - s[3], *slot)).filter(|(d, slot)| *d < LAMP_REACH && !own.contains(&(slot + 1))).collect();
-            if near.is_empty() {
-                continue;
+        let next = lamp_slots(&self.inst_lights, &self.spheres, &lamps);
+        let full = self.inst_lights.iter().zip(&self.spheres).filter(|(own, s)| !own.contains(&0) && lamps.iter().any(|(p, _)| p.distance(Vec3::new(s[0], s[1], s[2])) - s[3] < LAMP_REACH)).count();
+        // A sub-area's instances (its own buffer) take them the same way.
+        if let Some(sub) = &mut self.sub {
+            let snext = lamp_slots(&sub.inst_lights, &sub.spheres, &lamps);
+            let put = |i: u32, l: &[u32; 4]| gpu.queue.put(&sub.instances, i as u64 * INSTANCE_BYTES + 64, bytemuck::cast_slice(l));
+            for (&i, l) in snext.iter().filter(|(i, l)| sub.lamp_patch.get(i) != Some(*l)) {
+                put(i, l);
             }
-            near.sort_by(|a, b| a.0.total_cmp(&b.0));
-            let mut l = *own;
-            let mut more = near.into_iter();
-            for k in l.iter_mut().filter(|k| **k == 0) {
-                if let Some((_, slot)) = more.next() {
-                    *k = slot + 1;
+            for &i in sub.lamp_patch.keys().filter(|i| !snext.contains_key(i)) {
+                if let Some(own) = sub.inst_lights.get(i as usize) {
+                    put(i, own);
                 }
             }
-            if l != *own {
-                next.insert(i as u32, l);
-            }
+            log::info!("lamps: {} sub-area instances lit by lamps", snext.len());
+            sub.lamp_patch = snext;
         }
-        let full = self.inst_lights.iter().zip(&self.spheres).filter(|(own, s)| !own.contains(&0) && lamps.iter().any(|(p, _)| p.distance(Vec3::new(s[0], s[1], s[2])) - s[3] < LAMP_REACH)).count();
         log::info!("lamps: {} lamp lights on {} instances; {full} near a lamp have no free slot", lamps.len(), next.len());
+        self.lamps_last = lamps;
         let put = |i: u32, l: &[u32; 4]| gpu.queue.put(&self.instances, i as u64 * INSTANCE_BYTES + 64, bytemuck::cast_slice(l));
         for (&i, l) in &next {
             if self.lamp_patch.get(&i) != Some(l) && !self.links.iter().any(|(k, link, _)| *k == i && *link == self.hidden) {
@@ -1784,8 +1815,18 @@ impl ZoneRenderer {
             tex_base,
             link,
             shown: false,
+            inst_lights: geo.matrices.iter().map(|m| m.lights).collect(),
+            spheres: geo.spheres.clone(),
+            lamp_patch: HashMap::new(),
         });
         self.light_keys = light_keys;
+        // The lamps in force reach the new interior's instances too.
+        if self.lamps_wanted.is_none() && !self.lamps_last.is_empty() {
+            self.lamps_wanted = Some(self.lamps_last.clone());
+        }
+        if self.geo_pending.is_none() {
+            self.apply_lamps(gpu);
+        }
         self.area_keys = geo.area_keys.clone();
         // Offscreen renderers take everything at once.
         if !self.budgeted {
@@ -1829,6 +1870,9 @@ impl ZoneRenderer {
                 tex_base,
                 link: 0,
                 shown: false,
+                inst_lights: Vec::new(),
+                spheres: Vec::new(),
+                lamp_patch: HashMap::new(),
             });
             self.furn_inst.push(inst);
         }

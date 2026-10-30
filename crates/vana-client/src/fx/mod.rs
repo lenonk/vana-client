@@ -837,7 +837,8 @@ impl Registry {
 /// Effects::lamp_scan's findings: glow positions, data lights (position, table slot), shells found.
 #[derive(Default, Debug)]
 pub struct LampScan {
-    pub glows: Vec<Vec3>,
+    /// The glows' positions and colours (BGRA, 0x80 = 1.0).
+    pub glows: Vec<(Vec3, u32)>,
     pub lights: Vec<(Vec3, u32)>,
     pub shells: usize,
 }
@@ -2458,7 +2459,7 @@ impl Effects {
             if !matches!(inst.owner, Owner::Zone | Owner::SubArea) {
                 continue;
             }
-            let Some(pos) = c.back.map(|b| b.world) else { continue };
+            let Some((pos, colour)) = c.back.map(|b| (b.world, b.color)) else { continue };
             let lib = &self.reg.libs[inst.src.0];
             let dir = (inst.src.0, lib.tree.nodes[inst.src.1].parent.unwrap_or(usize::MAX));
             match c.draw {
@@ -2467,7 +2468,7 @@ impl Effects {
                     let Some(m) = self.reg.libs[r.0].meshes.get(&r.1) else { continue };
                     let names: Vec<String> = m.groups.iter().filter_map(|g| g.name.as_deref().map(|n| n.trim().to_ascii_lowercase())).filter(|n| !n.is_empty()).collect();
                     if names.iter().any(|n| n.starts_with("light")) {
-                        scan.glows.push(pos);
+                        scan.glows.push((pos, colour));
                         glow_dirs.insert(dir);
                     } else if names.is_empty() && m.mmb {
                         shells.push((i, dir));

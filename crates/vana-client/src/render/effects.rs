@@ -312,18 +312,25 @@ pub struct EffectsGpu {
 const STAGES: usize = 3;
 
 /// The lamps' copy (EffectsGpu::lamp_pipe): a lamp's slot takes its template's range, colour and intensity at its
-/// own position.
+/// own position; a lamp with no template (0xffff) its glow's colour (after the n lamps) at range 8 and intensity 20,
+/// the gate tunnel lights' (op 0x49 of glr1 .. gll2) *(inf: a stand-in)*.
 const LAMP_WGSL: &str = r#"
 @group(0) @binding(0) var<storage, read_write> lights: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read> lamps: array<vec4<f32>>;
 
 @compute @workgroup_size(64)
 fn copy_lamps(@builtin(global_invocation_id) gid: vec3<u32>) {
-    if (gid.x >= bitcast<u32>(lamps[0].x)) { return; }
+    let n = bitcast<u32>(lamps[0].x);
+    if (gid.x >= n) { return; }
     let l = lamps[1u + gid.x];
     let w = bitcast<u32>(l.w);
     let s = w & 0xffffu;
     let t = w >> 16u;
+    if (t == 0xffffu) {
+        lights[2u * s] = vec4<f32>(l.xyz, 8.0);
+        lights[2u * s + 1u] = vec4<f32>(lamps[1u + n + gid.x].rgb, 20.0);
+        return;
+    }
     lights[2u * s] = vec4<f32>(l.xyz, lights[2u * t].w);
     lights[2u * s + 1u] = lights[2u * t + 1u];
 }
@@ -377,7 +384,7 @@ impl EffectsGpu {
             compilation_options: Default::default(),
             cache: None,
         });
-        let lamp_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("effects lamps"), size: (16 * (crate::render::LIGHTS + 1)) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let lamp_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("effects lamps"), size: (16 * (2 * crate::render::LIGHTS + 1)) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let vs = wgpu::ShaderStages::VERTEX;
         let draw_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("effects draw"),
@@ -809,10 +816,12 @@ impl EffectsGpu {
     }
 
     /// The lamps' lights (client/lamps.rs): position, table slot, template slot.
-    pub fn set_lamps(&mut self, gpu: &Gpu, lamps: &[(glam::Vec3, u32, u32)]) {
+    /// The lamps: position, slot, template slot (0xffff: its own light) and the glow's colour (BGRA, 0x80 = 1.0).
+    pub fn set_lamps(&mut self, gpu: &Gpu, lamps: &[(glam::Vec3, u32, u32, u32)]) {
         let n = lamps.len().min(crate::render::LIGHTS);
         let mut words: Vec<[f32; 4]> = vec![[f32::from_bits(n as u32), 0.0, 0.0, 0.0]];
-        words.extend(lamps[..n].iter().map(|(p, slot, t)| [p.x, p.y, p.z, f32::from_bits(slot | t << 16)]));
+        words.extend(lamps[..n].iter().map(|(p, slot, t, _)| [p.x, p.y, p.z, f32::from_bits(slot | t << 16)]));
+        words.extend(lamps[..n].iter().map(|(.., c)| [((c >> 16) & 0xff) as f32 / 128.0, ((c >> 8) & 0xff) as f32 / 128.0, (c & 0xff) as f32 / 128.0, 0.0]));
         gpu.queue.put(&self.lamp_buf, 0, bytemuck::cast_slice(&words));
         self.lamp_count = n as u32;
     }
