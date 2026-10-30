@@ -1,0 +1,27 @@
+{
+  // F5 builds and starts the client under the Visual Studio debugger (Windows; the C/C++ extension's cppvsdbg).
+  // "release-debug" is release speed with symbols; "release" starts the plain release binary.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "vana-client (release with debug info)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/target/release-debug/vana-client.exe",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "console": "internalConsole",
+      "preLaunchTask": "Build (release with debug info)"
+    },
+    {
+      "name": "vana-client (release)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/target/release/vana-client.exe",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "console": "internalConsole",
+      "preLaunchTask": "Build (release)"
+    }
+  ]
+}

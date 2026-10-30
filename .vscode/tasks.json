@@ -1,0 +1,45 @@
+{
+  // Ctrl+Shift+B builds the release binary (target/release); the others are under Terminal > Run Task.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build (release)",
+      "type": "process",
+      "command": "cargo",
+      "args": ["build", "--release"],
+      "problemMatcher": ["$rustc"],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "Build (release with debug info)",
+      "type": "process",
+      "command": "cargo",
+      "args": ["build", "--profile", "release-debug"],
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "Build (dist: full LTO, for shipping)",
+      "type": "process",
+      "command": "cargo",
+      "args": ["build", "--profile", "dist"],
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "Run",
+      "type": "process",
+      "command": "cargo",
+      "args": ["run", "--release"],
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "Test",
+      "type": "process",
+      "command": "cargo",
+      "args": ["test", "--release"],
+      "problemMatcher": ["$rustc"],
+      "group": { "kind": "test", "isDefault": true }
+    }
+  ]
+}

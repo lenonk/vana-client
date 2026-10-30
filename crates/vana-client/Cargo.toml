@@ -35,7 +35,8 @@ rustls = { version = "0.23.46", default-features = false, features = ["ring", "s
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tokio = { version = "1.54.0", features = ["rt-multi-thread", "net", "io-util", "macros", "sync", "time"] }
-tokio-rustls = "0.26.6"
+# ring, as rustls above: the default aws-lc-rs needs CMake and NASM on Windows.
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["logging", "tls12", "ring"] }
 unrar = "0.5.8"
 ureq = "3"
 wgpu = "30.0.1"
@@ -45,3 +46,6 @@ sevenz-rust2 = { version = "0.24.1", default-features = false, features = ["util
 
 [target."cfg(windows)".dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_System_Time", "Win32_Foundation", "Win32_System_Console"] }
+
+[build-dependencies]
+embed-resource = "3.0.12"

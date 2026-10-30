@@ -266,6 +266,6 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - Portability to Windows and macOS: see "Portability notes" in MODLOG. Windows (MinGW cross build, tested by the
   user in WinBoat): release/build-windows.sh links everything in (no MinGW DLLs); the exe icon is a resource
   (crates/vana-client/build.rs, assets/vana-client.rc / .ico; not seen in Explorer yet). On a real Windows PC
-  (user, 2026-10-28) a monitor drag or a monitor choice goes wrong, and Play and the modern UI crash. Parked; the
-  native MSVC setup (.vscode, docs/building-windows.md, build.rs, Cargo changes) stays uncommitted by the user's
-  wish.
+  (user, 2026-10-28) a monitor drag or a monitor choice goes wrong, and Play and the modern UI crash. Parked. The
+  native MSVC setup (.vscode, docs/building-windows.md; builds on Windows, user 2026-10-28) is committed; build.rs
+  links the icon through embed-resource for both MSVC and the MinGW cross build.

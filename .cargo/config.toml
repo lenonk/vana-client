@@ -4,5 +4,9 @@
 # Static C runtime: no libwinpthread-1.dll next to the exe.
 rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=-static"]
 
+# Native Windows builds (MSVC, docs/building-windows.md): the C runtime linked in, so no VC++ redistributable.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
 [env]
 CPLUS_INCLUDE_PATH = { value = ".cargo/mingw-include", relative = true }

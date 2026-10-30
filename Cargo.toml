@@ -15,7 +15,20 @@ incremental = false
 lto = "fat"
 codegen-units = 1
 
+# Debug builds (cargo build): dependencies optimized and ours lightly, so a debug run is playable; debug assertions
+# and overflow checks stay on.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+# Release speed with full debug info, for a debugger (the VS Code launch configs): out in target/release-debug.
+[profile.release-debug]
+inherits = "release"
+debug = true
+
 # gpu-allocator 0.28.0 with one change (vendor/gpu-allocator/src/vulkan/mod.rs, "vana-client:"): wgpu's staging
-# buffers in system memory rather than in VRAM through ReBAR.
+# buffers in host memory when writes into VRAM through ReBAR measure slow (an eGPU's narrow link).
 [patch.crates-io]
 gpu-allocator = { path = "vendor/gpu-allocator" }

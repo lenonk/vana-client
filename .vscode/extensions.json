@@ -1,0 +1,8 @@
+{
+  // rust-analyzer: completion, errors and the $rustc problem matcher; C/C++: the MSVC debugger (cppvsdbg).
+  "recommendations": [
+    "rust-lang.rust-analyzer",
+    "ms-vscode.cpptools",
+    "tamasfe.even-better-toml"
+  ]
+}
