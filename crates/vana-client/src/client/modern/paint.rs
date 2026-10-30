@@ -289,6 +289,14 @@ pub fn image(s: &Sprite, at: Pos2, size: f32, tint: Color32) -> Shape {
     Shape::mesh(m)
 }
 
+/// `image` mirrored left to right.
+pub fn image_mirrored(s: &Sprite, at: Pos2, size: f32, tint: Color32) -> Shape {
+    let mut m = Mesh::with_texture(s.tex);
+    let uv = Rect::from_min_max(pos2(s.uv.max.x, s.uv.min.y), pos2(s.uv.min.x, s.uv.max.y));
+    m.add_rect_with_uv(Rect::from_min_size(at, vec2(size, size * s.size.y / s.size.x)), uv, tint);
+    Shape::mesh(m)
+}
+
 /// A gauge: the empty bar, then the full one cut at `f` of the way across (the pack's *_empty / *_full pairs).
 pub fn gauge(p: &Painter, empty: &Sprite, full: &Sprite, r: Rect, f: f32) {
     let k = r.height() / empty.size.y;

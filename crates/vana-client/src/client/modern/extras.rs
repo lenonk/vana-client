@@ -288,7 +288,7 @@ fn edge_window(p: &mut Panels, key: &str, width: f32, folded: bool, label: &str,
     let a = p.attach(key);
     let h = m.rects.borrow().get(key).map_or(TAB_H, |r| r.height());
     let size = vec2(width, h);
-    let (rect, open) = p.fly_rect(&a, size).unwrap_or_else(|| (p.free_rect(key, size), Open::None));
+    let (rect, open) = p.fly_rect(key, &a, size).unwrap_or_else(|| (p.free_rect(key, size), Open::None));
     // A retail window over it (they draw under every panel): it steps aside until that closes.
     if under_retail(m, rect) {
         p.this.insert(key.to_string(), rect);

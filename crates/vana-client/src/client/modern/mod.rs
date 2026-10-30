@@ -716,8 +716,15 @@ impl<'a> Panels<'a> {
         vec2(if p.w > 0.0 { p.w } else { size.x }, if p.h > 0.0 { p.h } else { size.y })
     }
 
-    /// A panel's top left for its height `h`: on the panel it is docked on, else from its place.
+    /// A panel's top left for its height `h`: where its hold puts it, on the panel it is docked on, else from its place.
     fn resolve(&self, id: &str, place: &Place, h: f32) -> Pos2 {
+        // Held (fly.rs): where its hold puts it.
+        if place.fly.is_some() {
+            let w = if place.w > 0.0 { place.w } else { self.m.rects.borrow().get(id).map_or(0.0, |r| r.width()) };
+            if let Some((r, _)) = self.fly_rect(id, &self.attach(id), vec2(w, h)) {
+                return r.min;
+            }
+        }
         if let Some(d) = &place.dock
             && let Some(t) = self.target(&d.to, 0)
         {
@@ -862,17 +869,7 @@ impl<'a> Panels<'a> {
             if !o.resizable {
                 return None;
             }
-            // The glyph sits left of the frame's corner ornament; the whole corner takes the drag.
-            let g = ui.interact(Rect::from_min_max(r.max - vec2(44.0, 28.0), r.max), Id::unique(("modern grip", id)), Sense::drag());
-            let lit = g.hovered() || g.dragged();
-            if let Some(s) = m.art.sprite("controls/resize") {
-                let c = if lit { Color32::WHITE } else { Color32::from_gray(170) };
-                ui.painter().add(paint::image(&s, r.max - vec2(40.0, 24.0), 16.0, c.gamma_multiply(alpha)));
-            }
-            if lit {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeNwSe);
-            }
-            g.dragged().then(|| g.drag_delta())
+            resize_grip(ui, m, r, false, alpha, id)
         });
         // The menu's windows draw over the edge windows (they stay where they were put).
         if COLUMN.contains(&id) {
@@ -901,7 +898,8 @@ impl<'a> Panels<'a> {
             place.dock = None;
             place.x = r.min.x / sw;
             if bottom {
-                place.b = r.max.y / sh;
+                // From its top and the height it is placed by: a drawn rect a pixel taller crept it down every frame.
+                place.b = (r.min.y + if h > 0.0 { h } else { r.height() }) / sh;
             } else {
                 place.y = r.min.y / sh;
             }
@@ -923,7 +921,7 @@ impl<'a> Panels<'a> {
         if let Some(g) = shown.inner {
             (place.w, place.h) = ((room.x + g.x).max(240.0), (room.y + g.y).max(60.0));
             if bottom && place.dock.is_none() {
-                place.b = (r.max.y + g.y) / sh;
+                place.b = (r.min.y + if h > 0.0 { h } else { r.height() } + g.y) / sh;
             }
             m.arranging.set(true);
             changed = true;
@@ -945,7 +943,7 @@ impl<'a> Panels<'a> {
         let (m, ctx) = (self.m, self.ctx);
         let a = self.attach(id);
         let room = if o.resizable { self.room(id, o.size) } else { o.size };
-        let h = m.rects.borrow().get(id).map_or(60.0, |r| r.height());
+        let h = o.height.or_else(|| m.rects.borrow().get(id).map(|r| r.height())).unwrap_or(60.0);
         let label = o.title.as_ref().map_or_else(|| fly::name(id), |t| t.text.to_string());
         if self.folded.get(&fly::fold_key(id)).copied().unwrap_or(false) {
             if self.fly_tab(id, &label) {
@@ -954,7 +952,7 @@ impl<'a> Panels<'a> {
             }
             return self.this.get(id).copied();
         }
-        let Some((rect, open)) = self.fly_rect(&a, vec2(room.x, h)) else {
+        let Some((rect, open)) = self.fly_rect(id, &a, vec2(room.x, h)) else {
             let at = self.free_rect(id, vec2(room.x, h)).min;
             return self.show(id, Show { at: Some(at), ..o }, add);
         };
@@ -962,16 +960,22 @@ impl<'a> Panels<'a> {
         let margin = if o.resizable { ROOM_MARGIN } else { MARGIN };
         let frame = if o.frame == "window_normal" && self.focus == Some(id) { "window_focused" } else { o.frame };
         m.frames.borrow_mut().insert(id.to_string(), frame);
-        let (title, alpha) = (o.title, o.alpha);
-        let mut fold = false;
+        let (title, alpha, fold) = (o.title, o.alpha, o.fold.clamp(0.0, 1.0));
+        // The resize corner away from the hold.
+        let grip_left = open.by_left() == Some(false);
+        let mut tuck = false;
         let shown = egui::Area::new(Id::unique(("modern panel", id))).order(Order::Middle).current_pos(rect.min).movable(false).constrain(false).show(ctx, |ui| {
             let screen = ctx.content_rect();
             if o.height.is_none() && !o.resizable {
                 ui.set_max_height((screen.max.y - rect.min.y).max(ui.min_rect().height()));
             }
+            let top = rect.max.y - rect.height() * fold;
+            if fold < 1.0 {
+                ui.set_clip_rect(ui.clip_rect().intersect(Rect::from_min_max(pos2(f32::NEG_INFINITY, top), pos2(f32::INFINITY, f32::INFINITY))));
+            }
             let bg = ui.painter().add(Shape::Noop);
             // The background moves it: sensed under the contents (last frame's size), so they keep their clicks.
-            let drag = ui.interact(rect, Id::unique(("modern held", id)), Sense::drag());
+            let drag = ui.interact(Rect::from_min_max(pos2(rect.min.x, top), rect.max), Id::unique(("modern held", id)), Sense::drag());
             let inner = egui::Frame::NONE.inner_margin(margin).show(ui, |ui| {
                 ui.set_width(room.x - margin.sum().x);
                 ui.visuals_mut().override_text_color = Some(m.theme.color("text"));
@@ -982,19 +986,32 @@ impl<'a> Panels<'a> {
                 add(ui, room);
             });
             let r = inner.response.rect;
-            ui.painter().set(bg, paint::faded(borders::fly(m, frame, r, open, &joined), alpha));
+            let showing = Rect::from_min_max(pos2(r.min.x, r.max.y - r.height() * fold), r.max);
+            ui.painter().set(bg, paint::faded(borders::fly(m, frame, showing, open, &joined), alpha));
             if let fly::Open::Edge { right } = open {
-                fold = fly::fold_knob(ui, m, r, !right, id);
+                tuck = fly::fold_knob(ui, m, showing, !right, id);
             }
+            let grow = if o.resizable { resize_grip(ui, m, r, grip_left, alpha, id) } else { None };
             if drag.dragged() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
             }
-            (r, drag)
+            (showing, drag, grow)
         });
-        let (r, drag) = shown.inner;
+        if COLUMN.contains(&id) {
+            ctx.move_to_top(shown.response.layer_id);
+        }
+        let (r, drag, grow) = shown.inner;
         self.this.insert(id.to_string(), r);
         self.held_drag(id, &a, r, &drag);
-        if fold {
+        // A resize from the corner away from the hold: the held side stays put.
+        if let Some(g) = grow {
+            let mut place = self.place(id);
+            (place.w, place.h) = ((room.x + g.x).max(240.0), (room.y + g.y).max(60.0));
+            self.layout.insert(id.to_string(), place);
+            m.arranging.set(true);
+            *self.changed = true;
+        }
+        if tuck {
             self.folded.insert(fly::fold_key(id), true);
             *self.changed = true;
         }
@@ -1136,6 +1153,22 @@ fn status_art() -> &'static HashMap<u16, &'static str> {
 
 fn title_row(ui: &mut Ui, m: &Modern, t: &Title) {
     title_row_in(ui, m, t, m.theme.color("gold"));
+}
+
+/// A resizable panel's grip in its bottom right corner (`left`: its bottom left, mirrored): the glyph inside the frame's
+/// corner ornament, the whole corner taking the drag. Returns the drag, x outward.
+fn resize_grip(ui: &mut Ui, m: &Modern, r: Rect, left: bool, alpha: f32, id: &str) -> Option<Vec2> {
+    let corner = if left { Rect::from_min_max(pos2(r.min.x, r.max.y - 28.0), pos2(r.min.x + 44.0, r.max.y)) } else { Rect::from_min_max(r.max - vec2(44.0, 28.0), r.max) };
+    let g = ui.interact(corner, Id::unique(("modern grip", id)), Sense::drag());
+    let lit = g.hovered() || g.dragged();
+    if let Some(s) = m.art.sprite("controls/resize") {
+        let c = (if lit { Color32::WHITE } else { Color32::from_gray(170) }).gamma_multiply(alpha);
+        ui.painter().add(if left { paint::image_mirrored(&s, pos2(r.min.x + 24.0, r.max.y - 24.0), 16.0, c) } else { paint::image(&s, r.max - vec2(40.0, 24.0), 16.0, c) });
+    }
+    if lit {
+        ui.ctx().set_cursor_icon(if left { egui::CursorIcon::ResizeNeSw } else { egui::CursorIcon::ResizeNwSe });
+    }
+    g.dragged().then(|| g.drag_delta()).map(|d| vec2(if left { -d.x } else { d.x }, d.y))
 }
 
 /// A title row in another colour (the target's name in its retail name colour).

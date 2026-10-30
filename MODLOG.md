@@ -12369,3 +12369,16 @@ since "Ship voyages: the moving world" listed them as not done.
 - The frames differ only in their band (normal gold, focused blue, alert red; the interiors are the same rows), so the
   fillets run from the band the target was drawn in (Modern.frames, Open::Side.band) to the flyout's, blended by the
   angle round the arc (PathStroke::new_uv); a frameless target ("none": the status icons) takes no joint.
+
+## Modern UI: flyouts, part 2: the chat and party windows held (2026-10-30; ours)
+- The chat and party windows grow from their bottom (BOTTOM), so their hold keeps the bottom: a screen edge's y and a
+  side's `along` measure it (fly::by_bottom / anchor). Panels::resolve gives a held panel its hold's place, which the
+  chat's own layout reads (its lines' floor, the full log's bottom, its rect while gone). A held panel folds into its
+  bottom edge as a free one does (Show.fold), and a resizable one keeps its grip, on the bottom corner away from the
+  hold (mirrored on the left; a resize there moves the free side only).
+- Fixed on the way (since the chat's docking, 58ac44f): a bottom-placed panel being dragged saved its bottom as the drawn
+  rect's, then stood that bottom minus its placed height; a drawn rect a pixel taller crept it down every frame until
+  the screen's edge. It is now its top plus the placed height.
+- Live (Lnxcsfix, 2026-10-30): the chat dragged sideways stays level (top 1297.7 px through the drag); held on the
+  right edge it folds into its bottom, the location panel riding on it, and fades out as retail after idling; its left
+  grip narrowed it 300 pt with the right side held; pulled 480 pt off, it landed free where its ghost was.

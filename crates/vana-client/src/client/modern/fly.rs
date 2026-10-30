@@ -5,7 +5,7 @@
 //! go. The edge windows (extras.rs) start on an edge; any other panel (Panels::show) can be put on one. Held ones fold
 //! into a tab.
 
-use super::{EDGE, Fly, Modern, Panels, STRONG, borders};
+use super::{BOTTOM, EDGE, Fly, Modern, Panels, STRONG, borders};
 use egui::{Color32, FontFamily, FontId, Pos2, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 
 /// How a panel is held.
@@ -56,6 +56,16 @@ fn fits(t: Rect, h: f32) -> bool {
 /// A flyout's top on panel `t`'s side, `along` below t's top, clear of t's corners.
 fn side_top(t: Rect, along: f32, h: f32) -> f32 {
     (t.min.y + along).clamp(t.min.y + JOIN_MARGIN, (t.max.y - JOIN_MARGIN - h).max(t.min.y + JOIN_MARGIN))
+}
+
+/// The chat and party windows grow from their bottom: their hold keeps it (its y / along measure the bottom).
+fn by_bottom(id: &str) -> bool {
+    BOTTOM.contains(&id)
+}
+
+/// The y a hold measures for `id` standing at `r`.
+fn anchor(id: &str, r: Rect) -> f32 {
+    if by_bottom(id) { r.max.y } else { r.min.y }
 }
 
 /// The folded state's key for a panel that is not an edge window (those keep their own).
@@ -131,18 +141,19 @@ impl Panels<'_> {
 
     /// Where a flyout `size` big stands for hold `a`, and what its frame is open to (a panel's side only where it
     /// fits). None free, or when the panel it rides is not shown.
-    pub(super) fn fly_rect(&self, a: &Attach, size: Vec2) -> Option<(Rect, Open)> {
+    pub(super) fn fly_rect(&self, id: &str, a: &Attach, size: Vec2) -> Option<(Rect, Open)> {
         let s = self.ctx.content_rect();
+        let lift = if by_bottom(id) { size.y } else { 0.0 };
         match a {
             Attach::Free => None,
             Attach::Edge { right, y } => {
-                let top = (s.height() * y).clamp(s.min.y, (s.max.y - size.y).max(s.min.y));
+                let top = (s.height() * y - lift).clamp(s.min.y, (s.max.y - size.y).max(s.min.y));
                 let x = if *right { s.max.x - size.x } else { s.min.x };
                 Some((Rect::from_min_size(pos2(x, top), size), Open::Edge { right: *right }))
             }
             Attach::Side { to, right, along } => {
                 let t = self.shown_rect(to)?;
-                let top = side_top(t, *along, size.y);
+                let top = side_top(t, *along - lift, size.y);
                 let x = if *right { t.max.x } else { t.min.x - size.x };
                 // Joined only to a framed panel's side, in the band it was drawn in.
                 let tf = self.m.frames.borrow().get(to.as_str()).copied().unwrap_or("window_normal");
@@ -174,7 +185,7 @@ impl Panels<'_> {
             if !fits(t, r.height()) {
                 continue;
             }
-            let y = side_top(t, f.along, r.height());
+            let y = side_top(t, f.along - if by_bottom(k) { r.height() } else { 0.0 }, r.height());
             let x = if f.right { t.max.x } else { t.min.x - r.width() };
             out.push((f.right, Rect::from_min_size(pos2(x, y), r.size())));
         }
@@ -205,7 +216,7 @@ impl Panels<'_> {
             }
         };
         let top = r.min.y.clamp(s.min.y, (s.max.y - r.height()).max(s.min.y));
-        let y = top / s.height().max(1.0);
+        let y = (top + if by_bottom(id) { r.height() } else { 0.0 }) / s.height().max(1.0);
         take((r.min.x - s.min.x).abs(), EDGE_SNAP, Attach::Edge { right: false, y }, Rect::from_min_size(pos2(s.min.x, top), r.size()));
         take((s.max.x - r.max.x).abs(), EDGE_SNAP, Attach::Edge { right: true, y }, Rect::from_min_size(pos2(s.max.x - r.width(), top), r.size()));
         let rects = self.m.rects.borrow();
@@ -214,7 +225,7 @@ impl Panels<'_> {
                 continue;
             }
             let y = side_top(*t, r.min.y - t.min.y, r.height());
-            let along = y - t.min.y;
+            let along = y - t.min.y + if by_bottom(id) { r.height() } else { 0.0 };
             take((r.min.x - t.max.x).abs(), SNAP, Attach::Side { to: to.clone(), right: true, along }, Rect::from_min_size(pos2(t.max.x, y), r.size()));
             take((t.min.x - r.max.x).abs(), SNAP, Attach::Side { to: to.clone(), right: false, along }, Rect::from_min_size(pos2(t.min.x - r.width(), y), r.size()));
         }
@@ -234,9 +245,9 @@ impl Panels<'_> {
         let would = Rect::from_min_size(at - off, rect.size());
         let s = ctx.content_rect();
         let (dist, slid) = match a {
-            Attach::Edge { right, .. } => (if *right { s.max.x - would.max.x } else { would.min.x - s.min.x }, Attach::Edge { right: *right, y: would.min.y / s.height().max(1.0) }),
+            Attach::Edge { right, .. } => (if *right { s.max.x - would.max.x } else { would.min.x - s.min.x }, Attach::Edge { right: *right, y: anchor(id, would) / s.height().max(1.0) }),
             Attach::Side { to, right, .. } => match self.shown_rect(to) {
-                Some(t) => ((if *right { would.min.x - t.max.x } else { t.min.x - would.max.x }).abs(), Attach::Side { to: to.clone(), right: *right, along: would.min.y - t.min.y }),
+                Some(t) => ((if *right { would.min.x - t.max.x } else { t.min.x - would.max.x }).abs(), Attach::Side { to: to.clone(), right: *right, along: anchor(id, would) - t.min.y }),
                 None => (f32::INFINITY, a.clone()),
             },
             Attach::Free => (f32::INFINITY, Attach::Free),
@@ -315,7 +326,7 @@ impl Panels<'_> {
         let galley = ctx.fonts_mut(|f| f.layout_no_wrap(label.to_string(), font, Color32::WHITE));
         let gw = galley.size().x;
         let size = vec2(TAB_W, (gw + 28.0).max(TAB_H));
-        let (rect, open) = self.fly_rect(&a, size).unwrap_or_else(|| (self.free_rect(id, size), Open::None));
+        let (rect, open) = self.fly_rect(id, &a, size).unwrap_or_else(|| (self.free_rect(id, size), Open::None));
         // A retail window over it (they draw under every panel): it steps aside until that closes.
         if under_retail(m, rect) {
             self.this.insert(id.to_string(), rect);
