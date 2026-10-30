@@ -12276,3 +12276,24 @@ since "Ship voyages: the moving world" listed them as not done.
 - Beadeaux (147): keys 1 (map 1, lower; 114,776 floor triangles) and 15 (map 2, upper; 45,027) meet at four ramps,
   all near y 11.5: (230.5, 6.6) K-8, (-193.4, 30.5) F-8, (-33.4, 89.5) H-7, (153.4, 150.5) J-6 (the same squares on
   both maps). zone-path from the Pashhow arrival reaches only the H-7 one.
+
+## Modern UI polish: the lobby, the title Config, keys that follow the drawn layout (2026-10-30; ours, not retail)
+- The title and login text: title button labels at 0.38 of the button's height (was 0.5), login field text at 0.46 (was
+  0.62), the help bar and popups at the form's text size (was 1.2..1.5x).
+- The select screen as retail's: the list at the bottom right, the cursor's details at the bottom left, the counts at
+  the top right; rows 54 tall with the name larger. The lobby screens never saved their panel rects (only the in-game
+  draw did), so a panel placed by its bottom had no height: select_screen and config_screen now store `this`.
+- The title's Config (lobycwin) in the modern style: one Config panel, centred, with the list Title Screen / Settings
+  (our SettingsUi in place, made while that entry is chosen). lobycwin's settings in retail's screen order (title music
+  first; page order has it last); the icon options named Newest (child 5) and Random (child 6); the aspect slider
+  (0xab, and in game 0x43) shows the ratio's name as retail's text under it. The title buttons draw on the Background
+  layer so panels open over them. modern/config.rs shares texts / native_rows / native_key / help_line between the
+  in-game page and this one.
+- Config text: a setting shows its heading and controls; what it does shows once, in the help line under the page
+  (the option under the pointer, else the setting, else the focused one). Our Settings' help drops the Config tool's
+  value numbers ("0034: ") and "(not retail)" on the modern page.
+- Keys as drawn (modern only): the AH's "Put ... up for ... G?" takes Left / Right as well; the trade windows and
+  synthesis move as their modern layout (trade::modern_link: slots 4 x 2, gil under them, OK / Cancel side by side;
+  their slots right of ours in player trade).
+- The Wide Scan name filter and the full log's find count as a text field (text_field_open), so the input layer's
+  typing flag turns off the W / A / S / D stick while they take letters.

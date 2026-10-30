@@ -362,6 +362,11 @@ impl ConfigUi {
         }
     }
 
+    /// An option that cannot be taken (greyed).
+    pub fn off(&self, name: &str, child: u16, sw: f32) -> bool {
+        disabled(name, child, sw, self.mon) || unowned(name, child, self.owned)
+    }
+
     /// The modern Config page: Enter on `child` of page `name` (whatever window is on top).
     pub fn apply(&mut self, v: &mut Values, name: &str, child: u16, sw: f32) -> Out {
         let mut out = Out::default();

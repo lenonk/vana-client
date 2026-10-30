@@ -613,7 +613,7 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
         Focus::Away => {}
         Focus::Slots => match key {
             K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => {
-                let to = link(gu, TSKILL1, s.cursor, key);
+                let to = if w.modern { super::trade::modern_link(s.cursor, key, false) } else { link(gu, TSKILL1, s.cursor, key) };
                 if to != s.cursor && to != 0 {
                     s.cursor = to;
                     w.sounds.push(Ui::Cursor as u32);

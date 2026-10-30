@@ -159,6 +159,26 @@ fn handover_update(w: &mut World) {
     }
 }
 
+/// The modern windows' cursor moves as drawn: the slots 4 x 2, the gil (11, with `gil`) under them, OK (9) and Cancel
+/// (10) side by side under that.
+pub(super) fn modern_link(cursor: u16, key: egui::Key, gil: bool) -> u16 {
+    use egui::Key as K;
+    match (cursor, key) {
+        (1..=8, K::ArrowLeft) => if (cursor - 1) % 4 == 0 { cursor + 3 } else { cursor - 1 },
+        (1..=8, K::ArrowRight) => if cursor % 4 == 0 { cursor - 3 } else { cursor + 1 },
+        (1..=4, K::ArrowDown) => cursor + 4,
+        (5..=8, K::ArrowUp) => cursor - 4,
+        (5..=8, K::ArrowDown) => if gil { 11 } else { 9 },
+        (11, K::ArrowUp) => 5,
+        (11, K::ArrowDown) => 9,
+        (9 | 10, K::ArrowUp) if gil => 11,
+        (9 | 10, K::ArrowUp) => cursor - 4,
+        (9, K::ArrowLeft | K::ArrowRight) => 10,
+        (10, K::ArrowLeft | K::ArrowRight) => 9,
+        _ => cursor,
+    }
+}
+
 fn handover_key(w: &mut World, gu: &GameUi, key: egui::Key) {
     use egui::Key as K;
     let Some(mut h) = w.handover.take() else { return };
@@ -168,7 +188,7 @@ fn handover_key(w: &mut World, gu: &GameUi, key: egui::Key) {
         // amount; Escape puts the cursor on Cancel first.
         Focus::Window => match key {
             K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => {
-                let to = super::post::link(gu, HANDOVER, h.cursor, key);
+                let to = if w.modern { modern_link(h.cursor, key, true) } else { super::post::link(gu, HANDOVER, h.cursor, key) };
                 if to != h.cursor && to != 0 {
                     h.cursor = to;
                     w.sounds.push(Ui::Cursor as u32);
@@ -904,16 +924,25 @@ fn p2p_key(w: &mut World, gu: &GameUi, key: egui::Key) {
         // FUN_101515e0: slots pick from the inventory (a filled one is cleared), OK sends Make, Cancel cancels, the gil
         // child asks the amount; after our OK only OK / Cancel take keys. Down from the bottom row moves to the gift.
         PFocus::Trade => match key {
-            K::ArrowDown if !locked && (5..=8).contains(&u.cursor) => {
+            K::ArrowDown if !w.modern && !locked && (5..=8).contains(&u.cursor) => {
                 (u.focus, u.gift) = (PFocus::Gift, u.cursor - 4);
+                w.sounds.push(Ui::Cursor as u32);
+            }
+            // Modern: their slots are right of ours.
+            K::ArrowRight if w.modern && !locked && matches!(u.cursor, 4 | 8) => {
+                (u.focus, u.gift) = (PFocus::Gift, u.cursor - 3);
                 w.sounds.push(Ui::Cursor as u32);
             }
             K::ArrowDown | K::ArrowUp if locked => {
                 u.cursor = if key == K::ArrowDown { 10 } else { 9 };
                 w.sounds.push(Ui::Cursor as u32);
             }
+            K::ArrowLeft | K::ArrowRight if locked && w.modern => {
+                u.cursor = if u.cursor == 9 { 10 } else { 9 };
+                w.sounds.push(Ui::Cursor as u32);
+            }
             K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft if !locked => {
-                let to = super::post::link(gu, TRADE, u.cursor, key);
+                let to = if w.modern { modern_link(u.cursor, key, true) } else { super::post::link(gu, TRADE, u.cursor, key) };
                 if to != u.cursor && to != 0 {
                     u.cursor = to;
                     w.sounds.push(Ui::Cursor as u32);
@@ -956,12 +985,16 @@ fn p2p_key(w: &mut World, gu: &GameUi, key: egui::Key) {
             _ => {}
         },
         PFocus::Gift => match key {
-            K::ArrowUp if (1..=4).contains(&u.gift) => {
+            K::ArrowUp if !w.modern && (1..=4).contains(&u.gift) => {
                 (u.focus, u.cursor) = (PFocus::Trade, u.gift + 4);
                 w.sounds.push(Ui::Cursor as u32);
             }
+            K::ArrowLeft if w.modern && matches!(u.gift, 1 | 5) => {
+                (u.focus, u.cursor) = (PFocus::Trade, u.gift + 3);
+                w.sounds.push(Ui::Cursor as u32);
+            }
             K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => {
-                let to = super::post::link(gu, GIFT, u.gift, key);
+                let to = if w.modern { modern_link(u.gift, key, false) } else { super::post::link(gu, GIFT, u.gift, key) };
                 if to != u.gift && (1..=8).contains(&to) {
                     u.gift = to;
                     w.sounds.push(Ui::Cursor as u32);
@@ -1177,6 +1210,18 @@ fn clip_text(gu: &mut GameUi, s: &str, x: f32, y: f32, max: f32, tint: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn modern_links() {
+        use egui::Key as K;
+        assert_eq!(modern_link(9, K::ArrowRight, true), 10);
+        assert_eq!(modern_link(10, K::ArrowLeft, true), 9);
+        assert_eq!(modern_link(7, K::ArrowDown, true), 11);
+        assert_eq!(modern_link(11, K::ArrowDown, true), 9);
+        assert_eq!(modern_link(10, K::ArrowUp, false), 6);
+        assert_eq!(modern_link(4, K::ArrowRight, false), 1);
+        assert_eq!(modern_link(2, K::ArrowUp, false), 2);
+    }
 
     fn h() -> Handover {
         Handover { npc: (0x0100_4011, 0x11), slots: [None; 8], gil: 0, cursor: 1, focus: Focus::Window, list: (0, 0), qty: None, money: None }

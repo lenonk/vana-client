@@ -1028,7 +1028,12 @@ fn key_inner(w: &mut World, a: &mut Auction, key: egui::Key) -> bool {
     // shopsell: Sell / Cancel (LAB_101d9ac0): Sell sends AskCommit; the fee prompt follows the reply.
     if let Some((sel, inv, item, price, single)) = a.shopsell {
         match key {
+            // Modern: the two side by side, so Left / Right too.
             K::ArrowUp | K::ArrowDown => {
+                a.shopsell = Some((3 - sel, inv, item, price, single));
+                w.sounds.push(Ui::Cursor as u32);
+            }
+            K::ArrowLeft | K::ArrowRight if w.modern => {
                 a.shopsell = Some((3 - sel, inv, item, price, single));
                 w.sounds.push(Ui::Cursor as u32);
             }

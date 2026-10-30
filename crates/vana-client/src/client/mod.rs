@@ -294,6 +294,9 @@ fn text_field_open(w: &World) -> bool {
         || polmail::composing(w)
         // The modern list search (magic, abilities, items, journal, the auction's bid pages) takes the letters.
         || w.list_search.is_some()
+        // The modern Wide Scan name filter and the full log's find.
+        || (w.modern && w.scan_typing)
+        || (w.modern && w.full_log.is_some() && w.log_find.is_some())
 }
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
@@ -10647,6 +10650,8 @@ impl App {
                             }
                             let help = match (&self.update_ui, &self.lobby_settings, &self.lobby_cfg) {
                                 (Some(u), _, _) => u.help(),
+                                // Modern: the Config panel has its own help line.
+                                (None, _, Some(_)) if modern_title => ITEMS[3].1.to_string(),
                                 (None, Some(s), _) => s.help(),
                                 (None, None, Some(c)) => match c.focus() {
                                     Some((_, configui::SETTINGS)) => configui::SETTINGS_HELP.to_string(),
@@ -10673,8 +10678,42 @@ impl App {
                             } else {
                                 lobby_text(lu, &slots, &help, WHITE, &self.cfg.client_version);
                             }
-                            // lobycwin and our settings screen over the title.
-                            if let Some(c) = self.lobby_cfg.as_mut() {
+                            // lobycwin and our settings screen over the title; modern: both pages of one Config panel.
+                            if let Some(c) = self.lobby_cfg.as_mut().filter(|_| modern_title) {
+                                c.owned = self.installed;
+                                if modern::lobby_config_settings(c) && self.lobby_settings.is_none() {
+                                    let mut s = settings::SettingsUi::open(&self.cfg, window);
+                                    s.monitors = self.monitors.clone();
+                                    s.gpus = self.gpus.clone();
+                                    let v = self.lobby_values.get(0xa8);
+                                    (s.s.music, s.s.effects) = (v, v);
+                                    self.lobby_settings = Some(s);
+                                }
+                                let mut outs = Vec::new();
+                                for ev in &input.events {
+                                    if let egui::Event::Key { key, pressed: true, modifiers, .. } = ev {
+                                        outs.push(modern::lobby_config_key(c, &mut self.lobby_values, self.lobby_settings.as_mut(), *key, modifiers.ctrl || modifiers.alt, sw));
+                                    }
+                                }
+                                let mo = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
+                                outs.push(mo.config_screen(ctx, lu, [screen_size[0] as u32, screen_size[1] as u32], self.cfg.modern_scale, c, &mut self.lobby_values, self.lobby_settings.as_mut(), sw));
+                                let mut closed = false;
+                                for out in outs {
+                                    if let Some(a) = self.audio.as_mut() {
+                                        for s in &out.sounds {
+                                            a.ui(*s);
+                                        }
+                                    }
+                                    lobby_changes(&out.changed, &mut lobby_apply);
+                                    closed |= out.closed;
+                                }
+                                if closed {
+                                    self.lobby_cfg = None;
+                                    self.lobby_settings = None;
+                                    self.cfg.game.store(None, &self.lobby_values);
+                                    save = true;
+                                }
+                            } else if let Some(c) = self.lobby_cfg.as_mut() {
                                 c.owned = self.installed;
                                 if self.lobby_settings.is_none() {
                                     let mut outs = Vec::new();
@@ -10724,8 +10763,8 @@ impl App {
                             if let Some(s) = self.lobby_settings.as_mut() {
                                 s.tick();
                                 let mut closed = false;
-                                // The Enter that opened it is not its first key.
-                                for ev in input.events.iter().filter(|_| !settings_new) {
+                                // The Enter that opened it is not its first key; modern: the Config panel has its keys and mouse.
+                                for ev in input.events.iter().filter(|_| !settings_new && !modern_title) {
                                     if let egui::Event::Key { key, pressed: true, modifiers, .. } = ev {
                                         closed |= s.key_mod(*key, modifiers.ctrl || modifiers.alt);
                                         if let Some(a) = self.audio.as_mut() {
@@ -10735,7 +10774,7 @@ impl App {
                                         }
                                     }
                                 }
-                                if let Some(p) = input.pointer.filter(|_| !settings_new) {
+                                if let Some(p) = input.pointer.filter(|_| !settings_new && !modern_title) {
                                     s.pointer(lu, p, input.moved, input.clicked, sw, sh);
                                     if s.hover {
                                         lu.hover.set(true);
@@ -10759,7 +10798,9 @@ impl App {
                                     apply = true;
                                     save = true;
                                 }
-                                s.draw(lu, sw, sh);
+                                if !modern_title {
+                                    s.draw(lu, sw, sh);
+                                }
                                 if closed {
                                     self.lobby_settings = None;
                                     if let Some(a) = self.audio.as_mut() {

@@ -13,6 +13,7 @@ use super::super::settings;
 use super::super::game_ui::GameUi;
 use super::{Panels, Title, paint};
 use crate::audio::Ui as Se;
+use crate::gamecfg::Values;
 use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, Vec2, pos2, vec2};
 
 /// What a list entry opens.
@@ -114,7 +115,7 @@ fn override_of(s: &Shape) -> Option<&'static (&'static str, u16, &'static str, &
 }
 
 /// Whether an option holds now.
-fn holds(c: &ConfigUi, v: &crate::gamecfg::Values, ctl: Ctl) -> bool {
+fn holds(c: &ConfigUi, v: &Values, ctl: Ctl) -> bool {
     match ctl {
         Ctl::Pick(id, x, _) => v.get(id) == x,
         Ctl::Bit(id, mask, on, _) => (v.get(id) & mask != 0) == on,
@@ -209,7 +210,7 @@ fn list_rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, page: &'static str, ro
 /// Font Colors' rows: the label and its sample line in the colour, R / G / B sliders under them (0..255); the focused
 /// slider ringed.
 #[allow(clippy::too_many_arguments)]
-fn colour_rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, v: &crate::gamecfg::Values, rows: &[(u16, u16, u16)], focus: Option<usize>, follow: bool, click: &mut Option<Click>) {
+fn colour_rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, v: &Values, rows: &[(u16, u16, u16)], focus: Option<usize>, follow: bool, click: &mut Option<Click>) {
     for (i, &(label, sample, id)) in rows.iter().enumerate() {
         let value = v.get(id);
         let col = super::chat::colour(crate::dat::battle::argb_bytes(value));
@@ -276,7 +277,6 @@ fn settings_page(ui: &mut Ui, m: &super::Modern, v: &settings::View, open: bool,
         let focus = open && v.row == row;
         let top = ui.cursor().min;
         ui.label(egui::RichText::new(&r.label).size(m.theme.small).family(FontFamily::Name(super::STRONG.into())).color(if focus { m.theme.color("gold") } else { m.theme.color("muted") }));
-        ui.label(egui::RichText::new(&r.help).size(m.theme.small - 1.5).color(m.theme.color("muted")));
         ui.add_space(2.0);
         match &r.ctl {
             settings::VCtl::Buttons(bs) => {
@@ -361,6 +361,322 @@ fn settings_follow(w: &mut World, entry: usize) {
     }
 }
 
+/// A native page's words: each setting's heading, its options' names and helps, and the setting's line (ours where we
+/// gave one, else the help of the option that holds: the first for a slider or none).
+struct Texts {
+    heads: Vec<String>,
+    labels: Vec<Vec<String>>,
+    opt_helps: Vec<Vec<String>>,
+    helps: Vec<String>,
+}
+
+/// Options whose sprite is an icon: (page, child, name).
+const LABELS: [(&str, u16, &str); 2] = [("lobycwin", 5, "Newest"), ("lobycwin", 6, "Random")];
+
+fn texts(gu: &GameUi, c: &ConfigUi, v: &Values, shapes: &[Shape]) -> Texts {
+    let heads = shapes.iter().map(|s| heading(gu, s)).collect();
+    let label = |menu: &str, k: u16, ctl: Ctl| match LABELS.iter().find(|l| l.0 == menu && l.1 == k) {
+        Some(l) => l.2.to_string(),
+        None => gu.child_caption(&full(menu), k).unwrap_or_else(|| fallback(ctl)),
+    };
+    let labels = shapes.iter().map(|s| s.ctls.iter().map(|(k, ctl)| label(s.menu, *k, *ctl)).collect()).collect();
+    let opt_helps: Vec<Vec<String>> = shapes.iter().map(|s| s.ctls.iter().map(|(k, _)| gu.focus_text(&full(s.menu), *k)[0].clone().unwrap_or_default()).collect()).collect();
+    let helps = shapes
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let held = s.ctls.iter().position(|(_, ctl)| holds(c, v, *ctl)).unwrap_or(0);
+            override_of(s).map(|h| h.3).filter(|h| !h.is_empty()).map(str::to_string).unwrap_or_else(|| opt_helps[i].get(held).cloned().unwrap_or_default())
+        })
+        .collect();
+    Texts { heads, labels, opt_helps, helps }
+}
+
+/// What the pointer is over on a native page: a setting, and the option there.
+#[derive(Default)]
+struct Hover {
+    setting: Option<usize>,
+    opt: Option<(usize, usize)>,
+}
+
+/// The list on the left: the chosen entry lit, a click choosing one.
+fn entry_list(ui: &mut Ui, m: &super::Modern, labels: &[&str], entry: usize, open: bool, click: &mut Option<Click>) {
+    ui.vertical(|ui| {
+        ui.set_width(150.0);
+        for (k, label) in labels.iter().enumerate() {
+            let (r, resp) = ui.allocate_exact_size(vec2(150.0, 30.0), Sense::click());
+            let face = match () {
+                _ if k == entry && !open => "controls/list_row_selected",
+                _ if k == entry || resp.hovered() => "controls/list_row_hover",
+                _ => "controls/list_row_normal",
+            };
+            super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
+            ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, *label, FontId::proportional(m.theme.ui), m.theme.color("text"));
+            if resp.clicked() {
+                *click = Some(Click::Entry(k));
+            }
+            ui.add_space(2.0);
+        }
+    });
+}
+
+/// A native page's settings: each heading and its options as buttons or its slider, the focused one ringed. What each
+/// does shows once, in the help line under the page.
+#[allow(clippy::too_many_arguments)]
+fn native_rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, c: &ConfigUi, v: &Values, shapes: &[Shape], t: &Texts, focus_row: Option<usize>, sw: f32, click: &mut Option<Click>, hover: &mut Hover) {
+    for (i, s) in shapes.iter().enumerate() {
+        let focus = focus_row == Some(i);
+        let top = ui.cursor().min;
+        ui.label(egui::RichText::new(&t.heads[i]).size(m.theme.small).family(FontFamily::Name(super::STRONG.into())).color(if focus { m.theme.color("gold") } else { m.theme.color("muted") }));
+        ui.add_space(2.0);
+        match s.ctls[0].1 {
+            Ctl::Slider(id, lo, hi, step) => {
+                let val = v.get_i(id).clamp(lo, hi);
+                let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width() - 60.0, 18.0), Sense::click_and_drag());
+                let f = (val - lo) as f32 / (hi - lo).max(1) as f32;
+                ui.painter().rect_filled(r.shrink2(vec2(0.0, 5.0)), 4.0, m.theme.color("charcoal"));
+                ui.painter().rect_filled(Rect::from_min_max(r.shrink2(vec2(0.0, 5.0)).min, pos2(r.min.x + r.width() * f, r.max.y - 5.0)), 4.0, m.theme.color("bronze"));
+                ui.painter().circle(pos2(r.min.x + r.width() * f, r.center().y), 7.0, m.theme.color("gold"), egui::Stroke::new(1.0, Color32::from_black_alpha(200)));
+                // The aspect ratios by name, as retail's text under the slider.
+                let shown = match id {
+                    0x43 | 0xab => configui::ASPECTS.get(val as usize).map_or(String::new(), |a| a.0.trim_matches(['(', ')']).to_string()),
+                    _ => val.to_string(),
+                };
+                ui.painter().text(pos2(r.max.x + 12.0, r.center().y), Align2::LEFT_CENTER, shown, FontId::monospace(m.theme.small), m.theme.color("text"));
+                if (resp.clicked() || resp.dragged())
+                    && let Some(at) = resp.interact_pointer_pos()
+                {
+                    let t = ((at.x - r.min.x) / r.width()).clamp(0.0, 1.0);
+                    let x = lo + ((t * (hi - lo) as f32 / step as f32).round() as i32) * step;
+                    if x != val {
+                        *click = Some(Click::Slide(id, x as u32));
+                    }
+                }
+                if resp.hovered() {
+                    hover.setting = Some(i);
+                }
+            }
+            _ => {
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+                    for (j, (child, ctl)) in s.ctls.iter().enumerate() {
+                        let off = c.off(s.menu, *child, sw);
+                        let on = holds(c, v, *ctl);
+                        let resp = button(ui, m, &t.labels[i][j], on, off, focus);
+                        if resp.hovered() {
+                            hover.setting = Some(i);
+                            hover.opt = Some((i, j));
+                        }
+                        if resp.clicked() && !off {
+                            *click = Some(Click::Apply(s.menu, *child));
+                        }
+                    }
+                });
+            }
+        }
+        // keylayou (Misc. 2's Compact 1): the functions the compact keyboard picture shows and their keys, while
+        // Compact 1 is under the pointer or the row has the keys with it chosen.
+        let compact = |j: usize| matches!(s.ctls.get(j), Some((6, Ctl::Pick(0x42, 1, _))));
+        if s.menu == "conf6win" && s.ctls.iter().any(|(k, _)| *k == 6) && (hover.opt.is_some_and(|(hi, j)| hi == i && compact(j)) || (focus && v.get(0x42) == 1)) {
+            ui.add_space(4.0);
+            egui::Grid::new("keylayou").num_columns(4).spacing(vec2(12.0, 2.0)).show(ui, |ui| {
+                for (k, cfg) in configui::KEYLAYOU_CELLS.iter().enumerate() {
+                    let label = configui2::k1_label(gu, *cfg).unwrap_or_default();
+                    ui.label(egui::RichText::new(label).size(m.theme.small - 1.5).color(m.theme.color("muted")));
+                    ui.label(egui::RichText::new(configui2::dik_char(v.get(*cfg))).size(m.theme.small - 1.5).family(FontFamily::Name(super::STRONG.into())).color(m.theme.color("text")));
+                    if k % 2 == 1 {
+                        ui.end_row();
+                    }
+                }
+            });
+        }
+        if focus {
+            let r = Rect::from_min_max(top - vec2(6.0, 2.0), pos2(top.x + ui.available_width() + 6.0, ui.cursor().min.y + 2.0));
+            ui.painter().rect_stroke(r, 6.0, egui::Stroke::new(1.0, m.theme.color("focus").gamma_multiply(0.6)), egui::StrokeKind::Outside);
+        }
+        ui.add_space(8.0);
+    }
+}
+
+/// The help line under a native page: the option under the pointer, else the setting there, else the focused one.
+fn help_line(ui: &mut Ui, m: &super::Modern, t: &Texts, hover: &Hover, focus_row: Option<usize>) {
+    let hovered = hover.opt.and_then(|(i, j)| t.opt_helps.get(i)?.get(j)).filter(|h| !h.is_empty());
+    if let Some(h) = hovered.or_else(|| hover.setting.or(focus_row).and_then(|i| t.helps.get(i))).filter(|h| !h.is_empty()) {
+        ui.separator();
+        ui.label(egui::RichText::new(h).size(m.theme.small).color(m.theme.color("muted")));
+    }
+}
+
+/// A native page's keys: Up / Down between settings, Left / Right change the focused one (a slider by its step), Enter
+/// takes a button, Escape goes back to the list.
+fn native_key(c: &mut ConfigUi, v: &mut Values, all: &[Shape], key: egui::Key, sw: f32) -> configui::Out {
+    use egui::Key as K;
+    let mut out = configui::Out::default();
+    let row = c.m_row.min(all.len().saturating_sub(1));
+    let Some(s) = all.get(row) else { return out };
+    match key {
+        K::ArrowUp | K::ArrowDown => {
+            let len = all.len().max(1);
+            c.m_row = if key == K::ArrowDown { (row + 1) % len } else { (row + len - 1) % len };
+            out.sounds.push(Se::Cursor);
+        }
+        K::Escape => {
+            c.m_open = false;
+            out.sounds.push(Se::Cancel);
+        }
+        K::ArrowLeft | K::ArrowRight => match s.ctls[0].1 {
+            Ctl::Slider(id, lo, hi, step) => {
+                let val = v.get_i(id).clamp(lo, hi);
+                let x = if key == K::ArrowRight { (val + step).min(hi) } else { (val - step).max(lo) };
+                if x != val {
+                    out = ConfigUi::set_value(v, id, x as u32);
+                    out.sounds.push(Se::Cursor);
+                }
+            }
+            Ctl::Pick(..) | Ctl::Bit(..) | Ctl::Act(Act::Anon(_)) => {
+                let on = s.ctls.iter().position(|(_, ctl)| holds(c, v, *ctl)).unwrap_or(0);
+                let len = s.ctls.len();
+                let order: Vec<usize> = (1..len).map(|d| if key == K::ArrowRight { (on + d) % len } else { (on + len - d) % len }).collect();
+                if let Some(&k) = order.iter().find(|&&k| !c.off(s.menu, s.ctls[k].0, sw)) {
+                    out = c.apply(v, s.menu, s.ctls[k].0, sw);
+                }
+            }
+            _ => {}
+        },
+        K::Enter => {
+            if matches!(s.ctls[0].1, Ctl::Open(_) | Ctl::Act(_)) && !matches!(s.ctls[0].1, Ctl::Act(Act::Anon(_))) {
+                out = c.apply(v, s.menu, s.ctls[0].0, sw);
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
+/// The title's Config list: retail's page (lobycwin) and ours.
+const LOBBY: [&str; 2] = ["Title Screen", "Settings"];
+
+/// lobycwin's settings in retail's order on screen: the title music first.
+fn lobby_shapes() -> Vec<Shape> {
+    let mut all = shapes(&["lobycwin"]);
+    all.sort_by_key(|s| !matches!(s.ctls[0].1, Ctl::Pick(0xaf, ..)));
+    all
+}
+
+/// Whether the title's Config has our Settings entry chosen (the app keeps its state up while it is).
+pub fn lobby_settings(c: &ConfigUi) -> bool {
+    c.m_entry == 1
+}
+
+/// The title's Config (lobycwin) in the modern style: the list, then retail's page or our Settings (`s`). Its step
+/// comes back: the sounds, the changed ids.
+pub fn lobby(p: &mut Panels, c: &mut ConfigUi, v: &mut Values, mut s: Option<&mut settings::SettingsUi>, sw: f32) -> configui::Out {
+    let mut out = configui::Out::default();
+    let Some(gu) = p.gu else { return out };
+    let m = p.m;
+    let entry = c.m_entry.min(LOBBY.len() - 1);
+    let (open, row) = (c.m_open, c.m_row);
+    let shapes = lobby_shapes();
+    let t = texts(gu, c, v, &shapes);
+    let ours = s.as_deref().filter(|_| lobby_settings(c)).map(|s| s.view());
+    let (mut sact, mut click, mut hover) = (Vec::new(), None, Hover::default());
+    // Centred, by last frame's size.
+    let screen = p.ctx.content_rect();
+    let size = m.rects.borrow().get("lobby config").map_or(vec2(640.0, 360.0), |r| r.size());
+    let at = (screen.center() - size / 2.0).round();
+    p.panel_at("lobby config", Some(Title { icon: Some("icons/config"), text: "Config", note: None }), 640.0, at, |ui| {
+        ui.horizontal_top(|ui| {
+            entry_list(ui, m, &LOBBY, entry, open, &mut click);
+            ui.add_space(16.0);
+            let tall = ui.ctx().content_rect().height() * 0.72;
+            egui::ScrollArea::vertical().max_height(tall).min_scrolled_height(tall).auto_shrink([false, true]).show(ui, |ui| {
+                ui.vertical(|ui| {
+                    ui.set_width(440.0);
+                    match &ours {
+                        Some(sv) => settings_page(ui, m, sv, open, 440.0, &mut sact),
+                        None if lobby_settings(c) => {}
+                        None => native_rows(ui, m, gu, c, v, &shapes, &t, open.then_some(row), sw, &mut click, &mut hover),
+                    }
+                })
+            });
+        });
+        match &ours {
+            Some(sv) if !sv.help.is_empty() => {
+                ui.separator();
+                ui.label(egui::RichText::new(&sv.help).size(m.theme.small).color(m.theme.color("muted")));
+            }
+            Some(_) => {}
+            None => help_line(ui, m, &t, &hover, open.then_some(row)),
+        }
+    });
+    if let Some(s) = s.as_deref_mut().filter(|_| !sact.is_empty()) {
+        for a in sact {
+            match a {
+                Do::Tab(k) => s.m_tab(k),
+                Do::Point(r, k) => {
+                    if s.m_point(r, k) {
+                        out.sounds.push(Se::Cursor);
+                    }
+                }
+                Do::Click(r, k) => s.m_click(r, k),
+                Do::Slide(r, i) => s.m_slide(r, i),
+            }
+            out.sounds.append(&mut s.sounds);
+        }
+        (c.m_open, c.m_row) = (true, 0);
+    }
+    match click {
+        Some(Click::Entry(k)) => {
+            (c.m_entry, c.m_open, c.m_row) = (k, true, 0);
+            out.sounds.push(Se::Select);
+        }
+        Some(Click::Apply(menu, child)) => {
+            let o = c.apply(v, menu, child, sw);
+            out.sounds.extend(o.sounds);
+            out.changed.extend(o.changed);
+        }
+        Some(Click::Slide(id, x)) => out.changed.extend(ConfigUi::set_value(v, id, x).changed),
+        _ => {}
+    }
+    out
+}
+
+/// The title's Config keys: on the list Up / Down choose, Enter or Right take, Escape closes Config; retail's page as
+/// the native pages; ours its own (its Escape back to the list).
+pub fn lobby_key(c: &mut ConfigUi, v: &mut Values, s: Option<&mut settings::SettingsUi>, key: egui::Key, page_mod: bool, sw: f32) -> configui::Out {
+    use egui::Key as K;
+    let mut out = configui::Out::default();
+    if !c.m_open {
+        match key {
+            K::ArrowUp | K::ArrowDown => {
+                c.m_entry = (c.m_entry + 1) % LOBBY.len();
+                out.sounds.push(Se::Cursor);
+            }
+            K::Enter | K::ArrowRight => {
+                (c.m_open, c.m_row) = (true, 0);
+                out.sounds.push(Se::Select);
+            }
+            K::Escape => {
+                out.closed = true;
+                out.sounds.push(Se::Close);
+            }
+            _ => {}
+        }
+        return out;
+    }
+    if lobby_settings(c) {
+        if let Some(s) = s {
+            if s.key_mod(key, page_mod) {
+                c.m_open = false;
+                out.sounds.push(Se::Cancel);
+            }
+            out.sounds.append(&mut s.sounds);
+        }
+        return out;
+    }
+    native_key(c, v, &lobby_shapes(), key, sw)
+}
+
 pub fn draw(p: &mut Panels, w: &mut World) {
     // Ours goes with the Config window, once the app has stored what changed.
     if w.modern && w.config.is_none() && w.settings.as_ref().is_some_and(|s| s.in_game && !s.dirty) {
@@ -383,21 +699,9 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         Entry::Native(menus) => shapes(menus),
         _ => Vec::new(),
     };
-    let heads: Vec<String> = shapes.iter().map(|s| heading(gu, s)).collect();
-    let labels: Vec<Vec<String>> = shapes.iter().map(|s| s.ctls.iter().map(|(k, ctl)| gu.child_caption(&full(s.menu), *k).unwrap_or_else(|| fallback(*ctl))).collect()).collect();
     let v = &w.game;
-    // Each option's own help (retail shows the cursor child's); a setting's line is ours where we gave one, else the
-    // help of the option that holds (the first for a slider or none).
-    let opt_helps: Vec<Vec<String>> = shapes.iter().map(|s| s.ctls.iter().map(|(k, _)| gu.focus_text(&full(s.menu), *k)[0].clone().unwrap_or_default()).collect()).collect();
-    let helps: Vec<String> = shapes
-        .iter()
-        .enumerate()
-        .map(|(i, s)| {
-            let held = s.ctls.iter().position(|(_, ctl)| holds(c, v, *ctl)).unwrap_or(0);
-            override_of(s).map(|h| h.3).filter(|h| !h.is_empty()).map(str::to_string).unwrap_or_else(|| opt_helps[i].get(held).cloned().unwrap_or_default())
-        })
-        .collect();
-    let mut hover_opt: Option<(usize, usize)> = None;
+    let t = texts(gu, c, v, &shapes);
+    let mut hover = Hover::default();
     let cat = c.m_cat.min(3);
     // The list pages' rows (row 0 is the category strip where there is one); the focused row kept in view as it moves.
     let (list, cats): (Vec<(u16, usize)>, Vec<String>) = match ENTRIES[entry].1 {
@@ -408,27 +712,9 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let follow = m.config_seen.get() != (entry, row);
     m.config_seen.set((entry, row));
     let mut click: Option<Click> = None;
-    let mut hover_help: Option<usize> = None;
     p.panel("window", Some(Title { icon: Some("icons/config"), text: "Config", note: None }), 640.0, |ui| {
         ui.horizontal_top(|ui| {
-            // The list.
-            ui.vertical(|ui| {
-                ui.set_width(150.0);
-                for (k, (label, _)) in ENTRIES.iter().enumerate() {
-                    let (r, resp) = ui.allocate_exact_size(vec2(150.0, 30.0), Sense::click());
-                    let face = match () {
-                        _ if k == entry && !open => "controls/list_row_selected",
-                        _ if k == entry || resp.hovered() => "controls/list_row_hover",
-                        _ => "controls/list_row_normal",
-                    };
-                    super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
-                    ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, *label, FontId::proportional(m.theme.ui), m.theme.color("text"));
-                    if resp.clicked() {
-                        click = Some(Click::Entry(k));
-                    }
-                    ui.add_space(2.0);
-                }
-            });
+            entry_list(ui, m, ENTRIES.map(|e| e.0).as_slice(), entry, open, &mut click);
             ui.add_space(16.0);
             // The page, scrolled when longer than most of the screen.
             let tall = ui.ctx().content_rect().height() * 0.72;
@@ -467,77 +753,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                     ui.label(egui::RichText::new(what).size(m.theme.small).color(m.theme.color("muted")));
                     return;
                 }
-                for (i, s) in shapes.iter().enumerate() {
-                    let focus = open && i == row;
-                    let top = ui.cursor().min;
-                    ui.label(egui::RichText::new(&heads[i]).size(m.theme.small).family(FontFamily::Name(super::STRONG.into())).color(if focus { m.theme.color("gold") } else { m.theme.color("muted") }));
-                    // What it does, under its name.
-                    if !helps[i].is_empty() {
-                        ui.label(egui::RichText::new(&helps[i]).size(m.theme.small - 1.5).color(m.theme.color("muted")));
-                        ui.add_space(2.0);
-                    }
-                    match s.ctls[0].1 {
-                        Ctl::Slider(id, lo, hi, step) => {
-                            let val = v.get_i(id).clamp(lo, hi);
-                            let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width() - 60.0, 18.0), Sense::click_and_drag());
-                            let f = (val - lo) as f32 / (hi - lo).max(1) as f32;
-                            ui.painter().rect_filled(r.shrink2(vec2(0.0, 5.0)), 4.0, m.theme.color("charcoal"));
-                            ui.painter().rect_filled(Rect::from_min_max(r.shrink2(vec2(0.0, 5.0)).min, pos2(r.min.x + r.width() * f, r.max.y - 5.0)), 4.0, m.theme.color("bronze"));
-                            ui.painter().circle(pos2(r.min.x + r.width() * f, r.center().y), 7.0, m.theme.color("gold"), egui::Stroke::new(1.0, Color32::from_black_alpha(200)));
-                            ui.painter().text(pos2(r.max.x + 12.0, r.center().y), Align2::LEFT_CENTER, val.to_string(), FontId::monospace(m.theme.small), m.theme.color("text"));
-                            if (resp.clicked() || resp.dragged())
-                                && let Some(at) = resp.interact_pointer_pos()
-                            {
-                                let t = ((at.x - r.min.x) / r.width()).clamp(0.0, 1.0);
-                                let x = lo + ((t * (hi - lo) as f32 / step as f32).round() as i32) * step;
-                                if x != val {
-                                    click = Some(Click::Slide(id, x as u32));
-                                }
-                            }
-                            if resp.hovered() {
-                                hover_help = Some(i);
-                            }
-                        }
-                        _ => {
-                            ui.horizontal_wrapped(|ui| {
-                                ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-                                for (j, (child, ctl)) in s.ctls.iter().enumerate() {
-                                    let off = configui::disabled(s.menu, *child, sw, c.mon);
-                                    let on = holds(c, v, *ctl);
-                                    let resp = button(ui, m, &labels[i][j], on, off, focus);
-                                    if resp.hovered() {
-                                        hover_help = Some(i);
-                                        hover_opt = Some((i, j));
-                                    }
-                                    if resp.clicked() && !off {
-                                        click = Some(Click::Apply(s.menu, *child));
-                                    }
-                                }
-                            });
-                        }
-                    }
-                    // keylayou (Misc. 2's Compact 1): the functions the compact keyboard picture shows and their keys, while
-                    // Compact 1 is under the pointer or the row has the keys with it chosen.
-                    let compact = |j: usize| matches!(s.ctls.get(j), Some((6, Ctl::Pick(0x42, 1, _))));
-                    if s.menu == "conf6win" && s.ctls.iter().any(|(k, _)| *k == 6) && (hover_opt.is_some_and(|(hi, j)| hi == i && compact(j)) || (focus && v.get(0x42) == 1)) {
-                        ui.add_space(4.0);
-                        egui::Grid::new("keylayou").num_columns(4).spacing(vec2(12.0, 2.0)).show(ui, |ui| {
-                            for (k, cfg) in configui::KEYLAYOU_CELLS.iter().enumerate() {
-                                let label = configui2::k1_label(gu, *cfg).unwrap_or_default();
-                                ui.label(egui::RichText::new(label).size(m.theme.small - 1.5).color(m.theme.color("muted")));
-                                ui.label(egui::RichText::new(configui2::dik_char(v.get(*cfg))).size(m.theme.small - 1.5).family(FontFamily::Name(super::STRONG.into())).color(m.theme.color("text")));
-                                if k % 2 == 1 {
-                                    ui.end_row();
-                                }
-                            }
-                        });
-                    }
-                    if focus {
-                        let r = Rect::from_min_max(top - vec2(6.0, 2.0), pos2(top.x + ui.available_width() + 6.0, ui.cursor().min.y + 2.0));
-                        ui.painter().rect_stroke(r, 6.0, egui::Stroke::new(1.0, m.theme.color("focus").gamma_multiply(0.6)), egui::StrokeKind::Outside);
-                    }
-                    ui.add_space(8.0);
-                }
+                native_rows(ui, m, gu, c, v, &shapes, &t, open.then_some(row), sw, &mut click, &mut hover);
             }));
         });
         if let Some(v) = ours.as_ref().filter(|v| !v.help.is_empty()) {
@@ -545,12 +761,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             ui.label(egui::RichText::new(&v.help).size(m.theme.small).color(m.theme.color("muted")));
             return;
         }
-        // The help line of the setting under the pointer, else the focused one.
-        let hovered = hover_opt.and_then(|(i, j)| opt_helps.get(i)?.get(j)).filter(|h| !h.is_empty());
-        if let Some(h) = hovered.or_else(|| hover_help.or(open.then_some(row)).and_then(|i| helps.get(i))).filter(|h| !h.is_empty()) {
-            ui.separator();
-            ui.label(egui::RichText::new(h).size(m.theme.small).color(m.theme.color("muted")));
-        }
+        help_line(ui, m, &t, &hover, open.then_some(row));
     });
     // A click on our page gives it the keys.
     if settings_act(w, sact)
@@ -733,47 +944,7 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
         _ => {}
     }
     let Entry::Native(menus) = ENTRIES[c.m_entry.min(n - 1)].1 else { return true };
-    let all = shapes(menus);
-    let row = c.m_row.min(all.len().saturating_sub(1));
-    let Some(s) = all.get(row) else { return true };
-    match key {
-        K::ArrowUp | K::ArrowDown => {
-            let len = all.len().max(1);
-            c.m_row = if key == K::ArrowDown { (row + 1) % len } else { (row + len - 1) % len };
-            w.sounds.push(Se::Cursor as u32);
-        }
-        K::Escape => {
-            c.m_open = false;
-            w.sounds.push(Se::Cancel as u32);
-        }
-        K::ArrowLeft | K::ArrowRight => match s.ctls[0].1 {
-            Ctl::Slider(id, lo, hi, step) => {
-                let val = w.game.get_i(id).clamp(lo, hi);
-                let x = if key == K::ArrowRight { (val + step).min(hi) } else { (val - step).max(lo) };
-                if x != val {
-                    let out = ConfigUi::set_value(&mut w.game, id, x as u32);
-                    w.sounds.push(Se::Cursor as u32);
-                    super::super::config_out(w, out);
-                }
-            }
-            Ctl::Pick(..) | Ctl::Bit(..) | Ctl::Act(Act::Anon(_)) => {
-                let on = s.ctls.iter().position(|(_, ctl)| holds(c, &w.game, *ctl)).unwrap_or(0);
-                let len = s.ctls.len();
-                let order: Vec<usize> = (1..len).map(|d| if key == K::ArrowRight { (on + d) % len } else { (on + len - d) % len }).collect();
-                if let Some(&k) = order.iter().find(|&&k| !configui::disabled(s.menu, s.ctls[k].0, sw, c.mon)) {
-                    let (menu, child) = (s.menu, s.ctls[k].0);
-                    apply(w, menu, child);
-                }
-            }
-            _ => {}
-        },
-        K::Enter => {
-            if matches!(s.ctls[0].1, Ctl::Open(_) | Ctl::Act(_)) && !matches!(s.ctls[0].1, Ctl::Act(Act::Anon(_))) {
-                let (menu, child) = (s.menu, s.ctls[0].0);
-                apply(w, menu, child);
-            }
-        }
-        _ => {}
-    }
+    let out = native_key(c, &mut w.game, &shapes(menus), key, sw);
+    super::super::config_out(w, out);
     true
 }

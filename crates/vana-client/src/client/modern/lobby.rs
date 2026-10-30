@@ -4,15 +4,17 @@
 //! (client/creator.rs and client/mod.rs keep its rules and keys) as one panel with the picks and their stats, its
 //! confirm and ok windows as the select screen's. The 3D scenes stay.
 
+use super::super::configui::{ConfigUi, Out};
 use super::super::creator::{self, Page};
 use super::super::game_ui::GameUi;
+use super::super::settings::SettingsUi;
+use crate::gamecfg::Values;
 use super::super::select::{Pointer, View};
 use super::craft::{button, tint};
 use super::{Modern, Panels, Title, paint};
 use egui::{Align2, Color32, Context, FontFamily, FontId, Sense, Ui, pos2, vec2};
 
 const W: f32 = 380.0;
-const ROW: f32 = 44.0;
 
 impl Modern {
     /// egui's zoom for the window height and the Interface Size, as the game's layer sets it.
@@ -30,7 +32,8 @@ impl Modern {
     pub fn title_buttons(&mut self, ctx: &Context, window: [u32; 2], scale: u32, ui_k: (f32, f32), buttons: &[([f32; 4], &str, bool, bool)]) {
         self.zoom_to(ctx, window, scale);
         let k = ctx.pixels_per_point();
-        let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, egui::Id::unique("modern title buttons")));
+        // Under the panels (the title's Config opens over them).
+        let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::unique("modern title buttons")));
         let hover = ctx.input(|i| i.pointer.hover_pos());
         for (r, label, lit, on) in buttons {
             let rect = egui::Rect::from_min_size(pos2(r[0] / (k * ui_k.0), r[1] / (k * ui_k.1)), vec2(r[2] / (k * ui_k.0), r[3] / (k * ui_k.1)));
@@ -44,8 +47,8 @@ impl Modern {
                 p.add(paint::nine_slice(&s, rect, 0.5, Color32::WHITE));
             }
             let c = if !on { self.theme.color("muted") } else if *lit { self.theme.color("gold") } else { self.theme.color("text") };
-            // The label sized to the button (retail's captions fill about half its height).
-            p.text(rect.center(), Align2::CENTER_CENTER, *label, FontId::new((rect.height() * 0.5).max(self.theme.ui), FontFamily::Name(super::STRONG.into())), c);
+            // The label sized to the button (retail's slim captions fill about 40 % of it).
+            p.text(rect.center(), Align2::CENTER_CENTER, *label, FontId::new((rect.height() * 0.38).max(self.theme.small), FontFamily::Name(super::STRONG.into())), c);
         }
     }
 
@@ -60,7 +63,7 @@ impl Modern {
         p.add(super::borders::window(self, "window_normal", frame));
         let blink = (ctx.input(|i| i.time) * 2.0) as i64 % 2 == 0;
         // Text sized to the fields (the retail-sized form drew it far too small).
-        let size = v.fields.first().map_or(self.theme.small, |f| (pt(f.0).height() * 0.62).max(self.theme.small));
+        let size = v.fields.first().map_or(self.theme.small, |f| (pt(f.0).height() * 0.46).max(self.theme.small));
         self.lobby_text.set(size);
         let font = FontId::proportional(size);
         for (i, (r, label, text, hint)) in v.fields.iter().enumerate() {
@@ -184,7 +187,7 @@ impl Modern {
     pub fn help_bar(&mut self, ctx: &Context, window: [u32; 2], scale: u32, ui_k: (f32, f32), strip: [f32; 4], ver: (f32, f32), text: &str, colour: [u8; 4], version: &str) {
         self.zoom_to(ctx, window, scale);
         let k = ctx.pixels_per_point();
-        let size = self.lobby_text.get().max(self.theme.ui);
+        let size = self.lobby_text.get().max(self.theme.small);
         let screen = ctx.content_rect();
         // Retail's strip, made tall enough for the text; its ends past the screen's sides.
         let cy = (strip[1] + strip[3] / 2.0) / (k * ui_k.1);
@@ -206,9 +209,9 @@ impl Modern {
         let r = pt(frame);
         let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique(("modern lobby popup", id))));
         p.add(super::borders::window(self, "window_normal", r));
-        // Above the login form's text (Fira reads smaller than the game font at one size).
+        // The login form's text size.
         let form = self.lobby_text.get();
-        let size = if form > 0.0 { form * 1.2 } else { self.theme.ui * 1.5 };
+        let size = if form > 0.0 { form } else { self.theme.ui };
         let area = egui::Rect::from_min_max(r.min + vec2(16.0, 8.0), pos2(r.max.x - 16.0, r.max.y - foot / (k * ui_k.1)));
         let galley = p.layout(text.to_string(), FontId::proportional(size), self.theme.color("text"), area.width());
         p.galley(pos2(area.center().x - galley.size().x / 2.0, area.center().y - galley.size().y / 2.0), galley, self.theme.color("text"));
@@ -252,6 +255,8 @@ impl Modern {
         let mut out = Pointer::default();
         list_panel(&mut p, gu, v, &mut out);
         windows(&mut p, gu, v, &mut out);
+        // This frame's rects: the panels placed by their bottom take their height from them.
+        *p.m.rects.borrow_mut() = std::mem::take(&mut p.this);
         out
     }
 
@@ -268,6 +273,18 @@ impl Modern {
         if !c.free {
             out = creator::Pointer::default();
         }
+        out
+    }
+
+    /// The title's Config (modern/config.rs's lobby page): its step.
+    #[allow(clippy::too_many_arguments)]
+    pub fn config_screen(&mut self, ctx: &Context, gu: &GameUi, window: [u32; 2], scale: u32, c: &mut ConfigUi, v: &mut Values, s: Option<&mut SettingsUi>, sw: f32) -> Out {
+        self.zoom_to(ctx, window, scale);
+        let mut layout = Default::default();
+        let (mut changed, mut font) = (false, 15.0);
+        let mut p = Panels { m: self, ctx, gu: Some(gu), layout: &mut layout, changed: &mut changed, chat_font: &mut font, battle_in_all: &mut true, condense: &mut true, folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: Some("lobby config") };
+        let out = super::config::lobby(&mut p, c, v, s, sw);
+        *p.m.rects.borrow_mut() = std::mem::take(&mut p.this);
         out
     }
 }
@@ -476,9 +493,12 @@ fn creator_prompts(p: &mut Panels, gu: &GameUi, c: &Page, out: &mut creator::Poi
     }
 }
 
+/// The select screen's list row height and its text sizes (larger than the in-game lists: read from the sofa).
+const SELECT_ROW: f32 = 54.0;
+
 /// One character: the name in its colour and the job and level at the right, the race and area under them.
 fn row(ui: &mut Ui, m: &Modern, r: &super::super::select::RowView, on: bool, focused: bool) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(vec2(W - 14.0, ROW), if focused { Sense::click() } else { Sense::hover() });
+    let (rect, resp) = ui.allocate_exact_size(vec2(W - 14.0, SELECT_ROW), if focused { Sense::click() } else { Sense::hover() });
     let face = match () {
         _ if on && focused => "controls/list_row_selected",
         _ if on || focused && resp.hovered() => "controls/list_row_hover",
@@ -486,27 +506,61 @@ fn row(ui: &mut Ui, m: &Modern, r: &super::super::select::RowView, on: bool, foc
     };
     super::rows::face(ui.painter(), m, rect, face, Color32::WHITE);
     let [_, race, job, level, area] = &r.info;
-    let top = rect.min.y + 14.0;
-    let strong = FontId::new(m.theme.ui, FontFamily::Name(super::STRONG.into()));
+    let top = rect.min.y + 18.0;
+    let strong = FontId::new(m.theme.title * 1.15, FontFamily::Name(super::STRONG.into()));
     ui.painter().text(pos2(rect.min.x + 24.0, top), Align2::LEFT_CENTER, &r.name, strong, tint(m, r.tint));
-    ui.painter().text(pos2(rect.max.x - 12.0, top), Align2::RIGHT_CENTER, format!("{job} {level}"), FontId::proportional(m.theme.small), m.theme.color("gold"));
-    let low = rect.max.y - 13.0;
-    ui.painter().text(pos2(rect.min.x + 24.0, low), Align2::LEFT_CENTER, race, FontId::proportional(m.theme.small), m.theme.color("muted"));
-    ui.painter().text(pos2(rect.max.x - 12.0, low), Align2::RIGHT_CENTER, area, FontId::proportional(m.theme.small), m.theme.color("muted"));
+    ui.painter().text(pos2(rect.max.x - 12.0, top), Align2::RIGHT_CENTER, format!("{job} {level}"), FontId::proportional(m.theme.ui), m.theme.color("gold"));
+    let low = rect.max.y - 15.0;
+    ui.painter().text(pos2(rect.min.x + 24.0, low), Align2::LEFT_CENTER, race, FontId::proportional(m.theme.ui), m.theme.color("muted"));
+    ui.painter().text(pos2(rect.max.x - 12.0, low), Align2::RIGHT_CENTER, area, FontId::proportional(m.theme.ui), m.theme.color("muted"));
     resp
 }
 
-/// The list at the left: every character, the cursor's details, the counts and the help line.
+/// A panel's top left that puts its bottom right (or bottom left) at `corner`, from last frame's size.
+fn from_bottom(m: &Modern, id: &str, width: f32, corner: egui::Pos2, right: bool) -> egui::Pos2 {
+    let h = m.rects.borrow().get(id).map_or(0.0, |r| r.height());
+    pos2(if right { corner.x - width } else { corner.x }, corner.y - h)
+}
+
+/// As retail's screen: the list at the bottom right (its name list), the cursor's details at the bottom left (its
+/// info panel), the counts at the top right; the help line under the list.
 fn list_panel(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
     let m = p.m;
     let screen = p.ctx.content_rect();
     let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let title = if v.deleting { gu.lobby_msg(8, 0x6a, "Delete Character") } else { "Select Character".to_string() };
     let title = title.lines().next().unwrap_or_default().to_string();
-    let at = pos2(screen.width() * 0.0121, screen.height() * 0.06);
-    p.panel_at("select", Some(Title { icon: Some("icons/party"), text: &title, note: None }), W + 44.0, at, |ui| {
+    let (gap, width) = (screen.width() * 0.0121, W + 44.0);
+    let bottom = screen.max.y - screen.height() * 0.05;
+    // The counts, top right.
+    if !v.counts.is_empty() {
+        let at = pos2(screen.max.x - gap - 360.0, screen.min.y + screen.height() * 0.04);
+        p.panel_at("select counts", None, 360.0, at, |ui| {
+            for c in &v.counts {
+                ui.label(egui::RichText::new(c).size(m.theme.ui).color(m.theme.color("muted")));
+            }
+        });
+    }
+    // The cursor's details, bottom left.
+    if let Some(r) = v.rows.get(v.cursor) {
+        let at = from_bottom(m, "select details", 340.0, pos2(screen.min.x + gap, bottom), false);
+        p.panel_at("select details", None, 340.0, at, |ui| {
+            ui.label(egui::RichText::new(&r.name).size(m.theme.title * 1.35).family(FontFamily::Name(super::STRONG.into())).color(tint(m, r.tint)));
+            ui.add_space(4.0);
+            for (label, value) in v.labels.iter().zip(&r.info) {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(label).size(m.theme.ui).color(m.theme.color("muted")));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(egui::RichText::new(value).size(m.theme.ui * 1.05).color(m.theme.color("text")));
+                    });
+                });
+            }
+        });
+    }
+    let at = from_bottom(m, "select", width, pos2(screen.max.x - gap, bottom), true);
+    p.panel_at("select", Some(Title { icon: Some("icons/party"), text: &title, note: None }), width, at, |ui| {
         let focused = v.list_focus;
-        let tall = screen.height() * 0.5;
+        let tall = screen.height() * 0.55;
         egui::ScrollArea::vertical().id_salt("select rows").max_height(tall).auto_shrink([false, true]).show(ui, |ui| {
             for (k, r) in v.rows.iter().enumerate() {
                 let resp = row(ui, m, r, k == v.cursor, focused);
@@ -523,22 +577,6 @@ fn list_panel(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
                 ui.add_space(2.0);
             }
         });
-        // The cursor's details (retail's info panel): World, Race, Job, Level, Area.
-        if let Some(r) = v.rows.get(v.cursor) {
-            ui.add_space(8.0);
-            for (label, value) in v.labels.iter().zip(&r.info) {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(label).size(m.theme.small).color(m.theme.color("muted")));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(egui::RichText::new(value).size(m.theme.small).color(m.theme.color("text")));
-                    });
-                });
-            }
-        }
-        ui.add_space(8.0);
-        for c in &v.counts {
-            ui.label(egui::RichText::new(c).size(m.theme.small).color(m.theme.color("muted")));
-        }
         if !v.deleting && v.options.is_none() && focused {
             ui.add_space(6.0);
             let label = gu.focus_text("menu    chfwin", 0)[1].clone().unwrap_or_else(|| "Settings".into());
@@ -548,7 +586,7 @@ fn list_panel(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
         }
         if !v.help.is_empty() {
             ui.add_space(6.0);
-            ui.label(egui::RichText::new(&v.help).size(m.theme.small).color(m.theme.color("muted")));
+            ui.label(egui::RichText::new(&v.help).size(m.theme.ui).color(m.theme.color("muted")));
         }
     });
 }
@@ -558,7 +596,9 @@ fn windows(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
     let m = p.m;
     let screen = p.ctx.content_rect();
     let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
-    let side = pos2(screen.width() * 0.0121 + W + 56.0, screen.height() * 0.06);
+    // Left of the list (bottom right), level with its top.
+    let list = m.rects.borrow().get("select").copied().unwrap_or(egui::Rect::from_min_size(pos2(screen.max.x - W - 60.0, screen.height() * 0.4), vec2(W, 200.0)));
+    let side = pos2(list.min.x - 264.0 - 12.0, list.min.y);
     // A column of buttons (chfwin, chswin): the cursor's lit; (hovered, clicked) child.
     let column = |ui: &mut Ui, rows: &[String], cur: u16, out: &mut Pointer| {
         for (k, t) in rows.iter().enumerate() {
@@ -566,7 +606,7 @@ fn windows(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
             let (r, resp) = ui.allocate_exact_size(vec2(220.0, 28.0), Sense::click());
             let face = if child == cur { "controls/list_row_selected" } else if resp.hovered() { "controls/list_row_hover" } else { "controls/list_row_normal" };
             super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
-            ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, t, FontId::proportional(m.theme.small), m.theme.color("text"));
+            ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, t, FontId::proportional(m.theme.ui), m.theme.color("text"));
             if resp.hovered() && moved {
                 out.child.0 = Some(child);
             }
@@ -642,8 +682,4 @@ fn windows(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
             ui.painter().text(pos2(r.min.x + 12.0, r.center().y), Align2::LEFT_CENTER, shown, FontId::proportional(m.theme.ui), m.theme.color("text"));
         });
     }
-}
-
-fn ctx_repaint(ui: &Ui) {
-    ui.ctx().request_repaint();
 }

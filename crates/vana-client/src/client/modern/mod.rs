@@ -46,7 +46,7 @@ use super::World;
 use super::game_ui::GameUi;
 use egui::{Color32, Context, FontFamily, FontId, Id, LayerId, Order, Pos2, Rect, Sense, Shape, Ui, Vec2, pos2, vec2};
 pub use command::{BarFocus, CmdMenu, bar_focus, key as command_key};
-pub use config::key as config_key;
+pub use config::{key as config_key, lobby_key as lobby_config_key, lobby_settings as lobby_config_settings};
 pub use journal::key as journal_key;
 pub use status::key as status_key;
 pub use storage::key as storage_key;

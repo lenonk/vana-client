@@ -900,10 +900,9 @@ impl SettingsUi {
     }
 }
 
-/// A row as the modern layer draws it: its heading, its help (with when a change shows), its controls.
+/// A row as the modern layer draws it: its heading and controls (its help is the page's line while it has the cursor).
 pub struct VRow {
     pub label: String,
-    pub help: String,
     pub ctl: VCtl,
 }
 
@@ -925,12 +924,15 @@ pub struct View {
     pub help: String,
 }
 
-fn when_text(w: When) -> &'static str {
-    match w {
-        When::Now => "",
-        When::NextZone => " Takes effect at the next zone load.",
-        When::Restart => " Takes effect on restart.",
-    }
+/// A help line for the modern page: without the Config tool's value numbers ("0034: ") and our "(not retail)" notes.
+fn plain(help: &str) -> String {
+    let body = match help.split_once(": ") {
+        Some((head, rest)) if head.starts_with(|c: char| c.is_ascii_digit()) && head.chars().all(|c| c.is_ascii_digit() || c == ' ' || c == '/') => rest,
+        _ => help,
+    };
+    let body = body.replace(" (not retail)", "");
+    let mut c = body.chars();
+    c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
 }
 
 impl SettingsUi {
@@ -943,12 +945,12 @@ impl SettingsUi {
                     if i < n {
                         let on = self.s.mods[i].enabled;
                         let ctl = VCtl::Buttons(vec![("ON".into(), on), ("OFF".into(), !on), ("Move".into(), false)]);
-                        Some(VRow { label: format!("{}. {}", i + 1, self.s.mods[i].name), help: format!("Mod pack {} of {n}: a higher one's textures win.", i + 1), ctl })
+                        Some(VRow { label: format!("{}. {}", i + 1, self.s.mods[i].name), ctl })
                     } else {
                         let p = m?.packs.get(i - n)?;
                         let name = p.path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
                         let label = m.and_then(|m| m.progress(&p.slug)).map_or(name.clone(), |pm| format!("{}%  {name}", pm / 10));
-                        Some(VRow { label, help: format!("{} game file{} to install.", p.files, if p.files == 1 { "" } else { "s" }), ctl: VCtl::Buttons(vec![("Install".into(), false)]) })
+                        Some(VRow { label, ctl: VCtl::Buttons(vec![("Install".into(), false)]) })
                     }
                 })
                 .collect()
@@ -963,11 +965,11 @@ impl SettingsUi {
                             VCtl::Slider { n, at, shown: self.shown(r) }
                         }
                     };
-                    VRow { label: r.label.to_string(), help: format!("{}{}", r.help, when_text(r.when)), ctl }
+                    VRow { label: r.label.to_string(), ctl }
                 })
                 .collect()
         };
-        View { title: self.title(), tabs: self.tabs(), tab: self.tab, rows, row: self.row, col: self.col, edit: self.edit, help: self.help() }
+        View { title: self.title(), tabs: self.tabs(), tab: self.tab, rows, row: self.row, col: self.col, edit: self.edit, help: plain(&self.help()) }
     }
 
     /// The modern layer's mouse: page `t`.
@@ -1274,6 +1276,14 @@ fn marker(gu: &mut GameUi, x: f32, y: f32, w: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plain_help() {
+        assert_eq!(plain("0034: full screen or a window."), "Full screen or a window.");
+        assert_eq!(plain("0001 / 0002: the window's size."), "The window's size.");
+        assert_eq!(plain("The monitor to use (not retail)."), "The monitor to use.");
+        assert_eq!(plain("Window: the window's shape."), "Window: the window's shape.");
+    }
 
     #[test]
     fn steps_and_store() {
