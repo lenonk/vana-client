@@ -338,10 +338,14 @@ Milestone 1:
   Left / Right), Right or Enter go to the rows, Left or Escape back (World::journal_on_list; the cursor of the column
   without the keys dims). The macro book list, both pages as one column, runs Up / Down across them (Left / Right do
   nothing there).
-- The treasure pool (2026-10-27, modern/loot.rs over treasure.rs): one panel docked on the action menu, the pool's rows
-  oldest first (icon, name and count, the best lot and its lotter, ours or "Passed"), Lot / Pass on the cursor's row
-  (lootope's choices, lit while it is open; once lotted our lot stands where Lot was), "Pass on the rest" (lnowin).
-  Retail's keys stay (Enter, Up / Down, Num+ to lnowin); hover moves the cursor, a click on a button acts. The party
+- The treasure pool (2026-10-27, modern/loot.rs over treasure.rs): one panel docked on the item info of its cursor's
+  row, which rides the action menu; the pool's rows oldest first (icon, name and count, the best lot and its lotter,
+  ours or "Passed"), Lot / Pass on the cursor's row (lootope's choices; once lotted our lot stands where Lot was),
+  "Pass on the rest" (lnowin). Keys (2026-10-31, user: "No way to lot or pass with the keyboard"; retail's two-step
+  lootope with Up / Down was hidden behind side-by-side buttons): the cursor's row always has a lit choice (Lot, or
+  Pass once lotted), so Enter acts at once; Left / Right pick Lot or Pass; Up / Down the rows and, past the last, Pass
+  on the rest; Escape closes the pool; Num+ still goes to Pass on the rest. A click on a row moves the cursor, a click
+  on a button acts. The party
   window shows retail's chest (fontshp 0x7a) on its top edge while the pool holds items. Live with a bot in the party
   (a solo pool hands items out at once) and !addtreasure.
 - Shops (2026-10-27, modern/shop.rs over shop.rs): NPC and guild shops and Set Bazaar's prices in the command

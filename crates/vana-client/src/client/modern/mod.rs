@@ -497,8 +497,8 @@ fn default_place(id: &str) -> Place {
         // (mode 0, flag 0x1000).
         "window" => at(0.0047, 0.0347),
         "iteminfo" => on("combat"),
-        // The treasure pool rides the action menu it is opened from.
-        "loot" => on("combat"),
+        // The treasure pool rides the action menu it is opened from, over the item info of its cursor's row.
+        "loot" => on("iteminfo"),
         // /check beside the command window's place.
         "check" => at(0.2, 0.0347),
         "blklist" => at(0.2, 0.0347),

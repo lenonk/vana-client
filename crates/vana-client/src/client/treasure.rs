@@ -184,7 +184,22 @@ pub fn update(w: &mut World) {
     if l.ope.as_ref().is_some_and(|o| o.slot as usize != at || o.item != w.treasure[at].item) {
         l.ope = None;
     }
+    // The modern panel's Lot / Pass stand on the cursor's row (ours): the choice stays open there, on Pass once lotted.
+    let s = &w.treasure[at];
+    if w.modern && !l.done && l.ope.is_none() && !passed(s) {
+        l.ope = Some(Ope { slot: at as u8, item: s.item, own_lot: s.own_lot, cursor: if lotted(s) { 2 } else { 1 }, row: l.cursor });
+    }
     w.loot = Some(l);
+}
+
+/// Our lot on a slot, cast or sent. Our lot itself decides once known: LSB's 0x0D3 for it comes with EntryFlg off.
+fn lotted(s: &Slot) -> bool {
+    s.own_lot > 0 || (s.own_lot == 0 && s.acted == 2)
+}
+
+/// Passed on a slot, or the pass sent.
+fn passed(s: &Slot) -> bool {
+    s.own_lot == -1 || (s.own_lot == 0 && s.acted == 1)
 }
 
 /// FUN_100eb800: the first empty inventory slot (container 0, 1..size-1).
@@ -217,6 +232,9 @@ fn pass(w: &mut World, slot: u8) {
 /// Keys (spec 3): lootope Up / Down / Enter / Escape; lnowin Enter (pass on every slot not acted on), Escape; loot Down /
 /// Up one row (no wrap), Right / Left the last / first row, Enter lootope (SE 0004 on a passed row), Escape closes.
 pub fn key(w: &mut World, key: egui::Key) {
+    if w.modern && modern_key(w, key) {
+        return;
+    }
     let Some(mut l) = w.loot.clone() else { return };
     let rows = rows(w);
     let n = rows.len() as u16;
@@ -379,8 +397,9 @@ fn lnowin_off(gu: &GameUi, w: &World, sw: f32, sh: f32) -> (f32, f32) {
 
 /// Num+ (list message 8): the focus to lnowin, SE 0013; Num+ on lnowin gives it back.
 pub fn num_plus(w: &mut World) {
-    if let Some(l) = w.loot.as_mut().filter(|l| l.ope.is_none()) {
-        l.done = !l.done;
+    let modern = w.modern;
+    if let Some(l) = w.loot.as_mut().filter(|l| l.ope.is_none() || modern) {
+        (l.done, l.ope) = (!l.done, None);
         w.sounds.push(13);
     }
 }
@@ -521,16 +540,67 @@ pub(super) fn view(w: &World) -> Option<View> {
     Some(View { rows, cursor: l.cursor, ope, done: l.done })
 }
 
-/// The cursor onto row `k` (from 1) with nothing open over loot. True when it moved.
+/// The cursor onto row `k` (from 1) with nothing open over loot (the modern panel's standing choice moves with it).
+/// True when it moved.
 pub(super) fn set_cursor(w: &mut World, k: u16) -> bool {
     let n = rows(w).len() as u16;
-    match w.loot.as_mut().filter(|l| l.ope.is_none() && !l.done && (1..=n).contains(&k)) {
+    let modern = w.modern;
+    match w.loot.as_mut().filter(|l| (l.ope.is_none() || modern) && !l.done && (1..=n).contains(&k)) {
         Some(l) if l.cursor != k => {
-            l.cursor = k;
+            (l.cursor, l.ope) = (k, None);
             true
         }
         _ => false,
     }
+}
+
+/// The modern panel's keys (ours: its Lot / Pass sit side by side on the cursor's row, `update` keeps that choice
+/// open): Up / Down the rows and, past the last, Pass on the rest; Left / Right Lot or Pass; Escape closes the pool.
+/// Enter is retail's (the lit choice, or Pass on the rest). False for the keys left to retail's handling.
+fn modern_key(w: &mut World, key: egui::Key) -> bool {
+    let Some(mut l) = w.loot.clone() else { return false };
+    let n = rows(w).len() as u16;
+    let moved = match key {
+        egui::Key::ArrowUp if l.done => {
+            l.done = false;
+            true
+        }
+        egui::Key::ArrowUp if l.cursor > 1 => {
+            (l.cursor, l.ope) = (l.cursor - 1, None);
+            true
+        }
+        egui::Key::ArrowDown if !l.done && l.cursor < n => {
+            (l.cursor, l.ope) = (l.cursor + 1, None);
+            true
+        }
+        egui::Key::ArrowDown if !l.done => {
+            (l.done, l.ope) = (true, None);
+            true
+        }
+        egui::Key::ArrowLeft | egui::Key::ArrowRight => {
+            let to = if key == egui::Key::ArrowLeft { 1 } else { 2 };
+            // A lotted row shows our lot where Lot was: only Pass is left.
+            match l.ope.as_mut() {
+                Some(o) if o.cursor != to && !(to == 1 && lotted(&w.treasure[o.slot as usize])) => {
+                    o.cursor = to;
+                    true
+                }
+                _ => false,
+            }
+        }
+        egui::Key::ArrowUp | egui::Key::ArrowDown => false,
+        egui::Key::Escape => {
+            w.sounds.push(Ui::Cancel as u32);
+            w.loot = None;
+            return true;
+        }
+        _ => return false,
+    };
+    if moved {
+        w.sounds.push(Ui::Cursor as u32);
+    }
+    w.loot = Some(l);
+    true
 }
 
 /// Cast Lot (`lot`) or Pass on row `k` as lootope would: the row's lootope opened on that choice, then Enter.
