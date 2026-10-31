@@ -266,6 +266,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - Portability to Windows and macOS: see "Portability notes" in MODLOG. Windows (MinGW cross build, tested by the
   user in WinBoat): release/build-windows.sh links everything in (no MinGW DLLs); the exe icon is a resource
   (crates/vana-client/build.rs, assets/vana-client.rc / .ico; not seen in Explorer yet). On a real Windows PC
-  (user, 2026-10-28) a monitor drag or a monitor choice goes wrong, and Play and the modern UI crash. Parked. The
+  (monitors at 100 / 150 / 200%) monitor drags, the Monitor row and the Play and modern UI crashes fixed and tested
+  2026-10-31 (MODLOG "Windows: monitors of different scale ..."); the modern UI follows the monitor's scale. The
   native MSVC setup (.vscode, docs/building-windows.md; builds on Windows, user 2026-10-28) is committed; build.rs
   links the icon through embed-resource for both MSVC and the MinGW cross build.
