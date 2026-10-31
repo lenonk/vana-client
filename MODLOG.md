@@ -8489,8 +8489,10 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   at tick 70); the filter saying no deletes it at once; off -> `dead` (-> `stop`: soft stop, sound 7197) and the
   actor goes 90 ticks later. Placement: the owner's ground place (FUN_100c9810); scale info[10 + size] / 100 (0.37 /
   0.75 / 1.12 / 1.51). The luopan is an ordinary pet NPC (files 53145..53151, 53160), already drawn.
-- The actor destructor (FUN_10082b10, every actor) walks its caster (+0x68) and target (+0x6c) link lists and unlinks
-  each effect: they run on without the actor, and FUN_1003be10 gives the identity for a mode whose actor is null
+- (Corrected 2026-10-30, "An actor's deletion takes its clones and tasks": clones and scheduler tasks are deleted,
+  only a generator run as its own template runs on.) The actor destructor (FUN_10082b10, every actor) walks its caster
+  (+0x68) and target (+0x6c) link lists and unlinks each effect: they run on without the actor, and FUN_1003be10
+  gives the identity for a mode whose actor is null
   (asm 0x1003c177 mode 1, 0x1003c1b0 mode 2 -> 0x1003c5f0). Ours: Effects::forget_actor (tasks, instances, pending
   starts on its files dropped), called on despawn and for the aura; attach_matrix returns the identity for a missing
   actor (so op 0x11 pulls such generators to the origin, as retail).
@@ -12516,3 +12518,55 @@ since "Ship voyages: the moving world" listed them as not done.
   the row lit as tracked, offered Stop tracking and stopped its 10 s refresh (it keyed off the index alone).
 - Ours (modern panel only; retail's map shows nothing either way): a track not confirmed within 2 s (Scan.asked) is
   dropped with the error sound, and the list refreshes again. Not seen live.
+
+## An actor's deletion takes its clones and tasks; fx-soak (2026-10-30)
+
+- User report: the frame rate fell to about 40 fps after a while in Garlaige Citadel; F12 showed fx draw at 14.5 of
+  17.8 ms, 1,095 live elements. The log's "effects live" line had 12 copies of each of model 52742's (model id 2447)
+  generators (2063, 2185, dis0, lit0, lit1, pou0..pou4, ras0/1, sin0/1, tub0/1, uz00): that monster had despawned
+  and come back 11 times, each new entity running `init` -> `mse0` -> (sub-animation 1) `ids1` -> `efon`, which
+  stops its generators on the actor pair (`efkl`, op 0x1e) and starts them again with op 0x02 (endless 0x1000
+  clones). The old sets had lost their actor, so `efkl` no longer matched them, and they ran on.
+- Retail deletes them with the actor. CXiSkeletonActor's destructor (vtable 0x10330f40, FUN_100c5540 ->
+  FUN_100c5c00) kills its held dust (+0x764) and `fvib` (+0x814) clones with FUN_100543a0, then FUN_10082b10 walks
+  the caster (+0x68) and target (+0x6c) links calling each link's vtable +0x10 / +0x14:
+  - CMoGeneratorClone (constructor FUN_100536c0, vtable 0x1032b69c, link sub-object +0x30 vtable 0x1032b680):
+    FUN_10054380 / FUN_10054390 -> FUN_100543a0 (ADD ECX,-0x30; CALL; MOV AL,1): its elements deleted at once
+    (FUN_100538e0(0), no burst), unlinked from both actors, the refcount forced to 0 and the clone freed.
+  - CMoSchedularTask (vtable 0x1032b860, link +0x34 vtable 0x1032b844): FUN_10057cf0 / FUN_10057d10 delete the task
+    (vtable +0x18(1)).
+  - The base generator (CMoGenerator, vtables 0x1032b114 / 0x1032b140: FUN_10049290 / FUN_100492a0) only unlinks and
+    returns 0: a generator run as its own template runs on, at the identity.
+  - Both kinds of clone are linked: model-load clones (FUN_10085060, the actor as caster) and op 0x02's (FUN_10057fb0
+    asm 0x10059afc, the task pair); element sub-clones (FUN_1004e8d0) inherit their parent's pair. FUN_100496f0
+    never ends an endless clone by itself (it returns 1 only when the duration +0xd0 is set and reached).
+  - Nothing else in the despawn path FUN_10092900 runs `efof` / `efkl` / `dead` *(found by a research pass over
+    FUN_10092870 / 10092800 / 10092760 / 10092710 / 100926c0)*.
+- Ours: Effects::forget_actor deletes the tasks with the actor as actor1 or actor2 and the instances linked to it that
+  are clones (op 0x02's, the model file's), footstep dust / prints / the wading ripple (Owner::Step) or an element's
+  sub-clones (driven); the others forget it as before. Its wading and footstep-folder entries go too. Test
+  fx::tasks::tests::despawn_takes_clones (model 52742 in sub-animation 1, three spawns: none left; without the fix
+  16 left after each).
+- `vana-client fx-soak --out FILE [--model ID] [--cycles 3] [--ticks 300] [--settle 600]`: every 0x00E model id, on a
+  stand-in actor in sub-animations 0 and 1: `init` and its model generators run, the actor despawns, `--cycles`
+  times; a row for every model with effects left after a despawn (marked template / endless) or a spawn starting more
+  than the one before. Without the fix it flags model 2447 (16, 32, 48 started).
+- fx-soak's first full run (with the fix) still flagged 180 of 6314 model runs, all bursts: model 298 (file 1598)
+  `st00` runs op 0x3f tm10 -> tm11, tm00 -> tm01, gp00 -> gp01 (B static, op 1 life 0). Retail (FUN_10057fb0):
+  - op 0x3f with an attached A (asm 0x10059f98..0x1005a027): C = a new clone of B (FUN_100536c0(B, 0, 0, 1)),
+    linked to the task's actor1 / actor2 when B is attached (+0x64 = the task); FUN_10053a00(A, pair, C) runs
+    FUN_100538e0(A clone, C) on each A clone on the pair: per live A element C's count is reset (FUN_10053370), one
+    emission with the A element as parent (FUN_100496f0), the A element deleted, then C soft-stopped (FUN_10053890).
+    With no A clone a static B emits once and C is deleted (FUN_100543a0): nothing. An unattached static A morphs as
+    its template into B's (asm 0x10059f66..0x10059f86).
+  - end-stream op 1 (FUN_1004e720, asm 0x1004e7e6..0x1004e868) runs the resource itself: a static one's live elements
+    are deleted first (FUN_100538e0(G, 0)), then the reset, one emission, the soft stop: one burst element per
+    template at most. Emission op 0x3c (asm 0x1004ee0e..0x1004ee36) only zeroes +0xcc: a static one emits once per
+    start (it emits only while +0x9c, the count since its start, is 0: asm 0x1004a605..0x1004a623).
+  - A static element (max life 0) never ages and is never deleted by its generator handle going; elements have no
+    actor links (FUN_10044970).
+  Ours had given each burst its own instance (an endless element each). Now: op 0x3f as above; bursts run on the
+  generator's one template instance (Effects::template_inst), op 1 clearing a static one's elements first; an
+  unattached static generator started by op 0x02 restarts its running template (FUN_100531d0, Effects::restart;
+  asm 0x100599e5..0x10059a39 links the template to the pair and restarts it) instead of a second instance.
+  fx-soak then: 0 of 6314 runs leave anything (growth = a rise on every spawn; random emissions wobble).

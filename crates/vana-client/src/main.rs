@@ -778,6 +778,24 @@ enum Cmd {
         #[arg(long, value_delimiter = ',')]
         only: Vec<u32>,
     },
+    /// Leak audit: every monster / NPC model (0x00E model ids) spawned on a stand-in actor, its `init` and model
+    /// generators run, then the actor despawned, `--cycles` times in sub-animations 0 and 1. Every effect left after a
+    /// despawn, or a spawn starting more than the first, is a leak: one TSV row per model with any, and a summary.
+    FxSoak {
+        #[arg(long)]
+        out: PathBuf,
+        #[arg(long, default_value_t = 3)]
+        cycles: u32,
+        /// Ticks each spawn runs before its despawn.
+        #[arg(long, default_value_t = 300)]
+        ticks: u32,
+        /// Ticks after each despawn before what is left is counted (long-lived elements end by then).
+        #[arg(long, default_value_t = 600)]
+        settle: u32,
+        /// Only this model id.
+        #[arg(long)]
+        model: Option<u16>,
+    },
     /// Render a zone offscreen to a PNG. Coordinates are game units (Y points down).
     ZoneShot {
         zone: u32,
@@ -1185,6 +1203,7 @@ fn main() -> Result<()> {
         Cmd::TextShot { text, font, lang, color, bg, alpha, zoom, out } => text_shot(&text, &font, &lang, &color, &bg, alpha, zoom, &out),
         Cmd::FxShot { zone, out, eye, caster, victim, category, anim, frames, every, hour, dust, file, walk, despawn } => fx_shot(zone, &out, &eye, &caster, &victim, (category, anim, dust, file), &walk, frames, every, hour, despawn),
         Cmd::FxSweep { out, kinds, ticks, mob_models, only } => fx_sweep(&out, &kinds, ticks, mob_models.as_deref(), &only),
+        Cmd::FxSoak { out, cycles, ticks, settle, model } => fx_soak(&out, cycles, ticks, settle, model),
         Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects, moon, start, sched, sub, voyage } => {
             use glam::Vec3;
             let cfg = config::Config::load();
@@ -2073,6 +2092,115 @@ impl fx::Actors for SweepActors {
     fn models(&self) -> Vec<(u32, Vec<u32>)> {
         Vec::new()
     }
+}
+
+/// fx-soak's stand-in: SWEEP_MOB with a model's files while `present` (gone, it has no place and no model), in
+/// sub-animation `sub`; SWEEP_PC a Hume.
+struct SoakActors {
+    files: (Vec<u32>, Vec<u32>),
+    present: std::cell::Cell<bool>,
+    sub: std::cell::Cell<u8>,
+}
+
+impl fx::Actors for SoakActors {
+    fn matrix(&self, id: u32) -> Option<glam::Mat4> {
+        (id != SWEEP_MOB || self.present.get()).then(|| SweepActors { mob_files: Default::default(), fx_files: Default::default() }.matrix(id)).flatten()
+    }
+    fn point(&self, _: u32, k: u16) -> Option<glam::Vec3> {
+        Some(if k == 0 { glam::Vec3::ZERO } else { glam::Vec3::new(0.0, -1.2, 0.0) })
+    }
+    fn scale(&self, _: u32) -> f32 {
+        1.0
+    }
+    fn files(&self, id: u32) -> (Vec<u32>, Vec<u32>) {
+        if id == SWEEP_MOB { self.files.clone() } else { (vec![8392], vec![9672, 7072]) }
+    }
+    fn hidden(&self, _: u32) -> bool {
+        false
+    }
+    fn models(&self) -> Vec<(u32, Vec<u32>)> {
+        if self.present.get() { vec![(SWEEP_MOB, self.files.1.iter().chain(&self.files.0).copied().collect())] } else { Vec::new() }
+    }
+    fn sub_anim(&self, _: u32) -> u8 {
+        self.sub.get()
+    }
+}
+
+fn fx_soak(out: &std::path::Path, cycles: u32, ticks: u32, settle: u32, only: Option<u16>) -> Result<()> {
+    use std::fmt::Write as _;
+    let cfg = config::Config::load();
+    let index = std::sync::Arc::new(dat::DatIndex::open(&cfg.ffxi_dir())?);
+    let keys = dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?)?;
+    let mut fx = fx::Effects::new();
+    fx.set_keys(std::sync::Arc::new(keys));
+    fx.set_index(index.clone());
+    fx.set_global(fx::lib::Library::load(0, index.read(0)?)?);
+    let frame = fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: glam::Mat4::IDENTITY, view_rot: glam::Mat4::IDENTITY, eye: glam::Vec3::new(0.0, -2.0, -6.0), draw_distance: 2000.0, area_light: glam::Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+    let mut rows = String::from("model\tfile\tsub\tstarted\tleft_tasks\tleft\n");
+    let (mut runs, mut leaks) = (0, 0);
+    let models: Vec<u16> = match only {
+        Some(m) => vec![m],
+        None => (0..6000).collect(),
+    };
+    for m in models {
+        let file = dat::npc::model_file(m);
+        if index.path(file).is_none() {
+            continue;
+        }
+        let Ok(ch) = dat::npc::load_npc(&index, &dat::npc::NpcLook::Model(m)) else { continue };
+        let all: Vec<u32> = ch.files.iter().chain(&ch.part_files).copied().collect();
+        for sub in [0u8, 1] {
+            let actors = SoakActors { files: (ch.part_files.clone(), ch.files.clone()), present: std::cell::Cell::new(true), sub: std::cell::Cell::new(sub) };
+            fx.preload(&all);
+            let t0 = std::time::Instant::now();
+            while fx.loading_count() > 0 && t0.elapsed().as_secs() < 5 {
+                fx.poll_loads();
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            let (mut started, mut left, mut left_tasks) = (Vec::new(), Vec::new(), 0);
+            for _ in 0..cycles {
+                actors.present.set(true);
+                fx.on_scheduler_quiet(SWEEP_MOB, u32::from_le_bytes(*b"init"));
+                for _ in 0..ticks {
+                    fx.tick(&frame, &actors);
+                }
+                started.push(fx.live_instances().len());
+                fx.forget_actor(SWEEP_MOB);
+                actors.present.set(false);
+                for _ in 0..settle {
+                    fx.tick(&frame, &actors);
+                }
+                left_tasks = left_tasks.max(fx.task_count());
+                left.extend(fx.live_instances());
+            }
+            // One model: what is left, in full.
+            if only.is_some() {
+                for l in fx.describe_insts() {
+                    println!("sub {sub}: {l}");
+                }
+                for (k, e) in fx.elems.iter().enumerate() {
+                    if let Some(e) = e {
+                        println!("sub {sub}: elem {k} inst {} life {} max {} flags {:#x} child {:?} back {}", e.inst, e.life, e.max_life, e.flags, e.child, e.back.is_some());
+                    }
+                }
+            }
+            fx.reset_runs();
+            runs += 1;
+            // A rise on every spawn (random emissions wobble by a few).
+            let grew = started.len() > 2 && started.windows(2).all(|w| w[1] > w[0]);
+            if left.is_empty() && left_tasks == 0 && !grew {
+                continue;
+            }
+            leaks += 1;
+            let mut names: Vec<String> = left.iter().map(|(n, f, clone, endless, by)| format!("{n}@{f}{}{}[{by}]", if *clone { "" } else { "(template)" }, if *endless { "(endless)" } else { "" })).collect();
+            names.sort();
+            names.dedup();
+            let _ = writeln!(rows, "{m}\t{file}\t{sub}\t{}\t{left_tasks}\t{}", started.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(","), names.join(" "));
+        }
+    }
+    std::fs::write(out, rows)?;
+    println!("fx-soak: {runs} model runs, {leaks} with effects left after a despawn or growing; {}", out.display());
+    Ok(())
 }
 
 /// The effect file of an action (fx/tasks.rs effect_base).

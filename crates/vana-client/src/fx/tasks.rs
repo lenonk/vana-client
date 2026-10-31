@@ -350,8 +350,10 @@ impl Effects {
         }
     }
 
-    /// The actor's destructor (FUN_10082b10): every effect that has it as caster or target forgets it and runs on
-    /// without (the attach modes then give the identity, 0x1003c5f0); starts waiting on its own files go.
+    /// The actor's destructor (FUN_100c5c00 -> FUN_10082b10, its caster and target links): every scheduler task and
+    /// generator clone linked to it goes with it (the links' callbacks FUN_10057cf0 delete the task, FUN_10054380 ->
+    /// FUN_100543a0 the clone and its elements at once, no burst); a generator run as its own template only forgets
+    /// it and runs on (the attach modes then give the identity, 0x1003c5f0); starts waiting on its own files go.
     pub fn forget_actor(&mut self, id: u32) {
         let who = Who::Actor(id);
         let clear = |w: &mut Who| {
@@ -362,13 +364,23 @@ impl Effects {
         self.pending.retain(|p| p.actor != Some(id));
         self.equip.remove(&id);
         self.equip_calls.retain(|c| c.0 != id);
+        self.wading.remove(&id);
+        self.foot_folder.remove(&id);
         for p in &mut self.pending {
             clear(&mut p.a1);
             clear(&mut p.a2);
         }
-        for t in self.tasks.iter_mut().flatten() {
-            clear(&mut t.a1);
-            clear(&mut t.a2);
+        for t in self.tasks.iter_mut() {
+            if t.as_ref().is_some_and(|t| t.a1 == who || t.a2 == who) {
+                *t = None;
+            }
+        }
+        // Clones: op 0x02's and the model file's, the footstep dust, prints and ripple, an element's sub-clones.
+        for i in 0..self.insts.len() {
+            let linked = self.insts[i].as_ref().is_some_and(|x| x.actors.contains(&who) && (x.clone || x.driven.is_some() || matches!(x.owner, super::Owner::Step(_))));
+            if linked {
+                self.kill(i);
+            }
         }
         for x in self.insts.iter_mut().flatten() {
             x.actors.iter_mut().for_each(|w| clear(w));
@@ -1442,21 +1454,45 @@ impl Effects {
             // lone B emission when no A runs are not done.
             0x3f => {
                 let (Some(ga), Some(gb)) = (scope(self, kind::GENERATOR), self.reg.resolve(t.res.0, t.res.1, kind::GENERATOR, op.u32_at(0x10))) else { return Flow::Next };
-                let f = self.last_frame;
-                // An unattached static A morphs as its template (every instance); else FUN_10053a00's actor match. With
-                // no A running, retail's lone B emission is deleted in the same op: nothing.
+                let Some(f) = self.last_frame else { return Flow::Next };
+                // FUN_100538e0 per A element: one emission of the target with the element as parent (its count reset),
+                // the A element deleted.
                 let any = self.template_wide(ga);
-                for i in 0..self.insts.len() {
-                    if !self.insts[i].as_ref().is_some_and(|x| x.src == ga && x.driven.is_none() && (any || pair_match(x.actors, t.a1, t.a2))) {
-                        continue;
-                    }
-                    if let Some(f) = f.as_ref() {
+                let a_insts: Vec<usize> = (0..self.insts.len()).filter(|&i| self.insts[i].as_ref().is_some_and(|x| x.src == ga && x.driven.is_none() && (any || pair_match(x.actors, t.a1, t.a2)))).collect();
+                // An unattached static A morphs as its template, into B's (asm 0x10059f66..0x10059f86).
+                if any {
+                    for i in a_insts {
                         let live = self.insts[i].as_ref().map(|x| x.live.clone()).unwrap_or_default();
                         for e in live {
-                            self.burst(gb, e, f, actors);
+                            self.burst(gb, e, &f, actors, true);
                         }
+                        self.kill(i);
+                    }
+                    return Flow::Next;
+                }
+                // Else a new clone C of B, linked to the task's pair when B is attached (asm 0x10059f98..0x1005a027):
+                // A's clones on the pair burst into it; with none, a static B's lone emission goes with C at once.
+                let Some(c) = self.start(gb, Owner::Task(t.uid)) else { return Flow::Next };
+                let b_attached = self.is_attached(gb);
+                if let Some(x) = self.insts[c].as_mut() {
+                    x.clone = true;
+                    x.actors = if b_attached { [t.a1, t.a2] } else { [Who::None; 2] };
+                }
+                self.attach_now(c, actors);
+                let found = !a_insts.is_empty();
+                for i in a_insts {
+                    let live = self.insts[i].as_ref().map(|x| x.live.clone()).unwrap_or_default();
+                    for e in live {
+                        self.emit_once(c, e, true, &f, actors);
                     }
                     self.kill(i);
+                }
+                if found {
+                    if let Some(x) = self.insts[c].as_mut() {
+                        x.stopping = true;
+                    }
+                } else if self.is_static(gb) {
+                    self.kill(c);
                 }
                 Flow::Next
             }
@@ -1705,6 +1741,19 @@ impl Effects {
             }
         }
         log::debug!("effects: generator {} (DAT {}) on {:?} -> {:?}", String::from_utf8_lossy(&self.reg.libs[g.0].tree.nodes[g.1].name), self.reg.libs[g.0].file_id, t.a1, t.a2);
+        // An unattached static generator runs as its template (asm 0x100599e5..0x10059a39): the one object, linked to
+        // the task's pair (FUN_1005e090) and restarted (FUN_100531d0), never a second.
+        if !attached
+            && persistent
+            && let Some(i) = (0..self.insts.len()).find(|&i| self.insts[i].as_ref().is_some_and(|x| x.src == g && !x.clone && x.parent_elem.is_none()))
+        {
+            self.restart(i);
+            if let Some(x) = self.insts[i].as_mut() {
+                x.actors = [t.a1, t.a2];
+            }
+            self.attach_now(i, actors);
+            return Some(i);
+        }
         let i = self.start(g, Owner::Task(t.uid))?;
         // FUN_10041f40: "%d" of the task's number, ":" (the "Miss!" art) under `misv`; fixed at emission.
         let misv = self.reg.libs[t.res.0].tree.nodes[t.res.1].name == *b"misv";
@@ -2494,6 +2543,15 @@ impl Effects {
         self.shine.iter().filter_map(|(id, s)| s.tex.map(|(r, _)| (*id, r, s.u, s.v, s.tf))).collect()
     }
 
+    /// fx-soak: every live generator instance as (name, file, clone, endless, what started it).
+    pub fn live_instances(&self) -> Vec<(String, u32, bool, bool, String)> {
+        let by = |o: &super::Owner| match o {
+            super::Owner::Task(uid) => self.tasks.iter().flatten().find(|t| t.uid == *uid).map_or("task(gone)".to_string(), |t| format!("task {}", String::from_utf8_lossy(&self.reg.libs[t.res.0].tree.nodes[t.res.1].name))),
+            o => format!("{o:?}"),
+        };
+        self.insts.iter().flatten().map(|x| (String::from_utf8_lossy(&x.name).into_owned(), self.reg.libs[x.src.0].file_id, x.clone, x.life <= 0.0, by(&x.owner))).collect()
+    }
+
     pub fn reset_runs(&mut self) {
         self.trails.clear();
         self.shine.clear();
@@ -2863,6 +2921,76 @@ mod tests {
         let g = shown.iter().filter(|x| x.0 == "g000").collect::<Vec<_>>();
         assert!(g.len() == 1 && g[0].1 <= 1.0 && !g[0].2, "{shown:?}");
         assert!(fx.tasks.iter().flatten().all(|t| t.paused == 0));
+    }
+
+    /// ORC with `files` while `present`; gone, it is in no model list.
+    struct Coming {
+        files: Vec<u32>,
+        present: std::cell::Cell<bool>,
+    }
+
+    impl Actors for Coming {
+        fn matrix(&self, id: u32) -> Option<Mat4> {
+            Two.matrix(id)
+        }
+        fn point(&self, id: u32, k: u16) -> Option<Vec3> {
+            Two.point(id, k)
+        }
+        fn scale(&self, _: u32) -> f32 {
+            1.0
+        }
+        fn files(&self, _: u32) -> (Vec<u32>, Vec<u32>) {
+            (Vec::new(), self.files.clone())
+        }
+        fn hidden(&self, _: u32) -> bool {
+            false
+        }
+        fn models(&self) -> Vec<(u32, Vec<u32>)> {
+            if self.present.get() { vec![(ORC, self.files.clone())] } else { Vec::new() }
+        }
+        // mse0 takes ids1 -> efon with sub-animation 1 (ids0 -> efof with 0).
+        fn sub_anim(&self, _: u32) -> u8 {
+            1
+        }
+    }
+
+    /// FUN_100c5c00 -> FUN_10082b10: a despawned actor's tasks and generator clones go with it. Model 52742 (a Garlaige
+    /// Citadel monster) runs `init` -> `mse0` -> `efon`, whose op 0x02 clones loop endlessly; three spawns leave no
+    /// set behind (they piled up, 12 sets after 11 respawns).
+    #[test]
+    fn despawn_takes_clones() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let index = std::sync::Arc::new(index);
+        let mut fx = Effects::new();
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        fx.preload(&[52742]);
+        while fx.reg.lib_of(52742).is_none() {
+            fx.poll_loads();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let model = fx.reg.lib_of(52742).unwrap();
+        let a = Coming { files: vec![52742], present: std::cell::Cell::new(true) };
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        let live = |fx: &Effects| fx.insts.iter().flatten().filter(|x| x.src.0 == model).count();
+        let mut counts = Vec::new();
+        for _ in 0..3 {
+            a.present.set(true);
+            fx.on_scheduler_quiet(ORC, u32::from_le_bytes(*b"init"));
+            for _ in 0..120 {
+                fx.tick(&f, &a);
+            }
+            counts.push(live(&fx));
+            fx.forget_actor(ORC);
+            a.present.set(false);
+            for _ in 0..5 {
+                fx.tick(&f, &a);
+            }
+            assert_eq!(live(&fx), 0);
+            assert!(fx.tasks.iter().flatten().all(|t| t.a1 != Who::Actor(ORC) && t.a2 != Who::Actor(ORC)));
+        }
+        assert!(counts[0] > 0 && counts.iter().all(|&c| c == counts[0]), "{counts:?}");
     }
 
     /// FUN_100d62c0: a part file's looping generators start on the actor too (Hume M main 8700: `gm01..gm06`).

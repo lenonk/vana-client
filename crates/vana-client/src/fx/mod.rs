@@ -1576,6 +1576,21 @@ impl Effects {
         Some(i)
     }
 
+    /// FUN_100531d0 on a running instance: its clock and emissions from the start again (the start's matrix too), its
+    /// elements kept.
+    pub(super) fn restart(&mut self, i: usize) {
+        let voyage = self.voyage;
+        let Some(x) = self.insts.get_mut(i).and_then(|x| x.as_mut()) else { return };
+        let Some(g) = self.reg.libs[x.src.0].generator(x.src.1) else { return };
+        (x.elapsed, x.countdown, x.emitted, x.finished, x.stopping, x.emptied) = (0.0, 0.0, 0, false, false, false);
+        (x.life, x.flags) = (g.life, g.flags | 0x800);
+        x.matrix = match x.mode {
+            0x14 => Some(voyage),
+            0x15 => Some(Mat4::from_cols(voyage.x_axis, voyage.y_axis, voyage.z_axis, glam::Vec4::W)),
+            _ => None,
+        };
+    }
+
     fn alloc_slot(&mut self) -> u32 {
         let mut s = [0u32; SLOT_WORDS];
         let id = Mat4::IDENTITY.to_cols_array();
@@ -2087,7 +2102,7 @@ impl Effects {
                         self.update_instance(ci, f, acts);
                     }
                 }
-                emit::Child::Burst { src } => self.burst(src, e, f, acts),
+                emit::Child::Burst { src } => self.burst(src, e, f, acts, false),
             }
         }
     }
@@ -2159,20 +2174,68 @@ impl Effects {
         }
     }
 
-    /// One emission of generator `src` with element `e` as parent, now (emission op 0x3c, end-stream op 1).
-    fn burst(&mut self, src: Ref, e: u32, f: &Frame, acts: &dyn Actors) {
+    /// One emission of generator `src` with element `e` as parent, now, run on the generator resource itself (its one
+    /// template instance; task link +0x64 0: no damage number). End-stream op 1 (`end`, FUN_1004e720): a static one's
+    /// elements go first (at most one burst's element lives per template), the count since its start is reset
+    /// (FUN_10053370), then the soft stop; emission op 0x3c only zeroes the countdown, so a static one emits once per
+    /// start.
+    fn burst(&mut self, src: Ref, e: u32, f: &Frame, acts: &dyn Actors, end: bool) {
         let actors = self.elems.get(e as usize).and_then(|c| c.as_ref()).and_then(|c| self.insts.get(c.inst)?.as_ref()).map_or([sched::Who::None; 2], |x| x.actors);
-        // Retail runs the generator resource itself (FUN_10048740), whose task link +0x64 is 0: no damage number.
-        if let Some(ci) = self.start(src, Owner::Element(e as usize)) {
-            if let Some(x) = self.insts[ci].as_mut() {
-                x.parent_elem = Some(e);
-                x.actors = actors;
-            }
-            self.update_instance(ci, f, acts);
-            if let Some(x) = self.insts[ci].as_mut() {
-                x.stopping = true;
+        let (ci, new) = match self.template_inst(src) {
+            Some(ci) => (ci, false),
+            None => match self.start(src, Owner::Element(e as usize)) {
+                Some(ci) => (ci, true),
+                None => return,
+            },
+        };
+        if new && let Some(x) = self.insts[ci].as_mut() {
+            x.actors = actors;
+        }
+        if end && self.is_static(src) {
+            self.clear_elems(ci);
+        }
+        self.emit_once(ci, e, end, f, acts);
+        if (end || new)
+            && let Some(x) = self.insts[ci].as_mut()
+        {
+            x.stopping = true;
+        }
+    }
+
+    /// FUN_100539e0: a static generator (flag 0x400, or op 1's life 0), whose elements never age.
+    pub(super) fn is_static(&self, g: Ref) -> bool {
+        self.reg.libs[g.0].generator(g.1).is_some_and(|gd| gd.flags & 0x400 != 0 || gd.template().is_some_and(|o| o.i16_at(0x22) == 0))
+    }
+
+    /// An attach mode that follows an actor (not 0 / 0xe / 0xf / 0x14; FUN_1005e0b0).
+    pub(super) fn is_attached(&self, g: Ref) -> bool {
+        self.reg.libs[g.0].generator(g.1).is_some_and(|gd| !matches!(gd.attach_mode(), 0 | 0xe | 0xf | 0x14))
+    }
+
+    /// The generator resource running as itself: its instance (no clone, no element's sub-clone).
+    pub(super) fn template_inst(&self, g: Ref) -> Option<usize> {
+        self.insts.iter().position(|x| x.as_ref().is_some_and(|x| x.src == g && !x.clone && x.driven.is_none()))
+    }
+
+    /// FUN_100538e0(G, 0): its live elements go, the instance stays.
+    fn clear_elems(&mut self, i: usize) {
+        let live = self.insts[i].as_mut().map(|x| std::mem::take(&mut x.live)).unwrap_or_default();
+        for e in live {
+            self.drop_elem(e);
+        }
+    }
+
+    /// One emission of instance `i` with element `e` as parent (+0xcc = 0, FUN_100496f0); `reset` the count and clock
+    /// since its start first (FUN_10053370).
+    pub(super) fn emit_once(&mut self, i: usize, e: u32, reset: bool, f: &Frame, acts: &dyn Actors) {
+        if let Some(x) = self.insts[i].as_mut() {
+            x.parent_elem = Some(e);
+            x.countdown = 0.0;
+            if reset {
+                (x.emitted, x.elapsed, x.finished) = (0, 0.0, false);
             }
         }
+        self.update_instance(i, f, acts);
     }
 
     /// FUN_10043ca0 once life < 1: the end stream (FUN_1004d770), then delete unless held.
@@ -2185,7 +2248,7 @@ impl Effects {
                 // Burst a generator at the element / start a scheduler with the element's actor pair.
                 0x01 => {
                     if let Some(g) = self.reg.resolve(src.0, src.1, kind::GENERATOR, op.u32(2)) {
-                        self.burst(g, e, f, acts);
+                        self.burst(g, e, f, acts, true);
                     }
                 }
                 0x02 => {
