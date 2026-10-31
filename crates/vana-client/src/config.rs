@@ -195,6 +195,8 @@ pub struct ModernPlace {
     pub dock: Option<ModernDock>,
     /// An edge window let go away from the edges: it stands at x / y with its whole frame.
     pub float: bool,
+    /// An edge window held by the top (1) or the bottom (2) edge, x its left; 0 the left or right edge by x's sign.
+    pub edge: u8,
 }
 
 /// A panel sitting on another: `gap` points between its bottom and the other's top, `dx` from the other's left, or

@@ -81,7 +81,7 @@ fn edge_sample(m: &Modern, ctx: &egui::Context) {
     let screen = ctx.content_rect();
     let r = Rect::from_min_max(pos2(screen.max.x - 290.0, 560.0), pos2(screen.max.x, 800.0));
     let p = ctx.layer_painter(LayerId::new(Order::Middle, Id::unique("edge sample")));
-    p.add(super::extras::edge_frame_shape(r, false, true, m, true, 16));
+    p.add(super::extras::edge_frame_shape(r, super::extras::Side::Right, true, m, true, 16));
     let font = egui::FontId::new(m.theme.small + 1.0, egui::FontFamily::Name(super::STRONG.into()));
     p.text(pos2(r.min.x + 36.0, r.min.y + 22.0), egui::Align2::LEFT_CENTER, "Wide Scan (37)", font, m.theme.color("gold"));
     for (k, (name, d)) in [("Rumoie", 0), ("Fulchia", 15), ("Home Point #3", 29), ("Trail Markings", 31), ("Artisan Moogle", 45), ("Lotte", 62), ("Valderotaux", 64)].iter().enumerate() {
@@ -94,7 +94,7 @@ fn edge_sample(m: &Modern, ctx: &egui::Context) {
 /// The skillchain helper on the left edge: a Liquefaction just made, three trusts and long names.
 fn skillchain_sample(m: &Modern, ctx: &egui::Context) {
     use crate::client::skillchain::{ChainWays, Closer, Now, View, Way};
-    let way = |a: &str, sa: &str, b: &str, sb: &str, ready: bool| Way { opener: (a.into(), sa.into()), closer: (b.into(), sb.into()), ready };
+    let way = |a: &str, sa: &str, b: &str, sb: &str, ready: bool| Way { opener: (a.into(), sa.into()), closer: (b.into(), sb.into()), ready, chain: 0 };
     let closer = |who: &str, skill: &str, chain, ready| Closer { who: who.into(), skill: skill.into(), chain, ready };
     let v = View {
         now: Some(Now {
@@ -108,24 +108,25 @@ fn skillchain_sample(m: &Modern, ctx: &egui::Context) {
             closers: vec![closer("You", "Blade: Retsu", 11, true), closer("Ayame", "Tachi: Kasha", 11, false), closer("Naji", "Vorpal Blade", 4, true), closer("Apururu (UC)", "Nott", 8, false)],
         }),
         chains: vec![
-            ChainWays { chain: 13, ways: vec![way("You", "Blade: Chi", "Ayame", "Tachi: Yukikaze", true), way("Naji", "Vorpal Blade", "You", "Blade: Ten", false), way("Ayame", "Tachi: Gekko", "Naji", "Burning Blade", false)] },
+            ChainWays { chain: 14, ways: vec![Way { chain: 16, ..way("You", "Blade: Chi", "Ayame", "Tachi: Yukikaze", true) }, Way { chain: 14, ..way("Naji", "Vorpal Blade", "You", "Blade: Ten", false) }, Way { chain: 14, ..way("Ayame", "Tachi: Gekko", "Naji", "Burning Blade", false) }] },
             ChainWays { chain: 11, ways: vec![way("You", "Blade: Retsu", "Shantotto II", "Final Exquisite Exquisite", true), way("Naji", "Red Lotus Blade", "Ayame", "Tachi: Kasha", false)] },
             ChainWays { chain: 12, ways: vec![way("Ayame", "Tachi: Enpi", "You", "Blade: Jin", false)] },
             ChainWays { chain: 3, ways: vec![way("Naji", "Fast Blade", "You", "Blade: Teki", true), way("You", "Blade: Rin", "Naji", "Burning Blade", true), way("Shantotto II", "Shantotto Pson", "You", "Blade: To", false), way("Ayame", "Tachi: Hobaku", "Naji", "Red Lotus Blade", false)] },
         ],
     };
-    m.sc_open.borrow_mut().insert(3);
+    m.sc_open.borrow_mut().extend([3, 14]);
+    let width = super::extras::skillchain_width(ctx, m, &v);
     let screen = ctx.content_rect();
     let at = pos2(screen.min.x, 120.0);
     let shown = egui::Area::new(Id::unique("skillchain sample")).order(Order::Middle).fixed_pos(at).constrain(false).show(ctx, |ui| {
         let bg = ui.painter().add(egui::Shape::Noop);
         let inner = egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 18, top: 12, bottom: 14 }).show(ui, |ui| {
-            ui.set_width(360.0 - 30.0);
+            ui.set_width(width - 30.0);
             ui.visuals_mut().override_text_color = Some(m.theme.color("text"));
             ui.label(egui::RichText::new("Skillchains").size(m.theme.small + 1.0).color(m.theme.color("gold")));
             super::extras::skillchain_body(ui, m, &v);
         });
-        ui.painter().set(bg, super::extras::edge_frame_shape(inner.response.rect, true, true, m, true, 16));
+        ui.painter().set(bg, super::extras::edge_frame_shape(inner.response.rect, super::extras::Side::Left, true, m, true, 16));
     });
     let _ = shown;
 }

@@ -26,6 +26,10 @@ pub struct Marquee {
 pub fn draw(m: &Modern, ctx: &Context, v: &TopView) {
     let p = ctx.layer_painter(LayerId::new(Order::Background, Id::unique("modern top bar")));
     let screen = ctx.content_rect();
+    // What the bar covers, for the windows on the top edge.
+    let (x0, x1) = (if v.title_up { PAD } else { PAD + SIDE + GAP }, if v.net_up { PAD } else { PAD + NET + GAP });
+    let span = Rect::from_min_max(pos2(screen.min.x + x0, screen.min.y), pos2(screen.max.x - x1, screen.min.y + PAD + H));
+    m.top_bar.set((v.alpha > 0.0).then_some((span, v.alpha)));
     let frame = |r: Rect| {
         if v.alpha > 0.0 {
             p.add(paint::faded(super::borders::window(m, "window_normal", r), v.alpha));

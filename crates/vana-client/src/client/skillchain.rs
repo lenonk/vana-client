@@ -292,7 +292,8 @@ pub struct Closer {
     pub ready: bool,
 }
 
-/// One chain and every way the party makes it: ours first, then those whose opener has the TP.
+/// One chain (Light and Darkness of both levels as one) and every way the party makes it: the stronger first, then
+/// ours, then those whose opener has the TP.
 #[derive(Clone, Debug)]
 pub struct ChainWays {
     pub chain: Prop,
@@ -304,6 +305,8 @@ pub struct Way {
     pub opener: (String, String),
     pub closer: (String, String),
     pub ready: bool,
+    /// The chain this way makes (level 4 for a second Light / Darkness).
+    pub chain: Prop,
 }
 
 /// The helper's view, in a party of two or more with skills known.
@@ -324,13 +327,14 @@ pub fn view(w: &World) -> Option<View> {
     let combos = combos(&members);
     let mut chains: Vec<ChainWays> = Vec::new();
     for cb in &combos {
-        if chains.iter().any(|c| c.chain == cb.chain) {
+        let fam = sc::family(cb.chain);
+        if chains.iter().any(|c| c.chain == fam) {
             continue;
         }
-        let mut ways: Vec<&Combo> = combos.iter().filter(|x| x.chain == cb.chain).collect();
-        ways.sort_by_key(|x| (!(members[x.opener.0].me || members[x.closer.0].me), !ready(x.opener.0)));
-        let ways = ways.into_iter().map(|x| Way { opener: (who(x.opener.0), name(w, x.opener.1)), closer: (who(x.closer.0), name(w, x.closer.1)), ready: ready(x.opener.0) }).collect();
-        chains.push(ChainWays { chain: cb.chain, ways });
+        let mut ways: Vec<&Combo> = combos.iter().filter(|x| sc::family(x.chain) == fam).collect();
+        ways.sort_by_key(|x| (std::cmp::Reverse(sc::level(x.chain)), !(members[x.opener.0].me || members[x.closer.0].me), !ready(x.opener.0)));
+        let ways = ways.into_iter().map(|x| Way { opener: (who(x.opener.0), name(w, x.opener.1)), closer: (who(x.closer.0), name(w, x.closer.1)), ready: ready(x.opener.0), chain: x.chain }).collect();
+        chains.push(ChainWays { chain: fam, ways });
     }
     Some(View { now, chains })
 }

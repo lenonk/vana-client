@@ -90,6 +90,15 @@ pub fn elements(p: Prop) -> &'static [Element] {
 }
 
 /// GetSkillchainTier: 1 for the level-1 properties, 2, 3 (Light / Darkness), 4.
+/// Light / Darkness of either level as one (their names are the same): 15 -> 13, 16 -> 14.
+pub fn family(p: Prop) -> Prop {
+    match p {
+        15 => 13,
+        16 => 14,
+        p => p,
+    }
+}
+
 pub fn level(p: Prop) -> u8 {
     match p {
         1..=8 => 1,

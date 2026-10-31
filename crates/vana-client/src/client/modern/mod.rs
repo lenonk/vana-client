@@ -120,6 +120,8 @@ pub struct Modern {
     edge_grip: std::cell::Cell<Option<extras::EdgeDrag>>,
     /// The edge window being dragged and where the pointer holds it (its ghost follows the pointer).
     edge_ghost: std::cell::RefCell<Option<(String, Vec2)>>,
+    /// The top bar this frame: the span its boxes take and how far faded in (the top edge's windows sit under it).
+    top_bar: std::cell::Cell<Option<(Rect, f32)>>,
     /// The skillchain helper's chains shown with all their ways.
     sc_open: std::cell::RefCell<std::collections::HashSet<u8>>,
     /// Each keyboard list's cursor last frame (`moved`).
@@ -177,6 +179,7 @@ impl Modern {
             retail: Default::default(),
             edge_grip: Default::default(),
             edge_ghost: Default::default(),
+            top_bar: Default::default(),
             sc_open: Default::default(),
             cursors: Default::default(),
             log_sel: Default::default(),
