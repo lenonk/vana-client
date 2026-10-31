@@ -12503,3 +12503,16 @@ since "Ship voyages: the moving world" listed them as not done.
 - Ours now (fx/mod.rs footstep, Foot, foot_set): the per-actor folder, the model file's (Character.files[0]) on a miss,
   the dust from that folder; the wading ripple's `i900` and op 0x78's fall thud read it too; cleared with the zone. A
   model file still loading plays no step rather than the tone. Test fx::tasks::tests::flyer_wing_beats.
+
+## Wide Scan: a track the server refuses (2026-10-30)
+
+- LSB's c2s 0x0F5 (packets/c2s/0x0f5_tracking_start.cpp) sets the tracked entity only when it is wide-scannable
+  (not gone, name not hidden, targetable; a monster without MobMod NoWidescan) and within the wide-scan range at that
+  moment (charutils getWideScanRange: RNG / BST by level, other jobs 150 with map.ALL_JOBS_WIDESCAN, else 0). A
+  refusal answers nothing; s2c 0x0F5 (Level 1, State 1 Start / 2 Lose) comes only with each of our c2s 0x015 (every
+  400 ms) once it is set.
+- User report: tracking one Heraldic Imp showed nothing on the compass, another worked. *(inf: the first was out of
+  range or gone when Track was clicked; the panel's list is up to 10 s old.)* The modern Wide Scan panel then kept
+  the row lit as tracked, offered Stop tracking and stopped its 10 s refresh (it keyed off the index alone).
+- Ours (modern panel only; retail's map shows nothing either way): a track not confirmed within 2 s (Scan.asked) is
+  dropped with the error sound, and the list refreshes again. Not seen live.

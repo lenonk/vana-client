@@ -37,6 +37,8 @@ pub struct Scan {
     pub party_busy: bool,
     /// Where we stood (world x, z) when the list was asked for: the results' offsets are from there.
     pub origin: (f32, f32),
+    /// When c2s 0x0F5 went, until the server confirms (it answers nothing when it refuses: out of range).
+    pub asked: Option<std::time::Instant>,
 }
 
 impl Scan {
@@ -53,7 +55,9 @@ impl Scan {
 
     /// FUN_100f93c0 (c2s 0x0F5): the block zeroed with the index set.
     pub fn track(&mut self, index: u16) {
+        log::debug!("tracking: asked for {index:#x}");
         self.track = Track { index, ..Default::default() };
+        self.asked = Some(std::time::Instant::now());
     }
 
     /// FUN_100f9430 (c2s 0x0F6): the index cleared.
@@ -75,8 +79,10 @@ impl Scan {
 
     /// LAB_100f9560: state 1 for the tracked index updates it; any other state for it, or index 0, clears the block.
     pub fn on_pos(&mut self, index: u16, level: u8, pos: [f32; 3], state: u32) {
+        log::debug!("tracking: {index:#x} level {level} state {state} at {pos:?} (ours {:#x})", self.track.index);
         if index != 0 && index == self.track.index && state == 1 {
             (self.track.level, self.track.state, self.track.pos) = (level, state, pos);
+            self.asked = None;
         } else if index == 0 || index == self.track.index {
             self.track = Track { state, ..Default::default() };
         }
@@ -102,9 +108,10 @@ mod tests {
         assert_eq!(s.start(), 0x0F6);
         s.on_state(2);
         s.track(0x45);
-        assert!(s.tracking().is_none());
+        assert!(s.tracking().is_none() && s.asked.is_some());
         s.on_pos(0x45, 1, [1.0, 2.0, 3.0], 1);
         assert_eq!(s.tracking().map(|t| t.pos), Some([1.0, 2.0, 3.0]));
+        assert!(s.asked.is_none());
         s.on_pos(0x46, 1, [9.0; 3], 1);
         assert!(s.tracking().is_some());
         s.on_pos(0x45, 1, [0.0; 3], 2);

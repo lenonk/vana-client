@@ -780,6 +780,12 @@ fn widescan_panel(p: &mut Panels, w: &mut World) {
     }
     // Folded it asks for nothing.
     let now = std::time::Instant::now();
+    // A track the server never confirmed (it refuses silently: out of range, gone) is dropped after five position
+    // packets, so the row is not shown tracked and the list refreshes again (ours).
+    if w.scan.tracking().is_none() && w.scan.track.index != 0 && w.scan.asked.is_some_and(|t| now.duration_since(t).as_secs_f32() >= 2.0) {
+        (w.scan.track, w.scan.asked) = (Default::default(), None);
+        w.sounds.push(crate::audio::Ui::Error as u32);
+    }
     if !folded && w.scan.track.index == 0 && w.scan.list_state != 1 && m.scan_at.get().is_none_or(|t| now.duration_since(t).as_secs_f32() >= 10.0) {
         m.scan_at.set(Some(now));
         super::super::scan_request(w);
