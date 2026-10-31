@@ -158,4 +158,9 @@ no code from the original client. To use it you need the game files from Square 
 
 ## License
 
-No license has been chosen yet.
+vana-client is released under the [MIT License](LICENSE).
+
+Bundled third-party files keep their own licenses: the Fira Sans, Inter and JetBrains Mono fonts are under the SIL
+Open Font License (the texts are beside them in `crates/vana-client/assets/fonts`), and the patched copy of
+gpu-allocator in `vendor/gpu-allocator` is under MIT or Apache-2.0. The game's files are Square Enix's and are not
+covered by this license.
