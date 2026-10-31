@@ -156,9 +156,28 @@ pub fn merge(stock: &[u8], mods: &[Vec<u8>]) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// A pack's `full` copy of a stock file cut to what `merge` takes from it: the D3s chunks that differ from stock's of
+/// the same key, inside the folder markers that key them. Also the number of D3s chunks kept.
+pub fn slim(stock: &[u8], full: &[u8]) -> Option<(Vec<u8>, usize)> {
+    let base: HashMap<_, &[u8]> = raw(stock)?.into_iter().map(|c| (c.key, c.bytes)).collect();
+    let (mut out, mut kept) = (Vec::new(), 0);
+    for c in raw(full)? {
+        let keep = match c.kind {
+            0 | 1 => true,
+            0x20 => image_ok(c.bytes) && base.get(&c.key).is_some_and(|b| *b != c.bytes),
+            _ => false,
+        };
+        if keep {
+            kept += (c.kind == 0x20) as usize;
+            out.extend_from_slice(c.bytes);
+        }
+    }
+    Some((out, kept))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::merge;
+    use super::{merge, slim};
 
     fn chunk(name: &[u8; 4], kind: u8, data: &[u8]) -> Vec<u8> {
         let size = (16 + data.len()).div_ceil(16) * 16;
@@ -206,5 +225,24 @@ mod tests {
         let high = [chunk(b"img1", 0x20, &tex(3, 2048, 4096, 80))].concat();
         assert_eq!(merge(&stock, &[high.clone(), low.clone()]).unwrap(), low);
         assert_eq!(merge(&stock, &[high]).unwrap(), stock);
+    }
+
+    /// A slim copy drops the stock chunks and the unchanged images, and merges to the same bytes as the full one.
+    #[test]
+    fn slim_merges_the_same() {
+        let tex = |name: &[u8; 4], n: u8| {
+            let mut d = vec![0u8; 64];
+            d[1..5].copy_from_slice(name);
+            d[21..25].copy_from_slice(&1u32.to_le_bytes());
+            d[25..29].copy_from_slice(&1u32.to_le_bytes());
+            d[30] = n;
+            d
+        };
+        let stock = [chunk(b"fold", 1, &[]), chunk(b"img1", 0x20, &tex(b"tex1", 1)), chunk(b"img2", 0x20, &tex(b"tex2", 1)), chunk(b"mdl1", 0x2e, &[1; 16]), chunk(b"end\0", 0, &[])].concat();
+        let full = [chunk(b"fold", 1, &[]), chunk(b"img1", 0x20, &tex(b"tex1", 7)), chunk(b"img2", 0x20, &tex(b"tex2", 1)), chunk(b"mdl1", 0x2e, &[1; 16]), chunk(b"end\0", 0, &[])].concat();
+        let (s, kept) = slim(&stock, &full).unwrap();
+        assert_eq!(kept, 1);
+        assert_eq!(s, [chunk(b"fold", 1, &[]), chunk(b"img1", 0x20, &tex(b"tex1", 7)), chunk(b"end\0", 0, &[])].concat());
+        assert_eq!(merge(&stock, &[s]).unwrap(), merge(&stock, &[full]).unwrap());
     }
 }

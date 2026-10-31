@@ -286,6 +286,20 @@ enum Cmd {
         #[arg(long)]
         out: PathBuf,
     },
+    /// Install a pack archive into `root` as Settings > Mods does, to check a pack before publishing it.
+    ModInstall {
+        #[arg(long)]
+        archive: PathBuf,
+        #[arg(long)]
+        root: PathBuf,
+    },
+    /// The tex-pack folder cut to its images for publishing: each file keeps only the images that differ from stock.
+    TexSlim {
+        #[arg(long)]
+        pack: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Decode a menu DAT (default 79, the US lobby): images, sprite sheets and a listing.
     UiDump {
         #[arg(long, default_value_t = dat::ui::LOBBY_US)]
@@ -1587,6 +1601,13 @@ fn main() -> Result<()> {
         Cmd::TexExport { out } => texpack::export(&out),
         Cmd::StatusDump { out } => texpack::status_dump(&out),
         Cmd::TexPack { manifest, upscaled, out } => texpack::pack(&manifest, &upscaled, &out),
+        Cmd::TexSlim { pack, out } => texpack::slim(&pack, &out),
+        Cmd::ModInstall { archive, root } => {
+            let pack = modpack::pack_of(&archive)?;
+            let n = modpack::install(&pack, &root, &std::sync::atomic::AtomicU32::new(0))?;
+            println!("{n} files into {}", root.join(&pack.slug).display());
+            Ok(())
+        }
         Cmd::TitleShot { out, width, height } => uishot::title_shot(&out, width, height),
         Cmd::UiShot { out, width, height } => uishot::ui_shot(&out, width, height),
         Cmd::TopbarShot { out, fade, menu, menu_swap, target, hpp, map, downloading, window, config, cfgset, installed, width, height } => client::topbar_shot(&out, &fade, menu, menu_swap.as_deref(), target.as_deref(), hpp, map.as_deref(), downloading, window.as_deref(), config.as_deref(), cfgset.as_deref(), installed, width, height),

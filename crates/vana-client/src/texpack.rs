@@ -372,6 +372,79 @@ pub fn pack(manifest_dir: &Path, up: &Path, out: &Path) -> Result<()> {
     Ok(())
 }
 
+/// `tex-slim`: the pack in `pack` cut to its images for publishing (no stock data in it): each file keeps only the
+/// images that differ from the stock file's (dat::overlay::slim), checked to merge to the same bytes as the full copy,
+/// written to `out` at the same path. Files written before are left as they are.
+pub fn slim(pack: &Path, out: &Path) -> Result<()> {
+    let stock_root = crate::config::Config::load().ffxi_dir();
+    let mut files = Vec::new();
+    let mut dirs = vec![pack.to_path_buf()];
+    while let Some(d) = dirs.pop() {
+        for e in std::fs::read_dir(&d).with_context(|| format!("reading {}", d.display()))?.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                dirs.push(p);
+            } else if let Ok(rel) = p.strip_prefix(pack) {
+                files.push(rel.to_path_buf());
+            }
+        }
+    }
+    files.sort();
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let counts: Mutex<[u64; 4]> = Mutex::new([0; 4]); // written, unchanged, full bytes, slim bytes
+    let failed: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    std::thread::scope(|s| {
+        for _ in 0..THREADS {
+            s.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(rel) = files.get(i) else { break };
+                    let dest = out.join(rel);
+                    if dest.exists() {
+                        continue;
+                    }
+                    let (Ok(stock), Ok(full)) = (std::fs::read(stock_root.join(rel)), std::fs::read(pack.join(rel))) else {
+                        failed.lock().unwrap().push(format!("{}: unreadable", rel.display()));
+                        continue;
+                    };
+                    let Some((bytes, kept)) = dat::overlay::slim(&stock, &full) else {
+                        failed.lock().unwrap().push(format!("{}: not a chunk file", rel.display()));
+                        continue;
+                    };
+                    if kept == 0 {
+                        counts.lock().unwrap()[1] += 1;
+                        continue;
+                    }
+                    if dat::overlay::merge(&stock, &[bytes.clone()]) != dat::overlay::merge(&stock, &[full.clone()]) {
+                        failed.lock().unwrap().push(format!("{}: merges differently", rel.display()));
+                        continue;
+                    }
+                    if let Some(dir) = dest.parent() {
+                        let _ = std::fs::create_dir_all(dir);
+                    }
+                    let tmp = dest.with_extension("part");
+                    if std::fs::write(&tmp, &bytes).and_then(|_| std::fs::rename(&tmp, &dest)).is_err() {
+                        failed.lock().unwrap().push(format!("{}: not written", rel.display()));
+                        continue;
+                    }
+                    let mut c = counts.lock().unwrap();
+                    (c[0], c[2], c[3]) = (c[0] + 1, c[2] + full.len() as u64, c[3] + bytes.len() as u64);
+                    if c[0] % 2000 == 0 {
+                        println!("{} files written", c[0]);
+                    }
+                }
+            });
+        }
+    });
+    let c = counts.into_inner().unwrap();
+    let failed = failed.into_inner().unwrap();
+    for f in &failed {
+        println!("{f}");
+    }
+    println!("{} files written ({:.1} GB of {:.1} GB), {} with no image changed, {} failed", c[0], c[3] as f64 / 1e9, c[2] as f64 / 1e9, c[1], failed.len());
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

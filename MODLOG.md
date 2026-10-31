@@ -12611,3 +12611,19 @@ DISPLAY13 at 100%; RX 6800 XT eGPU), MinGW cross builds, release and debug.
   `window.scale_factor()` into every frame's input, so the size follows the window to another monitor. The login
   form, laid out on game-UI rects (its mouse on the same rects), grows by the scale too, up to 0.4 of the UI height,
   its top kept below the logo's "ONLINE" line. Monitors at 100% (the Linux desktop here) see no change.
+
+## Our upscale pack: the slim copy for publishing (2026-10-31)
+
+- tex-pack writes whole game files: each packed DAT is the stock file with its images swapped, every other chunk
+  (models, motions, the rest) copied from SE's file. The overlay (dat/overlay.rs merge) only ever takes D3s / Msb / Bp
+  chunks from a mod, keyed by folder path, 4cc, kind, the texture's name and the n-th such chunk.
+- `vana-client tex-slim --pack DIR --out DIR` (texpack::slim, dat::overlay::slim) keeps, per file, the folder markers
+  (kinds 0 and 1: 16 and 32 bytes) and the D3s chunks that differ from the stock file's of the same key, and checks
+  that the slim copy merges to the same bytes as the full one. mods/vana-upscale (30261006_0): 35,132 files, 27.5 GB
+  full, 22.6 GB slim, none failed; the slim files hold only our images and the markers (0.4 MB of them in a tenth).
+  Test dat::overlay::tests::slim_merges_the_same.
+- LZMA (7z -mx=5) takes the upscaled DXT images to about a quarter (1.89 GiB of files to 0.42 GiB), so the published
+  pack fits GitHub's 2 GiB per-asset limit in a few parts. Each part installs on its own from Settings > Mods (one
+  Mods entry per part; their files don't overlap). `vana-client mod-install --archive FILE --root DIR` runs the Mods
+  page's install (modpack::pack_of + install) into another folder, to check a part before publishing it.
+- Published as its own GitHub release, created with `--latest=false`: the in-app Update reads /releases/latest.
