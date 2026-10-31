@@ -27,6 +27,27 @@ fn tint(m: &super::Modern, t: u32) -> Color32 {
     if t == TINT_WHITE { m.theme.color("text") } else { chat::colour(t.to_le_bytes()) }
 }
 
+/// An inventory slot's bazaar price: priced in our bazaar (LockFlg 0x19) it can't be moved, dropped or sold until
+/// Set Bazaar takes the price off.
+pub(super) fn bazaar_price(w: &World, container: u8, index: u8) -> Option<u32> {
+    (w.inv.locks.get(&(container, index)) == Some(&0x19)).then(|| w.inv.prices.get(&(container, index)).copied().unwrap_or(0))
+}
+
+/// The "Bazaar 1,000 G" tag ending at `right` on a row's middle `cy` (ours: retail shows nothing); its left.
+pub(super) fn bazaar_tag(ui: &Ui, m: &super::Modern, right: f32, cy: f32, price: u32) -> f32 {
+    let label = format!("Bazaar {} G", crate::inventory::gil_text(price as i64));
+    let f = FontId::new(m.theme.small - 2.0, FontFamily::Name(super::STRONG.into()));
+    let tw = ui.fonts_mut(|fo| fo.layout_no_wrap(label.clone(), f.clone(), Color32::WHITE).size().x);
+    let tag = Rect::from_min_max(pos2(right - tw - 10.0, cy - 9.0), pos2(right, cy + 9.0));
+    ui.painter().rect_filled(tag, 4.0, m.theme.color("charcoal"));
+    ui.painter().rect_stroke(tag, 4.0, egui::Stroke::new(1.0, m.theme.color("bronze")), egui::StrokeKind::Inside);
+    ui.painter().text(tag.center(), Align2::CENTER_CENTER, label, f, m.theme.color("gold"));
+    tag.min.x
+}
+
+/// What frees a bazaar item, under its refused actions.
+pub(super) const BAZAAR_NOTE: &str = "In your bazaar: Set Bazaar > Set Prices, price 0, frees it.";
+
 /// The kit's button, the keyboard cursor on it while `lit`; true when clicked (and not off).
 fn button(ui: &mut Ui, m: &super::Modern, label: &str, lit: bool, off: bool) -> bool {
     let s = super::kit::Btn { lit: lit && !off, cursor: lit, off };
@@ -61,6 +82,11 @@ fn list(p: &mut Panels, w: &mut World) {
     let rows = gitems::list_rows(w, &info, &shown, direct);
     let note = format!("{} / {}", shown.len(), w.inv.sizes[gitems::INVENTORY as usize].saturating_sub(1));
     let icons: Vec<Option<egui::TextureId>> = rows.iter().skip(scroll).take(VISIBLE_ROWS).map(|r| m.item_icon(p.ctx, &info, r.id)).collect();
+    let bazaar: Vec<Option<u32>> = shown.iter().skip(scroll).take(VISIBLE_ROWS).map(|s| bazaar_price(w, gitems::INVENTORY, s.index)).collect();
+    let use_bazaar = match sub {
+        Some(Sub::Use { index, .. }) => bazaar_price(w, gitems::INVENTORY, index).is_some(),
+        _ => false,
+    };
     let held = manual.flatten();
     let msg = |g: u8, k: usize, or: &str| gu.map_or(or.to_string(), |gu| gu.lobby_msg(g, k, or));
     let mut mouse = Mouse::default();
@@ -114,8 +140,12 @@ fn list(p: &mut Panels, w: &mut World) {
                 painter.image(t, Rect::from_min_size(at, vec2(ICON, ICON)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
             }
             painter.text(pos2(r.min.x + 42.0, r.center().y), Align2::LEFT_CENTER, &row.name, FontId::proportional(m.theme.ui), tint(m, row.tint));
+            let mut right = r.max.x - 12.0;
             if let Some(n) = &row.count {
-                painter.text(pos2(r.max.x - 12.0, r.center().y), Align2::RIGHT_CENTER, n, FontId::proportional(m.theme.ui), m.theme.color("text"));
+                right = painter.text(pos2(right, r.center().y), Align2::RIGHT_CENTER, n, FontId::proportional(m.theme.ui), m.theme.color("text")).min.x - 8.0;
+            }
+            if let Some(price) = bazaar.get(k).copied().flatten() {
+                bazaar_tag(ui, m, right, r.center().y, price);
             }
             if resp.clicked() {
                 mouse.click = Some(k);
@@ -137,6 +167,9 @@ fn list(p: &mut Panels, w: &mut World) {
                         }
                     }
                 });
+                if use_bazaar {
+                    ui.label(egui::RichText::new(BAZAAR_NOTE).size(m.theme.small).color(m.theme.color("gold")));
+                }
             }
             Some(Sub::Drop { yes, .. }) => {
                 ui.add_space(6.0);

@@ -98,6 +98,9 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let names = |s: &Slot| info.item(s.id).map(|it| it.name.clone()).unwrap_or_default();
     let bag_names: Vec<String> = bag.iter().map(|(_, s)| names(s)).collect();
     let inv_names: Vec<String> = inv.iter().map(names).collect();
+    let inv_bazaar: Vec<Option<u32>> = inv.iter().map(|s| super::items::bazaar_price(w, gitems::INVENTORY, s.index)).collect();
+    // The inventory side's cursor on a bazaar item: what frees it under the lists.
+    let bazaar_held = !b.on_bank && inv_bazaar.get(iscroll + icursor).copied().flatten().is_some();
     let (used, room) = fill(w, g);
     let inv_room = (w.inv.sizes[0] as usize).saturating_sub(1);
     let on_bank = b.on_bank;
@@ -140,8 +143,12 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                             let c = if dim { m.theme.color("muted") } else if tints[k] == TINT_WHITE { m.theme.color("text") } else { super::chat::colour(tints[k].to_le_bytes()) };
                             ui.painter().text(pos2(r.min.x + 42.0, r.center().y), Align2::LEFT_CENTER, name, FontId::proportional(m.theme.ui), c);
                             let count = if bank_side { bag[k].1.count } else { inv[k].count };
+                            let mut right = r.max.x - 12.0;
                             if count > 1 {
-                                ui.painter().text(pos2(r.max.x - 12.0, r.center().y), Align2::RIGHT_CENTER, count.to_string(), FontId::proportional(m.theme.ui), m.theme.color("text"));
+                                right = ui.painter().text(pos2(right, r.center().y), Align2::RIGHT_CENTER, count.to_string(), FontId::proportional(m.theme.ui), m.theme.color("text")).min.x - 8.0;
+                            }
+                            if let Some(price) = (!bank_side).then(|| inv_bazaar[k]).flatten() {
+                                super::items::bazaar_tag(ui, m, right, r.center().y, price);
                             }
                             if resp.clicked() {
                                 mouse.take = Some((bank_side, k, false));
@@ -160,6 +167,9 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             }
         });
         ui.add_space(4.0);
+        if bazaar_held {
+            ui.label(egui::RichText::new(super::items::BAZAAR_NOTE).size(m.theme.small).color(m.theme.color("gold")));
+        }
         ui.label(egui::RichText::new("Click moves a stack across, right click one. Tab changes the bag.").size(m.theme.small).color(m.theme.color("muted")));
     });
     if let Some(k) = mouse.bag {

@@ -130,7 +130,7 @@ fn search_box(ui: &mut Ui, m: &super::Modern) -> bool {
 }
 
 /// One pane as a column.
-fn pane(ui: &mut Ui, m: &super::Modern, gu: &GameUi, info: &ItemCache, p: &Pane, focused: bool, mouse: &mut Mouse) {
+fn pane(ui: &mut Ui, m: &super::Modern, gu: &GameUi, info: &ItemCache, p: &Pane, focused: bool, bazaar: usize, mouse: &mut Mouse) {
     ui.vertical(|ui| {
         ui.set_width(width(p));
         match p {
@@ -163,6 +163,11 @@ fn pane(ui: &mut Ui, m: &super::Modern, gu: &GameUi, info: &ItemCache, p: &Pane,
                 if focused {
                     mouse.row = got;
                 }
+                // Retail leaves bazaar items out without a word (ours).
+                if bazaar > 0 {
+                    let s = if bazaar == 1 { "1 item in your bazaar is not listed.".to_string() } else { format!("{bazaar} items in your bazaar are not listed.") };
+                    ui.label(egui::RichText::new(s).size(m.theme.small).color(m.theme.color("gold")));
+                }
             }
         }
     });
@@ -182,6 +187,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let total: f32 = panes.iter().map(width).sum::<f32>() + 16.0 * panes.len().saturating_sub(1) as f32 + 44.0;
     let title = gu.title_msg(0x12).unwrap_or_else(|| "Auction".into());
     let gil = crate::inventory::gil_text(w.inv.gil() as i64);
+    let bazaar = w.inv.locks.iter().filter(|((c, _), l)| *c == super::super::items::INVENTORY && **l == 0x19).count();
     let mut mouse = Mouse::default();
     // Not retail: the search over every bid category while the bid menus have the keys (typing starts it too).
     let searchable = free && !v.busy && auction::searchable(w);
@@ -218,7 +224,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                     ui.add_space(16.0);
                 }
                 let top = k + 1 == panes.len();
-                pane(ui, m, gu, &info, pn, top && free && !asking && !v.busy && search.is_none(), &mut mouse);
+                pane(ui, m, gu, &info, pn, top && free && !asking && !v.busy && search.is_none(), bazaar, &mut mouse);
             }
         });
         if let Some((step, max, val, item)) = v.money {
