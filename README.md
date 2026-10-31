@@ -51,7 +51,8 @@ Playable on a local LSB server. Working today:
 - The in-game and lobby Config menus, with an Extras page for additions such as a map overlay, a minimap, timers, a
   skillchain helper and chat timestamps
 - Game updates from the PlayOnline patch server, an Update button for the client itself, and a mod manager for HD
-  texture packs (install from an archive, order, enable, uninstall)
+  texture packs (install from an archive, order, enable, uninstall). Our HD pack, the game's textures upscaled 4x, is
+  on the [releases page](https://github.com/lenonk/vana-client/releases/tag/hd-pack-1)
 - Music and sound effects
 
 Not done yet:
