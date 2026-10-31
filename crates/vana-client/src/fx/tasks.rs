@@ -1544,16 +1544,14 @@ impl Effects {
             // footstep (model +0x800), at a snapshot of it, near f32 @0xc, far @8; nothing before a first step.
             0x78 => {
                 let Some(id) = self.doll_of(t.a1).id() else { return Flow::Next };
-                let (Some([_, k, s]), Some(&rain), Some(l), Some(m)) = (actors.cib(id), self.foot_folder.get(&id), self.zone_lib, actors.matrix(id)) else { return Flow::Next };
+                let (Some([_, k, s]), Some(&f), Some(m)) = (actors.cib(id), self.foot_folder.get(&id), actors.matrix(id)) else { return Flow::Next };
                 if k < 0 || s < 0 {
                     return Flow::Next;
                 }
                 let c = if k < 10 { b'0' + k as u8 } else { b'a' + (k - 10) as u8 };
                 let name = [b'0', b'a', c, b'1' + s as u8];
-                let lib = &self.reg.libs[l];
-                let folder = crate::dat::generator::fourcc(if rain { "fser" } else { "fses" });
-                let found = lib.tree.nodes.iter().position(|n| n.kind == kind::FOLDER && n.name == folder).and_then(|f| lib.find_in(f, 0x3d, name));
-                if let Some(n) = found
+                let (l, lib) = (f.at.0, &self.reg.libs[f.at.0]);
+                if let Some(n) = lib.find_in(f.at.1, 0x3d, name)
                     && let Some((se, loops)) = super::sound::sesep(lib.data(n))
                 {
                     log::debug!("effects: sound {se} op 0x78 ({})", String::from_utf8_lossy(&name));
@@ -3177,7 +3175,7 @@ mod tests {
         fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
         fx.load_zone(Library::load(332, index.read(332).unwrap()).unwrap());
         let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
-        fx.footstep(7, Vec3::new(3.0, 0.0, -2.0), Some(*b"0112"), Some(*b"w100"), false, false, 101);
+        fx.footstep(7, None, Vec3::new(3.0, 0.0, -2.0), Some(*b"0112"), Some(*b"w100"), false, false, 101);
         fx.tick(&f, &Walker);
         let dust: Vec<&crate::fx::Instance> = fx.insts.iter().flatten().filter(|x| &x.name == b"w100").collect();
         assert_eq!(dust.len(), 1);
@@ -3188,6 +3186,30 @@ mod tests {
             fx.tick(&f, &Walker);
         }
         assert!(!fx.insts.iter().flatten().any(|x| &x.name == b"w100"));
+    }
+
+    /// footsteps_sound.md 1.3 step 7.2: Caedarva Mire (zone DAT 179) has no 'z' steps, so a Heraldic Imp's (model
+    /// 52021, Cib 3 / 35) `01z1` comes from its model file's fses (se 147001, a wing beat), not DAT 0's 'foot' (se 12,
+    /// a plain tone); its later steps search that folder first.
+    #[test]
+    fn flyer_wing_beats() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let mut fx = Effects::new();
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        fx.load_zone(Library::load(179, index.read(179).unwrap()).unwrap());
+        let model = fx.reg.add(Library::load(52021, index.read(52021).unwrap()).unwrap());
+        let zone = fx.zone_lib.unwrap();
+        let fses = crate::fx::folder_of(&fx.reg.libs[zone], false).unwrap();
+        assert!(fx.reg.libs[zone].find_in(fses, 0x3d, *b"01z1").is_none());
+        for _ in 0..2 {
+            fx.footstep(9, Some(52021), Vec3::ZERO, Some(*b"01z1"), None, false, false, 101);
+            assert_eq!(fx.sounds.last().map(|s| s.se), Some(147001));
+            assert_eq!(fx.foot_folder.get(&9).map(|f| f.at.0), Some(model));
+        }
+        // With no model file to search, the fallback tone.
+        fx.footstep(10, None, Vec3::ZERO, Some(*b"01z1"), None, false, false, 101);
+        assert_eq!(fx.sounds.last().map(|s| s.se), Some(12));
     }
 
     /// triggers.md 7.1: atk0 -> ati0 -> dada -> dam0 -> damg (orc) -> chit (Hume) -> ef h (fists) -> hit1 (DAT 0):

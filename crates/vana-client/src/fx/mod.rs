@@ -533,6 +533,13 @@ pub enum ColorOp {
     Snap(u32, u32),
 }
 
+/// An actor's footstep folder (model +0x800, library and node) and its set (+0x804: true = 'fser').
+#[derive(Clone, Copy, Debug)]
+struct Foot {
+    rain: bool,
+    at: (usize, usize),
+}
+
 /// A running colour drive: its scheduler task, ticks left, target, and whether its destructor lands on the target
 /// (op 0xa0, +0x86).
 #[derive(Clone, Copy, Debug)]
@@ -936,8 +943,9 @@ pub struct Effects {
     knocks_later: Vec<(f32, Knock)>,
     /// DAT_1035bc60: knockback (speed per tick, decay, ticks) by level.
     knock_table: [[f32; 3]; 8],
-    /// Model +0x800: the footstep folder an actor's last step used (true = 'fser', the rain set), for op 0x78.
-    foot_folder: HashMap<u32, bool>,
+    /// Model +0x800 / +0x804: the footstep folder an actor's steps search (the zone's, or its model file's once a
+    /// name was missing there) and its set; op 0x78 and the wading ripple read it too.
+    foot_folder: HashMap<u32, Foot>,
     /// +0x9e8 / +0x808: the actor's wading ripple `i900` (None: the flag set without a clone).
     wading: HashMap<u32, Option<usize>>,
     /// Op 0x99: actor1's entity scale (+0x204).
@@ -1190,6 +1198,7 @@ impl Effects {
         self.leaked.clear();
         self.weathers.clear();
         self.wading.clear();
+        self.foot_folder.clear();
         self.tasks.clear();
         self.drives.clear();
         self.rot_drives.clear();
@@ -1285,12 +1294,7 @@ impl Effects {
     /// `folder`: this frame's fses / fser choice (Some(rain)), stored after the check as retail does.
     pub fn wade(&mut self, id: u32, water: bool, near: bool, folder: Option<bool>) {
         if water && near && !self.wading.contains_key(&id) {
-            let found = self.foot_folder.get(&id).copied().and_then(|rain| {
-                let l = self.zone_lib?;
-                let lib = &self.reg.libs[l];
-                let f = lib.tree.nodes.iter().position(|n| n.kind == kind::FOLDER && n.name == crate::dat::generator::fourcc(if rain { "fser" } else { "fses" }))?;
-                Some((l, lib.find_in(f, kind::GENERATOR, *b"i900")?))
-            });
+            let found = self.foot_folder.get(&id).and_then(|f| Some((f.at.0, self.reg.libs[f.at.0].find_in(f.at.1, kind::GENERATOR, *b"i900")?)));
             // The flag is set even without the folder (no ripple until it clears).
             let inst = found.and_then(|g| self.start(g, Owner::Step(id)));
             if let Some(x) = inst.and_then(|i| self.insts[i].as_mut()) {
@@ -1306,8 +1310,20 @@ impl Effects {
             }
         }
         if let Some(rain) = folder {
-            self.foot_folder.insert(id, rain);
+            self.foot_set(id, rain);
         }
+    }
+
+    /// FUN_100d2970 step 4: a new set ('fses', or 'fser' in the rain) takes that folder from the zone's scope; None
+    /// when the zone has none (no step).
+    fn foot_set(&mut self, id: u32, rain: bool) -> Option<(usize, usize)> {
+        if let Some(f) = self.foot_folder.get(&id).filter(|f| f.rain == rain) {
+            return Some(f.at);
+        }
+        let l = self.zone_lib?;
+        let at = (l, folder_of(&self.reg.libs[l], rain)?);
+        self.foot_folder.insert(id, Foot { rain, at });
+        Some(at)
     }
 
     /// The sub-area unloads (FUN_1017b110 -> FUN_100446a0): its generators' clones and its schedulers' tasks stop.
@@ -2213,34 +2229,58 @@ impl Effects {
         self.drop_elem(e);
     }
 
-    /// A footstep (FUN_100d2970 step 7): SeSep `name` (none while sneaking) in the zone's 'fses' folder ('fser' in the
-    /// rain weathers when not covered), else DAT 0's 'foot'; one shot at `pos`, centred, at `level` (101 walking, 127
-    /// running). Then the dust generator `dust` of that folder, if any, bursts once on actor `id`.
-    pub fn footstep(&mut self, id: u32, pos: Vec3, name: Option<[u8; 4]>, dust: Option<[u8; 4]>, print: bool, rain: bool, level: i32) {
-        let Some(l) = self.zone_lib else { return };
-        self.foot_folder.insert(id, rain);
-        let folder = crate::dat::generator::fourcc(if rain { "fser" } else { "fses" });
-        let lib = &self.reg.libs[l];
-        let Some(f) = lib.tree.nodes.iter().position(|n| n.kind == kind::FOLDER && n.name == folder) else { return };
-        if let Some(g) = dust.and_then(|d| lib.find_in(f, kind::GENERATOR, d)) {
-            self.dust.push(((l, g), id));
+    /// A footstep (FUN_100d2970 step 7): SeSep `name` (none while sneaking) in the actor's footstep folder (the
+    /// zone's 'fses', 'fser' in the rain weathers when not covered); missing there, the same folder of its model file
+    /// `model` (vtable +0x1e0; flyers keep their wing beats there) becomes its folder; else DAT 0's 'foot' (se 12, a
+    /// plain tone). One shot at `pos`, centred, at `level` (101 walking, 127 running). Then the dust generator `dust`
+    /// of that folder, if any, bursts once on actor `id`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn footstep(&mut self, id: u32, model: Option<u32>, pos: Vec3, name: Option<[u8; 4]>, dust: Option<[u8; 4]>, print: bool, rain: bool, level: i32) {
+        let Some(mut at) = self.foot_set(id, rain) else { return };
+        if let Some(name) = name {
+            let found = loop {
+                if let Some(n) = self.reg.libs[at.0].find_in(at.1, 0x3d, name) {
+                    break Some((at.0, n));
+                }
+                // A model file still loading: no step yet rather than the fallback tone.
+                let ml = match model {
+                    Some(m) => match self.lib_for(m) {
+                        Some(ml) => ml,
+                        None => return,
+                    },
+                    None => break None,
+                };
+                match folder_of(&self.reg.libs[ml], rain).map(|f| (ml, f)).filter(|&f| f != at) {
+                    Some(f) => {
+                        at = f;
+                        self.foot_folder.insert(id, Foot { rain, at });
+                    }
+                    None => break None,
+                }
+            };
+            let found = found.or_else(|| {
+                // Retail logs it too ("足音リソースの検索に失敗しました。").
+                log::debug!("effects: footstep {} on {id:#x} not found, DAT 0 'foot'", String::from_utf8_lossy(&name));
+                let g = self.reg.global?;
+                self.reg.libs[g].find_global(0x3d, u32::from_le_bytes(*b"foot")).map(|n| (g, n))
+            });
+            if let Some(r) = found
+                && let Some((se, loops)) = sound::sesep(self.reg.libs[r.0].data(r.1))
+            {
+                let mut s = sound::Sound::new(se, loops);
+                s.res = r;
+                s.pos = pos;
+                s.pan_in = 0.0;
+                s.vol = level;
+                self.sounds.push(s);
+            }
+        }
+        if let Some(g) = dust.and_then(|d| self.reg.libs[at.0].find_in(at.1, kind::GENERATOR, d)) {
+            self.dust.push(((at.0, g), id));
         }
         if print {
             self.prints.push(id);
         }
-        let Some(name) = name else { return };
-        let found = lib.find_in(f, 0x3d, name).map(|n| (l, n)).or_else(|| {
-            let g = self.reg.global?;
-            self.reg.libs[g].find_global(0x3d, u32::from_le_bytes(*b"foot")).map(|n| (g, n))
-        });
-        let Some(r) = found else { return };
-        let Some((se, loops)) = sound::sesep(self.reg.libs[r.0].data(r.1)) else { return };
-        let mut s = sound::Sound::new(se, loops);
-        s.res = r;
-        s.pos = pos;
-        s.pan_in = 0.0;
-        s.vol = level;
-        self.sounds.push(s);
     }
 
     /// Voices the audio reports playing (FUN_1023ba50), before tick.
@@ -2575,6 +2615,12 @@ impl Effects {
 
 /// Op-1 flags 4 (camera-relative) or 0x4000000 (spawned in view space): stopped under a roof (LAB_10183a30 /
 /// LAB_10183b40).
+/// FUN_100712e0(type 1, 'fses' / 'fser') in a file.
+fn folder_of(lib: &lib::Library, rain: bool) -> Option<usize> {
+    let w = crate::dat::generator::fourcc(if rain { "fser" } else { "fses" });
+    lib.tree.nodes.iter().position(|n| n.kind == kind::FOLDER && n.name == w)
+}
+
 fn roofed(g: &crate::dat::generator::Generator) -> bool {
     g.template().is_some_and(|o| o.u32(1) & 0x400_0004 != 0)
 }

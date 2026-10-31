@@ -12487,3 +12487,19 @@ since "Ship voyages: the moving world" listed them as not done.
 - Also: the 2FA recovery code has a Copy button (and Ctrl+C); the weather icon is centred in the whole location panel;
   the compass's tracked target is larger and pulses; macro keys are plain (no corner ornaments) with their number in
   white at the top right.
+
+## Footsteps: the model file's folder, not the 'foot' tone (2026-10-30)
+
+- User: a "telegraph beep" from Heraldic Imps (and Puks, other flyers) from the moment they came near; retail plays
+  their wing beats at the same cadence. Heraldic Imp, model 52021: Cib (3, 35, 0) = leg mode 3 (steps also while
+  standing), footstep kind 35 'z'. Its `0Nz1` SeSeps (se 147001 in fses, 147002 in fser) and `0az1` (127003 / 127004)
+  sit in the model file; Caedarva Mire's zone DAT 179 has no 'z' steps. Live (Lnxcsfix by an Imp, footsteps logged):
+  a step every 200..250 ms, about one gap in five under 150 ms.
+- FUN_100d2970 step 7 (footsteps_sound.md 1.3): a name missing from the actor's folder (+0x800, the zone's fses /
+  fser) switches it to the same folder in the actor's model resource (vtable +0x1e0 = actor+0xb4) and searches again;
+  that folder stays the actor's (+0x800, its 4cc at +0x804) until the set changes; only a name missing there too
+  falls to DAT 0's 'foot' = se 12, a 0.15 s 1047 Hz tone (retail logs "足音リソースの検索に失敗しました。" then).
+  Ours searched only the zone's folder and played se 12 for every such step: the beep.
+- Ours now (fx/mod.rs footstep, Foot, foot_set): the per-actor folder, the model file's (Character.files[0]) on a miss,
+  the dust from that folder; the wading ripple's `i900` and op 0x78's fall thud read it too; cleared with the zone. A
+  model file still loading plays no step rather than the tone. Test fx::tasks::tests::flyer_wing_beats.
