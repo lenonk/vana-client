@@ -19,8 +19,7 @@ const W: f32 = 380.0;
 impl Modern {
     /// egui's zoom for the window height and the Interface Size, as the game's layer sets it.
     fn zoom_to(&mut self, ctx: &Context, window: [u32; 2], scale: u32) {
-        let native = ctx.native_pixels_per_point().unwrap_or(1.0);
-        let zoom = self.theme.zoom(window[1] as f32 / native, scale);
+        let zoom = self.theme.zoom(window[1] as f32, scale);
         if (zoom - self.zoom).abs() > 0.001 {
             ctx.set_zoom_factor(zoom);
             self.zoom = zoom;

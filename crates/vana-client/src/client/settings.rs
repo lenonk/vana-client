@@ -233,7 +233,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
     ];
     const SCREEN: &[Row] = &[
         row("Resolution", "0001 / 0002: the window's size.", Size("0001", "0002", Sizes::Window), &[], Now),
-        row("Monitor", "The monitor full screen and borderless use (not retail).", Monitor, &[], Now),
+        row("Monitor", "The monitor the game opens on, in every window mode (not retail).", Monitor, &[], Now),
         row("GPU", "The graphics card to draw with; Default is the high-performance one (not retail).", Gpu, &[], Restart),
         row("Background", "0003 / 0004: the 3D scene's resolution, scaled to the window.", Size("0003", "0004", Sizes::Background), &[], Now),
         row("Menu Size", "0037 / 0038: the resolution menus and text are laid out at, then stretched.", Size("0037", "0038", Sizes::Ui), &[], Now),

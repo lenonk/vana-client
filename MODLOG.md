@@ -12570,3 +12570,44 @@ since "Ship voyages: the moving world" listed them as not done.
   unattached static generator started by op 0x02 restarts its running template (FUN_100531d0, Effects::restart;
   asm 0x100599e5..0x10059a39 links the template to the pair and restarts it) instead of a second instance.
   fx-soak then: 0 of 6314 runs leave anything (growth = a rise on every spawn; random emissions wobble).
+
+## Windows: monitors of different scale, the modern UI's size, two debug-build panics (2026-10-31)
+
+Tested on a real Windows 11 PC (DeepThought: DISPLAY1 2880x1800 at 200%, DISPLAY2 1920x1080 at 150%, DISPLAY12 and
+DISPLAY13 at 100%; RX 6800 XT eGPU), MinGW cross builds, release and debug.
+
+- The two crashes the user saw (2026-10-28) were egui `debug_assert!`s, so only debug builds (`cargo build` /
+  `cargo run`) hit them; release builds never did:
+  - "Texture modern/atlases/status_0@2x.png has size 2184x1776, but the maximum texture side is 2048": egui-winit
+    passes the device's texture limit in its first RawInput only (`State::new(.., max_texture_side)`, taken by
+    `RawInput::take`). The opening movie's frames take that input and drop it (logged on the box: "dropped by the
+    opening"); egui then keeps its 2048 default. Ours now sets `raw.max_texture_side` every frame.
+  - "Negative child size: [2346.4 -0.2]" on entering the world (Play): the modern chat window rounds its eased
+    height to whole pixels, which with almost no rows fell a fraction under the chrome; the line area is clamped
+    to 0 (and the kit slider's width too).
+- winit 0.30.13 on Windows (event_loop.rs WM_DPICHANGED, runner.rs BufferedEvent):
+  - It never answers WM_GETDPISCALEDSIZE, so Windows scales a dragged window linearly (its drag rectangle) and
+    overrides the size ScaleFactorChanged asked for (1280x720 came out 637x357 from 200% to 100%). Ours subclasses
+    the window (client/windpi.rs, SetWindowSubclass) and answers with the client size as it is plus the frame at the
+    new DPI (AdjustWindowRectExForDpi; none for a borderless window).
+  - During a drag it nudges the window back onto the monitor it is still mostly on, and the scale flipped back and
+    forth (nine changes 100% <-> 150% in half a second, the window no longer following the pointer). Inside the
+    move / size loop (WM_ENTERSIZEMOVE .. WM_EXITSIZEMOVE) ours puts the window at the rect Windows suggests after
+    winit's handling, and at the loop's end restores the client size it began with if the scale changed.
+  - A DPI change raised inside our own handler (set_outer_position for the Config Monitor row, the start-up
+    with_position) is buffered: winit reads the size writer at once (the linear size), SetWindowPos's that, and
+    replays ScaleFactorChanged later with a fresh writer whose value it then applies. The Resized for the linear
+    size is queued after it and arrived last: the surface took 1920x1080 while the window was 1280x720 (egui then
+    drew only the top-left 1280x720 of the frame). Resized now takes `window.inner_size()`, not the event's.
+  - ScaleFactorChanged keeps the configured resolution (the first-start window's size during first start), not
+    the surface's, which by then can already be the changed one; nothing in full screen.
+  - set_fullscreen(None) restores the window's placement on its old monitor, rescaled by DPI (2570 wide came back
+    5140): moving a window to another monitor leaves full screen first, then moves it over a few frames later.
+- A windowed start passed no position, so Windows opened it on the primary monitor whatever the Monitor row said
+  (the user's "snaps back to the first one"): it now opens centred on the configured monitor.
+- The modern UI ignored the monitor's scale: `zoom = (height / native) / 1080 * size` cancelled egui's native
+  pixels per point. It is now `height / 1080 * size` and egui multiplies the scale in, so a 200% panel draws it twice
+  as large (the user: the login form was too small to fill in on a 13-inch 200% panel). egui-winit stamps
+  `window.scale_factor()` into every frame's input, so the size follows the window to another monitor. The login
+  form, laid out on game-UI rects (its mouse on the same rects), grows by the scale too, up to 0.4 of the UI height,
+  its top kept below the logo's "ONLINE" line. Monitors at 100% (the Linux desktop here) see no change.

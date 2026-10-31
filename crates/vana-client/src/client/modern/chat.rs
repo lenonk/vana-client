@@ -701,7 +701,8 @@ pub fn draw(p: &mut Panels, v: &ChatView, s: Shown, lift: bool) {
     // Whole pixels: an eased height in fractions moved the bottom edge a pixel back and forth as it changed.
     let ppp = p.ctx.pixels_per_point();
     let height = ((chrome() + (s.rows * row).max(0.0)) * ppp).round() / ppp;
-    let lines_h = height - chrome();
+    // Rounded down, a height with almost no rows can fall a fraction under the chrome.
+    let lines_h = (height - chrome()).max(0.0);
     // The lines stand on the window's bottom edge, which stays put while it resizes, on a whole pixel: the layout
     // above them is rounded to pixels from the moving top, which made the text hop a pixel as the height changed.
     let floor = {

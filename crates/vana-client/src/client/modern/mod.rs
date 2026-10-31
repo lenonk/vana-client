@@ -202,8 +202,7 @@ impl Modern {
     /// One frame: egui's zoom for the window height, the panels. True when the config (the layout, the chat font) is
     /// to be saved.
     pub fn ui(&mut self, ctx: &Context, gu: &GameUi, w: &mut World, window: [u32; 2], cfg: &mut crate::config::Config) -> bool {
-        let native = ctx.native_pixels_per_point().unwrap_or(1.0);
-        let zoom = self.theme.zoom(window[1] as f32 / native, cfg.modern_scale);
+        let zoom = self.theme.zoom(window[1] as f32, cfg.modern_scale);
         if (zoom - self.zoom).abs() > 0.001 {
             ctx.set_zoom_factor(zoom);
             self.zoom = zoom;

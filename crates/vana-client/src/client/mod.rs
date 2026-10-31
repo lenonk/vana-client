@@ -12,6 +12,8 @@ mod creator;
 mod netwait;
 mod twofa;
 mod gmtell;
+#[cfg(windows)]
+mod windpi;
 mod charlnk;
 mod friends;
 mod friendlist;
@@ -637,18 +639,20 @@ enum LoginChoice {
 /// moves (and on Escape, which lands on Exit), 0002 on an enabled action, 0004 on a disabled one.
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
-fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut String; 4], remember: &mut bool, focus: &mut usize, busy: bool, status: &str, help_over: Option<&str>, version: &str, sounds: &mut Vec<crate::audio::Ui>, modern: Option<&mut Option<LoginView>>) -> Option<LoginChoice> {
+fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut String; 4], remember: &mut bool, focus: &mut usize, busy: bool, status: &str, help_over: Option<&str>, version: &str, sounds: &mut Vec<crate::audio::Ui>, modern: Option<&mut Option<LoginView>>, monitor_scale: f32) -> Option<LoginChoice> {
     let was = *focus;
     const CHOICES: [LoginChoice; 3] = [LoginChoice::LogIn, LoginChoice::Create, LoginChoice::Exit];
     const ITEMS: usize = 9;
     const CHECK: usize = 4;
     const TWOFA: usize = 8;
     let (sw, sh) = (size[0] as f32, size[1] as f32);
-    // The modern layer's form is half again as large (its text sized to the fields).
-    let f = if modern.is_some() { 1.5 } else { 1.0 };
+    // The modern layer's form is half again as large (its text sized to the fields), times the monitor's scale, up to
+    // what fits.
+    let f = if modern.is_some() { (1.5 * monitor_scale).min(0.4 * sh / 162.0).max(1.5) } else { 1.0 };
     let (ww, wh) = (380.0 * f, 162.0 * f);
-    // Centred between the title logo's foot (about half the height) and the copyright line (about 0.8).
-    let (wx, wy) = (((sw - ww) / 2.0).round(), (sh * 0.65 - wh / 2.0).round());
+    // Centred between the title logo's foot (about half the height) and the copyright line (about 0.8); a larger
+    // form stays below the logo's "ONLINE" line.
+    let (wx, wy) = (((sw - ww) / 2.0).round(), (sh * 0.65 - wh / 2.0).max(sh * 0.52).round());
     let row = |i: usize| wy + 14.0 * f + i as f32 * 22.0 * f;
     let field_rect = |i: usize| [wx + 148.0 * f, row(i), ww - 164.0 * f, 18.0 * f];
     // Remember password: the game font's box (filled when on) and its caption under the fields.
@@ -6653,8 +6657,10 @@ impl App {
             *self.monitor_applied.borrow_mut() = self.cfg.monitor.clone();
             if pick_monitor(&self.cfg.monitor, None, window.available_monitors(), size).is_some() {
                 log::info!("window: moving to monitor {:?}", self.cfg.monitor);
-                // Out of full screen first; the next stages run a few frames apart (move_window).
-                window.set_fullscreen(None);
+                // Out of full screen first on Linux; the next stages run a few frames apart (move_window).
+                if cfg!(target_os = "linux") {
+                    window.set_fullscreen(None);
+                }
                 self.move_stage.set(Some((1, 4)));
                 return;
             }
@@ -6685,7 +6691,8 @@ impl App {
     }
 
     /// The rest of a monitor move, a few frames per stage: 1 full screen on the new monitor (that places the
-    /// window there), 2 the configured mode, without leaving full screen when that mode is full screen too.
+    /// window there; elsewhere than Linux only for a full-screen mode, a window is moved over instead), 2 the
+    /// configured mode, without leaving full screen when that mode is full screen too.
     fn move_window(&self, window: &Window) {
         let Some((stage, frames)) = self.move_stage.get() else { return };
         if frames > 0 {
@@ -6694,15 +6701,30 @@ impl App {
         }
         let size = self.cfg.window_size();
         let monitor = pick_monitor(&self.cfg.monitor, None, window.available_monitors(), size);
+        let windowed = fullscreen(self.cfg.window_mode(), size, monitor.clone()).is_none();
         match stage {
             1 => {
-                window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(monitor)));
+                // Windows restores a window leaving full screen on the old monitor, rescaled by DPI: leave it first,
+                // then move the window over a few frames on.
+                if windowed && cfg!(not(target_os = "linux")) {
+                    if window.fullscreen().is_some() {
+                        window.set_fullscreen(None);
+                        self.move_stage.set(Some((1, 4)));
+                        return;
+                    }
+                    place_centred(window, monitor.as_ref(), size);
+                } else {
+                    window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(monitor)));
+                }
                 self.move_stage.set(Some((2, 8)));
             }
             _ => {
                 self.move_stage.set(None);
-                if fullscreen(self.cfg.window_mode(), size, monitor).is_none() {
+                if windowed && window.fullscreen().is_some() {
                     window.set_fullscreen(None);
+                    // X11 puts a window leaving full screen back where it was: centre it on the new monitor (Wayland
+                    // ignores a position; its compositor keeps it there).
+                    place_centred(window, monitor.as_ref(), size);
                 }
                 self.apply_window(window);
             }
@@ -10513,7 +10535,7 @@ impl App {
                     let modern_ui = self.cfg.modern_ui;
                     let mut view = None;
                     let help_over = self.twofa.as_ref().map(|t| t.help());
-                    let chosen = login_window(lu, shown, size, fields, &mut self.cfg.remember_password, focus, busy, &status, help_over, &self.cfg.client_version, &mut sounds, modern_ui.then_some(&mut view));
+                    let chosen = login_window(lu, shown, size, fields, &mut self.cfg.remember_password, focus, busy, &status, help_over, &self.cfg.client_version, &mut sounds, modern_ui.then_some(&mut view), ctx.native_pixels_per_point().unwrap_or(1.0));
                     let window = [size[0], size[1]];
                     // The popups keep retail's size but stand clear of our (larger) form: their bottom above its top.
                     let form_top = view.as_ref().map_or(f32::MAX, |v| v.frame[1] - 10.0);
@@ -11865,6 +11887,7 @@ impl App {
         if self.monitors.is_empty() {
             self.monitors = monitor_list(gfx.window.available_monitors());
             log::info!("monitors: {:?}", self.monitors.iter().map(|m| &m.1).collect::<Vec<_>>());
+            log::info!("monitor scales: {:?}", gfx.window.available_monitors().map(|m| format!("{} {} at {:?}", m.name().unwrap_or_default(), m.scale_factor(), m.position())).collect::<Vec<_>>());
         }
         if std::mem::take(&mut self.window_dirty) {
             self.apply_window(&gfx.window);
@@ -12062,6 +12085,9 @@ impl App {
         self.window_upkeep(&mut gfx);
         let size = [gfx.config.width, gfx.config.height];
         let mut raw = gfx.egui_state.take_egui_input(&gfx.window);
+        // egui-winit passes the texture limit in its first input only; lost, egui assumes 2048 and the modern atlases
+        // (status_0@2x is 2184 wide) fail its debug check.
+        raw.max_texture_side = Some(gfx.gpu.device.limits().max_texture_dimension_2d as usize);
         let phase = self.phase_name();
         let mut script_shot = None;
         if let Some(sc) = &mut self.drive.input {
@@ -13348,15 +13374,21 @@ impl ApplicationHandler for App {
         let [ww, wh] = if bootstrap { firstrun::WINDOW } else { self.cfg.window_size() };
         // Test runs are always windowed.
         let mode = if self.drive.driven() || bootstrap { 1 } else { self.cfg.window_mode() };
-        let attrs = Window::default_attributes()
+        let monitor = pick_monitor(&self.cfg.monitor, event_loop.primary_monitor(), event_loop.available_monitors(), [ww, wh]);
+        let full = fullscreen(mode, [ww, wh], monitor.clone());
+        let mut attrs = Window::default_attributes()
             .with_title(title)
             .with_resizable(!bootstrap)
             .with_inner_size(winit::dpi::PhysicalSize::new(ww, wh))
-            .with_fullscreen(fullscreen(mode, [ww, wh], pick_monitor(&self.cfg.monitor, event_loop.primary_monitor(), event_loop.available_monitors(), [ww, wh])))
             .with_decorations(mode == 1)
             .with_visible(false)
             .with_active(!self.drive.driven())
             .with_window_icon(window_icon());
+        // A window opens centred on its monitor, not where the system puts new ones (Windows: the primary).
+        if let Some(m) = monitor.as_ref().filter(|_| full.is_none()) {
+            attrs = attrs.with_position(centred(m, [ww, wh]));
+        }
+        let attrs = attrs.with_fullscreen(full);
         // Wayland ignores window icons: the compositor finds ours through the app id and vana-client.desktop.
         #[cfg(target_os = "linux")]
         let attrs = {
@@ -13365,6 +13397,8 @@ impl ApplicationHandler for App {
             WindowAttributesExtX11::with_name(attrs, "vana-client", "vana-client")
         };
         let window = Arc::new(event_loop.create_window(attrs).expect("creating the window"));
+        #[cfg(windows)]
+        windpi::keep_size(&window);
         if let Some(m) = window.current_monitor() {
             crate::gamecfg::set_desktop(m.size().width, m.size().height);
         }
@@ -13439,9 +13473,24 @@ impl ApplicationHandler for App {
                 }
                 _ => event_loop.exit(),
             },
+            // Onto a monitor of another scale a window keeps its resolution in pixels (winit would scale 2560 wide to
+            // 5120 at 200%); full screen keeps the monitor's size.
+            WindowEvent::ScaleFactorChanged { scale_factor, mut inner_size_writer } => {
+                if gfx.window.fullscreen().is_none() {
+                    let [w, h] = if self.first_run.is_some() { firstrun::WINDOW } else { self.cfg.window_size() };
+                    log::info!("window: scale factor {scale_factor}, keeping {w}x{h}");
+                    let _ = inner_size_writer.request_inner_size(winit::dpi::PhysicalSize::new(w, h));
+                }
+            }
             WindowEvent::Resized(size) => {
-                log::info!("window resized to {}x{}", size.width, size.height);
-                resize_surface(gfx, size);
+                // One winit held back (raised inside our own handler) can come after a newer size: the window's wins.
+                let now = gfx.window.inner_size();
+                if now != size {
+                    log::info!("window resized to {}x{} (stale {}x{})", now.width, now.height, size.width, size.height);
+                } else {
+                    log::info!("window resized to {}x{}", size.width, size.height);
+                }
+                resize_surface(gfx, now);
             }
             WindowEvent::RedrawRequested => {
                 self.redraw();
@@ -13588,6 +13637,20 @@ fn pick_monitor(preferred: &str, current: Option<winit::monitor::MonitorHandle>,
     let all: Vec<_> = all.collect();
     let named = all.iter().find(|m| !preferred.is_empty() && m.name().as_deref() == Some(preferred)).cloned();
     named.or(current).or_else(|| all.iter().find(|m| m.size().width == size[0] && m.size().height == size[1]).cloned()).or_else(|| all.into_iter().next())
+}
+
+/// The outer position centring `size` on monitor `m`.
+fn centred(m: &winit::monitor::MonitorHandle, size: [u32; 2]) -> winit::dpi::PhysicalPosition<i32> {
+    let (p, ms) = (m.position(), m.size());
+    let (dx, dy) = ((ms.width as i32 - size[0] as i32).max(0) / 2, (ms.height as i32 - size[1] as i32).max(0) / 2);
+    winit::dpi::PhysicalPosition::new(p.x + dx, p.y + dy)
+}
+
+/// Moves the window to centre `size` on `monitor`.
+fn place_centred(window: &Window, monitor: Option<&winit::monitor::MonitorHandle>, size: [u32; 2]) {
+    if let Some(m) = monitor {
+        window.set_outer_position(centred(m, size));
+    }
 }
 
 /// The monitors for the settings screen: (name, "name  W x H").

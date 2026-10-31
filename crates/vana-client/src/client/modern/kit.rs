@@ -353,7 +353,7 @@ const SLIDER_ROOM: f32 = 110.0;
 fn slider(ui: &mut Ui, m: &Modern, n: usize, at: usize, shown: &str) -> Option<usize> {
     let avail = ui.available_width();
     let value = ui.painter().layout_no_wrap(shown.to_string(), FontId::proportional(m.theme.small), m.theme.color("text"));
-    let (r, resp) = ui.allocate_exact_size(vec2(avail - SLIDER_ROOM, 20.0), Sense::click_and_drag());
+    let (r, resp) = ui.allocate_exact_size(vec2((avail - SLIDER_ROOM).max(0.0), 20.0), Sense::click_and_drag());
     let f = if n > 1 { at as f32 / (n - 1) as f32 } else { 1.0 };
     let track = r.shrink2(vec2(0.0, 6.0));
     let p = ui.painter();

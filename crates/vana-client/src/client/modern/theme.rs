@@ -81,8 +81,8 @@ impl Theme {
         self.colors.get(name).copied().unwrap_or(Color32::MAGENTA)
     }
 
-    /// Points per logical pixel: the window height against 1080 times the size setting (percent), clamped to
-    /// 0.4 .. 3.
+    /// egui's zoom: the window height in pixels against 1080 times the size setting (percent), clamped to 0.4 .. 3.
+    /// egui multiplies in the monitor's scale, so a 200% panel draws the interface twice as large.
     pub fn zoom(&self, height_px: f32, scale: u32) -> f32 {
         (height_px / 1080.0 * scale as f32 / 100.0).clamp(0.4, 3.0)
     }

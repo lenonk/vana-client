@@ -582,7 +582,7 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, menu_sw
             t
         });
         let help = twofa.as_ref().map(|t| t.help());
-        super::login_window(&mut gu, &input, [width, height], [&mut a, &mut b, &mut c, &mut d], &mut remember, &mut 0, false, "", help, &cfg.client_version, &mut Vec::new(), None);
+        super::login_window(&mut gu, &input, [width, height], [&mut a, &mut b, &mut c, &mut d], &mut remember, &mut 0, false, "", help, &cfg.client_version, &mut Vec::new(), None, 1.0);
         if let Some(t) = twofa.as_mut() {
             super::twofa::window(&mut gu, &input, [width, height], t, false, &mut Vec::new(), None);
         }
