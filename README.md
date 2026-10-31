@@ -10,7 +10,8 @@ The goal is a faithful clone of the retail client first. Its menus, sprites, fon
 from the game's files and from the behaviour of the original executable. Improvements come after that.
 Retail limits that only existed because of 2002 hardware, like the 30 fps cap, become settings.
 
-Linux is the current platform. Windows and macOS are planned.
+It runs on Linux and Windows (64-bit); builds of both are on the [releases page](https://github.com/lenonk/vana-client/releases).
+macOS is planned.
 
 ## Two interfaces
 
@@ -57,7 +58,7 @@ Not done yet:
 
 - Some event script operations (the mini-games on 0xb3 among them)
 - Gamepad support
-- macOS builds; Windows builds work through a MinGW cross build
+- macOS builds
 
 ## Requirements
 
