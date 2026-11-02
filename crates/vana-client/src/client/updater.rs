@@ -282,7 +282,9 @@ pub enum Job {
     Running(Progress),
     /// Lines to show; whether a restart finishes it.
     Done(Vec<String>, bool),
-    Failed(String),
+    /// What went wrong; whether game files were written before it (the app reopens its DAT index then too: a
+    /// refused code file leaves the data files already updated).
+    Failed(String, bool),
 }
 
 /// What the window does next for the app.
@@ -343,6 +345,7 @@ impl UpdateUi {
             let set = |p: Progress| *job.lock().unwrap() = Job::Running(p);
             let mut lines = Vec::new();
             let mut restart = false;
+            let wrote = std::sync::atomic::AtomicBool::new(false);
             let result = (|| -> Result<()> {
                 // Asked for before the file check finished: wait for it here.
                 let plan = if game {
@@ -374,6 +377,7 @@ impl UpdateUi {
                     let total_bytes: u64 = plan.todo.iter().map(|t| t.2).sum();
                     let version = plan.server.version.clone();
                     crate::patch::apply(&root, &plan, 4, &|f, b| {
+                        wrote.store(true, std::sync::atomic::Ordering::Relaxed);
                         set(Progress { label: "Updating game files".into(), done: b, total: total_bytes, detail: format!("{} / {} files, {:.1} of {:.1} MB", thousands(f as u64), thousands(total_files as u64), b as f64 / 1e6, total_bytes as f64 / 1e6) });
                     })?;
                     status.lock().unwrap().game = Game::Current;
@@ -392,7 +396,7 @@ impl UpdateUi {
             })();
             *job.lock().unwrap() = match result {
                 Ok(()) => Job::Done(lines, restart),
-                Err(e) => Job::Failed(format!("{e:#}")),
+                Err(e) => Job::Failed(format!("{e:#}"), wrote.into_inner()),
             };
         });
     }
@@ -403,7 +407,7 @@ impl UpdateUi {
         let finished = self.job.as_ref().map(|j| match &*j.lock().unwrap() {
             Job::Running(_) => None,
             Job::Done(_, r) => Some(*r),
-            Job::Failed(_) => Some(false),
+            Job::Failed(..) => Some(false),
         });
         match finished {
             // While it runs the window takes no keys.
@@ -463,15 +467,24 @@ impl UpdateUi {
         out
     }
 
-    /// Called every frame: reports a finished game update once (the app reopens its DAT index).
+    /// Called every frame: reports once that a game update finished, or failed after writing files (the app reopens
+    /// its DAT index).
     pub fn poll(&mut self) -> Out {
         let mut out = Out::default();
-        if !self.reloaded
-            && let Some(Job::Done(lines, _)) = self.job.as_ref().map(|j| j.lock().unwrap()).as_deref()
-        {
-            self.reloaded = true;
-            out.reload = lines.iter().any(|l| l.starts_with("Game files"));
-            self.cursor = 2;
+        if self.reloaded {
+            return out;
+        }
+        match self.job.as_ref().map(|j| j.lock().unwrap()).as_deref() {
+            Some(Job::Done(lines, _)) => {
+                self.reloaded = true;
+                out.reload = lines.iter().any(|l| l.starts_with("Game files"));
+                self.cursor = 2;
+            }
+            Some(Job::Failed(_, wrote)) => {
+                self.reloaded = true;
+                out.reload = *wrote;
+            }
+            _ => {}
         }
         out
     }
@@ -534,7 +547,7 @@ impl UpdateUi {
         let job = self.job.as_ref().map(|j| match &*j.lock().unwrap() {
             Job::Running(p) => Job::Running(p.clone()),
             Job::Done(l, r) => Job::Done(l.clone(), *r),
-            Job::Failed(e) => Job::Failed(e.clone()),
+            Job::Failed(e, w) => Job::Failed(e.clone(), *w),
         });
         let buttons = |gu: &mut GameUi, labels: [&str; 2], cursor: usize| {
             for (i, label) in labels.iter().enumerate() {
@@ -571,7 +584,7 @@ impl UpdateUi {
                 }
                 buttons(gu, if restart { ["Restart", "Later"] } else { ["OK", ""] }, if restart { self.cursor } else { 2 });
             }
-            Some(Job::Failed(e)) => {
+            Some(Job::Failed(e, _)) => {
                 gu.text("The update did not finish:", x + 20.0, y + 48.0, 0, white);
                 for (k, part) in gu.wrap(&e, w - 40.0).iter().enumerate().take(4) {
                     gu.text(part, x + 20.0, y + 68.0 + 16.0 * k as f32, 0, grey);

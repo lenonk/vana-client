@@ -1,0 +1,74 @@
+# The pinned list of game code files (src/code_pins.rs): every few hours, asks the PlayOnline patch server for its
+# current manifest, downloads each .exe / .dll whole, hashes it, and when the list changed signs it with the code-pins
+# key (secret CODE_PINS_KEY; release/new-code-pins-key.sh makes it) and publishes code-pins.txt + .sig in the
+# `code-pins` pre-release. The patcher writes a code file only when it is on this list.
+name: Code pins
+
+on:
+  schedule:
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: code-pins
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  pins:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpipewire-0.3-dev libclang-dev libasound2-dev libudev-dev pkg-config
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --locked
+      - name: Build the list from the patch server
+        run: target/release/vana-client code-pins > code-pins.txt && cat code-pins.txt
+      - name: Compare with the published list
+        id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Skipped only when the published text is the same AND its signature checks against the key built into
+          # clients now: after a key rotation or a half-finished upload the list is signed again.
+          gh release download code-pins -R "$GITHUB_REPOSITORY" -p code-pins.txt -O published.txt 2>/dev/null || : > published.txt
+          gh release download code-pins -R "$GITHUB_REPOSITORY" -p code-pins.txt.sig -O published.sig 2>/dev/null || : > published.sig
+          pub=$(tr -d ' \n' < release/code-pins-key.pub)
+          if [ ${#pub} -eq 64 ]; then
+            # An Ed25519 SubjectPublicKeyInfo is this fixed 12-byte prefix and the 32-byte key.
+            printf "$(printf '302a300506032b6570032100%s' "$pub" | sed 's/../\\x&/g')" > pub.der
+            valid=0
+            openssl pkeyutl -verify -rawin -pubin -keyform DER -inkey pub.der -in published.txt -sigfile published.sig >/dev/null 2>&1 && valid=1
+          else
+            valid=0
+          fi
+          if cmp -s code-pins.txt published.txt && [ "$valid" = 1 ]; then echo "same=1" >> "$GITHUB_OUTPUT"; echo "unchanged"; fi
+      - name: Sign and publish
+        if: steps.diff.outputs.same != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CODE_PINS_KEY: ${{ secrets.CODE_PINS_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$CODE_PINS_KEY" ] || { echo "::error::no CODE_PINS_KEY secret; run release/new-code-pins-key.sh"; exit 1; }
+          key="$RUNNER_TEMP/code-pins-key.pem"
+          umask 077
+          printf '%s\n' "$CODE_PINS_KEY" > "$key"
+          trap 'rm -f "$key"' EXIT
+          # The secret must match the key built into the client, or no client would accept the list.
+          pub=$(openssl pkey -in "$key" -pubout -outform DER | tail -c 32 | od -An -tx1 | tr -d ' \n')
+          [ "$pub" = "$(tr -d ' \n' < release/code-pins-key.pub)" ] || { echo "::error::CODE_PINS_KEY is not the key in release/code-pins-key.pub"; exit 1; }
+          openssl pkeyutl -sign -rawin -inkey "$key" -in code-pins.txt -out code-pins.txt.sig
+          if ! gh release view code-pins -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create code-pins -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" --title "Pinned game code files" \
+              --notes "SHA-256 of the PlayOnline patch server's current .exe / .dll files, signed with the code-pins key. Updated by the Code pins workflow; the patcher writes no code file that is not listed here."
+          fi
+          gh release upload code-pins -R "$GITHUB_REPOSITORY" code-pins.txt code-pins.txt.sig --clobber

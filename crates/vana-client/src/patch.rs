@@ -542,6 +542,9 @@ pub fn fetch_one(path: &str, dir: &Path) -> Result<(PathBuf, String)> {
     let entries = parse_manifest(&String::from_utf8_lossy(&manifest))?;
     let e = entries.iter().find(|e| e.path.eq_ignore_ascii_case(path)).ok_or_else(|| anyhow!("{path} is not in the manifest"))?;
     let data = produce(&mut Session::connect()?, dir, e, Action::Direct)?;
+    if is_code(&e.path) && !crate::code_pins::Pins::fetch()?.allows(&e.path, &data) {
+        bail!("{}: not on the pinned list of code files; not written", e.path);
+    }
     let out = writable(dir, &e.path)?;
     write_atomic(&out, &data)?;
     Ok((out, e.versions.last().map(|v| v.stamp.clone()).unwrap_or_default()))
@@ -549,7 +552,13 @@ pub fn fetch_one(path: &str, dir: &Path) -> Result<(PathBuf, String)> {
 
 /// Fetches and writes every planned file on `connections` sessions, then records the manifest. `progress` gets
 /// (files done, bytes done).
+///
+/// An executable or library is written only when it is on the signed pinned list (crate::code_pins): one that is
+/// not, or every one when the list cannot be had, is left as it is while the data files go on, and the manifest is
+/// not recorded, so the next check offers the update again (the list may simply not cover a new patch yet).
 pub fn apply(root: &Path, plan: &Plan, connections: usize, progress: &(dyn Fn(usize, u64) + Sync)) -> Result<()> {
+    let pins = plan.todo.iter().any(|t| is_code(&plan.entries[t.0].path)).then(crate::code_pins::Pins::fetch);
+    let refused: std::sync::Mutex<Vec<String>> = Default::default();
     let next = std::sync::atomic::AtomicUsize::new(0);
     let (files, bytes) = (std::sync::atomic::AtomicUsize::new(0), std::sync::atomic::AtomicU64::new(0));
     let failed: std::sync::Mutex<Option<anyhow::Error>> = Default::default();
@@ -567,7 +576,18 @@ pub fn apply(root: &Path, plan: &Plan, connections: usize, progress: &(dyn Fn(us
                     let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     let Some(&(ei, a, n)) = plan.todo.get(i) else { return };
                     let e = &plan.entries[ei];
-                    match produce(&mut sess, root, e, a).and_then(|d| write_atomic(&writable(root, &e.path)?, &d)) {
+                    let pinned = |d: &[u8]| match &pins {
+                        Some(Ok(p)) => p.allows(&e.path, d),
+                        _ => false,
+                    };
+                    let written = produce(&mut sess, root, e, a).and_then(|d| {
+                        if is_code(&e.path) && !pinned(&d) {
+                            refused.lock().unwrap().push(e.path.clone());
+                            return Ok(());
+                        }
+                        write_atomic(&writable(root, &e.path)?, &d)
+                    });
+                    match written {
                         Ok(()) => {
                             let f = files.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
                             let b = bytes.fetch_add(n, std::sync::atomic::Ordering::Relaxed) + n;
@@ -582,7 +602,32 @@ pub fn apply(root: &Path, plan: &Plan, connections: usize, progress: &(dyn Fn(us
     if let Some(e) = failed.into_inner().unwrap() {
         return Err(e);
     }
+    let refused = refused.into_inner().unwrap();
+    if !refused.is_empty() {
+        let why = match &pins {
+            Some(Err(e)) => format!("the pinned list of code files could not be checked ({e:#})"),
+            Some(Ok(p)) if p.server != plan.server.version => {
+                format!("the pinned list of code files covers {}, not {} yet; try again later", p.server, plan.server.version)
+            }
+            _ => "they are not on the pinned list of code files".into(),
+        };
+        bail!("{} code file(s) not written because {why}: {}", refused.len(), refused.join(", "));
+    }
     write_atomic(&root.join(STAMP_FILE), &plan.manifest)
+}
+
+/// The pinned list's text for the server's current code files, each downloaded whole and hashed (the code-pins
+/// workflow signs it). Nothing is written.
+pub fn code_pins() -> Result<String> {
+    let server = Session::connect()?.version()?;
+    let manifest = Session::connect()?.manifest()?;
+    let entries = parse_manifest(&String::from_utf8_lossy(&manifest))?;
+    let mut s = Session::connect()?;
+    let lines = entries.iter().filter(|e| is_code(&e.path)).map(|e| Ok(crate::code_pins::line(&e.path, &produce(&mut s, Path::new(""), e, Action::Direct)?))).collect::<Result<Vec<_>>>()?;
+    if lines.is_empty() {
+        bail!("the manifest lists no code files");
+    }
+    Ok(crate::code_pins::render(&server.version, lines))
 }
 
 #[cfg(test)]
