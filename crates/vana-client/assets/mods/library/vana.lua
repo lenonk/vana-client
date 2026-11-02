@@ -334,7 +334,7 @@ function packets.inject_in(id_or_data, body) end
 ---@param body? string the body after the 4-byte header
 function packets.inject_out(id_or_data, body) end
 
---- A whole sub-packet from an id and its body (the header's size made to fit).
+--- A whole sub-packet from an id and its body (the header's size made to fit; at most 508 bytes in all).
 ---@param id integer 
 ---@param body string 
 ---@return string

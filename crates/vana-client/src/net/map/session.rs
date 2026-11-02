@@ -44,6 +44,9 @@ impl SubPacket {
     }
 }
 
+/// The largest sub-packet: its header's size field is 7 bits of 4-byte words (127 * 4).
+pub const MAX_SUB_LEN: usize = 0x7f * 4;
+
 /// Builds one sub-packet; the body is padded to the 4-byte unit the size field counts in.
 pub fn build(id: u16, body: &[u8]) -> Vec<u8> {
     let len = (4 + body.len()).div_ceil(4) * 4;

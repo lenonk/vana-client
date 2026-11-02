@@ -866,6 +866,35 @@ mod tests {
         assert_eq!(vm.st.borrow().errors.len(), 1);
     }
 
+    /// Injected and hook-built packets carry a size field that matches their bytes, and none overflows it (issue #69).
+    #[test]
+    fn packet_sizes_fit_the_header() {
+        // A whole sub-packet with a wrong size field gets the right one; the data is padded to a word.
+        let p = fit(vec![0x15, 0x02, 0, 0, 1, 2, 3]).unwrap();
+        assert_eq!(p.len(), 8);
+        assert_eq!(u16::from_le_bytes([p[0], p[1]]), 0x015 | (2 << 9));
+        assert_eq!(fit(vec![0; 508]).unwrap().len(), 508);
+        assert!(fit(vec![0; 509]).is_err());
+        assert!(fit(vec![0; 3]).is_err());
+        let vm = Vm::new(manifest::Manifest::default(), PathBuf::from("."), vm::Source::Dir(PathBuf::from("."))).unwrap();
+        api::install(&vm.lua, &vm, (serde_json::Value::Null, serde_json::Value::Null)).unwrap();
+        vm.st.borrow_mut().granted.push("packets.write".into());
+        vm.lua.load("assert(#packets.build(0x15, string.rep('x', 504)) == 508)").exec().unwrap();
+        for code in [
+            "packets.build(0x15, string.rep('x', 505))",
+            "packets.build(0x200, '')",
+            "packets.inject_out(0x15, string.rep('x', 505))",
+            "packets.inject_in(string.rep('x', 512))",
+            "packets.inject_in('abc')",
+        ] {
+            assert!(vm.lua.load(code).exec().is_err(), "{code} was accepted");
+        }
+        vm.lua.load("packets.inject_in(string.char(0x15, 0x02, 0, 0, 1))").exec().unwrap();
+        let st = vm.st.borrow();
+        assert_eq!(st.inject_in, vec![vec![0x15, 0x04, 0, 0, 1, 0, 0, 0]]);
+        assert!(st.inject_out.is_empty());
+    }
+
     /// A mod can't reach /lua through commands.run (issue #68): it would grant itself permissions.
     #[test]
     fn commands_run_refuses_lua() {
@@ -1317,13 +1346,20 @@ fn packet_id(data: &[u8]) -> u16 {
     if data.len() < 2 { 0 } else { u16::from_le_bytes([data[0], data[1]]) & 0x1ff }
 }
 
-/// The header's size field (bits 9.., in 4-byte words) made to fit `data` (padded to a whole word).
-fn fit(mut data: Vec<u8>) -> Vec<u8> {
-    let len = data.len().max(4).div_ceil(4) * 4;
+/// The header's size field (bits 9.., in 4-byte words) made to fit `data` (padded to a whole word). An error when it
+/// can't: the field is 7 bits, so a sub-packet is at most 508 bytes (issue #69).
+pub(super) fn fit(mut data: Vec<u8>) -> Result<Vec<u8>, String> {
+    if data.len() < 4 {
+        return Err(format!("a packet is at least 4 bytes (its header), not {}", data.len()));
+    }
+    let len = data.len().div_ceil(4) * 4;
+    if len > crate::net::map::session::MAX_SUB_LEN {
+        return Err(format!("a packet is at most {} bytes (header included), not {len}", crate::net::map::session::MAX_SUB_LEN));
+    }
     data.resize(len, 0);
     let id = packet_id(&data);
     data[..2].copy_from_slice(&(id | ((len / 4) as u16) << 9).to_le_bytes());
-    data
+    Ok(data)
 }
 
 /// Every mod's hooks of one direction over one packet, in load order and priority (Windower's chain): each sees the
@@ -1365,12 +1401,10 @@ fn chain(host: &Host, w: &World, data: Vec<u8>, injected: bool, outgoing: bool) 
                         vm.error(&mlua::Error::runtime("changing or blocking packets needs packets.write (/lua grant)"));
                     }
                     Ok(mlua::Value::Boolean(false)) => blocked = true,
-                    Ok(mlua::Value::String(s)) => {
-                        let b = s.as_bytes().to_vec();
-                        if b.len() >= 4 {
-                            cur = fit(b);
-                        }
-                    }
+                    Ok(mlua::Value::String(s)) => match fit(s.as_bytes().to_vec()) {
+                        Ok(b) => cur = b,
+                        Err(e) => vm.error(&mlua::Error::runtime(format!("a packet hook's result was not used: {e}"))),
+                    },
                     Ok(_) => {}
                 }
             }

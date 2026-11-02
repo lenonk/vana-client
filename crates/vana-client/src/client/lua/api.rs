@@ -346,7 +346,7 @@ pub(super) fn install(lua: &Lua, vm: &super::vm::Vm, storage: (serde_json::Value
     }
     packets.set(
         "build",
-        lua.create_function(|lua, (id, body): (u16, mlua::LuaString)| lua.create_string(crate::net::map::session::build(id, &body.as_bytes())))?,
+        lua.create_function(|lua, (id, body): (Value, mlua::LuaString)| lua.create_string(build_packet(id, &body.as_bytes())?))?,
     )?;
     packets.set(
         "last",
@@ -997,12 +997,28 @@ pub(super) fn need_action(lua: &Lua) -> mlua::Result<()> {
     }
 }
 
-/// A packet to inject: a whole sub-packet (header included), or (id, body).
+/// A packet to inject: a whole sub-packet (header included, its size field set to fit), or (id, body).
 fn packet_bytes(a: Value, b: Option<mlua::LuaString>) -> mlua::Result<Vec<u8>> {
     match (a, b) {
-        (Value::Integer(id), Some(body)) => Ok(crate::net::map::session::build(id as u16, &body.as_bytes())),
-        (Value::Number(id), Some(body)) => Ok(crate::net::map::session::build(id as u16, &body.as_bytes())),
-        (Value::String(data), None) if data.as_bytes().len() >= 4 => Ok(data.as_bytes().to_vec()),
+        (id @ (Value::Integer(_) | Value::Number(_)), Some(body)) => build_packet(id, &body.as_bytes()),
+        (Value::String(data), None) => super::fit(data.as_bytes().to_vec()).map_err(mlua::Error::runtime),
         _ => Err(mlua::Error::runtime("inject takes (id, body) or a whole sub-packet")),
     }
+}
+
+/// session::build for a mod: the id must fit its 9 bits and the packet the 7-bit size field (issue #69).
+fn build_packet(id: Value, body: &[u8]) -> mlua::Result<Vec<u8>> {
+    let id = match id {
+        Value::Integer(i) => i,
+        Value::Number(n) if n.fract() == 0.0 => n as i64,
+        _ => return Err(mlua::Error::runtime("a packet id is a whole number")),
+    };
+    if !(0..=0x1ff).contains(&id) {
+        return Err(mlua::Error::runtime(format!("packet id {id} is not 0..0x1ff")));
+    }
+    let len = (4 + body.len()).div_ceil(4) * 4;
+    if len > crate::net::map::session::MAX_SUB_LEN {
+        return Err(mlua::Error::runtime(format!("a packet is at most {} bytes (header included), not {len}", crate::net::map::session::MAX_SUB_LEN)));
+    }
+    Ok(crate::net::map::session::build(id as u16, body))
 }
