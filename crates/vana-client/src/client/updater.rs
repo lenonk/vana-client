@@ -39,8 +39,8 @@ pub struct Release {
     pub tag: String,
     pub url: String,
     pub size: u64,
-    /// The asset's "<name>.sha256" beside it (sha256sum's format), when the release has one.
-    pub sha256_url: Option<String>,
+    /// The asset's "<name>.sig" beside it: its Ed25519 signature (64 bytes) by the release key.
+    pub sig_url: String,
 }
 
 pub enum Client {
@@ -96,7 +96,7 @@ pub fn start(root: PathBuf) -> Shared {
     });
     let c = s.clone();
     std::thread::spawn(move || {
-        let client = match latest_release() {
+        let client = match signing_key().and_then(|_| latest_release()) {
             Ok(Some(r)) if newer(&r.tag, env!("CARGO_PKG_VERSION")) => Client::Available(r),
             Ok(Some(_)) => Client::Current,
             Ok(None) => Client::Unavailable("no release for this platform".into()),
@@ -124,8 +124,10 @@ fn latest_release() -> Result<Option<Release>> {
     let tag = v["tag_name"].as_str().unwrap_or_default().to_string();
     let find = |name: &str| v["assets"].as_array().and_then(|a| a.iter().find(|x| x["name"].as_str() == Some(name)));
     let url = |a: &serde_json::Value| a["browser_download_url"].as_str().unwrap_or_default().to_string();
-    let sha256_url = find(&format!("{}.sha256", asset_name())).map(url);
-    Ok(find(asset_name()).map(|a| Release { tag, url: url(a), size: a["size"].as_u64().unwrap_or(0), sha256_url }))
+    let Some(asset) = find(asset_name()) else { return Ok(None) };
+    // An unsigned release is never offered: anyone who can change a release could change a checksum beside it too.
+    let sig_url = find(&format!("{}.sig", asset_name())).map(url).with_context(|| format!("release {tag} has no {}.sig; not offered", asset_name()))?;
+    Ok(Some(Release { tag, url: url(asset), size: asset["size"].as_u64().unwrap_or(0), sig_url }))
 }
 
 /// 5321 as "5,321".
@@ -208,30 +210,30 @@ pub fn download(url: &str, dest: &Path, progress: &dyn Fn(u64, u64)) -> Result<(
     Ok(())
 }
 
-/// The digest a "<name>.sha256" file gives: its first word, 64 hex digits (sha256sum writes "<hex>  <name>").
-fn parse_sha256(text: &str) -> Result<[u8; 32]> {
-    let hex = text.split_whitespace().next().unwrap_or_default();
-    if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-        bail!("the release's checksum file is not a SHA-256");
+/// The release signing key's public half (release/signing-key.pub, 64 hex digits; the private half stays with whoever
+/// publishes, release/publish.sh signs with it). Empty in a build without one: then no update is offered.
+const SIGNING_KEY: &str = include_str!("../../../../release/signing-key.pub");
+
+fn signing_key() -> Result<[u8; 32]> {
+    let hex = SIGNING_KEY.trim();
+    if hex.is_empty() {
+        bail!("this build has no release signing key; updates are not offered");
     }
-    let mut out = [0u8; 32];
-    for (i, o) in out.iter_mut().enumerate() {
-        *o = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16)?;
-    }
-    Ok(out)
+    hex::decode(hex).ok().and_then(|b| b.try_into().ok()).context("release/signing-key.pub is not 64 hex digits")
 }
 
-/// Checks a downloaded binary against the release's .sha256 (when it has one); on a mismatch the file is removed.
+/// `data` signed by `key`: Ed25519, as `openssl pkeyutl -sign -rawin` makes it (64 bytes).
+fn signed(key: &[u8; 32], data: &[u8], sig: &[u8]) -> bool {
+    ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, key).verify(data, sig).is_ok()
+}
+
+/// Checks a downloaded binary against the release's .sig before it is installed; anything else removes the file.
 fn verify(r: &Release, file: &Path) -> Result<()> {
-    let Some(sha_url) = &r.sha256_url else {
-        log::warn!("update: release {} has no {}.sha256; installing unchecked", r.tag, asset_name());
-        return Ok(());
-    };
-    let want = parse_sha256(&agent().get(sha_url).call().with_context(|| sha_url.clone())?.body_mut().read_to_string()?)?;
-    let got = ring::digest::digest(&ring::digest::SHA256, &std::fs::read(file)?);
-    if got.as_ref() != want {
+    let key = signing_key()?;
+    let sig = agent().get(&r.sig_url).call().with_context(|| r.sig_url.clone())?.body_mut().with_config().limit(1024).read_to_vec()?;
+    if !signed(&key, &std::fs::read(file)?, &sig) {
         let _ = std::fs::remove_file(file);
-        bail!("the downloaded vana-client {} does not match the release's checksum; not installed", r.tag);
+        bail!("the downloaded vana-client {} is not signed by the release key; not installed", r.tag);
     }
     Ok(())
 }
@@ -624,17 +626,25 @@ impl UpdateUi {
 
 #[cfg(test)]
 mod tests {
-    use super::{newer, parse_sha256, thousands};
+    use super::{newer, signed, thousands};
 
     #[test]
-    fn checksum_files_parse() {
-        let hex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-        let want = ring::digest::digest(&ring::digest::SHA256, b"");
-        assert_eq!(parse_sha256(&format!("{hex}  vana-client-linux-x86_64\n")).unwrap(), want.as_ref());
-        assert_eq!(parse_sha256(hex).unwrap(), want.as_ref());
-        assert!(parse_sha256("").is_err());
-        assert!(parse_sha256("e3b0c442 vana-client").is_err());
-        assert!(parse_sha256(&hex.replace('e', "g")).is_err());
+    fn signatures_check() {
+        use ring::signature::{Ed25519KeyPair, KeyPair};
+        let rng = ring::rand::SystemRandom::new();
+        let pair = |rng| Ed25519KeyPair::from_pkcs8(Ed25519KeyPair::generate_pkcs8(rng).unwrap().as_ref()).unwrap();
+        let (ours, theirs) = (pair(&rng), pair(&rng));
+        let key: [u8; 32] = ours.public_key().as_ref().try_into().unwrap();
+        let data = b"vana-client binary";
+        assert!(signed(&key, data, ours.sign(data).as_ref()));
+        // Another key's signature, a changed binary, or a cut signature are refused.
+        assert!(!signed(&key, data, theirs.sign(data).as_ref()));
+        assert!(!signed(&key, b"vana-client binarY", ours.sign(data).as_ref()));
+        assert!(!signed(&key, data, &ours.sign(data).as_ref()[..63]));
+        // RFC 8032 section 7.1, test 3 (message af82), the same Ed25519 that `openssl pkeyutl -sign -rawin` makes.
+        let key: [u8; 32] = hex::decode("fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025").unwrap().try_into().unwrap();
+        let sig = hex::decode("6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a").unwrap();
+        assert!(signed(&key, &hex::decode("af82").unwrap(), &sig));
     }
 
     #[test]
@@ -656,3 +666,4 @@ mod tests {
         assert_eq!((thousands(5321), thousands(452), thousands(1_234_567)), ("5,321".into(), "452".into(), "1,234,567".into()));
     }
 }
+

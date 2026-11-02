@@ -81,7 +81,7 @@ cargo build --release
 
 The binary is `target/release/vana-client`. Release builds are incremental, without link-time optimisation; for a binary to hand out, `cargo build --profile dist` (fat LTO, one codegen unit) writes `target/dist/vana-client`.
 
-Published releases are built with `release/build-linux.sh` (in the Steam Runtime 3 "sniper" SDK container, so one binary runs on every current distro) and `release/build-windows.sh` (a MinGW cross build), then `release/publish.sh VERSION` tags them and creates the GitHub release that the in-app Update offers.
+Published releases are built with `release/build-linux.sh` (in the Steam Runtime 3 "sniper" SDK container, so one binary runs on every current distro) and `release/build-windows.sh` (a MinGW cross build), then `release/publish.sh VERSION` signs them with the release key (Ed25519; the private key stays with the publisher, `VANA_SIGNING_KEY`, and its public half is `release/signing-key.pub`, built into the client), tags them and creates the GitHub release that the in-app Update offers. The client installs only a binary whose `.sig` matches that key.
 
 ## Install the game data
 
