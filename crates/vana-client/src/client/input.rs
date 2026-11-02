@@ -113,6 +113,9 @@ pub struct Input {
     consumed: bool,
     /// NumLock, from the last numpad digit's logical key (winit reports no toggle state).
     numlock: bool,
+    /// A game controller's sticks (client/gamepad.rs, not retail): left X / Y, right X / Y in -1 ..= 1, right and
+    /// down positive, as the axes.
+    stick: [f32; 4],
 }
 
 impl Default for Input {
@@ -138,6 +141,7 @@ impl Default for Input {
             window: false,
             consumed: false,
             numlock: true,
+            stick: [0.0; 4],
         }
     }
 }
@@ -246,6 +250,16 @@ impl Input {
                 }
             }
         }
+    }
+
+    /// The controller's sticks for the next frames (client/gamepad.rs).
+    pub fn set_stick(&mut self, stick: [f32; 4]) {
+        self.stick = stick;
+    }
+
+    /// A window had the keys last frame (arrows go to it, not to the camera).
+    pub fn window_active(&self) -> bool {
+        self.window
     }
 
     /// Drops every key (focus lost: the window gets no releases).
@@ -363,6 +377,16 @@ impl Input {
         }
         let key = |p: u8, n: u8| self.held(p) as i32 as f32 - self.held(n) as i32 as f32;
         let stick = |p: u64, n: u64| -> f32 { if self.pad.held & p != 0 { 127.0 / 128.0 } else if self.pad.held & n != 0 { -1.0 } else { 0.0 } };
+        // A controller's stick (not retail) counts as the compact stick of the same axis, the larger one winning. The
+        // left stick does not move while typing; the right stick follows the arrows' rule.
+        let (left, right) = (!self.typing, !self.typing && !self.window);
+        let pad_stick = match id {
+            4 | 0x79 | 0x9d if left => self.stick[0],
+            5 | 0x7a | 0x9e if left => self.stick[1],
+            6 if right => self.stick[2],
+            7 | 0x7c if right => self.stick[3],
+            _ => 0.0,
+        };
         let arrows = !self.typing && (!self.window || self.shift());
         let (keys, pad) = match id {
             4 => (if self.typing && self.numlock { 0.0 } else { key(0x4d, 0x4b) }, stick(0x20_0000, 0x40_0000)),
@@ -378,6 +402,7 @@ impl Input {
             6 => (if arrows { key(0xcd, 0xcb) } else { 0.0 }, stick(0x2_0000, 0x4_0000)),
             _ => (if arrows { key(0xd0, 0xc8) } else { 0.0 }, stick(0x10_0000, 0x8_0000)),
         };
+        let pad = if pad_stick.abs() > pad.abs() { pad_stick } else { pad };
         if keys.abs() >= pad.abs() { keys } else { pad }
     }
 

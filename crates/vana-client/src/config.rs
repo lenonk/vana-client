@@ -201,6 +201,16 @@ pub struct Config {
     pub modern_condense: bool,
     /// The list search's recent picks by character, newest first (listsearch.rs).
     pub modern_recent: std::collections::BTreeMap<String, Vec<String>>,
+    /// Not retail (client/gamepad.rs): read a game controller. Its buttons press keys, its sticks move and turn the
+    /// camera.
+    pub gamepad: bool,
+    /// Stick travel ignored around the centre, 0 ..= 0.9.
+    pub gamepad_deadzone: f32,
+    /// The right stick's up and down turned over.
+    pub gamepad_invert_y: bool,
+    /// Button -> key overrides by name ("South": "Enter", "LeftTrigger2": "ControlLeft"); empty = the defaults in
+    /// client/gamepad.rs. An empty key name unbinds the button.
+    pub gamepad_buttons: std::collections::BTreeMap<String, String>,
 }
 
 /// A modern UI panel's place: its left and top (or, for the panels that grow upward, its bottom `b`) as fractions of the
@@ -350,6 +360,10 @@ impl Default for Config {
             modern_battle_in_all: true,
             modern_condense: true,
             modern_recent: Default::default(),
+            gamepad: true,
+            gamepad_deadzone: 0.2,
+            gamepad_invert_y: false,
+            gamepad_buttons: Default::default(),
             tool: Default::default(),
             retail_aspect: false,
             monitor: String::new(),

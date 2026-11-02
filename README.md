@@ -42,6 +42,7 @@ Playable on a local LSB server. Working today:
 - Effects: spells, abilities, weapon skills and skillchains, damage numbers, footsteps, level up and the other
   milestone effects
 - The retail key set: numpad movement, autorun, first person, F-key targeting, macros and palettes
+- Gamepads (see [Gamepad](#gamepad))
 - The HUD, chat log and chat line (chat modes, auto-translate, text commands), targeting, combat, and the magic,
   ability and mount menus
 - The main menu: Status (merit points, job points, currencies, Unity), Equipment and equipment sets, Items and
@@ -60,7 +61,6 @@ Playable on a local LSB server. Working today:
 Not done yet:
 
 - Some event script operations (the mini-games on 0xb3 among them)
-- Gamepad support
 - macOS builds
 
 ## Requirements
@@ -141,6 +141,36 @@ changed from the in-game Config menus. The fields you may need to set by hand:
 | `frame_limit` | `300` | Frame limit in fps, `0` for unlimited |
 | `gpu` | empty | Graphics adapter by name; empty picks the high-performance one |
 | `audio_device` | empty | Output device; empty uses the system default |
+| `gamepad` | `true` | Read a game controller |
+| `gamepad_deadzone` | `0.2` | Stick travel ignored around the centre, `0` to `0.9` |
+| `gamepad_invert_y` | `false` | Turn the right stick's up and down over |
+| `gamepad_buttons` | empty | Button to key overrides (see below) |
+
+### Gamepad
+
+Any controller SDL-style mappings know (Xbox, PlayStation, Switch Pro and most others) works on Linux and Windows.
+The pad acts as a keyboard: the left stick walks (analog), the right stick turns the camera, and each button holds a
+key. With a window open, and on the title and lobby screens, the left stick moves the cursor like the arrow keys.
+
+| Button | Key | Does |
+|---|---|---|
+| South (A / Cross) | Enter | Confirm, act on the target |
+| East (B / Circle) | Escape | Cancel, back |
+| West (X / Square) | Num * | Lock on (or `/heal`) |
+| North (Y / Triangle), Start | Num - | Main menu |
+| D-pad | Arrows | Window cursor, camera |
+| LB / L1 | Tab | Next target |
+| RB / R1 | Num + | Other window, next tab |
+| LT / L2, RT / R2 | Ctrl, Alt | Held: the macro palettes. D-pad up / right / down / left and the face buttons N / E / S / W then press 1 to 8 |
+| Back / Select | F8 | Nearest monster |
+| Left stick click | Num 7 | Autorun |
+| Right stick click | Num 5 | First / third person |
+
+`gamepad_buttons` changes a button by gilrs's button name and winit's key name, for example
+`"gamepad_buttons": {"West": "F1", "Select": ""}` (an empty key unbinds it). Button names: `South`, `East`, `North`,
+`West`, `LeftTrigger`, `RightTrigger`, `LeftTrigger2`, `RightTrigger2`, `Select`, `Start`, `Mode`, `LeftThumb`,
+`RightThumb`, `DPadUp`, `DPadDown`, `DPadLeft`, `DPadRight`. Building on Linux needs libudev's headers
+(`libudev-dev`, `systemd-devel`).
 
 ## For developers
 
