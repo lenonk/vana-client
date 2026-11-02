@@ -136,8 +136,17 @@ pub fn read(map: &PadMap, alt: &PadMap, dev: &Device, mode: u8, dead: f32) -> (u
     } else if held & bit(slot::STICK_CAMERA) != 0 || mode == 2 {
         (v[0], v[1], v[2], v[3]) = (v[2], v[3], 0.0, 0.0);
     }
+    // Retail zeroes each axis under 42 on its own (FUN_10005a40), which snaps a stick within ~19 degrees of an axis
+    // onto it: turning the stick, the character turned in jumps. Ours: the dead zone is round, a stick's two axes
+    // zeroed together while its push is under it.
+    // The d-pad from an axis keeps retail's per-axis rule (its ±64 steps want the snap).
     let dead = dead * 127.0;
-    for x in &mut v {
+    for (x, y) in [(0, 1), (2, 3)] {
+        if v[x].hypot(v[y]) < dead {
+            (v[x], v[y]) = (0.0, 0.0);
+        }
+    }
+    for x in &mut v[4..] {
         if x.abs() < dead {
             *x = 0.0;
         }
@@ -402,6 +411,14 @@ mod tests {
         // Under 42 is nothing.
         let small = |c: u8| if c == 1 { 40.0 } else { 0.0 };
         assert_eq!(read(&m, &alt, &dev(&[], &small), 0, 42.0 / 127.0).1, [0.0; 4]);
+        // The dead zone is round: a push near an axis keeps its small side, so the direction does not snap.
+        let near = |c: u8| match c {
+            1 => 120.0,
+            2 => 30.0,
+            _ => 0.0,
+        };
+        let v = read(&m, &alt, &dev(&[], &near), 0, 42.0 / 127.0).1;
+        assert!(v[3] < -29.0 && ((v[3] / v[2]) + 0.25).abs() < 1e-4, "{v:?}");
         // A diagonal is rescaled to 127.
         let diag = |c: u8| if c <= 2 { 127.0 } else { 0.0 };
         let v = read(&m, &alt, &dev(&[], &diag), 0, 42.0 / 127.0).1;

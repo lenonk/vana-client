@@ -172,7 +172,7 @@ The default is FFXiPadConfig's XInput layout, the same as the official PC layout
 | `gamepad` | `true` | Read a game controller |
 | `gamepad_padsin` | empty (FFXiPadConfig's XInput default) | Button settings in `padsin000` format: 32 numbers, one per function, each an XInput button number (0 B, 1 X, 2 Y, 3 A, 4 / 5 / 6 / 7 d-pad right / left / up / down, 8 LB, 9 LT, 10 L3, 11 RB, 12 RT, 13 R3, 14 Start, 15 Back), an axis 32 + n (1 left X, 2 left Y, 4 right X, 5 right Y; negative inverts) or -1. The function order is in [padsin_order.md](docs/re/gamepad/padsin_order.md) |
 | `gamepad_padexsin` | empty | `padexsin000`, the map used while the "alternate map" button is held |
-| `gamepad_deadzone` | `0.33` | Stick travel ignored around the centre (retail's 42 of 127) |
+| `gamepad_deadzone` | `0.33` | Stick travel ignored around the centre (retail's 42 of 127), measured round so turning the stick does not snap to its axes |
 | `gamepad_invert_y` | `false` | Turn the camera's up and down over |
 
 Building on Linux needs libudev's headers (`libudev-dev`, `systemd-devel`).
