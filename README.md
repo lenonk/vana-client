@@ -175,6 +175,13 @@ The default is FFXiPadConfig's XInput layout, the same as the official PC layout
 | `gamepad_deadzone` | `0.33` | Stick travel ignored around the centre (retail's 42 of 127), measured round so turning the stick does not snap to its axes |
 | `gamepad_invert_y` | `false` | Turn the camera's up and down over |
 
+Typing on the pad: when a text field opens while the pad was the last thing used (the chat line, the login boxes,
+the character name), or on RB in a text field, a keyboard comes up. Under Steam (Steam Deck, Big Picture) that is
+Steam's own keyboard; elsewhere the client draws one on screen. On it the d-pad moves, A types the key, B or LB
+deletes, X turns the page (letters, capitals, symbols), Y types a space, RB or Start sends Enter and Back closes it.
+The mouse can click its keys too. The on-screen keyboard is ported from
+[Blizz127/vana-client](https://github.com/Blizz127/vana-client).
+
 Building on Linux needs libudev's headers (`libudev-dev`, `systemd-devel`).
 
 ## For developers

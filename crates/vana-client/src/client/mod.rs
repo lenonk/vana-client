@@ -54,6 +54,7 @@ mod firstrun;
 mod desktop;
 mod target;
 mod gamepad;
+mod osk;
 mod input;
 mod camera;
 mod items;
@@ -6522,6 +6523,12 @@ pub struct App {
     /// Keys Lua mods pressed this frame, as egui events.
     synth_events: Vec<egui::Event>,
     gamepad: gamepad::Gamepad,
+    /// The on-screen keyboard (osk.rs): ours where Steam has none, the text field edge that raises it, whether the pad
+    /// was the last device used, and the events its mouse clicks made for the next frame.
+    kb: osk::Keyboard,
+    kb_edge: osk::Edge,
+    pad_last: bool,
+    kb_events: Vec<egui::Event>,
     /// Frames per second, 0 = unlimited (config frame_limit), and the present mode must be picked again.
     frame_limit: u32,
     present_dirty: bool,
@@ -6768,6 +6775,10 @@ impl App {
             input: input::Input::default(),
             synth_events: Vec::new(),
             gamepad: gamepad::Gamepad::default(),
+            kb: osk::Keyboard::default(),
+            kb_edge: osk::Edge::default(),
+            pad_last: false,
+            kb_events: Vec::new(),
             frame_limit,
             present_dirty: false,
             window_dirty: false,
@@ -10870,6 +10881,17 @@ impl App {
         })
     }
 
+    /// The text field that has the keys, if any, for the on-screen keyboard: the chat line and the world's fields, the
+    /// login screen's, the character name entry.
+    fn text_field(&self) -> Option<osk::Field> {
+        match &self.phase {
+            Phase::World(w) => text_field_open(w).then_some(if w.typing { osk::Field::Chat } else { osk::Field::Other }),
+            Phase::Login { .. } => Some(osk::Field::Login),
+            Phase::Characters { screen: LobbyScreen::Create, .. } if self.creator_step == 5 && self.creator_world.is_none() => Some(osk::Field::Name),
+            _ => None,
+        }
+    }
+
     fn ui(&mut self, ctx: &egui::Context, window: [u32; 2]) {
         let mut action: Option<Box<dyn FnOnce(&mut App)>> = None;
         self.ui_drawn = false;
@@ -10891,7 +10913,7 @@ impl App {
         let notches = self.list_wheel.trunc();
         self.list_wheel -= notches;
         // Over a modern panel the pointer is egui's: the game's windows get no clicks or wheel there.
-        let mine = !(matches!(&self.phase, Phase::World(w) if w.modern) && (ctx.is_pointer_over_egui() || ctx.egui_is_using_pointer()));
+        let mine = !(matches!(&self.phase, Phase::World(w) if w.modern) && (ctx.is_pointer_over_egui() || ctx.egui_is_using_pointer())) && !self.kb.hovered();
         let input = ctx.input(|i| UiInput {
             wheel: if mine { notches as i32 } else { 0 },
             pointer: i.pointer.hover_pos().map(|p| (p.x * ppp * k.0, p.y * ppp * k.1 + ptr_dy)),
@@ -12658,7 +12680,18 @@ impl App {
             Phase::World(w) => window_over_actions(w) && !w.typing,
             _ => true,
         };
-        let pad = self.gamepad.poll(&self.cfg, gfx.window.has_focus(), menu, macros, palette, tabs, field, dt);
+        // A key, a click or typed text: the keyboard and mouse are the last devices, not the pad.
+        if raw.events.iter().any(|e| matches!(e, egui::Event::Key { pressed: true, .. } | egui::Event::PointerButton { pressed: true, .. } | egui::Event::Text(_))) {
+            self.pad_last = false;
+        }
+        // A keyboard over a field that is gone closes before it takes another frame of the pad.
+        let text = self.text_field();
+        if text.is_none() {
+            self.kb.close();
+        }
+        let ctx = gamepad::Ctx { menu, macros, palette, tabs, field, text: text.is_some(), osk: self.kb.is_open() };
+        let pad = self.gamepad.poll(&self.cfg, gfx.window.has_focus(), ctx, dt);
+        self.pad_last |= pad.pressed;
         self.input.set_pad(pad.pad);
         // FUN_101a2e80: a trigger press toggles its palette, the other trigger swaps to the other one.
         if pad.palette != 0
@@ -12675,7 +12708,22 @@ impl App {
         if pad.pressed && !self.dragging && !self.left_down {
             self.mouse.visible = false;
         }
-        raw.events.extend(pad.events);
+        // The on-screen keyboard: last frame's clicks, then the pad's keys (it takes them all while up).
+        raw.events.append(&mut self.kb_events);
+        if ctx.osk {
+            for ev in &pad.events {
+                raw.events.extend(self.kb.pad_event(ev));
+            }
+        } else {
+            raw.events.extend(pad.events);
+        }
+        let rose = self.kb_edge.update(text.is_some(), self.pad_last);
+        if let Some(f) = text
+            && (rose || (pad.keyboard && !self.kb.is_open()))
+            && osk::request(f) == osk::Raised::Builtin
+        {
+            self.kb.open(f);
+        }
         let phase = self.phase_name();
         let mut script_shot = None;
         if let Some(sc) = &mut self.drive.input {
@@ -12802,7 +12850,12 @@ impl App {
         let ctx = gfx.egui_ctx.clone();
         self.update_netwait(dt);
         let before = self.ui_snap();
-        let mut output = perf::timed(|| "egui".into(), || ctx.run_ui(raw, |ui| self.ui(ui.ctx(), size)));
+        let mut output = perf::timed(|| "egui".into(), || ctx.run_ui(raw, |ui| {
+            self.ui(ui.ctx(), size);
+            // The on-screen keyboard over everything; its clicks type next frame.
+            let typed = self.kb.show(ui.ctx());
+            self.kb_events.extend(typed);
+        }));
         self.egui_deltas.append(std::mem::take(&mut output.textures_delta));
         let after = self.ui_snap();
         if let (Some(s), Some(a)) = (Self::ui_sound(&before, &after), self.audio.as_mut()) {
@@ -12826,7 +12879,7 @@ impl App {
             gfx.egui_state.egui_input_mut().events.push(egui::Event::Paste(t));
         }
         if self.ui_drawn {
-            platform.cursor_icon = if self.cfg.tool("0021") == 0 { egui::CursorIcon::None } else { egui::CursorIcon::Default };
+            platform.cursor_icon = if self.cfg.tool("0021") == 0 && !self.kb.hovered() { egui::CursorIcon::None } else { egui::CursorIcon::Default };
         } else {
             self.mouse.invalidate();
         }

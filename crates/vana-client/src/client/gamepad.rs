@@ -55,6 +55,9 @@ pub mod slot {
     pub const MENU: u8 = 1;
     pub const TAB_BACK: u8 = 8;
     pub const TAB_NEXT: u8 = 12;
+    pub const WINDOW: u8 = 2;
+    pub const START: u8 = 15;
+    pub const BACK: u8 = 16;
     pub const CANCEL: u8 = 3;
     pub const RIGHT: u8 = 4;
     pub const LEFT: u8 = 5;
@@ -200,6 +203,38 @@ pub fn keys_of(held: u64, menu: bool, palette: bool, tabs: bool) -> (Vec<KeyCode
     (keys, held & !taken)
 }
 
+/// The on-screen keyboard's keys (client/osk.rs reads them): the d-pad moves its cursor, A types the key, B and LB
+/// (retail's software keyboard: 0x1f) erase, X turns the key page (0x25), Y is a space, RB (0x1e) and Start send Enter
+/// (as F2), Back closes it (0x2f). None of it reaches the game as pad bits.
+pub fn osk_keys(held: u64) -> Vec<KeyCode> {
+    let map = [
+        (slot::UP, KeyCode::ArrowUp),
+        (slot::DOWN, KeyCode::ArrowDown),
+        (slot::LEFT, KeyCode::ArrowLeft),
+        (slot::RIGHT, KeyCode::ArrowRight),
+        (slot::CONFIRM, KeyCode::Enter),
+        (slot::CANCEL, KeyCode::Backspace),
+        (slot::TAB_BACK, KeyCode::Backspace),
+        (slot::MENU, KeyCode::Tab),
+        (slot::WINDOW, KeyCode::Space),
+        (slot::TAB_NEXT, KeyCode::F2),
+        (slot::START, KeyCode::F2),
+        (slot::BACK, KeyCode::Escape),
+    ];
+    let mut keys: Vec<KeyCode> = Vec::new();
+    for (s, k) in map {
+        if held & bit(s) != 0 && !keys.contains(&k) {
+            keys.push(k);
+        }
+    }
+    keys
+}
+
+/// Keys that repeat while held (retail's pad repeat): the arrows, and Backspace on the on-screen keyboard.
+fn repeats(k: KeyCode) -> bool {
+    nav(k) || k == KeyCode::Backspace
+}
+
 fn nav(k: KeyCode) -> bool {
     matches!(k, KeyCode::ArrowUp | KeyCode::ArrowDown | KeyCode::ArrowLeft | KeyCode::ArrowRight)
 }
@@ -217,10 +252,32 @@ pub struct Frame {
     pub stick: [f32; 4],
     /// A macro trigger went down with the macro gate open: 1 LT (the Ctrl palette), 2 RT (Alt).
     pub palette: u8,
+    /// RB went down in a text field with the on-screen keyboard closed: raise it (the official layout's software
+    /// keyboard button).
+    pub keyboard: bool,
     /// egui key events for the windows (with repeats for the arrows).
     pub events: Vec<egui::Event>,
     /// A button went down (hides the mouse cursor, as a key does).
     pub pressed: bool,
+}
+
+/// What has the pad this frame.
+#[derive(Clone, Copy, Default)]
+pub struct Ctx {
+    /// A window has the keys.
+    pub menu: bool,
+    /// Retail's macro gate is open (field, no window but the action menu): LT / RT toggle the palettes.
+    pub macros: bool,
+    /// A macro palette is up.
+    pub palette: bool,
+    /// A window has the keys (not the chat line): LB / RB turn its tabs.
+    pub tabs: bool,
+    /// In the world.
+    pub field: bool,
+    /// A text field has the keys: RB raises the on-screen keyboard.
+    pub text: bool,
+    /// The built-in on-screen keyboard is up and takes the pad.
+    pub osk: bool,
 }
 
 #[derive(Default)]
@@ -239,10 +296,8 @@ pub struct Gamepad {
 impl Gamepad {
     /// Reads the pads. `focused`: the window has the focus (a pad in the background does nothing, as padmode's
     /// foreground default); `menu`: a window has the keys; `field`: in the world.
-    /// `macros`: retail's macro gate is open (field, no window but the action menu), so LT / RT toggle the palettes;
-    /// `palette`: one is up; `tabs`: a window has the keys (LB / RB turn its tabs).
-    #[allow(clippy::too_many_arguments)]
-    pub fn poll(&mut self, cfg: &Config, focused: bool, menu: bool, macros: bool, palette: bool, tabs: bool, field: bool, dt: f32) -> Frame {
+    pub fn poll(&mut self, cfg: &Config, focused: bool, ctx: Ctx, dt: f32) -> Frame {
+        let Ctx { menu, macros, palette, tabs, field, text, osk } = ctx;
         if !cfg.gamepad {
             return self.release_all();
         }
@@ -304,10 +359,15 @@ impl Gamepad {
             self.mode = (self.mode + 1) % 3;
         }
         self.prev = held;
+        // The on-screen keyboard takes every button and neither stick.
+        if osk {
+            return self.step(&osk_keys(held), dt);
+        }
         let menu = menu || palette || !field;
-        let (keys, pad_bits) = keys_of(held, menu, palette, tabs && menu);
+        let (keys, pad_bits) = keys_of(held, menu, palette, tabs && menu && !text);
         let mut f = self.step(&keys, dt);
         f.pad = pad_bits;
+        f.keyboard = text && edge & bit(slot::TAB_NEXT) != 0;
         if field && (macros || palette) {
             f.palette = if edge & bit(slot::MACRO_CTRL) != 0 { 1 } else if edge & bit(slot::MACRO_ALT) != 0 { 2 } else { 0 };
         }
@@ -350,7 +410,7 @@ impl Gamepad {
         }
         self.down.retain(|(k, _)| keys.contains(k));
         for (k, t) in &mut self.down {
-            if nav(*k) {
+            if repeats(*k) {
                 *t -= dt;
                 if *t <= 0.0 {
                     *t += REPEAT_EVERY;
@@ -454,6 +514,9 @@ mod tests {
         let mut g = Gamepad::default();
         let f = g.step(&[KeyCode::ShiftRight, KeyCode::Tab], 1.0 / 60.0);
         assert!(matches!(f.events[..], [egui::Event::Key { key: egui::Key::Tab, modifiers, .. }] if modifiers.shift), "{:?}", f.events);
+        // The on-screen keyboard: A types, B / LB erase, RB / Start send, and nothing reaches the game.
+        let (held, _) = read(&m, &m, &dev(&[3, 0, 8, 14], &none), 0, 0.33);
+        assert_eq!(osk_keys(held), vec![KeyCode::Enter, KeyCode::Backspace, KeyCode::F2]);
         // Every key has a DIK code.
         for k in [KeyCode::Enter, KeyCode::Escape, KeyCode::NumpadSubtract, KeyCode::ArrowUp] {
             assert!(crate::client::input::dik(k).is_some(), "{k:?}");
