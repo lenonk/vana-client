@@ -20267,3 +20267,76 @@ Ashita, beyond the above:
 - Controller input (tCrossBar, cBind) waits on gamepad support.
 
 Lessons from other games' mod layers (BG3 Script Extender, WoW, Skyrim, Factorio) are in docs/lua-mods.md 2.
+
+## Gamepad (2026-11-02)
+
+- Retail's pad path, from the unpacked FFXiMain.dll (30261006_0; the file is POL1-packed, see
+  docs/re/gamepad/findings.md, which also corrects earlier guesses: FUN_101bced0 is the chat word list loader, so
+  config 0xce is a chat-filter option, not a pad option). FUN_10005a40 polls DirectInput (DIJOYSTATE2) or XInput
+  (through xinputdll.dll) each frame into the input object's 64-bit pad word (+0x220 held, +0x228 pressed, +0x230
+  released, +0x238 repeat; bit n = slot n) and the stick bytes +0x250 / +0x251 camera X / Y, +0x252 / +0x253
+  movement X / Y ((b - 0x80) / 128, dead zone 42, movement past 9677 rescaled). padsin000 maps 32 positions to slots
+  through the permutation at 0x1034f930; values are button numbers (XInput virtual: 0 B, 1 X, 2 Y, 3 A, 4..7 d-pad
+  R / L / U / D, 8 LB, 9 LT, 10 L3, 11 RB, 12 RT, 13 R3, 14 Start, 15 Back) or axis codes 32 + n.
+- The key functions' pad bits (keyfn_table.md) are our PAD table's: the compact keyboard and the pad share the word.
+  The second word (+0x224) holds slots 32 / 33 / 35 / 36 (key functions 0xb7..0xba); slot 34 switches to padexsin.
+  0x27..0x2a are pad-only d-pad functions in the field (below).
+- Ours (client/gamepad.rs): gilrs stands in for DirectInput / XInput; config.json gamepad_padsin / gamepad_padexsin in
+  the registry's format, FFXiPadConfig's XInput layout by default. Our windows read egui keys, so the confirm,
+  cancel and main menu slots also send Enter / Escape / Num-, and the d-pad the arrows with a window or a palette up
+  (repeat 16 ticks, then every 2, as mgr +0x94). The sticks never step a window's cursor and keep moving / turning
+  with a window up.
+- What each button does where, from the DLL (docs/re/gamepad/window_fns.md): only 18 of the 239 window OnKey handlers
+  take the pad's extra events, nearly all of them text input (the software keyboard, msgline, comment, fep).
+  - Field d-pad (table 0x10371ee0): up / down step the alliance's 18 slots, wrapping (FUN_10203920); right / left the
+    next / previous actor on screen without wrapping (FUN_10083d00 / FUN_10083b40; Tab wraps). target::pad_step,
+    target::party_pad_step.
+  - Macros (FUN_101a2e80): a trigger's press (0x89 LT / 0x8a RT) toggles the Ctrl / Alt palette and the other swaps
+    it; the palette's own keys (FUN_101a3960) pick and run the macro. A pad-opened palette stays up after the
+    release (World::pad_palette). No button maps straight to a macro number.
+  - Windows: LT / RT are 0xa8, read with Ctrl / Alt, so held they ride on the arrows as Ctrl (page; the full log's
+    0xaf scroll) and both together as Alt (0xb5 / 0xb6, the item lists' next / previous bag). Their bits stay set
+    (0x89 item compare, 0x9a map fast scroll).
+  - RB 0x24 (FUN_101579c0): with no window, opens the chat line; with the UI hidden (FUN_101d0c70) the screenshot.
+  - Slots 32 / 33 / 35 / 36 (0xb7..0xba, unbound by default): the shut down prompt, F8's nearest target, /jump, /map.
+- Not built: retail's software keyboard windows (keypad*, where RB / LB / X / Back / LT / RT type; ours is the
+  on-screen keyboard below), the ground-position cursor that LT / RT + d-pad move in position-target mode
+  (0xb0..0xb3), and L3 centring the map viewer on its cursor (0x7e).
+
+## Gamepad: window tabs, lock-on camera, own facing (2026-11-02)
+
+- Ours: with a window up the pad's LB / RB (slots 8 / 12; retail's list windows take neither, window_fns.md) send
+  Shift+Tab / Tab, and every modern tabbed window turns its tabs with them: the storage view's bags, the journal,
+  settings (Settings::tab_back), the macro palettes and config pages (kit), the job point pages, the equip set pages
+  (esmenu) and storage tabs (esedit), the concierge's filters. World::key_shift carries the dispatched key's Shift.
+  Not the shop's Buy / Sell (its main menu, reached with the d-pad) or the chat log's channel tabs (no pad focus).
+- Fix: locked on, the stick's / keys' axis 6 turned the camera the wrong way. target::step_camera rotates with
+  Quat::from_rotation_y, opposite to camera::orbit, which the free camera turns by -v6; the locked call now negates it
+  (the mouse's cam_turn already matched).
+- Fix: our character is drawn from the float facing (World::my_face) instead of the network byte. Retail keeps the
+  heading as a float (FUN_100a6240: -atan2 of the frame's step, or the stick turned by the camera yaw) and rounds it
+  only for the position packet; from the byte (1.4 degree steps) a stick's slow turn stepped and its noise shook.
+
+## Gamepad: round stick dead zone (2026-11-02)
+
+- Ours: the movement and camera sticks' dead zone is round (a stick's two axes zeroed together while its push is
+  under it). Retail's FUN_10005a40 zeroes each axis under 42 on its own, which snaps a stick within asin(42/127) ~19
+  degrees of an axis onto it, so turning the stick turned the character in jumps. The d-pad from an axis keeps the
+  per-axis rule.
+
+## Gamepad: on-screen keyboard (2026-11-02)
+
+- Ours, ported from Blizz127/vana-client (develop, af02adc / b491cd0): when a text field opens and the pad was the
+  last device used, or on RB (slot 12) in a text field, the client raises a keyboard. Under Steam (`SteamAppId` or
+  `SteamGameId` set) it opens `steam://open/keyboard`; otherwise it draws its own egui keyboard. While that is open
+  the pad drives only the keyboard (no pad bits, no sticks). Retail has its own software keyboard windows, which
+  this does not reproduce; the text goes into our egui text fields.
+
+## Gamepad: UI hide covers the modern layer; the keyboard's opening press (2026-11-02)
+
+- Key function 0x56 (Back / Scroll Lock) hides the UI: retail's menu manager +0xb4 draws no window at all (see "UI
+  hide, screenshots, Pause"). Ours: the modern layer's windows are not drawn either while it is set (they stood
+  where retail's windows would). B / Esc still shows it again.
+- Ours: buttons held when the on-screen keyboard opens or closes are ignored until let go. RB raised the keyboard and,
+  still held, struck its Enter, closing the chat line, and on release of the keyboard re-pressed 0x24 (open the
+  chat line), so a held RB opened and closed it over and over and the game took no other pad input meanwhile.

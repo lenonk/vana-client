@@ -10529,7 +10529,7 @@ impl App {
             world.sounds.push(16);
         }
         // RB with the UI shown, in the field with no window: the chat input line opens (the software keyboard's
-        // trigger; the software keyboard itself is not built).
+        // trigger; ours raises the on-screen keyboard there, osk.rs).
         if rb && !world.ui_hidden && !world.typing && !event::active(world) && !world_window_open(world) && world.palette.0 == 0 {
             world.typing = true;
         }
