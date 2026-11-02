@@ -101,6 +101,13 @@ fn connect(c: &Cred, port: u16) -> Result<tls::TlsStream> {
     Ok(s)
 }
 
+/// The largest answer body taken: xi_profile's largest is a ReadFile of a whole file (data/files.h fileSizeLimit,
+/// 4 MiB) and its checksum; the rest is slack.
+const MAX_ANSWER: usize = 0x40_0000 + 0x1000;
+
+/// The longest IRC line taken: notices carry a base64 payload of a few hundred bytes.
+const MAX_IRC_LINE: usize = 64 * 1024;
+
 /// One profile request (3.2): ProfOpenData, ProfOpenAns 0x81, ProfSendReqData {kind 2, command, sub, size}, the body;
 /// the answer's error (0 ok, 1 refused, 0x7e not found) and body.
 pub fn request(c: &Cred, cmd: u8, sub: u8, body: &[u8]) -> Result<(u8, Vec<u8>)> {
@@ -126,11 +133,24 @@ pub fn request(c: &Cred, cmd: u8, sub: u8, body: &[u8]) -> Result<(u8, Vec<u8>)>
         bail!("xi_profile answer code {:#x}", recv[0]);
     }
     let size = u32::from_le_bytes(recv[4..8].try_into().unwrap()) as usize;
-    let mut out = vec![0u8; size];
-    s.read_exact(&mut out)?;
+    let out = read_answer(&mut s, size).with_context(|| format!("the answer to request {cmd:#x}/{sub:#x}"))?;
     s.conn.send_close_notify();
     let _ = s.flush();
     Ok((recv[1], out))
+}
+
+/// An answer body of the `size` its header gave, at most MAX_ANSWER; it grows as the bytes arrive, so a size the
+/// server never sends costs nothing.
+fn read_answer(r: &mut impl Read, size: usize) -> Result<Vec<u8>> {
+    if size > MAX_ANSWER {
+        bail!("xi_profile claims a {size}-byte answer (the most taken is {MAX_ANSWER})");
+    }
+    let mut out = Vec::new();
+    r.take(size as u64).read_to_end(&mut out)?;
+    if out.len() != size {
+        bail!("xi_profile closed the connection {} bytes into a {size}-byte answer", out.len());
+    }
+    Ok(out)
 }
 
 /// The body sealed with its checksum (the last u32).
@@ -471,14 +491,18 @@ fn irc_run(c: &Cred, tx: &mpsc::Sender<Irc>, stop: &mpsc::Receiver<()>) -> Resul
             send_line(r.get_mut(), "PING :x")?;
             last = Instant::now();
         }
-        match r.read_line(&mut line) {
+        // Bounded, so a server that never sends the newline can't grow the line without limit.
+        match r.by_ref().take((MAX_IRC_LINE + 1 - line.len()) as u64).read_line(&mut line) {
             Ok(0) => bail!("closed by the server"),
             Ok(_) if line.ends_with('\n') => {
                 let l = line.trim_end_matches(['\r', '\n']);
-                let text = &l[..l.len().saturating_sub(4)];
-                irc_line(r.get_mut(), text, tx)?;
+                // A line whose last 4 bytes split a character is malformed: skipped.
+                if let Some(text) = l.get(..l.len().saturating_sub(4)) {
+                    irc_line(r.get_mut(), text, tx)?;
+                }
                 line.clear();
             }
+            Ok(_) if line.len() > MAX_IRC_LINE => bail!("an IRC line over {MAX_IRC_LINE} bytes"),
             Ok(_) => {}
             Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
             Err(e) => return Err(e.into()),
@@ -524,6 +548,18 @@ fn notice(payload: &str) -> Option<Irc> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An answer header claiming more than any real answer is refused before anything is allocated, and one cut
+    /// short is an error (issue #81).
+    #[test]
+    fn answer_size_is_capped() {
+        assert!(read_answer(&mut &[][..], u32::MAX as usize).is_err());
+        assert!(read_answer(&mut &[][..], MAX_ANSWER + 1).is_err());
+        assert!(read_answer(&mut &[1u8, 2][..], 3).is_err());
+        assert_eq!(read_answer(&mut &[1u8, 2, 3, 4][..], 3).unwrap(), [1, 2, 3]);
+        let whole = vec![7u8; MAX_ANSWER];
+        assert_eq!(read_answer(&mut &whole[..], MAX_ANSWER).unwrap().len(), MAX_ANSWER);
+    }
 
     /// Vectors derived from LSB's codec (MODLOG "The Friend List and PlayOnline messages").
     #[test]

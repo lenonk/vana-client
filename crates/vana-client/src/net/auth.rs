@@ -7,6 +7,8 @@ use serde_json::{Value, json};
 use std::io::{Read, Write};
 
 pub const LOADER_VERSION: [u8; 3] = [2, 2, 0];
+/// The most of a login reply taken before giving up: xi_connect's replies are a few hundred bytes of JSON.
+const MAX_REPLY: usize = 64 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -55,6 +57,30 @@ fn describe(result: u64) -> &'static str {
     }
 }
 
+/// The reply is one JSON document: read until it parses, at most MAX_REPLY bytes.
+fn read_reply(stream: &mut impl Read) -> Result<Value> {
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 4096];
+    loop {
+        let n = match stream.read(&mut chunk) {
+            Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {
+                bail!("the login server did not reply (it ignores requests it considers malformed)")
+            }
+            r => r.context("reading the login reply")?,
+        };
+        if n == 0 {
+            bail!("the login server closed the connection without replying");
+        }
+        buf.extend_from_slice(&chunk[..n]);
+        if let Ok(v) = serde_json::from_slice(&buf) {
+            return Ok(v);
+        }
+        if buf.len() >= MAX_REPLY {
+            bail!("the login server's reply is over {MAX_REPLY} bytes and still not JSON");
+        }
+    }
+}
+
 pub fn send(host: &str, port: u16, command: Command, req: &Request) -> Result<Reply> {
     let mut stream = tls::connect(host, port).with_context(|| format!("connecting to {host}:{port}"))?;
     let mut body = json!({
@@ -72,24 +98,7 @@ pub fn send(host: &str, port: u16, command: Command, req: &Request) -> Result<Re
     stream.write_all(body.to_string().as_bytes())?;
     stream.flush()?;
 
-    // The reply is one JSON document; read until it parses.
-    let mut buf = Vec::new();
-    let mut chunk = [0u8; 4096];
-    let reply: Value = loop {
-        let n = match stream.read(&mut chunk) {
-            Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {
-                bail!("the login server did not reply (it ignores requests it considers malformed)")
-            }
-            r => r.context("reading the login reply")?,
-        };
-        if n == 0 {
-            bail!("the login server closed the connection without replying");
-        }
-        buf.extend_from_slice(&chunk[..n]);
-        if let Ok(v) = serde_json::from_slice(&buf) {
-            break v;
-        }
-    };
+    let reply = read_reply(&mut stream)?;
     stream.conn.send_close_notify();
     let _ = stream.flush();
 
@@ -118,4 +127,35 @@ pub fn send(host: &str, port: u16, command: Command, req: &Request) -> Result<Re
         0x12 => Reply::TotpRemoved,
         other => bail!("{} (code 0x{other:02X})", describe(other)),
     })
+}
+
+#[cfg(test)]
+mod reply_tests {
+    use super::*;
+
+    /// A reader that hands out `left` bytes of `fill`, then the end.
+    struct Endless(u8, usize);
+    impl Read for Endless {
+        fn read(&mut self, b: &mut [u8]) -> std::io::Result<usize> {
+            let n = b.len().min(self.1);
+            b[..n].fill(self.0);
+            self.1 -= n;
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn reply_parses_when_whole() {
+        let v = read_reply(&mut &br#"{"result": 1}"#[..]).unwrap();
+        assert_eq!(v["result"], 1);
+    }
+
+    /// A server streaming non-JSON is cut off at MAX_REPLY, not read until it stops (issue #81).
+    #[test]
+    fn endless_reply_is_cut_off() {
+        let mut r = Endless(b' ', usize::MAX);
+        let e = read_reply(&mut r).unwrap_err();
+        assert!(e.to_string().contains("still not JSON"), "{e}");
+        assert!(usize::MAX - r.1 <= MAX_REPLY + 4096);
+    }
 }
