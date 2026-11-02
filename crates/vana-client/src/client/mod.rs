@@ -5449,6 +5449,8 @@ struct World {
     /// The macro palette controller (DAT_1066279c): +0xc open (0, 1 Ctrl, 2 Alt), +0xd pending, +0x10 the hold's
     /// second, each palette's cursor cell.
     palette: (u8, u8, u64, [usize; 2]),
+    /// The open palette came from a pad trigger (FUN_101a2e80's toggle: it stays up after the release).
+    pad_palette: bool,
     /// Key function 0x56 (Scroll Lock): the UI hidden (menu manager +0xb4); shown again by Esc and on zoning.
     ui_hidden: bool,
     /// Key function 0x55 (Print Screen, UI hidden only): the screenshot to save this frame.
@@ -7725,6 +7727,7 @@ impl App {
                             party_asked: false,
                             macros: None,
                             palette: (0, 0, 0, [0, 0]),
+                            pad_palette: false,
                             ui_hidden: false,
                             shot_request: None,
                             shot_count: (0, -1),
@@ -10436,8 +10439,12 @@ impl App {
         // clock; released, it closes. Ctrl wins.
         let held = if self.input.test(0x76, input::mode::HELD) { 1 } else if self.input.test(0x77, input::mode::HELD) { 2 } else { 0 };
         let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        // A pad trigger's palette (client/gamepad.rs) stays up until toggled, run or cancelled.
+        world.pad_palette &= world.palette.0 != 0 && gate;
+        let pad_palette = world.pad_palette;
         let pal = &mut world.palette;
-        if held == 0 || !gate {
+        if held == 0 && pad_palette {
+        } else if held == 0 || !gate {
             (pal.0, pal.1, pal.2) = (0, 0, 0);
         } else if pal.0 != held {
             if pal.1 != held {
@@ -10474,7 +10481,9 @@ impl App {
         // map closed; the shutter SE "0016". Saved as FUN_101d0ea0 names it: the name's first three letters,
         // yymmddhhmmss and a letter for shots in the same second, in the game folder's screenshots (PNG here, retail
         // JPG).
-        if self.input.test(0x55, input::mode::PRESS) && world.ui_hidden && world.map.is_none() && world.in_scene() {
+        // The pad's RB (key function 0x24, pad only) is the same shutter with the UI hidden (window_fns.md).
+        let rb = self.input.test(0x24, input::mode::PRESS);
+        if (self.input.test(0x55, input::mode::PRESS) || rb) && world.ui_hidden && world.map.is_none() && world.in_scene() {
             let t = jiff::Zoned::now();
             let sec = t.second();
             world.shot_count = if world.shot_count.1 == sec { (world.shot_count.0.wrapping_add(1), sec) } else { (0, sec) };
@@ -10482,6 +10491,24 @@ impl App {
             let name = format!("{initials}{:02}{:02}{:02}{:02}{:02}{:02}{}.png", t.year() % 100, t.month(), t.day(), t.hour(), t.minute(), sec, (b'a' + world.shot_count.0 % 10) as char);
             world.shot_request = Some(self.cfg.ffxi_dir().join("screenshots").join(name));
             world.sounds.push(16);
+        }
+        // RB with the UI shown, in the field with no window: the chat input line opens (the software keyboard's
+        // trigger; the software keyboard itself is not built).
+        if rb && !world.ui_hidden && !world.typing && !event::active(world) && !world_window_open(world) && world.palette.0 == 0 {
+            world.typing = true;
+        }
+        // The pad's extra slots 32 / 33 / 35 / 36 (key functions 0xb7..0xba, pad only, unbound by default): the shut
+        // down prompt, F8's nearest target, /jump and /map.
+        if !event::active(world) && !world.typing && !world_window_open(world) {
+            if self.input.test(0xb7, input::mode::PRESS) && world.confirm.is_none() && world.my_motion.status != 1 {
+                world.confirm = Some((Confirm::Shutdown, false));
+            } else if self.input.test(0xb8, input::mode::PRESS) && !world.ko_open {
+                target::nearest_kind(world, 0x10, false, false);
+            } else if self.input.test(0xb9, input::mode::PRESS) {
+                send_chat(world, "/jump".into());
+            } else if self.input.test(0xba, input::mode::PRESS) {
+                send_chat(world, "/map".into());
+            }
         }
         // Key function 0x13 (Pause, FUN_101609f0): the log-out prompt, in the field, not engaged, with the UI shown.
         if self.input.test(0x13, input::mode::PRESS) && !event::active(world) && !world.ui_hidden && world.my_motion.status != 1 && world.confirm.is_none() && world.ko_offer != 2 {
@@ -10519,15 +10546,15 @@ impl App {
                 }
             }
         }
-        // Retail's pad-only field d-pad (key functions 0x27 / 0x28 / 0x29 / 0x2a, context 1, no keyboard binding; what
-        // they do is ours from the official layout: up / down the party, right / left the actors on screen). Not with a
-        // window or a target prompt up: the d-pad is their cursor then.
-        if !event::active(world) && !world.ko_open && world.ko_offer != 2 && !world_window_open(world) && world.prompt.is_none() {
+        // Retail's pad-only field d-pad (key functions 0x27 / 0x28 / 0x29 / 0x2a, context 1, no keyboard binding; table
+        // 0x10371ee0): up / down the alliance, right / left the actors on screen. Not with a window, a palette or a
+        // target prompt up: the d-pad is their cursor then.
+        if !event::active(world) && !world.ko_open && world.ko_offer != 2 && !world_window_open(world) && world.prompt.is_none() && world.palette.0 == 0 {
             let view = Self::camera(world).view();
             if self.input.test(0x29, input::mode::PRESS) {
-                target::cycle(world, view, true);
+                target::pad_step(world, view, true);
             } else if self.input.test(0x2a, input::mode::PRESS) {
-                target::cycle(world, view, false);
+                target::pad_step(world, view, false);
             } else if let Some(down) = [(0x27, false), (0x28, true)].into_iter().find(|(k, _)| self.input.test(*k, input::mode::PRESS)).map(|(_, d)| d)
                 && let Some(t) = target::party_pad_step(world, down)
             {
@@ -12595,12 +12622,19 @@ impl App {
         let field = matches!(self.phase, Phase::World(_));
         let menu = self.input.window_active() || matches!(&self.phase, Phase::World(w) if w.prompt.is_some());
         // Retail's macro gate (FUN_101a33e0): no window has the focus but the action menu.
-        let macros = matches!(&self.phase, Phase::World(w) if !window_over_actions(w) && !w.typing);
-        let pad = self.gamepad.poll(&self.cfg, gfx.window.has_focus(), menu, macros, field, dt);
+        let macros = matches!(&self.phase, Phase::World(w) if !window_over_actions(w) && !w.typing && !w.ui_hidden && w.macros.is_some());
+        let palette = matches!(&self.phase, Phase::World(w) if w.palette.0 != 0);
+        let pad = self.gamepad.poll(&self.cfg, gfx.window.has_focus(), menu, macros, palette, field, dt);
         self.input.set_pad(pad.pad);
-        for (code, down) in pad.keys {
-            if let Some(k) = input::dik(code) {
-                self.input.set(k, down);
+        // FUN_101a2e80: a trigger press toggles its palette, the other trigger swaps to the other one.
+        if pad.palette != 0
+            && let Phase::World(w) = &mut self.phase
+        {
+            let n = pad.palette;
+            if w.palette.0 == n {
+                (w.palette.0, w.palette.1, w.palette.2, w.pad_palette) = (0, 0, 0, false);
+            } else {
+                (w.palette.0, w.palette.1, w.pad_palette) = (n, n, true);
             }
         }
         self.input.set_stick(pad.stick);

@@ -681,17 +681,27 @@ fn nearest(w: &World, keep: impl Fn(u32, &super::Entity) -> bool) -> Option<u32>
 
 /// FUN_10083d00 / FUN_10083b40 order: from the target's screen key, the nearest key to that side (under 3600);
 /// none, the far end the other way (Tab wraps to the leftmost, Shift+Tab to the rightmost).
-fn screen_step(keys: &[(u32, f32)], from: f32, right: bool) -> Option<u32> {
+fn screen_step(keys: &[(u32, f32)], from: f32, right: bool, wrap: bool) -> Option<u32> {
     let side = |k: f32| if right { k - from } else { from - k };
     let next = keys.iter().filter(|(_, k)| side(*k) > 0.0 && side(*k) < 3600.0).min_by(|a, b| side(a.1).total_cmp(&side(b.1)));
-    let wrap = || keys.iter().filter(|(_, k)| side(*k) < 0.0).max_by(|a, b| side(a.1).abs().total_cmp(&side(b.1).abs()));
-    next.or_else(wrap).map(|(id, _)| *id)
+    let wrapped = || keys.iter().filter(|(_, k)| wrap && side(*k) < 0.0).max_by(|a, b| side(a.1).abs().total_cmp(&side(b.1).abs()));
+    next.or_else(wrapped).map(|(id, _)| *id)
 }
 
 /// Key functions 0x84 / 0x97 (Tab, Num0 / with Shift): FUN_10158ca0. No valid target: the nearest in front;
 /// else screen order by x_view / max(|z_view|, 1) x focal among candidates within 50 of the camera (on screen this
 /// frame, so nothing behind the camera), else the nearest.
 pub fn cycle(w: &mut World, view: glam::Mat4, right: bool) {
+    step_screen(w, view, right, true);
+}
+
+/// The pad's field d-pad right / left (key functions 0x29 / 0x2a, table 0x10371ee0): the same screen order as Tab, but
+/// it stops at the last actor on that side instead of wrapping (window_fns.md).
+pub fn pad_step(w: &mut World, view: glam::Mat4, right: bool) {
+    step_screen(w, view, right, false);
+}
+
+fn step_screen(w: &mut World, view: glam::Mat4, right: bool, wrap: bool) {
     if !picks_allowed(w) {
         return;
     }
@@ -706,8 +716,12 @@ pub fn cycle(w: &mut World, view: glam::Mat4, right: bool) {
         let key = |p: Vec3| Some(raw(p)).filter(|k| k.1 < 50.0).map(|k| k.0);
         let hidden = super::event::hidden(w);
         let keys: Vec<(u32, f32)> = w.entities.iter().filter(|(id, e)| **id != t && candidate(w, &hidden, **id, e)).filter_map(|(id, e)| key(e.pos).map(|k| (*id, k))).collect();
-        screen_step(&keys, from, right)
+        screen_step(&keys, from, right, wrap)
     });
+    // At the edge the pad keeps its target.
+    if pick.is_none() && cur.is_some() && !wrap {
+        return;
+    }
     let pick = pick.or_else(|| nearest(w, |_, _| true));
     if pick.is_some() {
         set(w, pick);
@@ -787,14 +801,16 @@ pub fn slot_target(w: &World, slot: usize) -> Option<u32> {
     w.actors.get(&id).is_some_and(|a| a.character.is_some()).then_some(id)
 }
 
-/// A controller's d-pad up / down (not retail's code): the party member (slots 0 ..= 5, as F1 ..= F6) above or below the
-/// target's slot, wrapping and skipping slots with no one to target; from a target outside the party, ourselves.
+/// The pad's field d-pad up / down (key functions 0x27 / 0x28, table 0x10371ee0): the alliance member (slots 0 ..= 17)
+/// above or below the target's slot, wrapping and skipping slots with no one to target; from a target outside the
+/// alliance, ourselves (window_fns.md).
 pub fn party_pad_step(w: &World, down: bool) -> Option<u32> {
-    let slots: Vec<Option<u32>> = (0..6).map(|s| slot_target(w, s)).collect();
+    const N: usize = 18;
+    let slots: Vec<Option<u32>> = (0..N).map(|s| slot_target(w, s)).collect();
     let Some(at) = w.target.and_then(|t| slots.iter().position(|s| *s == Some(t))) else {
         return slots[0].or(Some(w.my_id));
     };
-    (1..6).map(|i| if down { (at + i) % 6 } else { (at + 6 - i) % 6 }).find_map(|s| slots[s])
+    (1..N).map(|i| if down { (at + i) % N } else { (at + N - i) % N }).find_map(|s| slots[s])
 }
 
 /// FUN_101514a0: while engaged with no target, the first attackable actor we claimed that is alive.
@@ -964,11 +980,14 @@ mod tests {
     #[test]
     fn screen_order() {
         let keys = [(1, -200.0), (2, -50.0), (3, 40.0), (4, 300.0)];
-        assert_eq!(screen_step(&keys, 0.0, true), Some(3));
-        assert_eq!(screen_step(&keys, 0.0, false), Some(2));
-        assert_eq!(screen_step(&keys, 500.0, true), Some(1));
-        assert_eq!(screen_step(&keys, -500.0, false), Some(4));
-        assert_eq!(screen_step(&[], 0.0, true), None);
+        assert_eq!(screen_step(&keys, 0.0, true, true), Some(3));
+        assert_eq!(screen_step(&keys, 0.0, false, true), Some(2));
+        assert_eq!(screen_step(&keys, 500.0, true, true), Some(1));
+        assert_eq!(screen_step(&keys, -500.0, false, true), Some(4));
+        assert_eq!(screen_step(&[], 0.0, true, true), None);
+        // The pad's d-pad stops at the edge.
+        assert_eq!(screen_step(&keys, 500.0, true, false), None);
+        assert_eq!(screen_step(&keys, -500.0, false, false), None);
     }
 
     /// Attackable targets go when dead, despawning or flagged off (with /attackoff); NPCs only when hidden or
