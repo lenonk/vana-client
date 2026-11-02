@@ -39,7 +39,9 @@ pub fn parse_cur(b: &[u8]) -> Result<Frame> {
     let (w, h) = (b[e] as u32, b[e + 1] as u32);
     let hotspot = if kind == 2 { (u16_at(b, e + 4).unwrap_or(0), u16_at(b, e + 6).unwrap_or(0)) } else { (0, 0) };
     let (Some(len), Some(at)) = (u32_at(b, e + 8), u32_at(b, e + 12)) else { bail!("short icon entry") };
-    let Some(img) = b.get(at as usize..(at + len) as usize) else { bail!("icon image out of range") };
+    let Some(img) = (at as usize).checked_add(len as usize).and_then(|end| b.get(at as usize..end)) else {
+        bail!("icon image out of range")
+    };
     let (width, height, rgba) = if img.starts_with(b"\x89PNG") { png(img)? } else { dib(img, w, h)? };
     Ok(Frame { width, height, rgba, hotspot })
 }
