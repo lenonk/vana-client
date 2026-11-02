@@ -54,8 +54,17 @@ From the unpacked FFXiMain.dll (30261006_0). [C] confirmed in code, [I] inferred
   0xb8 [C]. So a trigger + d-pad hits 0xb0..0xb3 first and never steps the target; outside a ground prompt their
   command does nothing (+0x58 == 0) [C].
 - Locked on with no prompt, FUN_101587f0 swallows every command but 1 and 5 [C].
-- Up / down (command 2, FUN_10158b60) read field +0x60: & 4 party allowed, & 8 the alliance too (else the party
-  only), & 0x200 self. Left / right (commands 3 / 4) are FUN_10083b40 / FUN_10083d00(current, +0x60, +0x64) [C].
+- Up / down (command 2, FUN_10158b60) need field +0x60 & 4 and a pick, else nothing [C]. partyOnly = !(+0x60 & 8).
+  FUN_10203920 (ECX DAT_106643a8; only with no party-window pick, +0x40 == 0 and DAT_106643e4 == 0) resets the index
+  DAT_106643dc to 0 with no step when the pick is in no slot; else 0x27 -1 / 0x28 +1, wrapping over all 18 slots,
+  until FUN_102034e0(0) is non-zero (slot valid by FUN_102033c0: record 0x10663af0 + i * 0x7c, +0x62 set, short +0x1c
+  0, +0x1a our zone, its entity's +0xa0 set) [C]. If the pick is in the list (FUN_102031f0(id, partyOnly, 1)) the
+  result is FUN_102034e0(partyOnly) (FUN_10203500: 0 for slots past 5 when partyOnly) [C]. Without 0x200 a result of
+  us steps once more, and us again is nothing; with 0x200 a 0 result is us [C]. Slot 0 is us [I].
+- The macro gate FUN_101a33e0 needs game state 0x60, !FUN_1015dce0(), field +0x59 and +0xc4 clear, DAT_106631d4
+  idle, !FUN_10087070(0) and its window test; every palette path of FUN_101a2e80 (LT 0x89 / RT 0x8a press and hold,
+  Ctrl / Alt 0x76 / 0x77 held, FUN_101a3500's Ctrl / Alt + 1..0) needs it, so a target prompt opens no palette [C]. A
+  macro run from the palette closes it (FUN_101a3960 event 5 -> FUN_101a3300, FUN_101a3350) before an <st> line [C]. Left / right (commands 3 / 4) are FUN_10083b40 / FUN_10083d00(current, +0x60, +0x64) [C].
   +0x60 / +0x64 come from FUN_10159170 and table 0x103720c0 (1 -> 0x200, 2 -> 0x100, 4 -> 4, 8 -> 8, 0x10 -> 1,
   0x20 -> 0x10, 0x40 -> 2, 0x80 -> 2 with +0x64 = 0x1800); a party target also gets 8 when FUN_101cc350 says we are
   in an alliance [C]. With no prompt +0x60 = 0xffffffff and +0x64 = 0 (FUN_101578f0 / FUN_10159040) [C].

@@ -872,22 +872,28 @@ pub fn slot_target(w: &World, slot: usize) -> Option<u32> {
     w.actors.get(&id).is_some_and(|a| a.character.is_some()).then_some(id)
 }
 
-/// The pad's field d-pad up / down (key functions 0x27 / 0x28, table 0x10371ee0, FUN_10158b60 -> FUN_10203920): the
-/// member above or below the target's slot, wrapping and skipping slots with no one the action may take; from a target
-/// outside them, the first that fits (ourselves with no prompt) (window_fns.md).
+/// The pad's field d-pad up / down (key functions 0x27 / 0x28, table 0x10371ee0, FUN_10158b60 -> FUN_10203920). None
+/// leaves the pick as it is. Field +0x60 is Sub::inc, every bit with no prompt (ground_cursor.md).
 pub fn party_pad_step(w: &World, down: bool) -> Option<u32> {
-    // Field +0x60 (Sub::inc; all bits with no prompt): 4 the party, 8 the alliance too (else our six), 0x200 us.
     let inc = w.prompt.as_ref().map_or(u32::MAX, |s| s.inc);
-    let n = if inc & 8 != 0 { 18 } else { 6 };
-    // By slot: us by 0x200, the rest of our six by 4, the alliance's slots (6..17) by 8.
-    let valid = |s: usize, id: u32| if id == w.my_id { inc & 0x200 != 0 } else if s < 6 { inc & 4 != 0 } else { inc & 8 != 0 };
-    let slots: Vec<Option<u32>> = (0..n).map(|s| slot_target(w, s)).collect();
-    let fits = |s: usize| slots[s].filter(|&id| valid(s, id));
-    let found = match w.target.and_then(|t| slots.iter().position(|s| *s == Some(t))) {
-        Some(at) => (1..n).map(|i| if down { (at + i) % n } else { (at + n - i) % n }).find_map(fits),
-        None => (0..n).find_map(fits),
-    };
-    // Nothing valid: us, when the action may take us.
+    // Nothing without 4 or without a pick.
+    let pick = w.target.filter(|_| inc & 4 != 0)?;
+    // Without 8 only our six count (FUN_10203500).
+    let party_only = inc & 8 == 0;
+    let slots: Vec<Option<u32>> = (0..18).map(|s| slot_target(w, s)).collect();
+    let fits = |s: usize| slots[s].filter(|_| !(party_only && s > 5));
+    // FUN_10203920 walks all 18 slots to the next occupied one, wrapping; a pick outside them (or outside our six
+    // when party_only) gives nothing.
+    let next = |at: usize| (1..=18).map(|i| if down { (at + i) % 18 } else { (at + 18 - i) % 18 }).find(|&s| slots[s].is_some());
+    let at = slots.iter().position(|s| *s == Some(pick)).filter(|&at| fits(at).is_some());
+    let mut to = at.and_then(next);
+    let mut found = to.and_then(fits);
+    // Without 0x200, landing on us steps once more; us again is nothing.
+    if inc & 0x200 == 0 && found == Some(w.my_id) {
+        to = to.and_then(next);
+        found = to.and_then(fits).filter(|&id| id != w.my_id);
+    }
+    // With 0x200, nothing becomes us.
     found.or_else(|| (inc & 0x200 != 0).then_some(w.my_id))
 }
 
