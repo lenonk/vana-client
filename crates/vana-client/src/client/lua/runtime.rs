@@ -322,6 +322,10 @@ fn call(lua: &Lua, id: &str, name: &str, args: mlua::Variadic<Value>) -> mlua::R
     };
     let f: Function = {
         let s = st.borrow();
+        // A suspended mod runs nothing, for the host or for another mod.
+        if s.suspended {
+            return Err(mlua::Error::runtime(format!("mods.call: {id} is suspended")));
+        }
         let p = s.provided.iter().find(|p| p.0 == name).ok_or_else(|| mlua::Error::runtime(format!("mods.call: {id} provides no {name}")))?;
         tl.registry_value(&p.1)?
     };

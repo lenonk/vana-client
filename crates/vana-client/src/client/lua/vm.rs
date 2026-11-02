@@ -106,6 +106,8 @@ pub(super) struct ModState {
     pub binds: Vec<super::input::Bind>,
     /// Functions other mods may call (mods.provide).
     pub provided: Vec<(String, RegistryKey)>,
+    /// The mod was suspended (Vm::suspended): other mods can't run its code through mods.call either.
+    pub suspended: bool,
 }
 
 impl ModState {

@@ -712,6 +712,7 @@ pub(super) fn frame(w: &mut World, gu: Option<&super::game_ui::GameUi>) {
         {
             out.push((format!("Mod {} suspended: {why}. /lua reload {} to start it again.", vm.manifest.name, vm.manifest.id), ERROR));
             vm.suspended = Some(why);
+            vm.st.borrow_mut().suspended = true;
         }
         let (notices, vm_ops, save_now) = {
             let mut st = vm.st.borrow_mut();
@@ -864,6 +865,26 @@ mod tests {
         assert!(t0.elapsed() < std::time::Duration::from_secs(2), "the test ran {:?}", t0.elapsed());
         assert!(vm.st.borrow().sleepers.is_empty());
         assert_eq!(vm.st.borrow().errors.len(), 1);
+    }
+
+    /// A suspended mod's provided functions don't run for other mods either.
+    #[test]
+    fn mods_call_skips_a_suspended_mod() {
+        let dir: runtime::Shared = Default::default();
+        let new = |id: &str| {
+            let m = manifest::Manifest { id: id.into(), ..Default::default() };
+            let vm = Vm::new(m, PathBuf::from("."), vm::Source::Dir(PathBuf::from("."))).unwrap();
+            vm.lua.set_app_data(dir.clone());
+            api::install(&vm.lua, &vm, (serde_json::Value::Null, serde_json::Value::Null)).unwrap();
+            dir.borrow_mut().mods.push(runtime::Entry { id: id.into(), name: id.into(), version: String::new(), lua: vm.lua.weak(), st: vm.st.clone() });
+            vm
+        };
+        let (caller, provider) = (new("caller"), new("provider"));
+        provider.lua.load("mods.provide('twice', function(n) return n * 2 end)").exec().unwrap();
+        assert_eq!(caller.lua.load("return mods.call('provider', 'twice', 21)").eval::<i64>().unwrap(), 42);
+        provider.st.borrow_mut().suspended = true;
+        let e = caller.lua.load("return mods.call('provider', 'twice', 21)").eval::<i64>().unwrap_err();
+        assert!(e.to_string().contains("suspended"), "{e}");
     }
 
     /// Injected and hook-built packets carry a size field that matches their bytes, and none overflows it (issue #69).

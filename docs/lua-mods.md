@@ -82,8 +82,10 @@ Built (client/lua/, modern/modwin.rs), each checked live:
   - `fs.read` / `write` / `append` / `exists` / `list` / `mkdir` / `remove` / `rename` in the mod's data folder
     (mod-data/<id>/files), reads falling back to the mod's own files; `shared/...` with `files.shared`; no `..`
   - `json.encode` / `decode`
-  - `mods.list`, `mods.provide` / `mods.call` (a function in another mod's VM, values copied), `mods.emit` (an event
-    to every other mod)
+  - `mods.list`, `mods.provide` / `mods.call` (a function in another mod's VM, values copied; not a suspended mod's),
+    `mods.emit` (an event to every other mod). Open question (issue #70): the provided function runs with the
+    provider's grants, so a mod without a permission can use one a granted mod exposes. Whether a call should check
+    the caller's grants too is upstream's call.
   - `text.from_shift_jis` / `to_shift_jis` / `plain` (auto-translate phrases as words); `client.copy`
   - checked live: a call returning two values, an emitted table, files written, appended, listed and read back, the
     mod's own file read, `..` and `shared/` refused, JSON both ways, the os subset, Shift-JIS round trip
