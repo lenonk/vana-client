@@ -10068,6 +10068,8 @@ impl App {
         let (mut cx, mut cy) = (self.input.axis(6), self.input.axis(7));
         // FUN_10159ba0: in a ground-cursor prompt with the keyboard's Ctrl / Alt held (0x76 / 0x77), the movement stick
         // (axes 4, -5), else the camera stick, moves the cursor every frame; we and the camera take neither meanwhile.
+        // A new pick ends the cursor (FUN_10159660 clears +0x22), so going back to an earlier pick starts afresh.
+        target::drop_stale_ground_cursor(world);
         if !world.prompt.as_ref().is_some_and(|s| s.ground) {
             world.ground_cursor = None;
         } else if self.input.test(0x76, input::mode::HELD) || self.input.test(0x77, input::mode::HELD) {
@@ -10493,7 +10495,8 @@ impl App {
         }
         // FUN_101a33e0: no window has the focus, or the one that has it is the action menu (playermo / mp_pmode) or a
         // palette; the action menu stays up while engaged.
-        let window = window_over_actions(world) || world.settings.is_some() || world.full_log.is_some();
+        // A target prompt keeps the triggers / Ctrl / Alt for its ground-position cursor (0xb0..0xb3, FUN_10159ba0).
+        let window = window_over_actions(world) || world.settings.is_some() || world.full_log.is_some() || world.prompt.is_some();
         let gate = world.in_scene() && !world.ui_hidden && !event::active(world) && !world.dead() && !window && world.macros.is_some();
         // FUN_101a2e80 step 3: Ctrl (0x76) / Alt (0x77) held opens palette 1 / 2 at the next whole second of the
         // clock; released, it closes. Ctrl wins.
@@ -12710,8 +12713,8 @@ impl App {
         // confirm / cancel / menu / d-pad slots stand for.
         let field = matches!(self.phase, Phase::World(_));
         let menu = self.input.window_active() || matches!(&self.phase, Phase::World(w) if w.prompt.is_some());
-        // Retail's macro gate (FUN_101a33e0): no window has the focus but the action menu.
-        let macros = matches!(&self.phase, Phase::World(w) if !window_over_actions(w) && !w.typing && !w.ui_hidden && w.macros.is_some());
+        // Retail's macro gate (FUN_101a33e0): no window has the focus but the action menu, and no target prompt.
+        let macros = matches!(&self.phase, Phase::World(w) if !window_over_actions(w) && !w.typing && !w.ui_hidden && w.prompt.is_none() && w.macros.is_some());
         let palette = matches!(&self.phase, Phase::World(w) if w.palette.0 != 0);
         // A window has the keys (not the chat line): LB / RB turn its tabs.
         let tabs = match &self.phase {

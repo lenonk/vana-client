@@ -374,6 +374,13 @@ pub fn ground_offset(w: &World, t: u32) -> Vec3 {
     c.1 - at
 }
 
+/// FUN_10159660: a pick other than the cursor's ends it.
+pub fn drop_stale_ground_cursor(w: &mut World) {
+    if w.ground_cursor.is_some_and(|c| Some(c.0) != w.target) {
+        w.ground_cursor = None;
+    }
+}
+
 pub fn ground_cursor(w: &World) -> Option<Vec3> {
     w.ground_cursor.filter(|c| Some(c.0) == w.target).map(|c| c.1)
 }
@@ -872,11 +879,13 @@ pub fn party_pad_step(w: &World, down: bool) -> Option<u32> {
     // Field +0x60 (Sub::inc; all bits with no prompt): 4 the party, 8 the alliance too (else our six), 0x200 us.
     let inc = w.prompt.as_ref().map_or(u32::MAX, |s| s.inc);
     let n = if inc & 8 != 0 { 18 } else { 6 };
-    let valid = |id: u32| if id == w.my_id { inc & 0x200 != 0 } else { inc & 4 != 0 };
+    // By slot: us by 0x200, the rest of our six by 4, the alliance's slots (6..17) by 8.
+    let valid = |s: usize, id: u32| if id == w.my_id { inc & 0x200 != 0 } else if s < 6 { inc & 4 != 0 } else { inc & 8 != 0 };
     let slots: Vec<Option<u32>> = (0..n).map(|s| slot_target(w, s)).collect();
+    let fits = |s: usize| slots[s].filter(|&id| valid(s, id));
     let found = match w.target.and_then(|t| slots.iter().position(|s| *s == Some(t))) {
-        Some(at) => (1..n).map(|i| if down { (at + i) % n } else { (at + n - i) % n }).find_map(|s| slots[s].filter(|&id| valid(id))),
-        None => slots.iter().flatten().copied().find(|&id| valid(id)),
+        Some(at) => (1..n).map(|i| if down { (at + i) % n } else { (at + n - i) % n }).find_map(fits),
+        None => (0..n).find_map(fits),
     };
     // Nothing valid: us, when the action may take us.
     found.or_else(|| (inc & 0x200 != 0).then_some(w.my_id))

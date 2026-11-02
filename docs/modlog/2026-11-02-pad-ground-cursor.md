@@ -25,9 +25,13 @@ From FFXiMain.dll (docs/re/gamepad/ground_cursor.md).
 - The field command table 0x10371ee0 (FUN_101585f0 -> FUN_101587b0) runs every field frame in a target prompt or with
   no window holding the field, and takes only the first entry whose test passes: 0xb0, 0xb1, 0xb3, 0xb2, 0x91, 0x27,
   0x28, 0x2a, 0x29, ... So with a trigger held the d-pad never steps the target. Fixes to ours: the pad's d-pad steps
-  (0x27..0x2a) now run in a target prompt too, through its targets (field +0x60: 4 party, 8 the alliance too, else
-  our six, 0x200 us; nothing that fits gives us when allowed), and on the press and its repeats (mode 0), not the
-  press only.
+  (0x27..0x2a) now run in a target prompt too, through its targets (field +0x60 by slot: 0x200 us, 4 the rest of
+  our six, 8 the alliance's slots 6..17, which are only walked with 8; nothing that fits gives us when allowed), and
+  on the press and its repeats (mode 0), not the press only.
+- In a target prompt the triggers and Ctrl / Alt open no macro palette (ours: the pad's and the keyboard's palette
+  gates leave out World::prompt), so trigger + d-pad reaches 0xb0..0xb3 as the first-match table has it rather than
+  the palette taking the d-pad. A pick other than the cursor's drops it (target::drop_stale_ground_cursor), so going
+  back to an earlier pick starts afresh.
 - The windows' pad repeat is the press, tick 17 and every 3rd tick after (past mgr +0x94 = 16, strictly, then back to
   14), not 16 and every 2.
 - L3 on the map (key function 0x7e, mask 4: the map's context 0x26; 0x30 / 0x44 have mask 8, so it neither rests nor
