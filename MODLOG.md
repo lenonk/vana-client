@@ -20290,3 +20290,55 @@ Ashita, beyond the above:
 - Controller input (tCrossBar, cBind) waits on gamepad support.
 
 Lessons from other games' mod layers (BG3 Script Extender, WoW, Skyrim, Factorio) are in docs/lua-mods.md 2.
+
+## Lua mods: /lua only from the player (ours, 2026-11-02)
+
+- `commands.run("//lua grant <own id> ...")` used to need no permission (a `//` line skips the actions check) and
+  reached `/lua` like a typed line, so any mod could grant itself every permission its mod.toml lists, or
+  `/lua run` code in another mod with that mod's grants (issue #68).
+- Lines for the mods now carry where they came from: the player (the chat line, a macro), a mod's bind the player
+  pressed, or a mod's own line (`commands.run`, an action). `/lua` runs only from the player; a mod's command still
+  runs from a bind as the player's input and from a mod's line as the mod's own.
+- `commands.run` refuses a line whose first word is `lua` with an error. Mod lines are trimmed before the check, so a
+  leading space no longer sends one down the typed path as the player's.
+
+## Lua mods: wait_until budget, require paths, links in mod folders (ours, 2026-11-02)
+
+- wait_until: the test runs on the game thread each frame. It now runs under the filter budget (FILTER_CAP,
+  20 ms) with the previous deadline restored after; one that runs past it, or errors, is recorded as the mod's
+  error and ends the wait (as an error did before). A test that looped used to freeze the client.
+- require: a module name with a backslash or a colon is refused, as `..` and a leading `/` were (on Windows those
+  made an absolute path that joined past the mod's folder).
+- fs: a path whose existing part is a symlink, from mod-data down (the mod's <id>/files folder or .shared, and
+  the path in it), is refused, so a link can't lead read, write, list, delete or move outside the folder. mod-data
+  itself may be a link (where the user keeps it).
+- Not changed: mods.call runs the provider's function with the provider's grants. Whether it should check the
+  caller's grants instead is still open (upstream's permission model).
+
+## Lua mods: mods.call skips a suspended mod (ours, 2026-11-02)
+
+- A mod suspended for its errors (`Mod X suspended: ...`) ran nothing for the host, but other mods could still run
+  its provided functions through `mods.call`, with its grants. The call now fails with "mods.call: X is suspended"
+  until `/lua reload X`.
+- Not changed, still open (issue #70): a provided function runs with the provider's grants, not the caller's. The
+  options (check the caller's grants too during the call, or treat providing as delegating and show it on the grant
+  page) are upstream's permission model to decide; docs/lua-mods.md now says so where `mods.call` is listed.
+
+## Lua mods: injected packets fit their size field (ours, 2026-11-02)
+
+- `packets.inject_in` / `inject_out` took a whole sub-packet as it came (4 bytes or more), so its header's size
+  field could disagree with its bytes; a hook's result was already fitted. Injected packets now go through the same
+  fit: padded to a word, the size field set from the length (issue #69).
+- The size field is 7 bits of 4-byte words, so a sub-packet is at most 508 bytes. `build`, the `(id, body)` form of
+  inject and a whole injected packet over that raise an error; a hook result over it (or under 4 bytes) is reported
+  as the mod's error and the packet goes on unchanged. An id over 0x1ff is refused instead of being cut to 9 bits.
+
+## Lua mods: string patterns keep to the time budget (ours, 2026-11-02)
+
+- `string.find` / `match` / `gmatch` / `gsub` ran Lua's matcher in C, which executes no VM instructions, so the
+  budget hook (every 10,000 instructions) never fired while it backtracked: `string.find(string.rep('a', 40000),
+  '^.-.-b')` blocked the game thread for 3.6 s, and unanchored for hours (issue #83).
+- The four are now a Rust port of Lua 5.4's lstrlib.c matcher (client/lua/pattern.rs), step for step: the same
+  results and errors (a test runs a set of calls through both and compares), and every 1024 match steps it checks the
+  mod's deadline. Past it the call fails with "ran past its time budget", as a runaway loop does. A plain find
+  (`plain` or no magic characters) is a linear substring search.
