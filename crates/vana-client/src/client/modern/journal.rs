@@ -151,9 +151,10 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key, page: bool) -> bool {
             w.sounds.push(Se::Cancel as u32);
             close(w);
         }
+        // Tab / Shift+Tab (the pad's RB / LB): the next / previous tab.
         (_, K::Tab) => {
-            let k = TABS.iter().position(|x| x.0 == t).unwrap_or(0);
-            switch(w, TABS[(k + 1) % TABS.len()].0);
+            let (k, n) = (TABS.iter().position(|x| x.0 == t).unwrap_or(0), TABS.len());
+            switch(w, TABS[if w.key_shift { (k + n - 1) % n } else { (k + 1) % n }].0);
         }
         (Tab::Missions | Tab::Quests | Tab::KeyItems, K::ArrowUp | K::ArrowDown) if !on_list => {
             let side = if key == K::ArrowDown { K::ArrowRight } else { K::ArrowLeft };

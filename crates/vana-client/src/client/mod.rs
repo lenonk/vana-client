@@ -1948,6 +1948,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         gu.press_at(p);
     }
     for ev in input.events.iter().filter(|_| !input_open) {
+        if let egui::Event::Key { modifiers, .. } = ev {
+            world.key_shift = modifiers.shift;
+        }
         match ev {
             // Ctrl+V with the chat line closed opens it with the text (ours).
             egui::Event::Paste(t) if !world.typing && !opened => {
@@ -2154,7 +2157,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // one of its pages, keyed there).
                 _ if world.settings.is_some() && !(world.modern && world.config.is_some()) => {
                     let mut s = world.settings.take().unwrap();
-                    let closes = s.key_mod(*key, modifiers.ctrl || modifiers.alt);
+                    let closes = if *key == egui::Key::Tab && modifiers.shift {
+                        s.tab_back();
+                        false
+                    } else {
+                        s.key_mod(*key, modifiers.ctrl || modifiers.alt)
+                    };
                     if !closes {
                         world.settings = Some(s);
                     }
@@ -5012,7 +5020,9 @@ fn base_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
     }
     if id == w.my_id {
         let m = w.my_motion;
-        return Some(Place { pos: drawn_pos(w), forward: forward_from_dir(my_dir), tilt: [0.0; 2], status: m.status, ratio: if w.moving { w.move_tier * own_rate(w) } else { 0.0 }, size });
+        // The float facing while the byte is still ours (a server or event turn sets only the byte).
+        let forward = w.my_face.filter(|f| f.0 == my_dir).map_or_else(|| forward_from_dir(my_dir), |f| f.1);
+        return Some(Place { pos: drawn_pos(w), forward, tilt: [0.0; 2], status: m.status, ratio: if w.moving { w.move_tier * own_rate(w) } else { 0.0 }, size });
     }
     let e = w.entities.get(&id)?;
     Some(Place { pos: e.pos, forward: Vec3::new(e.yaw.cos(), 0.0, -e.yaw.sin()), tilt: [0.0; 2], status: e.motion.status, ratio: e.ratio, size })
@@ -5451,6 +5461,11 @@ struct World {
     palette: (u8, u8, u64, [usize; 2]),
     /// The open palette came from a pad trigger (FUN_101a2e80's toggle: it stays up after the release).
     pad_palette: bool,
+    /// Shift was held with the key being dispatched (Shift+Tab turns a window's tabs back; the pad's LB sends it).
+    key_shift: bool,
+    /// Our facing unquantized, with the network direction it rounds to: retail draws the player from the float heading
+    /// (FUN_100a6240) and rounds it only for the position packet; drawn from the byte, a stick's slow turn stepped.
+    my_face: Option<(u8, Vec3)>,
     /// Key function 0x56 (Scroll Lock): the UI hidden (menu manager +0xb4); shown again by Esc and on zoning.
     ui_hidden: bool,
     /// Key function 0x55 (Print Screen, UI hidden only): the screenshot to save this frame.
@@ -7728,6 +7743,8 @@ impl App {
                             macros: None,
                             palette: (0, 0, 0, [0, 0]),
                             pad_palette: false,
+                            key_shift: false,
+                            my_face: None,
                             ui_hidden: false,
                             shot_request: None,
                             shot_count: (0, -1),
@@ -10161,7 +10178,9 @@ impl App {
             // and lowers the eye at the free rate, unscaled.
             let (dx, dy) = std::mem::take(&mut world.cam_turn);
             let ticks = dt * 60.0;
-            target::step_camera(world, ticks, dx + turn_keys * i6 * camera::YAW_RATE * ticks, dy + cy * i7 * camera::RISE_RATE * ticks);
+            // step_camera's rotation runs opposite to camera::orbit's, which the free camera turns by -v6: the stick /
+            // keys' axis 6 goes in negated so it turns the same way locked as free (the mouse's cam_turn already does).
+            target::step_camera(world, ticks, dx - turn_keys * i6 * camera::YAW_RATE * ticks, dy + cy * i7 * camera::RISE_RATE * ticks);
             let to = tp - world.pos;
             if to.x.abs() + to.z.abs() > 1e-3 {
                 world.yaw = to.x.atan2(to.z);
@@ -10270,12 +10289,18 @@ impl App {
         if let Ok(mut me) = world.net.me.lock() {
             me.pos = world.pos.to_array();
             // Standing still keeps the facing; only the camera turns. Locked, we face the target.
-            if let Some((_, Some(y))) = pin {
-                me.dir = dir_from_forward(Vec3::new(y.cos(), 0.0, -y.sin()));
+            let to = if let Some((_, Some(y))) = pin {
+                Some(Vec3::new(y.cos(), 0.0, -y.sin()))
             } else if lock_target.is_some() || face_cam || world.mouse_look || (turn != 0.0 && !stepping) {
-                me.dir = dir_from_forward(face);
+                Some(face)
             } else if stepping {
-                me.dir = dir_from_forward(step.normalize());
+                Some(step.normalize())
+            } else {
+                None
+            };
+            if let Some(f) = to {
+                me.dir = dir_from_forward(f);
+                world.my_face = Some((me.dir, f));
             }
             me.moving = moving;
         }
@@ -11338,7 +11363,11 @@ impl App {
                                 // The Enter that opened it is not its first key; modern: the Config panel has its keys and mouse.
                                 for ev in input.events.iter().filter(|_| !settings_new && !modern_title) {
                                     if let egui::Event::Key { key, pressed: true, modifiers, .. } = ev {
-                                        closed |= s.key_mod(*key, modifiers.ctrl || modifiers.alt);
+                                        if *key == egui::Key::Tab && modifiers.shift {
+                                            s.tab_back();
+                                        } else {
+                                            closed |= s.key_mod(*key, modifiers.ctrl || modifiers.alt);
+                                        }
                                         if let Some(a) = self.audio.as_mut() {
                                             for x in s.sounds.drain(..) {
                                                 a.ui(x);
@@ -12624,7 +12653,12 @@ impl App {
         // Retail's macro gate (FUN_101a33e0): no window has the focus but the action menu.
         let macros = matches!(&self.phase, Phase::World(w) if !window_over_actions(w) && !w.typing && !w.ui_hidden && w.macros.is_some());
         let palette = matches!(&self.phase, Phase::World(w) if w.palette.0 != 0);
-        let pad = self.gamepad.poll(&self.cfg, gfx.window.has_focus(), menu, macros, palette, field, dt);
+        // A window has the keys (not the chat line): LB / RB turn its tabs.
+        let tabs = match &self.phase {
+            Phase::World(w) => window_over_actions(w) && !w.typing,
+            _ => true,
+        };
+        let pad = self.gamepad.poll(&self.cfg, gfx.window.has_focus(), menu, macros, palette, tabs, field, dt);
         self.input.set_pad(pad.pad);
         // FUN_101a2e80: a trigger press toggles its palette, the other trigger swaps to the other one.
         if pad.palette != 0

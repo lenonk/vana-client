@@ -144,8 +144,9 @@ pub fn key(w: &mut World, key: egui::Key, page_mod: bool) {
         let (job, pg, n) = (p.job, p.page, page_len(p, &t));
         let cursor = p.cursor[pg];
         match key {
-            // FUN_1014acc0: the other page, back on its row (FUN_101f7080: top = min(row, the last top)).
-            K::ArrowLeft | K::ArrowRight if !page_mod => {
+            // FUN_1014acc0: the other page, back on its row (FUN_101f7080: top = min(row, the last top)). Tab (the pad's
+            // RB / LB) too, as the modern layer draws the pages as tabs.
+            K::ArrowLeft | K::ArrowRight | K::Tab if !page_mod => {
                 if let Some(p) = w.jp_ui.as_mut().and_then(|u| u.page.as_mut()) {
                     p.page = 1 - p.page;
                     let (q, n) = (p.page, page_len(p, &t));

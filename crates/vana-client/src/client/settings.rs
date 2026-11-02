@@ -731,6 +731,12 @@ impl SettingsUi {
         self.key_mod(key, false)
     }
 
+    /// Shift+Tab (the pad's LB): the previous tab.
+    pub fn tab_back(&mut self) {
+        self.sounds.clear();
+        self.turn(-1);
+    }
+
     pub fn key_mod(&mut self, key: egui::Key, page_mod: bool) -> bool {
         self.sounds.clear();
         if self.on_mods() {

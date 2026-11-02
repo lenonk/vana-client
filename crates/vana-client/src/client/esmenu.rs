@@ -92,6 +92,12 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
         menu_key(w, gu, key, o, row);
         return;
     }
+    // Tab / Shift+Tab (the pad's RB / LB): the next / previous page, the modern layer's page tabs.
+    if key == K::Tab {
+        flip(w, !w.key_shift);
+        w.sounds.push(Ui::Cursor as u32);
+        return;
+    }
     // FUN_101a6eb0, after the generic link move: Left / Right turn the page, Enter on a row opens mcresmn, on an
     // arrow turns the page; Escape writes the page and closes.
     match key {

@@ -159,8 +159,8 @@ The default is FFXiPadConfig's XInput layout, the same as the official PC layout
 | Y / Triangle | Active window |
 | D-pad | In a menu: the cursor. In the field: up / down the party and alliance members (wrapping), left / right the actors on screen (stopping at the last) |
 | Left stick / right stick | Move / camera (also with a menu up; the sticks never drive menus) |
-| LB / L1 | Autorun |
-| RB / R1 | Open the chat line; with the windows hidden, a screenshot |
+| LB / L1 | Autorun; in a window with tabs, the previous tab |
+| RB / R1 | Open the chat line; with the windows hidden, a screenshot; in a window with tabs, the next tab |
 | LT / L2, RT / R2 | In the field: open or close the Ctrl / Alt macro palette (the other trigger swaps); in it the d-pad picks the macro (left / right) and the set (up / down), A runs it, B closes. In a window: held, the d-pad pages lists like Ctrl + arrow; both held, left / right switch the item bag |
 | L3 | Rest, or lock on with a target |
 | R3 | First / third person |

@@ -53,6 +53,8 @@ pub const fn bit(slot: u8) -> u64 {
 pub mod slot {
     pub const CONFIRM: u8 = 0;
     pub const MENU: u8 = 1;
+    pub const TAB_BACK: u8 = 8;
+    pub const TAB_NEXT: u8 = 12;
     pub const CANCEL: u8 = 3;
     pub const RIGHT: u8 = 4;
     pub const LEFT: u8 = 5;
@@ -157,8 +159,10 @@ pub fn read(map: &PadMap, alt: &PadMap, dev: &Device, mode: u8, dead: f32) -> (u
 }
 
 /// The egui keys a held pad word stands for, and the pad word left for the key functions. `menu`: the d-pad is the
-/// arrows; `palette`: a macro palette is up, and takes confirm / cancel / the d-pad from the key functions.
-pub fn keys_of(held: u64, menu: bool, palette: bool) -> (Vec<KeyCode>, u64) {
+/// arrows; `palette`: a macro palette is up, and takes confirm / cancel / the d-pad from the key functions; `tabs`: a
+/// window has the keys, so LB / RB (slots 8 / 12, nothing in retail's list windows) are Shift+Tab / Tab, the previous /
+/// next tab of the modern windows.
+pub fn keys_of(held: u64, menu: bool, palette: bool, tabs: bool) -> (Vec<KeyCode>, u64) {
     let mut keys = Vec::new();
     let (ctrl, alt) = (held & bit(slot::MACRO_CTRL) != 0, held & bit(slot::MACRO_ALT) != 0);
     // 0xa8 (either trigger) is the page modifier, 0xb5 / 0xb6 (both, as Alt+Right / Left) the bag switch. The right-hand
@@ -170,6 +174,11 @@ pub fn keys_of(held: u64, menu: bool, palette: bool) -> (Vec<KeyCode>, u64) {
         if held & bit(s) != 0 {
             keys.push(k);
         }
+    }
+    if tabs && held & bit(slot::TAB_BACK) != 0 {
+        keys.extend([KeyCode::ShiftRight, KeyCode::Tab]);
+    } else if tabs && held & bit(slot::TAB_NEXT) != 0 {
+        keys.push(KeyCode::Tab);
     }
     if menu {
         for (s, k) in [(slot::UP, KeyCode::ArrowUp), (slot::DOWN, KeyCode::ArrowDown), (slot::LEFT, KeyCode::ArrowLeft), (slot::RIGHT, KeyCode::ArrowRight)] {
@@ -222,8 +231,9 @@ impl Gamepad {
     /// Reads the pads. `focused`: the window has the focus (a pad in the background does nothing, as padmode's
     /// foreground default); `menu`: a window has the keys; `field`: in the world.
     /// `macros`: retail's macro gate is open (field, no window but the action menu), so LT / RT toggle the palettes;
-    /// `palette`: one is up.
-    pub fn poll(&mut self, cfg: &Config, focused: bool, menu: bool, macros: bool, palette: bool, field: bool, dt: f32) -> Frame {
+    /// `palette`: one is up; `tabs`: a window has the keys (LB / RB turn its tabs).
+    #[allow(clippy::too_many_arguments)]
+    pub fn poll(&mut self, cfg: &Config, focused: bool, menu: bool, macros: bool, palette: bool, tabs: bool, field: bool, dt: f32) -> Frame {
         if !cfg.gamepad {
             return self.release_all();
         }
@@ -286,7 +296,7 @@ impl Gamepad {
         }
         self.prev = held;
         let menu = menu || palette || !field;
-        let (keys, pad_bits) = keys_of(held, menu, palette);
+        let (keys, pad_bits) = keys_of(held, menu, palette, tabs && menu);
         let mut f = self.step(&keys, dt);
         f.pad = pad_bits;
         if field && (macros || palette) {
@@ -307,9 +317,20 @@ impl Gamepad {
     fn step(&mut self, keys: &[KeyCode], dt: f32) -> Frame {
         let mut f = Frame::default();
         let mods = egui::Modifiers { ctrl: keys.contains(&KeyCode::ControlRight), alt: keys.contains(&KeyCode::AltRight), ..Default::default() };
+        let shift = egui::Modifiers { shift: keys.contains(&KeyCode::ShiftRight), ..Default::default() };
         let event = |k: KeyCode, pressed: bool, repeat: bool| {
-            // The page modifier rides on the arrows only (Ctrl + Minus would zoom egui).
-            let mods = if nav(k) { mods } else { egui::Modifiers::default() };
+            // The modifier markers are modifiers only, not keys of their own.
+            if matches!(k, KeyCode::ShiftRight | KeyCode::ControlRight | KeyCode::AltRight) {
+                return None;
+            }
+            // The page modifier rides on the arrows only (Ctrl + Minus would zoom egui), LB's Shift on its Tab.
+            let mods = if nav(k) {
+                mods
+            } else if k == KeyCode::Tab {
+                shift
+            } else {
+                egui::Modifiers::default()
+            };
             // egui reads the numpad's minus as Minus, as egui-winit maps it.
             egui::Key::from_name(&format!("{k:?}")).map(|key| egui::Event::Key { key, physical_key: Some(key), pressed, repeat, modifiers: mods })
         };
@@ -396,17 +417,26 @@ mod tests {
         let none = |_: u8| 0.0;
         // A and the d-pad up: Enter; the arrow only in a window; the bits stay for the key functions.
         let (held, _) = read(&m, &m, &dev(&[3, 6], &none), 0, 0.33);
-        assert_eq!(keys_of(held, false, false), (vec![KeyCode::Enter], bit(0) | bit(6)));
-        assert_eq!(keys_of(held, true, false).0, vec![KeyCode::Enter, KeyCode::ArrowUp]);
+        assert_eq!(keys_of(held, false, false, false), (vec![KeyCode::Enter], bit(0) | bit(6)));
+        assert_eq!(keys_of(held, true, false, false).0, vec![KeyCode::Enter, KeyCode::ArrowUp]);
         // A palette up takes confirm and the d-pad from the key functions (no action menu, no field targeting).
-        assert_eq!(keys_of(held, true, true).1, 0);
+        assert_eq!(keys_of(held, true, true, false).1, 0);
         // LT in a window: Ctrl on the arrows (0xa8, page); the trigger's bit stays (0x89 item compare).
         let (held, _) = read(&m, &m, &dev(&[9, 6], &none), 0, 0.33);
-        assert_eq!(keys_of(held, true, false), (vec![KeyCode::ControlRight, KeyCode::ArrowUp], held));
+        assert_eq!(keys_of(held, true, false, false), (vec![KeyCode::ControlRight, KeyCode::ArrowUp], held));
         // Both triggers: Alt (0xb5 / 0xb6, the bag switch). In the field neither is a key.
         let (held, _) = read(&m, &m, &dev(&[9, 12, 4], &none), 0, 0.33);
-        assert_eq!(keys_of(held, true, false).0, vec![KeyCode::AltRight, KeyCode::ArrowRight]);
-        assert!(keys_of(held, false, false).0.is_empty());
+        assert_eq!(keys_of(held, true, false, false).0, vec![KeyCode::AltRight, KeyCode::ArrowRight]);
+        assert!(keys_of(held, false, false, false).0.is_empty());
+        // LB / RB with a window: Shift+Tab / Tab; without one, nothing (LB autoruns, RB opens the chat line).
+        let (held, _) = read(&m, &m, &dev(&[8], &none), 0, 0.33);
+        assert_eq!(keys_of(held, true, false, true), (vec![KeyCode::ShiftRight, KeyCode::Tab], held));
+        assert!(keys_of(held, false, false, false).0.is_empty());
+        let (held, _) = read(&m, &m, &dev(&[11], &none), 0, 0.33);
+        assert_eq!(keys_of(held, true, false, true).0, vec![KeyCode::Tab]);
+        let mut g = Gamepad::default();
+        let f = g.step(&[KeyCode::ShiftRight, KeyCode::Tab], 1.0 / 60.0);
+        assert!(matches!(f.events[..], [egui::Event::Key { key: egui::Key::Tab, modifiers, .. }] if modifiers.shift), "{:?}", f.events);
         // Every key has a DIK code.
         for k in [KeyCode::Enter, KeyCode::Escape, KeyCode::NumpadSubtract, KeyCode::ArrowUp] {
             assert!(crate::client::input::dik(k).is_some(), "{k:?}");

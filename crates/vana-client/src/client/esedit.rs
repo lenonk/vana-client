@@ -162,6 +162,19 @@ pub fn num_plus(w: &mut World) {
 
 pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
     let Some(e) = ed(w) else { return };
+    // Tab / Shift+Tab (the pad's RB / LB): the next / previous container, the modern layer's storage tabs (mcrmogc's
+    // order, as Enter on its children sets it).
+    if key == egui::Key::Tab && e.mogc.is_none() {
+        const ORDER: [u8; 16] = [0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let back = w.key_shift;
+        if let Some(e) = ed_mut(w) {
+            let k = ORDER.iter().position(|&c| c == e.container).unwrap_or(0);
+            e.container = ORDER[if back { (k + 15) % 16 } else { (k + 1) % 16 }];
+            (e.scroll, e.cursor) = (0, 0);
+        }
+        w.sounds.push(Ui::Cursor as u32);
+        return;
+    }
     if let Some(o) = e.mogc {
         mogc_key(w, gu, key, o);
     } else if e.on_list {

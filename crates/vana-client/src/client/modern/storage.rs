@@ -272,10 +272,12 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
             set_cursor(w, bank_side, k.min(n.saturating_sub(1)));
             w.sounds.push(Se::Cursor as u32);
         }
+        // Tab / Shift+Tab (the pad's RB / LB): the next / previous bag.
         K::Tab => {
             let tabs = bags(w, &b);
             if let Some(i) = tabs.iter().position(|&k| k == g) {
-                switch(w, tabs[(i + 1) % tabs.len()]);
+                let n = tabs.len();
+                switch(w, tabs[if w.key_shift { (i + n - 1) % n } else { (i + 1) % n }]);
             }
         }
         K::Enter if n > 0 => take(w, side, cur.min(n - 1), false),
