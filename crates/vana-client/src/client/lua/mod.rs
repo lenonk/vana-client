@@ -38,8 +38,8 @@ pub struct Host {
     started: bool,
     /// Events raised by the client since the last mod phase.
     events: Vec<(&'static str, Vec<serde_json::Value>)>,
-    /// Lines for mods (a registered command, or /lua), run in the next mod phase; true when the player typed it.
-    typed: Vec<(String, bool)>,
+    /// Lines for mods (a registered command, or /lua), run in the next mod phase, with where they came from.
+    typed: Vec<(String, From)>,
     last_frame: Option<std::time::Instant>,
     /// Last frame's state, for the derived change events.
     prev: Option<Snap>,
@@ -293,8 +293,9 @@ impl Host {
         first == "lua" || self.vms.iter().any(|v| v.suspended.is_none() && v.st.borrow().commands.iter().any(|(n, _)| *n == first))
     }
 
+    /// A line the player typed (the chat line or a macro): the only source that may run /lua.
     pub fn type_line(&mut self, line: &str) {
-        self.typed.push((line.to_string(), true));
+        self.typed.push((line.to_string(), From::Player));
     }
 
     fn char_file(w: &World) -> String {
@@ -636,15 +637,21 @@ pub(super) fn frame(w: &mut World, gu: Option<&super::game_ui::GameUi>) {
         host.watch_upkeep(w, &mut out);
         bind_lines = input::run_binds(&mut host, w, &mut out);
         // Lines typed for mods.
-        for (line, input) in std::mem::take(&mut host.typed) {
+        for (line, from) in std::mem::take(&mut host.typed) {
             let body = line.trim_start_matches('/');
             let mut words = body.split_whitespace();
             let name = words.next().unwrap_or("").to_ascii_lowercase();
             let args: Vec<&str> = words.collect();
             if name == "lua" {
-                host.lua_command(w, &args, &mut out);
+                // /lua grants, runs code in and unloads mods: only from the player, never from a mod's line or bind.
+                if from == From::Player {
+                    host.lua_command(w, &args, &mut out);
+                } else {
+                    out.push(("/lua runs only when typed by the player, not from a mod.".into(), ERROR));
+                }
                 continue;
             }
+            let input = from != From::Mod;
             let owner = host.vms.iter().find(|v| v.suspended.is_none() && v.st.borrow().commands.iter().any(|(n, _)| *n == name));
             match owner {
                 Some(vm) => lend(vm, w, |vm| {
@@ -750,7 +757,7 @@ pub(super) fn frame(w: &mut World, gu: Option<&super::game_ui::GameUi>) {
         apply(w, gu, op);
     }
     for line in bind_lines {
-        super::textcmd::run(w, &line, super::textcmd::Mode::Typed);
+        run_line(w, &line, super::textcmd::Mode::Typed, From::Bind);
     }
     // Injected packets go through the hooks now, not with the next batch (which may be seconds away).
     if w.lua.vms.iter().any(|v| !v.st.borrow().inject_in.is_empty()) {
@@ -760,6 +767,28 @@ pub(super) fn frame(w: &mut World, gu: Option<&super::game_ui::GameUi>) {
     if w.lua.vms.iter().any(|v| !v.st.borrow().inject_out.is_empty()) {
         let out = packets_out(w, Vec::new());
         let _ = w.net.commands.send(super::net::NetCommand::SendBatch(0, out));
+    }
+}
+
+/// Where a line for the mods came from.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum From {
+    /// Typed by the player (the chat line, a macro).
+    Player,
+    /// A mod's key bind the player pressed: the mod's command runs as the player's input, but /lua does not run.
+    Bind,
+    /// A mod's own line (commands.run, actions): runs as the mod's own, not the player's input.
+    Mod,
+}
+
+/// A line from a mod or a mod's bind, run as typed. Lines for the mods are queued here with their source, so that
+/// textcmd::run never takes them as the player's (it trims the line the same way, so the check matches).
+pub(super) fn run_line(w: &mut World, line: &str, mode: super::textcmd::Mode, from: From) {
+    let line = line.trim();
+    if line.starts_with('/') && w.lua.takes(line) {
+        w.lua.typed.push((line.to_string(), from));
+    } else {
+        super::textcmd::run(w, line, mode);
     }
 }
 
@@ -777,9 +806,7 @@ fn apply(w: &mut World, gu: Option<&super::game_ui::GameUi>, op: Op) {
             }
             (None, None) => w.chat.push(text),
         },
-        // A mod's line for a mod runs as the mod's own, not the player's input.
-        Op::Run(line) if line.starts_with('/') && w.lua.takes(&line) => w.lua.typed.push((line, false)),
-        Op::Run(line) => super::textcmd::run(w, &line, super::textcmd::Mode::Typed),
+        Op::Run(line) => run_line(w, &line, super::textcmd::Mode::Typed, From::Mod),
         Op::Act(a) => actions::apply(w, gu, a),
         Op::Key(k) => w.lua.synth.push(k),
         Op::Copy(text) => w.copied = Some(text),
@@ -837,6 +864,21 @@ mod tests {
         assert!(t0.elapsed() < std::time::Duration::from_secs(2), "the test ran {:?}", t0.elapsed());
         assert!(vm.st.borrow().sleepers.is_empty());
         assert_eq!(vm.st.borrow().errors.len(), 1);
+    }
+
+    /// A mod can't reach /lua through commands.run (issue #68): it would grant itself permissions.
+    #[test]
+    fn commands_run_refuses_lua() {
+        let vm = Vm::new(manifest::Manifest::default(), PathBuf::from("."), vm::Source::Dir(PathBuf::from("."))).unwrap();
+        api::install(&vm.lua, &vm, (serde_json::Value::Null, serde_json::Value::Null)).unwrap();
+        for line in ["//lua grant x automation", "/lua run other print(1)", "  //LUA unload other", "lua list"] {
+            let r = vm.lua.load(format!("commands.run({line:?})")).exec();
+            assert!(r.is_err(), "{line:?} was accepted");
+        }
+        assert!(vm.st.borrow().ops.is_empty());
+        // Other // lines still queue (they need no permission).
+        vm.lua.load("commands.run('//mycommand a b')").exec().unwrap();
+        assert_eq!(vm.st.borrow().ops.len(), 1);
     }
 
     /// Every documented function is bound, and every function in a documented namespace is documented.

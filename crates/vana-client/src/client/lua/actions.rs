@@ -82,7 +82,7 @@ pub(super) fn apply(w: &mut World, gu: Option<&GameUi>, a: Action) {
             let cmd = if a.kind == 3 { "/weaponskill" } else if a.kind == 0x14 { "/monsterskill" } else { "/jobability" };
             textcmd::run(w, &format!("{cmd} \"{name}\"{}", token(&t)), textcmd::Mode::Internal);
         }
-        Action::Line(line) => textcmd::run(w, &line, textcmd::Mode::Internal),
+        Action::Line(line) => super::run_line(w, &line, textcmd::Mode::Internal, super::From::Mod),
         Action::UseSlot { bag, index, target } => {
             // As /item: the status gate, then the use (target: ourselves when none).
             if !textcmd::status_gate(w, 0x7f) {

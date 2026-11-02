@@ -141,6 +141,11 @@ pub(super) fn install(lua: &Lua, vm: &super::vm::Vm, storage: (serde_json::Value
     commands.set(
         "run",
         lua.create_function(|lua, line: String| {
+            // /lua is the player's: a mod must not grant itself permissions or run code in other mods (issue #68).
+            let first = line.trim().trim_start_matches('/').split_whitespace().next().unwrap_or("");
+            if first.eq_ignore_ascii_case("lua") {
+                return Err(mlua::Error::runtime("commands.run: /lua runs only when typed by the player"));
+            }
             if !line.starts_with("//") {
                 need_action(lua)?;
             }

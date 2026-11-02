@@ -283,7 +283,8 @@ never cancels other mods' handlers; only filter hooks can block.
 - **Mod commands:** `commands.register("name", fn)` for `//name` and `/name`, with aliases, and an unhandled-command
   hook.
 - **Running commands:** `commands.run("a; wait 1; b")` takes the same path as typed text: game commands, our native
-  commands, and other mods' commands.
+  commands, and other mods' commands. `/lua` is the player's only: `commands.run` refuses it, and a mod's bind
+  line or action that reaches it is refused too, so a mod can't grant itself permissions or run code in another.
 - **Binds:** `binds.set(key with modifiers, command, {down/up, chat-open})` and `unset`. Binds also appear in our key
   assignment.
 - **Scripts and macros:** script files and `/exec`; macros (read books, pages and lines, run them, set the book / set).
