@@ -247,7 +247,7 @@ impl Lobby {
         put_name(&mut p, 0x74, version);
         put(&mut p, 0x84, &content.to_le_bytes());
         lobby.send_view(0x26, p)?;
-        let reply = lobby.read_view(0x05)?;
+        let reply = lobby.read_view(0x05, 0x28)?;
         lobby.key_counter = rd_u32(&reply, 0x1C).wrapping_add(1);
         lobby.expansions = rd_u32(&reply, 0x20);
         lobby.features = rd_u32(&reply, 0x24);
@@ -284,8 +284,9 @@ impl Lobby {
         Ok(())
     }
 
-    /// Reads one view packet and checks it is `expect` (lobby errors become `Err`).
-    fn read_view(&mut self, expect: u8) -> Result<Vec<u8>> {
+    /// Reads one view packet and checks it is `expect` and at least `min_len` bytes, the end of the last field its
+    /// caller reads (lobby errors become `Err`).
+    fn read_view(&mut self, expect: u8, min_len: usize) -> Result<Vec<u8>> {
         let mut size = [0u8; 4];
         self.view.read_exact(&mut size).context("the lobby closed the view connection")?;
         let size = u32::from_le_bytes(size) as usize;
@@ -316,10 +317,15 @@ impl Lobby {
             self.key_counter = self.key_counter.wrapping_add(1);
         }
         if command == 0x04 {
-            return Err(Refused(rd_u32(&pkt, 32) as u16).into());
+            // The code is the u32 @0x20.
+            let code = pkt.get(32..36).context("the lobby's refusal is too short to carry its code")?;
+            return Err(Refused(u32::from_le_bytes(code.try_into().unwrap()) as u16).into());
         }
         if command != expect {
             bail!("expected lobby reply 0x{expect:02X}, got 0x{command:02X}");
+        }
+        if size < min_len {
+            bail!("lobby reply 0x{command:02X} is {size} bytes, too short (needs {min_len})");
         }
         Ok(pkt)
     }
@@ -372,7 +378,7 @@ impl Lobby {
                 bail!("expected the character list, got 0x{:02X}", list[0]);
             }
         }
-        let pkt = self.read_view(0x20)?;
+        let pkt = self.read_view(0x20, 32)?;
         let count = (rd_u32(&pkt, 28) as usize).min(16);
         self.records = (0..count).filter_map(|i| pkt.get(32 + i * CHAR_INFO_LEN..32 + (i + 1) * CHAR_INFO_LEN)).map(|r| r.try_into().unwrap()).collect();
         Ok(self.records.iter().map(|r| parse_char(r)).collect())
@@ -380,7 +386,7 @@ impl Lobby {
 
     pub fn worlds(&mut self) -> Result<Vec<(u32, String)>> {
         self.send_view(0x24, packet(0x2C))?;
-        let pkt = self.read_view(0x23)?;
+        let pkt = self.read_view(0x23, 32)?;
         let count = rd_u32(&pkt, 28) as usize;
         let worlds: Vec<(u32, String)> = (0..count)
             .filter_map(|i| {
@@ -397,7 +403,7 @@ impl Lobby {
     pub fn check_name(&mut self, name: &str, world: &str, pass: &str) -> Result<()> {
         let p = check_body(self.free_slot(), name, world, pass);
         self.send_view(0x22, p)?;
-        self.read_view(0x03)?;
+        self.read_view(0x03, 28)?;
         Ok(())
     }
 
@@ -405,7 +411,7 @@ impl Lobby {
     pub fn create_character(&mut self, c: &NewCharacter) -> Result<()> {
         let p = make_body(self.free_slot(), c);
         self.send_view(0x21, p)?;
-        self.read_view(0x03)?;
+        self.read_view(0x03, 28)?;
         Ok(())
     }
 
@@ -414,7 +420,7 @@ impl Lobby {
         put(&mut p, 0x1C, &ch.content_id.to_le_bytes());
         put(&mut p, 0x20, &self.world_id(ch.content_id).to_le_bytes());
         self.send_view(0x14, p)?;
-        self.read_view(0x03)?;
+        self.read_view(0x03, 28)?;
         Ok(())
     }
 
@@ -422,7 +428,7 @@ impl Lobby {
     pub fn rename(&mut self, ch: &Character, name: &str) -> Result<()> {
         let p = rename_body(ch.content_id, self.world_id(ch.content_id), name);
         self.send_view(0x28, p)?;
-        self.read_view(0x03)?;
+        self.read_view(0x03, 28)?;
         Ok(())
     }
 
@@ -466,14 +472,15 @@ impl Lobby {
             self.data.as_mut().unwrap().write_all(&key_msg)?;
         }
 
-        let pkt = self.read_view(0x0B)?;
+        let pkt = self.read_view(0x0B, 0x48)?;
         let ip = |o| Ipv4Addr::from(rd_u32(&pkt, o).to_le_bytes());
         // The lobby closes the link after 0x0B and the game waits for it (FUN_100ee160 sub 2), then makes the character
         // PlayOnline's active one (subs 0xE..0x15); a failure there ends the login.
         if self.playonline() {
             self.view.set_read_timeout(Some(Duration::from_secs(10)))?;
             let mut rest = Vec::new();
-            let _ = self.view.read_to_end(&mut rest);
+            // Bounded: anything after 0x0B is ignored, and a lobby that keeps sending can't grow it without limit.
+            let _ = (&mut self.view).take(MAX_REPLY as u64).read_to_end(&mut rest);
             let world_key = rd_u16(&rec, 4) as u32 | (rd_u16(&rec, 6) as u32) << 16 | (rec[0xB] as u32) << 24;
             if let Some(p) = self.pol.as_mut() {
                 p.profile.select(ch.content_id, world_key)?;
@@ -663,6 +670,69 @@ mod create_tests {
         // The 0x07 hashed c; 0x0B makes it c + 2 and world entry c + 4 (MODLOG "PlayOnline sign-in").
         let c = server.join().unwrap();
         assert_eq!((m.char_id, m.map.1, m.key[..16].to_vec(), u32::from_le_bytes(m.key[16..].try_into().unwrap())), (2 << 16 | 0x1234, 54230, k16.to_vec(), c + 4));
+    }
+
+    /// A lobby whose replies stop at the header: each one is an error, not a panic (issue #80).
+    #[test]
+    fn short_replies_are_errors() {
+        use std::net::TcpListener;
+        // Answers 0x26 with `first` (header and body), then each later request with the next reply.
+        let lobby = |replies: Vec<(u8, Vec<u8>)>| {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = std::thread::spawn(move || {
+                let (mut s, _) = listener.accept().unwrap();
+                for (cmd, body) in replies {
+                    let mut n = [0u8; 4];
+                    if s.read_exact(&mut n).is_err() {
+                        return;
+                    }
+                    let mut p = vec![0u8; u32::from_le_bytes(n) as usize - 4];
+                    s.read_exact(&mut p).unwrap();
+                    let mut r = packet(28 + body.len());
+                    r[8] = cmd;
+                    r[28..].copy_from_slice(&body);
+                    let d = Md5::digest(&r);
+                    r[12..28].copy_from_slice(&d);
+                    s.write_all(&r).unwrap();
+                }
+            });
+            let session = Session::PlayOnline { auth_code: [0; 64], k16: [0; 16] };
+            (Lobby::connect("127.0.0.1", port, 0, session, b"dll", "30261006_0", 5, 0, Default::default()), server)
+        };
+        let ok05 = (0x05, vec![0u8; 12]);
+        // 0x05 without its counter seed and masks.
+        let (l, s) = lobby(vec![(0x05, vec![])]);
+        assert!(l.is_err());
+        s.join().unwrap();
+        // A refusal without its code, to 0x26 and to 0x1F.
+        let (l, s) = lobby(vec![(0x04, vec![0; 2])]);
+        assert!(l.err().unwrap().downcast_ref::<Refused>().is_none());
+        s.join().unwrap();
+        let (l, s) = lobby(vec![ok05.clone(), (0x04, vec![])]);
+        assert!(l.unwrap().characters().is_err());
+        s.join().unwrap();
+        // A whole refusal still carries its code.
+        let (l, s) = lobby(vec![ok05.clone(), (0x04, 313u32.to_le_bytes().repeat(2))]);
+        assert_eq!(refusal(l.unwrap().characters()).unwrap().unwrap_err(), 313);
+        s.join().unwrap();
+        // 0x20 and 0x23 without their counts.
+        let (l, s) = lobby(vec![ok05.clone(), (0x20, vec![])]);
+        assert!(l.unwrap().characters().is_err());
+        s.join().unwrap();
+        let (l, s) = lobby(vec![ok05.clone(), (0x23, vec![])]);
+        assert!(l.unwrap().worlds().is_err());
+        s.join().unwrap();
+        // 0x0B without the search server.
+        let mut list = vec![0u8; 4 + CHAR_INFO_LEN];
+        list[0] = 1;
+        list[4..8].copy_from_slice(&7u32.to_le_bytes());
+        list[4 + 12..4 + 16].copy_from_slice(b"Nine");
+        let (l, s) = lobby(vec![ok05, (0x20, list), (0x0B, vec![0; 0x40 - 28])]);
+        let mut l = l.unwrap();
+        let chars = l.characters().unwrap();
+        assert!(l.select(&chars[0]).is_err());
+        s.join().unwrap();
     }
 
     /// A lobby record whose model ids carry their slot nibble parses to bare ids every part file resolves from.
