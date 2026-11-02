@@ -4,9 +4,10 @@
 # `code-pins` pre-release. The patcher writes a code file only when it is on this list.
 name: Code pins
 
+# Run by hand only until the repository has a code-pins key (release/new-code-pins-key.sh); then add back
+#   schedule:
+#     - cron: "17 */3 * * *"
 on:
-  schedule:
-    - cron: "17 */3 * * *"
   workflow_dispatch:
 
 permissions:

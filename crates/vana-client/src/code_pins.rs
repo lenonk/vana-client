@@ -18,7 +18,7 @@ use anyhow::{Context, Result, anyhow, bail};
 const KEY: &str = include_str!("../../../release/code-pins-key.pub");
 const HEADER: &str = "vana-code-pins 1";
 /// Where the workflow publishes the list (a pre-release, so the updater's releases/latest never picks it).
-pub const URL: &str = "https://github.com/akreao/vana-client/releases/download/code-pins/code-pins.txt";
+pub const URL: &str = "https://github.com/lenonk/vana-client/releases/download/code-pins/code-pins.txt";
 
 /// SHA-256 as lowercase hex.
 pub fn sha256(data: &[u8]) -> String {

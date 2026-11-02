@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publishes a GitHub release vVERSION of akreao/vana-client (the repo the updater asks, updater.rs RELEASE_REPO) with the
+# Publishes a GitHub release vVERSION of lenonk/vana-client (the repo the updater asks, updater.rs RELEASE_REPO) with the
 # assets release/build-*.sh made, each with a <asset>.sig: its Ed25519 signature by the release key, which the updater
 # checks against release/signing-key.pub (built in) before installing. The private key is VANA_SIGNING_KEY, by default
 # ~/.config/vana-client-release/signing-key.pem; it never goes in the repository. VERSION must be
@@ -29,4 +29,4 @@ notes=(--generate-notes)
 [ -n "${2:-}" ] && notes=(--notes-file "$2")
 git tag "v$version"
 git push origin "v$version"
-gh release create "v$version" -R akreao/vana-client --title "vana-client $version" "${notes[@]}" "${assets[@]}" "${sigs[@]}"
+gh release create "v$version" -R lenonk/vana-client --title "vana-client $version" "${notes[@]}" "${assets[@]}" "${sigs[@]}"

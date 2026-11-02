@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 
 /// Where releases are published.
 /// This fork's releases (release/publish.sh makes them): a build never offers upstream's binary in place of ours.
-pub const RELEASE_REPO: &str = "akreao/vana-client";
+pub const RELEASE_REPO: &str = "lenonk/vana-client";
 
 /// The release asset for this platform.
 pub fn asset_name() -> &'static str {

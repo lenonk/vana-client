@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Makes a new code-pins key (Ed25519): its public half goes in release/code-pins-key.pub (built into the client),
-# its private half becomes the CODE_PINS_KEY secret of akreao/vana-client for the Code pins workflow and is then
+# its private half becomes the CODE_PINS_KEY secret of lenonk/vana-client for the Code pins workflow and is then
 # deleted here. It is not the release signing key (release/publish.sh); that one never goes to CI.
 # Needs openssl 3 and gh signed in with access to the repository's secrets. Run it again to rotate: commit the new
 # .pub, release a client built with it, then run the workflow so the list is signed with the new key.
 #   release/new-code-pins-key.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
-repo=akreao/vana-client
+repo=lenonk/vana-client
 dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
 umask 077
