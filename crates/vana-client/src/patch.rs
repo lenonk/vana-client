@@ -284,6 +284,61 @@ pub struct Entry {
     pub versions: Vec<Version>,
 }
 
+/// A manifest path as a file under the install root: relative, `/` or `\` separated, with no empty, `.` or `..`
+/// component, no colon (drive letter or NTFS stream), no control character, and no component Windows would trim
+/// (trailing dot or space) or open as a device (CON, NUL, COM1 ...). The manifest comes over plain TCP, so a path
+/// that fails this could otherwise write anywhere the user can (issue #84).
+pub fn check_path(p: &str) -> Result<()> {
+    let bad = |why: &str| Err(anyhow!("manifest path {p:?} {why}"));
+    if p.chars().any(|c| c.is_control() || c == ':') {
+        return bad("has a drive, stream or control character");
+    }
+    for c in p.split(['/', '\\']) {
+        if c.is_empty() || c == "." || c == ".." {
+            return bad("is not a plain relative path");
+        }
+        if c.ends_with(['.', ' ']) {
+            return bad("has a name ending in a dot or space");
+        }
+        let stem = c.split('.').next().unwrap_or_default().trim_end().to_ascii_uppercase();
+        let numbered = stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT")) && stem.as_bytes()[3].is_ascii_digit();
+        if numbered || matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$") {
+            return bad("names a Windows device");
+        }
+    }
+    Ok(())
+}
+
+/// Where a manifest path lives under `root`, after [`check_path`].
+fn local(root: &Path, p: &str) -> Result<PathBuf> {
+    check_path(p)?;
+    Ok(root.join(p))
+}
+
+/// Where a manifest file is written under `root`: [`local`], and no folder between `root` and the file may be a
+/// symlink or junction, since writing through one would leave the install folder.
+fn writable(root: &Path, p: &str) -> Result<PathBuf> {
+    let out = local(root, p)?;
+    // The folders the write really goes through: on Unix a backslash is part of a name, not a separator.
+    let mut at = root.to_path_buf();
+    for c in Path::new(p).parent().into_iter().flat_map(Path::components) {
+        at.push(c);
+        let m = match std::fs::symlink_metadata(&at) {
+            Ok(m) => m,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => break,
+            Err(e) => return Err(e).with_context(|| at.display().to_string()),
+        };
+        #[cfg(windows)]
+        let linked = m.file_type().is_symlink() || std::os::windows::fs::MetadataExt::file_attributes(&m) & 0x400 != 0;
+        #[cfg(not(windows))]
+        let linked = m.file_type().is_symlink();
+        if linked {
+            bail!("{} is a link; the patcher only writes inside the install folder", at.display());
+        }
+    }
+    Ok(out)
+}
+
 /// `file <path> {`, version lines `stamp len sum md5 <direct>.slc len [<delta>.olc len]`, `}`, until `end`.
 pub fn parse_manifest(text: &str) -> Result<Vec<Entry>> {
     // Paths may hold spaces: a path token ends at its suffix followed by a space.
@@ -319,6 +374,7 @@ pub fn parse_manifest(text: &str) -> Result<Vec<Entry>> {
             None if l == "end" => break,
             None => {
                 let p = l.strip_prefix("file ").and_then(|s| s.strip_suffix(" {")).ok_or_else(|| anyhow!("manifest line {}: {l:?}", i + 1))?;
+                check_path(p).with_context(|| format!("manifest line {}", i + 1))?;
                 open = Some(Entry { path: p.into(), versions: Vec::new() });
             }
             Some(_) if l == "}" => {
@@ -409,7 +465,7 @@ pub fn plan_against(root: &Path, server: ServerVersion) -> Result<Plan> {
 /// Every code file of the stamped manifest matches its current version.
 fn code_current(root: &Path) -> bool {
     let Some(entries) = std::fs::read_to_string(root.join(STAMP_FILE)).ok().and_then(|t| parse_manifest(&t).ok()) else { return false };
-    entries.iter().filter(|e| is_code(&e.path)).all(|e| sig_of_path(&root.join(&e.path)).ok().flatten().is_some_and(|l| decide(e, Some(l)).0 == Action::Current))
+    entries.iter().filter(|e| is_code(&e.path)).all(|e| local(root, &e.path).and_then(|p| sig_of_path(&p)).ok().flatten().is_some_and(|l| decide(e, Some(l)).0 == Action::Current))
 }
 
 /// Asks the server for its version and manifest and checks every listed file under `root` (in parallel).
@@ -430,7 +486,7 @@ fn plan_for(root: &Path, code: bool, server: ServerVersion) -> Result<Plan> {
                     loop {
                         let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         let Some(e) = entries.get(i) else { return Ok(()) };
-                        let d = decide(e, sig_of_path(&root.join(&e.path))?);
+                        let d = decide(e, sig_of_path(&local(root, &e.path)?)?);
                         found.lock().unwrap().push((i, d.0, d.1));
                     }
                 })
@@ -463,7 +519,7 @@ fn produce(s: &mut Session, root: &Path, e: &Entry, a: Action) -> Result<Vec<u8>
         Action::Current => unreachable!(),
         Action::Direct => direct(&s.fetch(&cur.direct.0, cur.direct.1)?).with_context(|| cur.direct.0.clone())?,
         Action::Deltas(from) => {
-            let mut d = std::fs::read(root.join(&e.path))?;
+            let mut d = std::fs::read(local(root, &e.path)?)?;
             for v in &e.versions[from..] {
                 let (p, n) = v.delta.as_ref().unwrap();
                 d = olc(&s.fetch(p, *n)?, &d).with_context(|| p.clone())?;
@@ -486,7 +542,7 @@ pub fn fetch_one(path: &str, dir: &Path) -> Result<(PathBuf, String)> {
     let entries = parse_manifest(&String::from_utf8_lossy(&manifest))?;
     let e = entries.iter().find(|e| e.path.eq_ignore_ascii_case(path)).ok_or_else(|| anyhow!("{path} is not in the manifest"))?;
     let data = produce(&mut Session::connect()?, dir, e, Action::Direct)?;
-    let out = dir.join(&e.path);
+    let out = writable(dir, &e.path)?;
     write_atomic(&out, &data)?;
     Ok((out, e.versions.last().map(|v| v.stamp.clone()).unwrap_or_default()))
 }
@@ -511,7 +567,7 @@ pub fn apply(root: &Path, plan: &Plan, connections: usize, progress: &(dyn Fn(us
                     let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     let Some(&(ei, a, n)) = plan.todo.get(i) else { return };
                     let e = &plan.entries[ei];
-                    match produce(&mut sess, root, e, a).and_then(|d| write_atomic(&root.join(&e.path), &d)) {
+                    match produce(&mut sess, root, e, a).and_then(|d| write_atomic(&writable(root, &e.path)?, &d)) {
                         Ok(()) => {
                             let f = files.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
                             let b = bytes.fetch_add(n, std::sync::atomic::Ordering::Relaxed) + n;
@@ -575,5 +631,44 @@ mod tests {
         assert!(is_code(&m[1].path));
         let s = Sig::of(b"\xff\x01");
         assert_eq!((s.len, s.sum), (2, 0));
+    }
+
+    #[test]
+    fn manifest_paths_stay_under_the_root() {
+        for ok in ["ROM/0/0.DAT", "ROM9\\12\\34.DAT", "Tools/a b.chm", "FFXiMain.dll", "polboot.exe"] {
+            assert!(check_path(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "", "/etc/passwd", "\\Windows\\x.dll", "\\\\host\\share\\x", "C:\\x.exe", "C:x.exe", "ROM/../../x", "..\\x", "ROM/./0.DAT",
+            "ROM//0.DAT", "ROM/", "a.DAT:stream", "ROM/.. /x", "ROM/x.", "ROM/NUL", "con.txt", "ROM/COM1.DAT", "a\0b",
+        ] {
+            assert!(check_path(bad).is_err(), "{bad:?}");
+        }
+        let entry = |p: &str| format!("file {p} {{\n1_0 1 1 1 1_0/Direct/x.slc 5\n}}\nend\n");
+        assert!(parse_manifest(&entry("ROM/0/0.DAT")).is_ok());
+        for p in ["../../.config/autostart/x.desktop", "/tmp/x", "C:\\Users\\x\\Start Menu\\x.exe"] {
+            assert!(parse_manifest(&entry(p)).is_err(), "{p}");
+        }
+        assert!(local(Path::new("/game"), "/etc/passwd").is_err());
+        assert_eq!(local(Path::new("/game"), "ROM/0/0.DAT").unwrap(), Path::new("/game/ROM/0/0.DAT"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn writes_do_not_follow_links_out_of_the_root() {
+        let base = std::env::temp_dir().join(format!("vana-patch-links-{}", std::process::id()));
+        let (root, outside) = (base.join("game"), base.join("outside"));
+        std::fs::create_dir_all(root.join("ROM/0")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("ROM2")).unwrap();
+        assert_eq!(writable(&root, "ROM/0/0.DAT").unwrap(), root.join("ROM/0/0.DAT"));
+        assert_eq!(writable(&root, "ROM3/1/2.DAT").unwrap(), root.join("ROM3/1/2.DAT"));
+        assert!(writable(&root, "ROM2/1/2.DAT").is_err());
+        // One file name on Unix, so the ROM2 link is not on its way.
+        assert!(writable(&root, "ROM2\\1\\2.DAT").is_ok());
+        // A linked root itself is fine: only folders below it are checked.
+        std::os::unix::fs::symlink(&root, base.join("linked")).unwrap();
+        assert!(writable(&base.join("linked"), "ROM/0/0.DAT").is_ok());
+        std::fs::remove_dir_all(&base).unwrap();
     }
 }
