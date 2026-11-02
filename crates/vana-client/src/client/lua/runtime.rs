@@ -49,10 +49,30 @@ fn place(lua: &Lua, data: &Path, path: &str) -> mlua::Result<PathBuf> {
     match r.strip_prefix("shared") {
         Ok(rest) => {
             super::api::need(lua, "files.shared")?;
-            Ok(super::data_dir().join(".shared").join(rest))
+            no_links(&super::data_dir(), &Path::new(".shared").join(rest), path)
         }
-        Err(_) => Ok(data.join(r)),
+        // From mod-data down, so a link at <id> or <id>/files is caught too (mod-data itself may be a link: the
+        // user's own choice of where it lives).
+        Err(_) => {
+            let root = super::data_dir();
+            match data.strip_prefix(&root) {
+                Ok(sub) => no_links(&root, &sub.join(r), path),
+                Err(_) => no_links(data, &r, path),
+            }
+        }
     }
+}
+
+/// base joined with r, refused when a part of r that exists is a symlink: following one could leave the folder.
+fn no_links(base: &Path, r: &Path, path: &str) -> mlua::Result<PathBuf> {
+    let mut p = base.to_path_buf();
+    for part in r.components() {
+        p.push(part);
+        if std::fs::symlink_metadata(&p).is_ok_and(|m| m.file_type().is_symlink()) {
+            return Err(mlua::Error::runtime(format!("{path:?}: a link, which could lead outside the mod's folder")));
+        }
+    }
+    Ok(p)
 }
 
 /// Whether the mod's own files have this path (a file or a folder).
@@ -331,5 +351,22 @@ mod tests {
         assert!(super::rel("a/../../x").is_err());
         assert!(super::rel("C:/x").is_err());
         assert_eq!(super::rel("/a//b/./c.txt").unwrap(), std::path::PathBuf::from("a/b/c.txt"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn links_refused() {
+        let base = std::env::temp_dir().join(format!("vana-lua-links-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("dir")).unwrap();
+        std::os::unix::fs::symlink(std::env::temp_dir(), base.join("out")).unwrap();
+        let p = |s: &str| super::no_links(&base, &super::rel(s).unwrap(), s);
+        assert_eq!(p("dir/a.txt").unwrap(), base.join("dir/a.txt"));
+        assert!(p("new/b.txt").is_ok());
+        assert!(p("out").is_err());
+        assert!(p("out/x.txt").is_err());
+        // A link as the mod's own folder is caught from the root down.
+        assert!(super::no_links(&base, std::path::Path::new("out/files/a.txt"), "a.txt").is_err());
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

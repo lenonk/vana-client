@@ -75,7 +75,8 @@ pub(super) fn install(lua: &Lua, vm: &super::vm::Vm, storage: (serde_json::Value
             {
                 return Ok(v);
             }
-            if name.contains("..") || name.starts_with('/') {
+            // No way out of the folder: no "..", no root, and (Windows) no drive or backslash path.
+            if name.contains("..") || name.starts_with('/') || name.contains(['\\', ':']) {
                 return Err(mlua::Error::runtime(format!("require {name:?}: outside the mod's folder")));
             }
             let rel = name.replace('.', "/");

@@ -824,6 +824,21 @@ mod tests {
     use super::*;
     use mlua::{Table, Value};
 
+    /// A wait_until test that never returns runs out of its budget instead of freezing the frame.
+    #[test]
+    fn wait_until_test_has_a_budget() {
+        let vm = Vm::new(manifest::Manifest::default(), PathBuf::from("."), vm::Source::Dir(PathBuf::from("."))).unwrap();
+        api::install(&vm.lua, &vm, (serde_json::Value::Null, serde_json::Value::Null)).unwrap();
+        let f: mlua::Function = vm.lua.load("return function() wait_until(function() while true do end end) end").eval().unwrap();
+        vm.resume(vm.lua.create_thread(f).unwrap(), ());
+        assert_eq!(vm.st.borrow().sleepers.len(), 1);
+        let t0 = std::time::Instant::now();
+        vm.wake();
+        assert!(t0.elapsed() < std::time::Duration::from_secs(2), "the test ran {:?}", t0.elapsed());
+        assert!(vm.st.borrow().sleepers.is_empty());
+        assert_eq!(vm.st.borrow().errors.len(), 1);
+    }
+
     /// Every documented function is bound, and every function in a documented namespace is documented.
     #[test]
     fn docs_match_bindings() {

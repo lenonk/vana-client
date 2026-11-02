@@ -365,7 +365,17 @@ impl Vm {
                 }
                 Wake::Until(test, limit) => {
                     let f: Option<Function> = self.lua.registry_value(test).ok();
-                    let passed = f.map(|f| f.call::<bool>(()).unwrap_or(true)).unwrap_or(true);
+                    // The test runs on the game thread too: under a budget, so one that loops can't freeze the frame.
+                    // An error (the budget's included) is recorded, and the wait ends as before.
+                    let passed = f.is_none_or(|f| {
+                        let prev = self.st.borrow_mut().deadline.replace(Instant::now() + FILTER_CAP);
+                        let r = f.call::<bool>(());
+                        self.st.borrow_mut().deadline = prev;
+                        r.unwrap_or_else(|e| {
+                            self.error(&e);
+                            true
+                        })
+                    });
                     passed || limit.is_some_and(|l| now >= l)
                 }
             };
