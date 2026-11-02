@@ -7,7 +7,7 @@
 
 use super::blowfish::Blowfish;
 use super::compress::Codec;
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use md5::{Digest, Md5};
 use std::net::{SocketAddr, UdpSocket};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -68,6 +68,9 @@ pub struct MapSession {
     /// Datagram bytes sent / received on this session, for the Network window.
     pub bytes_out: u64,
     pub bytes_in: u64,
+    /// Datagrams dropped because they failed their checksum or didn't decompress, and how many in a row.
+    pub bad_in: u64,
+    bad_run: u32,
     /// Sub-packets not yet acked, stamped with the sequence of their first send (FUN_100fac80 resends them in
     /// every datagram until the server's header u16 @2 reaches it), and that ack.
     unacked: Vec<(u16, Vec<u8>)>,
@@ -83,6 +86,8 @@ pub struct MapSession {
 }
 
 const LOG_DATAGRAMS: u32 = 40;
+/// Unreadable datagrams in a row that end the session: past this it is a wrong key or a broken link, not noise.
+const BAD_RUN_LIMIT: u32 = 50;
 
 /// The sub-packets' ids and syncs, for the log.
 fn sub_ids(plain: &[u8]) -> String {
@@ -107,7 +112,7 @@ impl MapSession {
     pub fn connect(server: SocketAddr, key: &[u8; 20], codec: Codec) -> Result<Self> {
         let sock = UdpSocket::bind("0.0.0.0:0")?;
         sock.connect(server)?;
-        Ok(Self { sock, cipher: Blowfish::for_session_key(key), key: super::blowfish::session_key(key), codec, seq: 0, server_seq: 0, bytes_out: 0, bytes_in: 0, unacked: Vec::new(), server_ack: 0, last_in: None, logged: (0, 0), cert: None, clock: None })
+        Ok(Self { sock, cipher: Blowfish::for_session_key(key), key: super::blowfish::session_key(key), codec, seq: 0, server_seq: 0, bytes_out: 0, bytes_in: 0, bad_in: 0, bad_run: 0, unacked: Vec::new(), server_ack: 0, last_in: None, logged: (0, 0), cert: None, clock: None })
     }
 
     /// @0 our sequence, @2 the last server datagram handled, @4 / @8 the clock's ms and seconds; after the zone-in
@@ -224,6 +229,20 @@ impl MapSession {
         Ok(())
     }
 
+    /// Drops a datagram that can't be read: counted, logged (the first few), and an error only after BAD_RUN_LIMIT in a
+    /// row.
+    fn bad_datagram(&mut self, n: usize, why: &str) -> Result<Option<Vec<SubPacket>>> {
+        self.bad_in += 1;
+        self.bad_run += 1;
+        if self.bad_in <= LOG_DATAGRAMS as u64 {
+            log::warn!("map in: dropped a {n}-byte datagram that {why}");
+        }
+        if self.bad_run >= BAD_RUN_LIMIT {
+            bail!("{BAD_RUN_LIMIT} datagrams in a row could not be read; the last {why}");
+        }
+        Ok(None)
+    }
+
     /// Waits for one datagram and unpacks its sub-packets.
     pub fn recv(&mut self, timeout: Duration) -> Result<Option<Vec<SubPacket>>> {
         self.sock.set_read_timeout(Some(timeout))?;
@@ -243,11 +262,17 @@ impl MapSession {
         let mut dgram = buf[..n].to_vec();
         self.cipher.decrypt(&mut dgram[HEADER..]);
         let (data, digest) = dgram[HEADER..].split_at(n - HEADER - 16);
+        // A datagram that fails its checksum or doesn't decompress (corrupt, cut short, not the server's) is dropped
+        // and counts as no answer; LSB resends what we haven't acked. Only a run of them ends the session.
         if Md5::digest(data).as_slice() != digest {
-            bail!("datagram failed its checksum (wrong session key?)");
+            return self.bad_datagram(n, "failed its checksum (wrong session key?)");
         }
         let bits = u32::from_le_bytes(data[data.len() - 4..].try_into().unwrap());
-        let plain = self.codec.decompress(&data[..data.len() - 4], bits).context("decompressing datagram")?;
+        let plain = match self.codec.decompress(&data[..data.len() - 4], bits) {
+            Ok(p) => p,
+            Err(e) => return self.bad_datagram(n, &format!("did not decompress: {e:#}")),
+        };
+        self.bad_run = 0;
         // FUN_100f76b0: a datagram not newer than the last one handled is dropped (counted), and so is a sub-packet
         // whose sync is not newer; only an accepted datagram moves the stored sequence and ack.
         let seq = u16::from_le_bytes([dgram[0], dgram[1]]);
@@ -321,5 +346,64 @@ mod tests {
         let got: Vec<usize> = (0..4).map(|_| s.recv(Duration::from_secs(1)).unwrap().unwrap().len()).collect();
         assert_eq!(got, [1, 0, 0, 1]);
         assert_eq!(s.server_seq, 6);
+    }
+
+    /// A codec of plain 8-bit codes (each byte its own code), so the test needs no FFXiMain.dll.
+    fn plain_codec() -> Codec {
+        let mut table = vec![0u8; 2048];
+        for b in 0..=255u8 {
+            let i = (b as i8 as i32 + 0x80) as usize;
+            table[i * 4..i * 4 + 4].copy_from_slice(&(b as u32).to_le_bytes());
+            table[(i + 0x100) * 4..(i + 0x100) * 4 + 4].copy_from_slice(&8u32.to_le_bytes());
+        }
+        Codec::from_table(&table).unwrap()
+    }
+
+    /// A datagram that fails its checksum or doesn't decompress is dropped, not the session; a run of them ends it
+    /// (issue #82).
+    #[test]
+    fn bad_datagram_dropped() {
+        let codec = plain_codec();
+        let key = [7u8; 20];
+        let server = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let mut s = MapSession::connect(server.local_addr().unwrap(), &key, codec.clone()).unwrap();
+        let cipher = Blowfish::for_session_key(&key);
+        // `body` sealed (bits, MD5) and encrypted behind a header with `seq`.
+        let seal = |seq: u16, mut body: Vec<u8>, bits: u32| {
+            body.extend_from_slice(&bits.to_le_bytes());
+            let digest = Md5::digest(&body);
+            body.extend_from_slice(&digest);
+            cipher.encrypt(&mut body);
+            let mut d = vec![0u8; HEADER];
+            d[..2].copy_from_slice(&seq.to_le_bytes());
+            d.extend_from_slice(&body);
+            d
+        };
+        let good = |seq: u16| {
+            let mut sub = build(0x029, &[0u8; 24]);
+            sub[2..4].copy_from_slice(&seq.to_le_bytes());
+            let (body, bits) = codec.compress(&sub);
+            seal(seq, body, bits)
+        };
+        let to = s.sock.local_addr().unwrap();
+        let mut corrupt = good(5);
+        corrupt[HEADER + 3] ^= 0x40;
+        // Passes its checksum but has no leading 0x01.
+        let undecodable = seal(5, vec![2u8; 24], 8 + 24 * 8);
+        for d in [&corrupt, &undecodable, &good(5)] {
+            server.send_to(d, to).unwrap();
+        }
+        let t = Duration::from_secs(1);
+        assert!(s.recv(t).unwrap().is_none());
+        assert!(s.recv(t).unwrap().is_none());
+        assert_eq!(s.recv(t).unwrap().unwrap().len(), 1);
+        assert_eq!((s.server_seq, s.bad_in), (5, 2));
+        // A good datagram resets the run: BAD_RUN_LIMIT - 1 more are still dropped, the next one ends it.
+        for _ in 0..BAD_RUN_LIMIT - 1 {
+            server.send_to(&corrupt, to).unwrap();
+            assert!(s.recv(t).unwrap().is_none());
+        }
+        server.send_to(&corrupt, to).unwrap();
+        assert!(s.recv(t).is_err());
     }
 }

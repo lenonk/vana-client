@@ -1039,21 +1039,26 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
     loop {
         let incoming = if !hooked_in.is_empty() {
             Some(std::mem::take(&mut hooked_in))
-        } else if let Some(packets) = map.recv(Duration::from_millis(20))? {
-            answered = true;
+        } else {
+            let got = map.recv(Duration::from_millis(20))?;
+            // Every datagram's bytes count, the dropped unreadable ones too (recv's None).
             stats.received.fetch_add(map.bytes_in - rx_seen, Relaxed);
             rx_seen = map.bytes_in;
-            stats.last_rx_ms.store(stats.now_ms(), Relaxed);
-            // While a mod hooks them, they go to the main thread first and come back as Decode.
-            if hooks.load(Ordering::Relaxed) & HOOK_IN != 0 || away_in > 0 {
-                away_in += 1;
-                tx.send(NetEvent::RawIn(sess, packets))?;
-                None
-            } else {
-                Some(packets)
+            match got {
+                Some(packets) => {
+                    answered = true;
+                    stats.last_rx_ms.store(stats.now_ms(), Relaxed);
+                    // While a mod hooks them, they go to the main thread first and come back as Decode.
+                    if hooks.load(Ordering::Relaxed) & HOOK_IN != 0 || away_in > 0 {
+                        away_in += 1;
+                        tx.send(NetEvent::RawIn(sess, packets))?;
+                        None
+                    } else {
+                        Some(packets)
+                    }
+                }
+                None => None,
             }
-        } else {
-            None
         };
         if let Some(packets) = incoming {
             for p in packets {
