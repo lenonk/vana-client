@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// Where releases are published.
-pub const RELEASE_REPO: &str = "lenonk/vana-client";
+/// This fork's releases (release/publish.sh makes them): a build never offers upstream's binary in place of ours.
+pub const RELEASE_REPO: &str = "akreao/vana-client";
 
 /// The release asset for this platform.
 pub fn asset_name() -> &'static str {
@@ -38,6 +39,8 @@ pub struct Release {
     pub tag: String,
     pub url: String,
     pub size: u64,
+    /// The asset's "<name>.sha256" beside it (sha256sum's format), when the release has one.
+    pub sha256_url: Option<String>,
 }
 
 pub enum Client {
@@ -119,8 +122,10 @@ fn latest_release() -> Result<Option<Release>> {
     };
     let v: serde_json::Value = serde_json::from_str(&resp.body_mut().read_to_string()?)?;
     let tag = v["tag_name"].as_str().unwrap_or_default().to_string();
-    let asset = v["assets"].as_array().and_then(|a| a.iter().find(|x| x["name"].as_str() == Some(asset_name())));
-    Ok(asset.map(|a| Release { tag, url: a["browser_download_url"].as_str().unwrap_or_default().to_string(), size: a["size"].as_u64().unwrap_or(0) }))
+    let find = |name: &str| v["assets"].as_array().and_then(|a| a.iter().find(|x| x["name"].as_str() == Some(name)));
+    let url = |a: &serde_json::Value| a["browser_download_url"].as_str().unwrap_or_default().to_string();
+    let sha256_url = find(&format!("{}.sha256", asset_name())).map(url);
+    Ok(find(asset_name()).map(|a| Release { tag, url: url(a), size: a["size"].as_u64().unwrap_or(0), sha256_url }))
 }
 
 /// 5321 as "5,321".
@@ -200,6 +205,34 @@ pub fn download(url: &str, dest: &Path, progress: &dyn Fn(u64, u64)) -> Result<(
         bail!("{url}: got {done} of {total} bytes");
     }
     std::fs::rename(&part, dest)?;
+    Ok(())
+}
+
+/// The digest a "<name>.sha256" file gives: its first word, 64 hex digits (sha256sum writes "<hex>  <name>").
+fn parse_sha256(text: &str) -> Result<[u8; 32]> {
+    let hex = text.split_whitespace().next().unwrap_or_default();
+    if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        bail!("the release's checksum file is not a SHA-256");
+    }
+    let mut out = [0u8; 32];
+    for (i, o) in out.iter_mut().enumerate() {
+        *o = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16)?;
+    }
+    Ok(out)
+}
+
+/// Checks a downloaded binary against the release's .sha256 (when it has one); on a mismatch the file is removed.
+fn verify(r: &Release, file: &Path) -> Result<()> {
+    let Some(sha_url) = &r.sha256_url else {
+        log::warn!("update: release {} has no {}.sha256; installing unchecked", r.tag, asset_name());
+        return Ok(());
+    };
+    let want = parse_sha256(&agent().get(sha_url).call().with_context(|| sha_url.clone())?.body_mut().read_to_string()?)?;
+    let got = ring::digest::digest(&ring::digest::SHA256, &std::fs::read(file)?);
+    if got.as_ref() != want {
+        let _ = std::fs::remove_file(file);
+        bail!("the downloaded vana-client {} does not match the release's checksum; not installed", r.tag);
+    }
     Ok(())
 }
 
@@ -347,6 +380,7 @@ impl UpdateUi {
                 if let Some(r) = release {
                     let dest = exe().context("no executable path")?.with_extension("new");
                     download(&r.url, &dest, &|d, t| set(Progress { label: format!("Downloading vana-client {}", r.tag), done: d, total: t.max(r.size), detail: format!("{:.1} of {:.1} MB", d as f64 / 1e6, t.max(r.size) as f64 / 1e6) }))?;
+                    verify(&r, &dest)?;
                     replace_self(&dest)?;
                     status.lock().unwrap().client = Client::Current;
                     lines.push(format!("vana-client {} is installed; restart to use it.", r.tag));
@@ -590,7 +624,18 @@ impl UpdateUi {
 
 #[cfg(test)]
 mod tests {
-    use super::{newer, thousands};
+    use super::{newer, parse_sha256, thousands};
+
+    #[test]
+    fn checksum_files_parse() {
+        let hex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let want = ring::digest::digest(&ring::digest::SHA256, b"");
+        assert_eq!(parse_sha256(&format!("{hex}  vana-client-linux-x86_64\n")).unwrap(), want.as_ref());
+        assert_eq!(parse_sha256(hex).unwrap(), want.as_ref());
+        assert!(parse_sha256("").is_err());
+        assert!(parse_sha256("e3b0c442 vana-client").is_err());
+        assert!(parse_sha256(&hex.replace('e', "g")).is_err());
+    }
 
     #[test]
     fn versions_compare_numerically() {

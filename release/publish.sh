@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Publishes a GitHub release vVERSION of lenonk/vana-client with the assets release/build-*.sh made. VERSION must be
+# Publishes a GitHub release vVERSION of akreao/vana-client (the repo the updater asks, updater.rs RELEASE_REPO) with the
+# assets release/build-*.sh made, each with a <asset>.sha256 the updater checks the download against. VERSION must be
 # the crate's version (crates/vana-client/Cargo.toml), newer than the last release: clients compare the tag with their
 # own version and offer the update when it is newer.
 #   release/publish.sh 0.1.1 [notes file]
@@ -12,8 +13,13 @@ assets=(target/assets/vana-client-linux-x86_64 target/assets/vana-client-windows
 for a in "${assets[@]}"; do
     [ -f "$a" ] || { echo "missing $a (run release/build-linux.sh and release/build-windows.sh)" >&2; exit 1; }
 done
+sums=()
+for a in "${assets[@]}"; do
+    (cd "$(dirname "$a")" && sha256sum "$(basename "$a")" > "$(basename "$a").sha256")
+    sums+=("$a.sha256")
+done
 notes=(--generate-notes)
 [ -n "${2:-}" ] && notes=(--notes-file "$2")
 git tag "v$version"
 git push origin "v$version"
-gh release create "v$version" -R lenonk/vana-client --title "vana-client $version" "${notes[@]}" "${assets[@]}"
+gh release create "v$version" -R akreao/vana-client --title "vana-client $version" "${notes[@]}" "${assets[@]}" "${sums[@]}"
