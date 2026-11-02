@@ -136,10 +136,36 @@ pub fn thousands(n: u64) -> String {
     out
 }
 
-/// "v0.2.0" newer than "0.1.0" (numeric parts, a leading v ignored).
+/// "v0.2.0" newer than "0.1.0": numeric parts (a leading v and any +build ignored, missing parts count as 0), then
+/// semver's pre-release rule: "1.2.0-rc1" comes before "1.2.0", and pre-releases compare part by part, numbers
+/// numerically and below words.
 pub fn newer(tag: &str, current: &str) -> bool {
-    let parts = |s: &str| s.trim_start_matches('v').split(['.', '-']).map(|p| p.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>();
-    parts(tag) > parts(current)
+    use std::cmp::Ordering;
+    fn split(s: &str) -> (Vec<u64>, Option<Vec<&str>>) {
+        let s = s.trim_start_matches('v');
+        let s = s.split_once('+').map_or(s, |(v, _)| v);
+        let (core, pre) = s.split_once('-').map_or((s, None), |(c, p)| (c, Some(p.split('.').collect())));
+        (core.split('.').map(|p| p.parse::<u64>().unwrap_or(0)).collect(), pre)
+    }
+    fn ident(a: &str, b: &str) -> Ordering {
+        match (a.parse::<u64>(), b.parse::<u64>()) {
+            (Ok(x), Ok(y)) => x.cmp(&y),
+            (Ok(_), Err(_)) => Ordering::Less,
+            (Err(_), Ok(_)) => Ordering::Greater,
+            (Err(_), Err(_)) => a.cmp(b),
+        }
+    }
+    let ((mut a, pa), (mut b, pb)) = (split(tag), split(current));
+    let n = a.len().max(b.len());
+    a.resize(n, 0);
+    b.resize(n, 0);
+    let order = a.cmp(&b).then_with(|| match (&pa, &pb) {
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => Ordering::Greater,
+        (Some(_), None) => Ordering::Less,
+        (Some(x), Some(y)) => x.iter().zip(y).map(|(p, q)| ident(p, q)).find(|o| o.is_ne()).unwrap_or(x.len().cmp(&y.len())),
+    });
+    order == Ordering::Greater
 }
 
 /// Downloads `url` to `dest` (through `dest.part`, resumed when one is there), reporting (bytes, total).
@@ -572,6 +598,16 @@ mod tests {
         assert!(newer("0.10.0", "0.9.9"));
         assert!(!newer("v0.1.0", "0.1.0"));
         assert!(!newer("0.0.9", "0.1.0"));
+        // A pre-release comes before its release (#67).
+        assert!(!newer("1.2.0-rc1", "1.2.0"));
+        assert!(newer("1.2.0", "1.2.0-rc1"));
+        assert!(newer("1.2.1-rc1", "1.2.0"));
+        assert!(newer("1.2.0-rc.2", "1.2.0-rc.1"));
+        assert!(newer("1.2.0-rc.10", "1.2.0-rc.9"));
+        assert!(newer("1.2.0-beta", "1.2.0-alpha"));
+        assert!(newer("1.2.0-alpha.1", "1.2.0-alpha"));
+        assert!(!newer("v1.2", "1.2.0"));
+        assert!(!newer("1.2.0+build5", "1.2.0"));
         assert_eq!((thousands(5321), thousands(452), thousands(1_234_567)), ("5,321".into(), "452".into(), "1,234,567".into()));
     }
 }
