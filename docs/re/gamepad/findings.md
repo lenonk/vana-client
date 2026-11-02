@@ -61,7 +61,7 @@ DirectInput device setup (FUN_100083d0) [C]:
 
 ## b. FUN_101bced0 and FUN_101bcb60
 
-- **FUN_101bced0 is NOT a gamepad count.** [C] It returns −1 if `DAT_10662dc0` (a 0x4e34-byte object built in FUN_101a8b50 by FUN_101bcef0) is null. Otherwise it returns FUN_101bd820, which loads **`prohibited.txt`** and **`allowed.txt`** word lists (UTF-8, ≤100 entries, regex-like `\(`, `[`, `^`, flags `(i)`, `(s)`, `(n)`) via FUN_101bd880. It returns 1 on success and −1 on failure. [I: it is the chat word filter.]
+- **FUN_101bced0 is NOT a gamepad count.** [C] It returns −1 if `DAT_10662dc0` (a 0x4e34-byte object built in FUN_101a8b50 by FUN_101bcef0) is null. Otherwise it returns FUN_101bd820, which loads **`prohibited.txt`** and **`allowed.txt`** word lists (UTF-8, ≤100 entries, regex-like `\(`, `[`, `^`, flags `(i)`, `(s)`, `(n)`) via FUN_101bd880. It returns 1 on success and −1 on failure. (the chat word filter; see window_fns.md: 0xce 1 = drop matching lines, 2 = replace the text).
 - **FUN_101bcb60** returns 1 if `DAT_10662dbc` is null, otherwise FUN_101bcc30. [C] That function:
   `FindWindowA(NULL,"FINAL FANTASY XI GAMEPAD Config")`, then if none is running, spawns a thread (FUN_10315c7c → 0x101bcca0 → **FUN_101bccb0**).
   FUN_101bccb0 reads `HKLM\SOFTWARE\PlayOnline{,US,EU}\InstallFolder` value `"0001"` (region index `*(DAT_10456a28+4)`),
@@ -171,11 +171,10 @@ The second callback column (`id*2+1`) is unused for every id except 0x9f (keyboa
 ## f. Config id 0xce
 
 FUN_1019bec0 (config setter): for id 0xce, values other than 1/2 are stored directly into `this+0x24`. Values 1 or 2 are kept only if `FUN_101bced0() > 0`, meaning `prohibited.txt` loaded. Otherwise it calls `FUN_10193830(0xce, 0)` (reset to 0). [C]
-Since FUN_101bced0 is the chat word-list loader, **0xce is a chat-filter option, not a gamepad option.** [I: strong] Nothing in the pad code (FUN_10005a40/10005130/100083d0) reads it.
+Since FUN_101bced0 is the chat word-list loader, **0xce is the chat-filter option, not a gamepad option** [C]: 0 = off, 1 = drop matching chat lines, 2 = replace them with system message (9, 0x159) (FUN_100da5e0, called @0x100e392c). Nothing in the pad code reads it.
 
 ## Not done / open
 
-- I did not resolve what consumes `this+0x24` for config 0xce.
 - The 2 "mode" bytes in the compact keyboard table (modreq 0/4/7/8, modeMask 4/5/6) are only partly decoded. Entries 27–34 have scancode 0 (probably filled at runtime).
 - Slot meanings beyond confirm/cancel/movement/camera/D-pad are inferred from default keyboard bindings only.
 
@@ -301,7 +300,7 @@ if (pressed == 0 && released == 0) {
 if (I->pressed & 0x80000000) cycle DAT_10455c3e;   // slot31
 ```
 - `repeatDelay` (`mgr+0x94`) is initialised to **16** in FUN_10005660 (pad manager reset). This is the only constant writer I found; a settings path may change it at runtime.
-- `FUN_10014cf0()` returns `max(1.0, *(float*)(DAT_104568fc+0x28))`, the engine's frame delta in ticks. [I] Ticks are 1/60 s, which gives a first repeat after ≈16 ticks (~0.27 s) and then one every 2 ticks (~30 Hz).
+- `FUN_10014cf0()` returns `max(1.0, *(float*)(DAT_104568fc+0x28))`. That delta is `60 / fps`, averaged over 4 frames and clamped at 20, so it is in **1/60 s ticks** [C]. The first repeat comes after 16 ticks (0.267 s), then one every 2 ticks (~30 Hz).
 - `mgr+0xdac` delays arming by one frame after any edge. The timer resets to 0 on any pressed or released edge, so pressing a second button restarts the repeat delay.
 - Testers read `repeat` for mode 0, `pressed` for mode 1, and `held` for mode 4. Modes 2/3 read repeat/pressed and then clear all pressed bits except their own (consume).
 
