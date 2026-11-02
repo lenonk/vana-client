@@ -20290,3 +20290,22 @@ Ashita, beyond the above:
 - Controller input (tCrossBar, cBind) waits on gamepad support.
 
 Lessons from other games' mod layers (BG3 Script Extender, WoW, Skyrim, Factorio) are in docs/lua-mods.md 2.
+
+## Game file updates: pinned code files (ours, 2026-11-02)
+
+- The patch server is plain TCP and its manifest only carries a 4-byte MD5 word per file, so whoever answers for
+  pc001.pol.com could hand the patcher their own executable. FFXiMain.dll has no Authenticode signature (checked on a
+  retail install), so signatures cannot be checked on the files themselves.
+- Ours: src/code_pins.rs. The Code pins workflow (.github/workflows/code-pins.yml, every 3 hours and by hand) runs
+  the hidden `vana-client code-pins`, which downloads every .exe / .dll in the server's current manifest whole and
+  lists `sha256 length path` under `vana-code-pins 1` / `server <version>`. When the list changed it signs it
+  (Ed25519, `openssl pkeyutl -sign -rawin`) with the code-pins key (secret CODE_PINS_KEY, made by
+  release/new-code-pins-key.sh; not the release key, which stays off CI) and uploads code-pins.txt + .sig to the
+  `code-pins` pre-release.
+- patch::apply fetches the list once when the plan has a code file and checks it against release/code-pins-key.pub
+  (built in). A code file, whole or by deltas, is written only when its final bytes' SHA-256, length and path
+  (without case) are on the list. Refused ones are left as they are while the data files go on, then apply fails
+  naming them and does not record the manifest, so the next check offers the update again. No list, a bad
+  signature, or a build with an empty key file refuses every code file. `update --file` checks the same way.
+- Not covered: an older signed list replayed by someone who can answer for github.com only allows code files that
+  were genuine at the time; the workflow trusts what the patch server tells GitHub's runners.
