@@ -141,40 +141,40 @@ changed from the in-game Config menus. The fields you may need to set by hand:
 | `frame_limit` | `300` | Frame limit in fps, `0` for unlimited |
 | `gpu` | empty | Graphics adapter by name; empty picks the high-performance one |
 | `audio_device` | empty | Output device; empty uses the system default |
-| `gamepad` | `true` | Read a game controller |
-| `gamepad_deadzone` | `0.2` | Stick travel ignored around the centre, `0` to `0.9` |
-| `gamepad_invert_y` | `false` | Turn the right stick's up and down over |
-| `gamepad_buttons` | empty | Button to key overrides (see below) |
+| `gamepad`, `gamepad_padsin` ... | | See [Gamepad](#gamepad) |
 
 ### Gamepad
 
-Any controller SDL-style mappings know (Xbox, PlayStation, Switch Pro and most others) works on Linux and Windows.
-The defaults follow the official PC layout for an Xbox 360 pad from PlayOnline's
-[new player tips](https://www.playonline.com/ff11newplayer/tips/en/list.html). The left stick walks (analog, also
-with a menu up), the right stick turns the camera, and the d-pad drives the menus. The sticks never drive menus.
+Controllers work on Linux and Windows (any pad with an SDL mapping: Xbox, PlayStation, Switch Pro and most others)
+through the retail client's own pad path: the buttons set the pad bits the game's key functions test, and the sticks
+fill its stick bytes (see [docs/re/gamepad](docs/re/gamepad/findings.md)). The button settings use the format of
+retail's registry value `padsin000`, written by FFXiPadConfig.exe, so a retail setting can be copied over as is.
+The default is FFXiPadConfig's XInput layout, the same as the official PC layout:
 
 | Button | Does |
 |---|---|
-| A / Cross | Confirm, the action menu (Enter) |
-| B / Circle | Cancel (Escape) |
-| X / Square | Main menu (Num -) |
-| Y / Triangle | Active window (Num +) |
+| A / Cross | Confirm, the action menu |
+| B / Circle | Cancel |
+| X / Square | Main menu |
+| Y / Triangle | Active window |
 | D-pad | In a menu: the cursor. In the field: up / down the party members, left / right the actors on screen |
-| LB / L1 | Autorun (Num 7) |
-| RB / R1 | Screenshot with the windows hidden (Print Screen); retail's software keyboard is not done |
-| LT / L2, RT / R2 | The macro palettes (Ctrl, Alt). While held, d-pad up / right / down / left and the face buttons Y / B / A / X press 1 to 8 |
-| Back / Select | Hide or show the windows (Scroll Lock) |
-| Start | Log out (Pause) |
-| L3 | Rest, or lock on with a target (Num *) |
-| R3 | First / third person (Num 5) |
+| Left stick / right stick | Move / camera (also with a menu up; the sticks never drive menus) |
+| LB / L1 | Autorun |
+| LT / L2, RT / R2 | Macro palettes (Ctrl, Alt). While held, d-pad up / right / down / left and Y / B / A / X run macros 1 to 8 |
+| L3 | Rest, or lock on with a target |
+| R3 | First / third person |
+| Back / Select | Hide or show the windows |
+| Start | Log out |
 
-`gamepad_buttons` changes a button by gilrs's button name and winit's key name or an action, for example
-`"gamepad_buttons": {"West": "F1", "Select": "", "RightTrigger": "Rest"}` (an empty key unbinds it). Actions:
-`TargetNext`, `TargetPrev`, `PartyUp`, `PartyDown` (field only; a d-pad button is still its arrow in a menu) and
-`Rest` (/heal). Button names: `South`, `East`, `North`,
-`West`, `LeftTrigger`, `RightTrigger`, `LeftTrigger2`, `RightTrigger2`, `Select`, `Start`, `Mode`, `LeftThumb`,
-`RightThumb`, `DPadUp`, `DPadDown`, `DPadLeft`, `DPadRight`. Building on Linux needs libudev's headers
-(`libudev-dev`, `systemd-devel`).
+| Field | Default | Meaning |
+|---|---|---|
+| `gamepad` | `true` | Read a game controller |
+| `gamepad_padsin` | empty (FFXiPadConfig's XInput default) | Button settings in `padsin000` format: 32 numbers, one per function, each an XInput button number (0 B, 1 X, 2 Y, 3 A, 4 / 5 / 6 / 7 d-pad right / left / up / down, 8 LB, 9 LT, 10 L3, 11 RB, 12 RT, 13 R3, 14 Start, 15 Back), an axis 32 + n (1 left X, 2 left Y, 4 right X, 5 right Y; negative inverts) or -1. The function order is in [padsin_order.md](docs/re/gamepad/padsin_order.md) |
+| `gamepad_padexsin` | empty | `padexsin000`, the map used while the "alternate map" button is held |
+| `gamepad_deadzone` | `0.33` | Stick travel ignored around the centre (retail's 42 of 127) |
+| `gamepad_invert_y` | `false` | Turn the camera's up and down over |
+
+Building on Linux needs libudev's headers (`libudev-dev`, `systemd-devel`).
 
 ## For developers
 

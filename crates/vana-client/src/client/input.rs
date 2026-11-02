@@ -28,7 +28,8 @@ pub mod mode {
     pub const HELD: i32 = 4;
 }
 
-/// Pad bit each key function's callback 0 tests (PTR_FUN_10361e28; MODLOG "Input layer"), i.e. the compact keys.
+/// Pad bit each key function's callback 0 tests (PTR_FUN_10361e28; MODLOG "Input layer"): the compact keys' and a
+/// controller's (client/gamepad.rs) slots.
 const PAD: &[(u8, u64)] = &[
     (0x00, 0x40), (0x27, 0x40), (0x2b, 0x40), (0x31, 0x40),
     (0x01, 0x80), (0x28, 0x80), (0x2c, 0x80), (0x32, 0x80),
@@ -50,6 +51,8 @@ const PAD: &[(u8, u64)] = &[
     (0x4f, 0x800_0000), (0xa4, 0x800_0000),
     (0x50, 0x1000_0000), (0xa5, 0x1000_0000),
     (0x55, 0x4000_0000),
+    // The second word (+0x224, slots 32 / 33 / 35 / 36): pad only (docs/re/gamepad/keyfn_table.md).
+    (0xb7, 1 << 32), (0xb8, 1 << 33), (0xb9, 1 << 35), (0xba, 1 << 36),
 ];
 
 /// A compact keyboard record (0x103623c8, 0x10 bytes): key, modifier rule, state mask, pad bits.
@@ -116,6 +119,8 @@ pub struct Input {
     /// A game controller's sticks (client/gamepad.rs, not retail): left X / Y, right X / Y in -1 ..= 1, right and
     /// down positive, as the axes.
     stick: [f32; 4],
+    /// A game controller's pad word (client/gamepad.rs: retail's FUN_10005a40 bits), ORed with the compact keys'.
+    device: u64,
 }
 
 impl Default for Input {
@@ -142,6 +147,7 @@ impl Default for Input {
             consumed: false,
             numlock: true,
             stick: [0.0; 4],
+            device: 0,
         }
     }
 }
@@ -252,6 +258,11 @@ impl Input {
         }
     }
 
+    /// The controller's pad word for the next frames (client/gamepad.rs).
+    pub fn set_pad(&mut self, bits: u64) {
+        self.device = bits;
+    }
+
     /// The controller's sticks for the next frames (client/gamepad.rs).
     pub fn set_stick(&mut self, stick: [f32; 4]) {
         self.stick = stick;
@@ -313,7 +324,9 @@ impl Input {
 
     fn pad_frame(&mut self, f: &Frame, frames: u32) {
         let prev = self.pad.held;
-        let held = if matches!(f.keyboard, 1 | 2) && !f.typing && !f.assigning { self.compact_bits(f.window) } else { 0 };
+        let keys = if matches!(f.keyboard, 1 | 2) && !f.typing && !f.assigning { self.compact_bits(f.window) } else { 0 };
+        // FUN_10005a40: the device's bits and the compact keys' share the word, its edges and its repeat.
+        let held = keys | self.device;
         let mut edge = held & !prev;
         let mut repeat = edge;
         // Up or down drops left / right from the edges.
@@ -377,9 +390,10 @@ impl Input {
         }
         let key = |p: u8, n: u8| self.held(p) as i32 as f32 - self.held(n) as i32 as f32;
         let stick = |p: u64, n: u64| -> f32 { if self.pad.held & p != 0 { 127.0 / 128.0 } else if self.pad.held & n != 0 { -1.0 } else { 0.0 } };
-        // A controller's stick (not retail) counts as the compact stick of the same axis, the larger one winning. The
-        // left stick does not move while typing; the right stick follows the arrows' rule.
-        let (left, right) = (!self.typing, !self.typing && !self.window);
+        // A controller's stick bytes (FUN_10005a40 +0x250..+0x253, client/gamepad.rs) count as the compact stick of
+        // the same axis, the larger one winning; not while typing. A window does not stop them: the sticks never drive
+        // windows (the d-pad does).
+        let (left, right) = (!self.typing, !self.typing);
         let pad_stick = match id {
             4 | 0x79 | 0x9d if left => self.stick[0],
             5 | 0x7a | 0x9e if left => self.stick[1],

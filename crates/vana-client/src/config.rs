@@ -201,16 +201,17 @@ pub struct Config {
     pub modern_condense: bool,
     /// The list search's recent picks by character, newest first (listsearch.rs).
     pub modern_recent: std::collections::BTreeMap<String, Vec<String>>,
-    /// Not retail (client/gamepad.rs): read a game controller. Its buttons press keys, its sticks move and turn the
-    /// camera.
+    /// Read a game controller (client/gamepad.rs; retail: padmode000's first flag).
     pub gamepad: bool,
-    /// Stick travel ignored around the centre, 0 ..= 0.9.
+    /// Stick travel ignored around the centre as a fraction of full: retail's 42 of 127.
     pub gamepad_deadzone: f32,
-    /// The right stick's up and down turned over.
+    /// The camera's up and down turned over (ours; retail inverts through padsin's sign).
     pub gamepad_invert_y: bool,
-    /// Button -> key overrides by name ("South": "Enter", "LeftTrigger2": "ControlLeft"); empty = the defaults in
-    /// client/gamepad.rs. An empty key name unbinds the button.
-    pub gamepad_buttons: std::collections::BTreeMap<String, String>,
+    /// The button settings in retail's padsin000 format (FFXiPadConfig's registry value: 32 numbers, XInput button
+    /// numbers or axis codes 32 + n); empty = gamepad::DEFAULT_PADSIN.
+    pub gamepad_padsin: String,
+    /// padexsin000, the map used while slot 34 is held; empty = gamepad::DEFAULT_PADEXSIN.
+    pub gamepad_padexsin: String,
 }
 
 /// A modern UI panel's place: its left and top (or, for the panels that grow upward, its bottom `b`) as fractions of the
@@ -361,9 +362,10 @@ impl Default for Config {
             modern_condense: true,
             modern_recent: Default::default(),
             gamepad: true,
-            gamepad_deadzone: 0.2,
+            gamepad_deadzone: 42.0 / 127.0,
             gamepad_invert_y: false,
-            gamepad_buttons: Default::default(),
+            gamepad_padsin: String::new(),
+            gamepad_padexsin: String::new(),
             tool: Default::default(),
             retail_aspect: false,
             monitor: String::new(),
