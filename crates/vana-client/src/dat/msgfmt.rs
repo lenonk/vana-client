@@ -23,11 +23,17 @@ fn sjis_pair(a: u8, b: u8) -> bool {
 }
 
 /// Expands a string: Shift-JIS bytes in and out. `item(id, count, no_article)` names an item for code 0x8e.
+///
+/// A jump (0x84..=0x8a) may land at or before its own code. Where it goes next depends only on the position, the
+/// compare flags and the choice end (`ints` and `strs` never change), so a string that loops comes back to one of
+/// those states after a backward jump. Such a string stops at the second visit instead of looping forever
+/// (issue #88), and the output so far is returned. A string that ends never repeats a state, so its output is unchanged.
 pub fn format(s: &[u8], strs: &[&[u8]], ints: &[i32], item: &dyn Fn(i32, i32, bool) -> Option<Vec<u8>>) -> Vec<u8> {
     let mut out = Vec::new();
     let (mut eq, mut lt, mut gt) = (false, false, false);
     let mut end = 0usize;
     let mut i = 0usize;
+    let mut seen = std::collections::HashSet::new();
     while i < s.len() && s[i] != 0 {
         let next = s.get(i + 1).copied().unwrap_or(0);
         if !sjis_pair(s[i], next) {
@@ -94,6 +100,9 @@ pub fn format(s: &[u8], strs: &[&[u8]], ints: &[i32], item: &dyn Fn(i32, i32, bo
             }
             _ => p,
         };
+        if i <= p - 3 && !seen.insert((i, eq, lt, gt, end)) {
+            break;
+        }
     }
     out
 }
@@ -240,6 +249,50 @@ mod tests {
         assert_eq!(f(4, 1), "Ann invites you to her party.");
         assert_eq!(f(4, 2), "Ann invites you to join a party.");
         assert_eq!(f(3, 2), "Ann invites you to form an alliance with their party.");
+    }
+
+    fn plain(s: &[u8], ints: &[i32]) -> Vec<u8> {
+        format(s, &[], ints, &|_, _, _| None)
+    }
+
+    /// Issue #88: an always-taken jump back to the start used to repeat forever. It now stops when the jump comes
+    /// back to a state it has already left from, so the loop body is written twice.
+    #[test]
+    fn backward_jump_stops() {
+        assert_eq!(plain(b"A\xFA\x40\x84\xFB", &[]), b"AA");
+        // A jump onto itself (offset -4 from p + 1 is the code's own start).
+        assert_eq!(plain(b"AB\xFA\x40\x84\xFC", &[]), b"AB");
+    }
+
+    /// A backward jump that is taken once, until a compare changes, still runs to the end.
+    #[test]
+    fn backward_jump_that_ends_is_kept() {
+        // 0 "X" | 1 jump to 17 if eq | 5 "Z" | 6 compare 1 == 1 | 13 jump to 1 | 17 "Y"
+        let s = b"X\xFA\x40\x85\x0CZ\xFA\x40\x83\x02\x01\x02\x01\xFA\x40\x84\xF0Y";
+        assert_eq!(plain(s, &[]), b"XZY");
+    }
+
+    /// Issue #88's fuzz shape: random bytes always return.
+    #[test]
+    fn random_strings_return() {
+        let mut x = 0x2545_f491_4f6c_dd1du64;
+        for _ in 0..20_000 {
+            let len = (x % 48) as usize;
+            let mut s = Vec::with_capacity(len);
+            for k in 0..len {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                // Bias towards escapes so jumps are common.
+                s.push(match x % 5 {
+                    0 => 0xfa,
+                    1 => 0x40,
+                    2 => 0x84 + (x >> 8) as u8 % 7,
+                    _ => (x >> 16) as u8 | (k == 0) as u8,
+                });
+            }
+            plain(&s, &[1, 2, 3]);
+        }
     }
 
     /// The moon percent at the turning points (FUN_10103ba0).
