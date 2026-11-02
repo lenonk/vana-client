@@ -20290,3 +20290,26 @@ Ashita, beyond the above:
 - Controller input (tCrossBar, cBind) waits on gamepad support.
 
 Lessons from other games' mod layers (BG3 Script Extender, WoW, Skyrim, Factorio) are in docs/lua-mods.md 2.
+
+## DAT parsers: malformed files no longer crash (ours, 2026-11-02)
+
+- A corrupt DAT (from the install or a mod pack) could panic or abort the client (issue #87, found by fuzzing).
+  Fixed in event::parse (a block count past the size table reserved up to 77 GB), zone::parse_mmb (offset table
+  read past the end), zone::parse_mzb (short header, records past the end), zone::light_list (read before its
+  length check), zone::parse_rid (a bad count looped up to u32::MAX times), character::parse_skeleton (short
+  chunk), title::parse_ops (ops too short for their argument now come out as Other), title::Title::parse (camera
+  key count past the chunk), ui::parse_sprite_lib (sprite count cut), sched::loops (an offset below 0x10 wrapped)
+  and the counts that sized allocations in autotrans, dialog and names (d_msg). zone::decode_mzb and
+  zone::decode_mmb need their 8-byte header. A camera path with no keys (title flyover, eventdump, the title dump) is skipped instead of sampled.
+- Each fix only changes what happens on input that used to crash; files that parsed before parse the same.
+- dat/fuzz.rs runs about 50 parsers on 4000 random and chunk-shaped inputs each (plus each chunk's payload) and
+  fails if any panics or aborts. New parsers should be added to its list.
+
+## Message formatter: loops stop (ours, 2026-11-02)
+
+- msgfmt::format (FUN_10153310) followed the jump codes 0x84..=0x8a to any signed-byte target, so a string whose
+  jump went back to or before itself (`A FA 40 84 FB`) repeated forever and grew memory until the process was
+  killed (issue #88, found by fuzzing). Where the formatter goes next depends only on the position, the compare
+  flags and the choice end, so after each backward jump it now records that state and stops at the first repeat,
+  returning the output so far. A string that ends never repeats a state, so retail strings format as before.
+  Not checked against retail; what FUN_10153310 does with such a string is not known (ours).
