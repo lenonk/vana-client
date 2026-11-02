@@ -545,6 +545,11 @@ impl Ground {
         down.or_else(|| hits.iter().map(|h| h.0).filter(|&h| h <= y + 2.0 && h > y - 13.0).max_by(|a, b| a.total_cmp(b)))
     }
 
+    /// The highest face over (x, z) from `top` down to `bottom` (y points down), if any.
+    pub fn highest_between(&self, x: f32, z: f32, top: f32, bottom: f32) -> Option<f32> {
+        self.heights(x, z).into_iter().map(|h| h.0).filter(|&h| h >= top && h <= bottom).min_by(|a, b| a.total_cmp(b))
+    }
+
     /// The height of the face over (x, z) nearest `y`, at most `within` from it.
     pub fn nearest(&self, x: f32, z: f32, y: f32, within: f32) -> Option<f32> {
         self.heights(x, z).into_iter().map(|h| h.0).filter(|h| (h - y).abs() <= within).min_by(|a, b| (a - y).abs().total_cmp(&(b - y).abs()))

@@ -20284,7 +20284,7 @@ Lessons from other games' mod layers (BG3 Script Extender, WoW, Skyrim, Factorio
 - Ours (client/gamepad.rs): gilrs stands in for DirectInput / XInput; config.json gamepad_padsin / gamepad_padexsin in
   the registry's format, FFXiPadConfig's XInput layout by default. Our windows read egui keys, so the confirm,
   cancel and main menu slots also send Enter / Escape / Num-, and the d-pad the arrows with a window or a palette up
-  (repeat 16 ticks, then every 2, as mgr +0x94). The sticks never step a window's cursor and keep moving / turning
+  (the press, then tick 17 and every 3rd: past mgr +0x94 = 16, back to 14). The sticks never step a window's cursor and keep moving / turning
   with a window up.
 - What each button does where, from the DLL (docs/re/gamepad/window_fns.md): only 18 of the 239 window OnKey handlers
   take the pad's extra events, nearly all of them text input (the software keyboard, msgline, comment, fep).
@@ -20300,8 +20300,8 @@ Lessons from other games' mod layers (BG3 Script Extender, WoW, Skyrim, Factorio
   - RB 0x24 (FUN_101579c0): with no window, opens the chat line; with the UI hidden (FUN_101d0c70) the screenshot.
   - Slots 32 / 33 / 35 / 36 (0xb7..0xba, unbound by default): the shut down prompt, F8's nearest target, /jump, /map.
 - Not built: retail's software keyboard windows (keypad*, where RB / LB / X / Back / LT / RT type; ours is the
-  on-screen keyboard below), the ground-position cursor that LT / RT + d-pad move in position-target mode
-  (0xb0..0xb3), and L3 centring the map viewer on its cursor (0x7e).
+  on-screen keyboard below). The ground-position cursor (0xb0..0xb3) and L3 on the map
+  (0x7e) are in the section below.
 
 ## Gamepad: window tabs, lock-on camera, own facing (2026-11-02)
 

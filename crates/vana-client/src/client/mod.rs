@@ -1766,7 +1766,11 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
 /// Where the target cursor points (FUN_10153470 -> vtable +0x27c, FUN_100ce6d0): attach point 2 like the name
 /// plate (+0x8a6 = +0x8a7 = 2), projected and truncated; the plate hangs below the same point.
 fn target_point(world: &World, id: u32, sw: f32, sh: f32, view_proj: glam::Mat4) -> Option<(f32, f32)> {
-    let p = anchor_point(world, id, 0)?;
+    project(anchor_point(world, id, 0)?, sw, sh, view_proj)
+}
+
+/// A world point on screen, truncated to whole pixels; None behind the eye.
+fn project(p: Vec3, sw: f32, sh: f32, view_proj: glam::Mat4) -> Option<(f32, f32)> {
     let clip = view_proj * p.extend(1.0);
     if clip.w <= 0.0 {
         return None;
@@ -3094,7 +3098,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
         if let Some(t) = world.target {
             let tint = target::range_tint(world, t);
-            if let Some((x, y)) = target_point(world, t, sw, sh, view_proj) {
+            // FUN_10159d40: with the ground-position cursor moved, the pick's arrow stands over it, 0.5 up.
+            let at = match target::ground_cursor(world) {
+                Some(c) => project(c - Vec3::new(0.0, 0.5, 0.0), sw, sh, view_proj),
+                None => target_point(world, t, sw, sh, view_proj),
+            };
+            if let Some((x, y)) = at {
                 pointers.push((x, y - 10.0, 2, tint));
             }
         }
@@ -6051,6 +6060,8 @@ struct World {
     ability: Option<magic::ListWin>,
     cats: Option<magic::Cats>,
     prompt: Option<target::Sub>,
+    /// The prompt's ground-position cursor (field +0x10..+0x18 while +0x22 is set) and the pick it started from.
+    ground_cursor: Option<(u32, Vec3)>,
     party_cursor: Option<target::PartyCursor>,
     /// /focustarget (target object +0x84 / +0x88): {id, ActIndex}, valid while a member of our six slots.
     focus: Option<(u32, u16)>,
@@ -7864,6 +7875,7 @@ impl App {
                             ability: None,
                             cats: None,
                             prompt: None,
+                            ground_cursor: None,
                             party_cursor: None,
                             focus: None,
                             mount_bits: None,
@@ -10053,7 +10065,19 @@ impl App {
             (ax, ay) = (0.0, 0.0);
         }
         // Camera axes 6 / 7: the arrows (with Shift in a window) or the compact I / J / K / L stick.
-        let (cx, cy) = (self.input.axis(6), self.input.axis(7));
+        let (mut cx, mut cy) = (self.input.axis(6), self.input.axis(7));
+        // FUN_10159ba0: in a ground-cursor prompt with the keyboard's Ctrl / Alt held (0x76 / 0x77), the movement stick
+        // (axes 4, -5), else the camera stick, moves the cursor every frame; we and the camera take neither meanwhile.
+        if !world.prompt.as_ref().is_some_and(|s| s.ground) {
+            world.ground_cursor = None;
+        } else if self.input.test(0x76, input::mode::HELD) || self.input.test(0x77, input::mode::HELD) {
+            let dir = if (ax, ay) != (0.0, 0.0) { glam::Vec2::new(ax, -ay) } else { glam::Vec2::new(cx, -cy) };
+            if dir != glam::Vec2::ZERO {
+                let c = Self::camera(world);
+                target::move_ground_cursor(world, dir, ticks, c.target - c.eye);
+            }
+            (ax, ay, cx, cy) = (0.0, 0.0, 0.0, 0.0);
+        }
         // Keyboard type 2, free camera: Shift held faces the camera (0x9c, player +0xfb; camera keys and Q / E off),
         // and Q / E turn the player (0xaa / 0xa9, FUN_10253a60 / FUN_102539f0) while the camera axes are idle.
         let type2 = world.game.get(0x42) == 2 && !world.locked;
@@ -10582,19 +10606,31 @@ impl App {
                 }
             }
         }
-        // Retail's pad-only field d-pad (key functions 0x27 / 0x28 / 0x29 / 0x2a, context 1, no keyboard binding; table
-        // 0x10371ee0): up / down the alliance, right / left the actors on screen. Not with a window, a palette or a
-        // target prompt up: the d-pad is their cursor then.
-        if !event::active(world) && !world.ko_open && world.ko_offer != 2 && !world_window_open(world) && world.prompt.is_none() && world.palette.0 == 0 {
+        // Field command table 0x10371ee0 (FUN_101585f0 -> FUN_101587b0, the first entry whose test passes, one a
+        // frame), in a target prompt or with no window holding the field; its ids act only in the field context
+        // (mask 1). Its d-pad entries, in table order, all mode 0 (the press and its repeats):
+        // - 0xb0 / 0xb1 / 0xb3 / 0xb2 (LT or RT + the d-pad, Ctrl or Alt + the arrows): the ground-position cursor of a
+        //   prompt that takes one (commands 0x18..0x1b). They come first, so with a trigger held the d-pad never steps
+        //   the target, prompt or not (their command does nothing without the cursor).
+        // - 0x27 / 0x28 (pad only): up / down the alliance; 0x2a / 0x29 the previous / next actor on screen. In a
+        //   prompt they take its targets (field +0x60 / +0x64); locked on with no prompt, nothing (FUN_101587f0).
+        if !event::active(world) && !world.ko_open && world.ko_offer != 2 && (world.prompt.is_some() || !world_window_open(world)) && world.palette.0 == 0 {
+            let rep = |input: &mut input::Input, k: usize| input.test(k, input::mode::REPEAT);
+            let cursor = [(0xb0, glam::Vec2::Y), (0xb1, glam::Vec2::NEG_Y), (0xb3, glam::Vec2::NEG_X), (0xb2, glam::Vec2::X)].into_iter().find(|(k, _)| rep(&mut self.input, *k));
             let view = Self::camera(world).view();
-            if self.input.test(0x29, input::mode::PRESS) {
-                target::pad_step(world, view, true);
-            } else if self.input.test(0x2a, input::mode::PRESS) {
+            if let Some((_, dir)) = cursor {
+                if world.prompt.as_ref().is_some_and(|s| s.ground) {
+                    let c = Self::camera(world);
+                    target::move_ground_cursor(world, dir, dt * 60.0, c.target - c.eye);
+                }
+            } else if let Some(down) = [(0x27, false), (0x28, true)].into_iter().find(|(k, _)| rep(&mut self.input, *k)).map(|(_, d)| d) {
+                if let Some(t) = target::party_pad_step(world, down) {
+                    target::pick(world, Some(t));
+                }
+            } else if rep(&mut self.input, 0x2a) {
                 target::pad_step(world, view, false);
-            } else if let Some(down) = [(0x27, false), (0x28, true)].into_iter().find(|(k, _)| self.input.test(*k, input::mode::PRESS)).map(|(_, d)| d)
-                && let Some(t) = target::party_pad_step(world, down)
-            {
-                target::pick(world, Some(t));
+            } else if rep(&mut self.input, 0x29) {
+                target::pad_step(world, view, true);
             }
         }
     }

@@ -488,8 +488,16 @@ fn send(w: &World, c: NetCommand) {
 
 /// FUN_100780d0: 0x01A {u32 id, u16 ActIndex, u16 category, u32 param, 3 x f32}.
 pub(super) fn act(w: &World, t: (u32, u16), category: u16, param: u32) {
+    act_at(w, t, category, param, glam::Vec3::ZERO);
+}
+
+/// `act` with the three floats set (packet +0x10 / +0x14 / +0x18).
+fn act_at(w: &World, t: (u32, u16), category: u16, param: u32, at: glam::Vec3) {
     let mut body = super::net::action_body(t.0, t.1, category);
     body[8..12].copy_from_slice(&param.to_le_bytes());
+    for (i, v) in at.to_array().into_iter().enumerate() {
+        body[12 + i * 4..16 + i * 4].copy_from_slice(&v.to_le_bytes());
+    }
     log::info!("0x01A category {category:#x} param {param} on {:#x} / {:#x}", t.0, t.1);
     send(w, NetCommand::Packet { id: 0x01A, body });
 }
@@ -710,7 +718,12 @@ fn open_prompt(w: &mut World, stash: &str, mask: u32, target_cmd: bool, quoted: 
         target::open_party_cursor(w, if mask == 5 { 6 } else { 18 }, then, range);
         return;
     }
-    if !target::open_sub(w, mask, then, range, String::new(), 0) {
+    if target::open_sub(w, mask, then, range, String::new(), 0) {
+        // 0x1007b7a8: /magic's prompt asks FUN_1022b850 too.
+        if let Some(sp) = spell {
+            target::ground_mode(w, sp as u16);
+        }
+    } else {
         refuse(w, 0x46);
         if mode == Mode::Macro
             && let Some(m) = w.macros.as_mut()
@@ -2771,7 +2784,9 @@ fn magic(w: &mut World, cid: u16, args: &[String], mode: Mode) -> Done {
     };
     let spell = find_spell(w, args.get(1).ok_or(())?, kind)?;
     let t = resolve(w, args.get(2).map(String::as_str), false, true, mode).ok_or(())?;
-    act(w, t, cat::MAGIC, spell as u32);
+    // FUN_10159cc0: the ground-position cursor less the target's position (0 with no cursor) rides in +0x10..+0x1b.
+    let offset = super::target::ground_offset(w, t.0);
+    act_at(w, t, cat::MAGIC, spell as u32, offset);
     Ok(())
 }
 

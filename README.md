@@ -157,12 +157,12 @@ The default is FFXiPadConfig's XInput layout, the same as the official PC layout
 | B / Circle | Cancel |
 | X / Square | Main menu |
 | Y / Triangle | Active window |
-| D-pad | In a menu: the cursor. In the field: up / down the party and alliance members (wrapping), left / right the actors on screen (stopping at the last) |
+| D-pad | In a menu: the cursor. In the field and in a target prompt: up / down the party and alliance members (wrapping), left / right the actors on screen (stopping at the last) |
 | Left stick / right stick | Move / camera (also with a menu up; the sticks never drive menus) |
 | LB / L1 | Autorun; in a window with tabs, the previous tab |
 | RB / R1 | Open the chat line; with the windows hidden, a screenshot; in a window with tabs, the next tab |
-| LT / L2, RT / R2 | In the field: open or close the Ctrl / Alt macro palette (the other trigger swaps); in it the d-pad picks the macro (left / right) and the set (up / down), A runs it, B closes. In a window: held, the d-pad pages lists like Ctrl + arrow; both held, left / right switch the item bag |
-| L3 | Rest, or lock on with a target |
+| LT / L2, RT / R2 | In the field: open or close the Ctrl / Alt macro palette (the other trigger swaps); in it the d-pad picks the macro (left / right) and the set (up / down), A runs it, B closes. In a window: held, the d-pad pages lists like Ctrl + arrow; both held, left / right switch the item bag. In a Geo- spell's target prompt: held, the d-pad moves the spot it lands on (as Ctrl / Alt + the arrows) |
+| L3 | Rest, or lock on with a target; on the map, back to where you were when it opened |
 | R3 | First / third person |
 | Back / Select | Hide or show the windows |
 | Start | Log out |

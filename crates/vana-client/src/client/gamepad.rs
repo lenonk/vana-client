@@ -239,9 +239,10 @@ fn nav(k: KeyCode) -> bool {
     matches!(k, KeyCode::ArrowUp | KeyCode::ArrowDown | KeyCode::ArrowLeft | KeyCode::ArrowRight)
 }
 
-/// Retail's pad repeat (mgr +0x94 = 16 ticks, then every 2), for the windows' arrows.
-const REPEAT_AFTER: f32 = 16.0 / 60.0;
-const REPEAT_EVERY: f32 = 2.0 / 60.0;
+/// Retail's pad repeat for the windows' arrows: past mgr +0x94 = 16 ticks (strictly), then the timer goes back to 14,
+/// so the press, tick 17 and every 3rd tick after (FUN_10005a40's +0x248).
+const REPEAT_AFTER: f32 = 17.0 / 60.0;
+const REPEAT_EVERY: f32 = 3.0 / 60.0;
 
 /// A frame's worth of pad input for the client.
 #[derive(Default)]
@@ -564,12 +565,12 @@ mod tests {
         let mut g = Gamepad::default();
         let f = g.step(&[KeyCode::ArrowDown], 1.0 / 60.0);
         assert!(f.pressed && f.events.len() == 1);
-        // Held: a repeat after 16 ticks, then every 2.
+        // Held: a repeat at tick 17, then every 3rd (17, 20, 23 in the next 24 ticks, give or take a tick of rounding).
         let mut repeats = 0;
         for _ in 0..24 {
             repeats += g.step(&[KeyCode::ArrowDown], 1.0 / 60.0).events.len();
         }
-        assert!((4..=5).contains(&repeats), "{repeats}");
+        assert_eq!(repeats, 3);
         assert_eq!(g.step(&[], 1.0 / 60.0).events.len(), 1);
         // A window's page modifier: Ctrl on the arrow, not on Enter.
         let mut g = Gamepad::default();

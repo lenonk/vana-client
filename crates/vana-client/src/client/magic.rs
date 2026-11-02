@@ -656,6 +656,7 @@ pub(super) fn enter(w: &mut World, kind: Kind) {
                 refuse(w, 0x5a);
                 return;
             }
+            target::ground_mode(w, id);
             if let Some(m) = w.magic.as_mut() {
                 m.hidden = true;
             }

@@ -511,7 +511,23 @@ impl Input {
     /// The pad callback's test (FUN_1011da00 and kin): +0x238 repeat, +0x228 edge, +0x220 held. Modes 2 / 3 keep
     /// only this bit's edge, as retail does.
     fn pad_test(&mut self, id: usize, mode: i32) -> bool {
-        let Some(&(_, bit)) = PAD.iter().find(|p| p.0 as usize == id) else { return false };
+        // 0xb0..0xb3 (the ground-position cursor): LT or RT held (slot 9 / 13) and the d-pad's up / down / right /
+        // left (slots 6 / 7 / 4 / 5) in the mode asked (keyfn_table.md).
+        let combo = match id {
+            0xb0 => Some(0x40),
+            0xb1 => Some(0x80),
+            0xb2 => Some(0x10),
+            0xb3 => Some(0x20),
+            _ => None,
+        };
+        let bit = match combo {
+            Some(_) if self.pad.held & 0x2200 == 0 => return false,
+            Some(b) => b,
+            None => match PAD.iter().find(|p| p.0 as usize == id) {
+                Some(&(_, b)) => b,
+                None => return false,
+            },
+        };
         let p = &mut self.pad;
         match mode {
             mode::REPEAT => p.repeat & bit != 0,
@@ -724,6 +740,23 @@ mod tests {
         assert_eq!(i.compact[6], Compact { key: 0x23, rule: 0, states: 4, bits: 0x400 });
         assert_eq!((i.k1.len(), i.k1[4].as_slice()), (28, &[11u8, 15, 19, 23][..]));
         assert_eq!((i.k2.len(), i.k2[0].as_slice()), (K2_ROWS, &[0x3bu16][..]));
+    }
+
+    /// 0xb0..0xb3 want LT or RT held with the d-pad (slots 9 / 13 and 6 / 7 / 4 / 5).
+    #[test]
+    fn pad_ground_cursor_combos() {
+        let mut i = Input::default();
+        i.set_pad(0x10);
+        i.begin_frame(frame());
+        assert!(!i.pad_test(0xb2, mode::PRESS));
+        i.set_pad(0);
+        i.begin_frame(frame());
+        i.set_pad(0x200 | 0x10);
+        i.begin_frame(frame());
+        assert!(i.pad_test(0xb2, mode::PRESS) && i.pad_test(0xb2, mode::REPEAT) && !i.pad_test(0xb3, mode::HELD));
+        i.set_pad(0x2000 | 0x40);
+        i.begin_frame(frame());
+        assert!(i.pad_test(0xb0, mode::HELD) && !i.pad_test(0xb1, mode::HELD));
     }
 
     #[test]

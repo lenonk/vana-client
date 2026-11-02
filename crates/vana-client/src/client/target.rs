@@ -297,6 +297,9 @@ pub struct Sub {
     /// The spell or ability name for titlewin slot 2, and helpwind slot 2's text id (group 0xe).
     pub title: String,
     pub help: u16,
+    /// Field +0x58 (FUN_1022b850): the spell's record +0x44 bit 5 (the Geo- spells) lets LT / RT + the d-pad, or Ctrl /
+    /// Alt + the arrows, move a ground-position cursor from the pick (key functions 0xb0..0xb3).
+    pub ground: bool,
 }
 
 impl Sub {
@@ -335,7 +338,7 @@ fn sub_kind(w: &World, id: u32) -> u32 {
 /// nothing fits (the caller prints its line).
 pub fn open_sub(w: &mut World, flags: u32, then: SubThen, range: Option<f32>, title: String, help: u16) -> bool {
     let (inc, exc) = SUB_FLAGS.iter().filter(|f| flags & f.0 != 0).fold((0, 0), |(i, e), f| (i | f.1, e | f.2));
-    let sub = Sub { inc, exc, saved: w.target, saved_lock: w.locked, then, range, title, help };
+    let sub = Sub { inc, exc, saved: w.target, saved_lock: w.locked, then, range, title, help, ground: false };
     let current = w.target.filter(|&t| t == w.my_id || w.entities.contains_key(&t));
     let first = match current {
         Some(t) if sub.takes(sub_kind(w, t)) && !(inc & 0x200 != 0 && sub_kind(w, t) & 0x10 != 0) => Some(t),
@@ -352,6 +355,63 @@ pub fn open_sub(w: &mut World, flags: u32, then: SubThen, range: Option<f32>, ti
     w.target = Some(first);
     w.target_since = std::time::Instant::now();
     true
+}
+
+/// FUN_1022b850: an open prompt for `spell` takes the ground-position cursor when the spell record's +0x44 has bit 5.
+pub fn ground_mode(w: &mut World, spell: u16) {
+    let on = w.actions.as_ref().and_then(|a| a.spell(spell)).is_some_and(|r| r.flags & 0x20 != 0);
+    if let Some(s) = w.prompt.as_mut() {
+        s.ground = on;
+    }
+}
+
+/// The ground-position cursor (field +0x10..+0x18, live while +0x22 is set): only for the pick it started from, as
+/// a new pick resets it (FUN_10159660).
+/// FUN_10159cc0: the cursor less target `t`'s position, zero with no cursor (or one started from another pick).
+pub fn ground_offset(w: &World, t: u32) -> Vec3 {
+    let Some(c) = w.ground_cursor.filter(|c| c.0 == t) else { return Vec3::ZERO };
+    let at = if t == w.my_id { w.pos } else { w.entities.get(&t).map_or(c.1, |e| e.pos) };
+    c.1 - at
+}
+
+pub fn ground_cursor(w: &World) -> Option<Vec3> {
+    w.ground_cursor.filter(|c| Some(c.0) == w.target).map(|c| c.1)
+}
+
+/// FUN_10159a20: moves the ground-position cursor by `dir` (x right, z up, as FUN_10159970 builds it for 0xb2 / 0xb3
+/// / 0xb0 / 0xb1) times config 0xc4 x the frame's whole ticks (at least 1) x 0.01, turned to the camera
+/// (FUN_10159b10). The first move starts it at the pick's position. Its height follows the ground below
+/// (FUN_10177770 -> FUN_10181210; kept when the probe misses).
+pub fn move_ground_cursor(w: &mut World, dir: glam::Vec2, ticks: f32, look: Vec3) {
+    let Some(t) = w.target.filter(|_| w.prompt.as_ref().is_some_and(|s| s.ground)) else { return };
+    let from = match ground_cursor(w) {
+        Some(c) => c,
+        None if t == w.my_id => w.pos,
+        None => match w.entities.get(&t) {
+            Some(e) => e.pos,
+            None => return,
+        },
+    };
+    let step = w.game.get(0xc4) as f32 * ticks.floor().max(1.0) * 0.01;
+    let mut p = from + cursor_step(dir, look) * step;
+    let above = if w.pos_zone == 0x95 { 0.5 } else { 2.0 };
+    if let Some(y) = w.ground.as_ref().and_then(|g| ground_height(g, p, above)) {
+        p.y = y;
+    }
+    w.ground_cursor = Some((t, p));
+}
+
+/// FUN_10159b10: `dir` (x right, z up) turned by atan2(look.x, look.z): up is the camera's level forward
+/// (sin t, cos t), right (cos t, -sin t), screen right.
+fn cursor_step(dir: glam::Vec2, look: Vec3) -> Vec3 {
+    let (sin, cos) = look.x.atan2(look.z).sin_cos();
+    Vec3::new(dir.x * cos + dir.y * sin, 0.0, -dir.x * sin + dir.y * cos)
+}
+
+/// FUN_10181210 at the cursor's x / z: a segment from `above` over the cursor (zone +0x170: 2, 0.5 in zone 0x95, set
+/// by FUN_10178df0) to 17 below (y points down); the hit nearest its start, the highest surface, wins (FUN_101693b0).
+fn ground_height(g: &super::ground::Ground, p: Vec3, above: f32) -> Option<f32> {
+    g.highest_between(p.x, p.z, p.y - above, p.y + 17.0)
 }
 
 /// Ours (the suggestions): the open prompt's cursor on `id` when the prompt takes it.
@@ -401,12 +461,16 @@ pub fn confirm_sub(w: &mut World) {
         w.ability = None;
     }
     let mode = if matches!(s.then, SubThen::Line { .. }) { super::textcmd::Mode::SubTarget } else { super::textcmd::Mode::Internal };
+    // The /magic it runs reads the ground-position cursor (FUN_10159cc0) before the prompt's state goes.
+    w.ground_cursor = w.ground_cursor.filter(|c| c.0 == t && s.ground);
     super::textcmd::run(w, &line, mode);
+    w.ground_cursor = None;
 }
 
 /// FUN_10158ff0: the cancel callback (the list comes back) and the saved target and lock.
 pub fn cancel_sub(w: &mut World) {
     let Some(s) = w.prompt.take() else { return };
+    w.ground_cursor = None;
     restore(w, &s);
     if let Some(m) = w.magic.as_mut() {
         m.hidden = false;
@@ -801,16 +865,21 @@ pub fn slot_target(w: &World, slot: usize) -> Option<u32> {
     w.actors.get(&id).is_some_and(|a| a.character.is_some()).then_some(id)
 }
 
-/// The pad's field d-pad up / down (key functions 0x27 / 0x28, table 0x10371ee0): the alliance member (slots 0 ..= 17)
-/// above or below the target's slot, wrapping and skipping slots with no one to target; from a target outside the
-/// alliance, ourselves (window_fns.md).
+/// The pad's field d-pad up / down (key functions 0x27 / 0x28, table 0x10371ee0, FUN_10158b60 -> FUN_10203920): the
+/// member above or below the target's slot, wrapping and skipping slots with no one the action may take; from a target
+/// outside them, the first that fits (ourselves with no prompt) (window_fns.md).
 pub fn party_pad_step(w: &World, down: bool) -> Option<u32> {
-    const N: usize = 18;
-    let slots: Vec<Option<u32>> = (0..N).map(|s| slot_target(w, s)).collect();
-    let Some(at) = w.target.and_then(|t| slots.iter().position(|s| *s == Some(t))) else {
-        return slots[0].or(Some(w.my_id));
+    // Field +0x60 (Sub::inc; all bits with no prompt): 4 the party, 8 the alliance too (else our six), 0x200 us.
+    let inc = w.prompt.as_ref().map_or(u32::MAX, |s| s.inc);
+    let n = if inc & 8 != 0 { 18 } else { 6 };
+    let valid = |id: u32| if id == w.my_id { inc & 0x200 != 0 } else { inc & 4 != 0 };
+    let slots: Vec<Option<u32>> = (0..n).map(|s| slot_target(w, s)).collect();
+    let found = match w.target.and_then(|t| slots.iter().position(|s| *s == Some(t))) {
+        Some(at) => (1..n).map(|i| if down { (at + i) % n } else { (at + n - i) % n }).find_map(|s| slots[s].filter(|&id| valid(id))),
+        None => slots.iter().flatten().copied().find(|&id| valid(id)),
     };
-    (1..N).map(|i| if down { (at + i) % N } else { (at + N - i) % N }).find_map(|s| slots[s])
+    // Nothing valid: us, when the action may take us.
+    found.or_else(|| (inc & 0x200 != 0).then_some(w.my_id))
 }
 
 /// FUN_101514a0: while engaged with no target, the first attackable actor we claimed that is alive.
@@ -975,6 +1044,21 @@ pub fn step_camera(w: &mut World, ticks: f32, turn: f32, rise: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The ground cursor's d-pad: up away from the camera, right to the screen's right (as walking's
+    /// forward.cross(NEG_Y)), whatever the camera's height.
+    #[test]
+    fn ground_cursor_turns_with_the_camera() {
+        let near = |a: Vec3, b: Vec3| (a - b).length() < 1e-5;
+        let look = Vec3::new(0.0, 0.3, 2.0);
+        assert!(near(cursor_step(glam::Vec2::Y, look), Vec3::Z));
+        assert!(near(cursor_step(glam::Vec2::X, look), Vec3::X));
+        let look = Vec3::new(3.0, -1.0, 0.0);
+        let fwd = Vec3::X;
+        assert!(near(cursor_step(glam::Vec2::Y, look), fwd));
+        assert!(near(cursor_step(glam::Vec2::X, look), fwd.cross(Vec3::NEG_Y)));
+        assert!(near(cursor_step(glam::Vec2::NEG_X, look), -fwd.cross(Vec3::NEG_Y)));
+    }
 
     /// Tab steps to the next screen key to the right and wraps to the leftmost; Shift+Tab mirrors it.
     #[test]
