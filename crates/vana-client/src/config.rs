@@ -19,13 +19,24 @@ pub fn data_dir() -> PathBuf {
     app_dir(dirs::data_dir())
 }
 
+/// A character name as a file name. The name comes from the server's zone-in packet, so only ASCII letters and
+/// digits are used as they are (every retail and LSB name: LSB's validateCharacterName allows letters only, so their
+/// files keep their names). Anything else, a path separator or "..", becomes '_' and the name's UTF-8 bytes in hex:
+/// the file stays inside its folder, and two different names never share a file.
+fn name_file(name: &str) -> String {
+    if !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return format!("{name}.json");
+    }
+    format!("_{}.json", name.bytes().map(|b| format!("{b:02x}")).collect::<String>())
+}
+
 /// A character's saved chat lines (the modern chat's history): in the data dir, or beside an FFXI_CONFIG copy.
 pub fn chat_history_path(name: &str) -> PathBuf {
     let dir = match std::env::var_os("FFXI_CONFIG") {
         Some(p) => PathBuf::from(p).with_file_name("chat"),
         None => data_dir().join("chat"),
     };
-    dir.join(format!("{name}.json"))
+    dir.join(name_file(name))
 }
 
 /// A character's training regime state (client/regime.rs), beside the chat history.
@@ -34,7 +45,7 @@ pub fn regime_path(name: &str) -> PathBuf {
         Some(p) => PathBuf::from(p).with_file_name("regime"),
         None => data_dir().join("regime"),
     };
-    dir.join(format!("{name}.json"))
+    dir.join(name_file(name))
 }
 
 /// The servers' certificate fingerprints (net/tls.rs): in the data dir, or beside an FFXI_CONFIG copy.
@@ -491,5 +502,21 @@ impl Config {
     /// The frame limit in effect: FFXI_FRAME_LIMIT overrides the file (test runs), 0 = unlimited.
     pub fn frame_limit(&self) -> u32 {
         std::env::var("FFXI_FRAME_LIMIT").ok().and_then(|v| v.parse().ok()).unwrap_or(self.frame_limit)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn name_file_stays_in_its_folder() {
+        assert_eq!(name_file("Steven"), "Steven.json");
+        assert_eq!(name_file("../x"), "_2e2e2f78.json");
+        assert_eq!(name_file("a/b\\c"), "_612f625c63.json");
+        assert_eq!(name_file(""), "_.json");
+        // Names that differ only in a replaced character keep separate files.
+        assert_ne!(name_file("a/b"), name_file("a\\b"));
+        assert_eq!(chat_history_path("../x").file_name().unwrap(), "_2e2e2f78.json");
     }
 }
