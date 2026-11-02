@@ -37,6 +37,14 @@ pub fn regime_path(name: &str) -> PathBuf {
     dir.join(format!("{name}.json"))
 }
 
+/// The servers' certificate fingerprints (net/tls.rs): in the data dir, or beside an FFXI_CONFIG copy.
+pub fn known_servers_path() -> PathBuf {
+    match std::env::var_os("FFXI_CONFIG") {
+        Some(p) => PathBuf::from(p).with_file_name("known_servers.json"),
+        None => data_dir().join("known_servers.json"),
+    }
+}
+
 /// The client's log: in the data dir, or beside an FFXI_CONFIG copy (test runs keep their own).
 pub fn log_path() -> PathBuf {
     match std::env::var_os("FFXI_CONFIG") {

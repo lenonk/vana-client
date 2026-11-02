@@ -142,6 +142,21 @@ changed from the in-game Config menus. The fields you may need to set by hand:
 | `gpu` | empty | Graphics adapter by name; empty picks the high-performance one |
 | `audio_device` | empty | Output device; empty uses the system default |
 
+
+### Server certificates
+
+The login and profile connections use TLS with the server's self-signed certificate. The client remembers the
+certificate each server sends the first time (`~/.local/share/vana-client/known_servers.json`) and refuses a different
+one later, since that is what someone intercepting the connection would send. When a server really gets a new
+certificate (an LSB reinstall makes one), trust it with:
+
+```sh
+vana-client trust-server SERVER            # forget the pinned certificate; the next login pins the new one
+vana-client trust-server SERVER --port 54231 --fingerprint AB:CD:...   # or pin a known one up front
+```
+
+On the server, `openssl x509 -in login.cert -noout -fingerprint -sha256` prints the login port's fingerprint (`profile.cert` is xi_profile's, on its own port).
+
 ## For developers
 
 - `MODLOG.md` records every reverse-engineered fact the code relies on: addresses in the original executable,

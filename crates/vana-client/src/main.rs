@@ -96,6 +96,16 @@ enum Cmd {
         #[arg(long)]
         to: Option<PathBuf>,
     },
+    /// Trust a server's new TLS certificate: forget the one pinned for HOST (every port, or --port), so the next
+    /// connection pins the certificate it is sent. With --fingerprint (and --port), pin that SHA-256 instead
+    /// (`openssl x509 -in login.cert -noout -fingerprint -sha256` on the server prints it).
+    TrustServer {
+        host: String,
+        #[arg(long)]
+        port: Option<u16>,
+        #[arg(long)]
+        fingerprint: Option<String>,
+    },
     /// Open the client window and drive it: log in, pick a character, walk, screenshot, log out.
     Play {
         /// JSON file with "username" and "password".
@@ -1134,6 +1144,14 @@ fn main() -> Result<()> {
                 })?;
                 println!("updated {total} files to {}", plan.server.version);
             }
+            Ok(())
+        }
+        Cmd::TrustServer { host, port, fingerprint } => {
+            let store = config::known_servers_path();
+            for line in net::tls::trust(&store, &host, port, fingerprint.as_deref())? {
+                println!("{line}");
+            }
+            println!("({})", store.display());
             Ok(())
         }
         Cmd::Install { source, game_dir, staging, no_verify, keep_staging } => {
