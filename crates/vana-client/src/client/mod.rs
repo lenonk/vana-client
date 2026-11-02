@@ -12027,7 +12027,9 @@ impl App {
                     window_closes(world, &input.events);
                     self.hud_blockers = world_hud(gu, world, &input, screen_size, &mut self.keys, view_proj, self.numpad_slash);
                 }
+                // With the UI hidden (key function 0x56) retail draws no window at all, so the modern layer goes too.
                 if world.modern
+                    && !world.ui_hidden
                     && let Some(gu) = self.game_ui.as_ref()
                 {
                     // The retail windows drawn this frame, in egui points.

@@ -289,6 +289,11 @@ pub struct Gamepad {
     /// DAT_10455c3e: the left stick's mode (0 move, 1 d-pad, 2 camera), cycled by slot 31.
     mode: u8,
     prev: u64,
+    /// Whether the on-screen keyboard had the pad last frame.
+    osk: bool,
+    /// Buttons held when the keyboard opened or closed, ignored until let go, so the press that raised or closed it
+    /// does not act again on the other side (RB raising it would otherwise send Enter and close it at once).
+    swallow: u64,
     /// Keys held now, with the time to their next arrow repeat.
     down: Vec<(KeyCode, f32)>,
 }
@@ -359,6 +364,8 @@ impl Gamepad {
             self.mode = (self.mode + 1) % 3;
         }
         self.prev = held;
+        let held = self.unswallowed(held, osk);
+        let edge = edge & held;
         // The on-screen keyboard takes every button and neither stick.
         if osk {
             return self.step(&osk_keys(held), dt);
@@ -377,8 +384,19 @@ impl Gamepad {
         f
     }
 
+    /// `held` less the buttons still down from when the keyboard opened or closed.
+    fn unswallowed(&mut self, held: u64, osk: bool) -> u64 {
+        if osk != self.osk {
+            self.osk = osk;
+            self.swallow = held;
+        }
+        self.swallow &= held;
+        held & !self.swallow
+    }
+
     fn release_all(&mut self) -> Frame {
         self.prev = 0;
+        self.swallow = 0;
         self.step(&[], 0.0)
     }
 
@@ -521,6 +539,24 @@ mod tests {
         for k in [KeyCode::Enter, KeyCode::Escape, KeyCode::NumpadSubtract, KeyCode::ArrowUp] {
             assert!(crate::client::input::dik(k).is_some(), "{k:?}");
         }
+    }
+
+    #[test]
+    fn keyboard_swallows_the_press_that_raised_it() {
+        let mut g = Gamepad::default();
+        let rb = bit(slot::TAB_NEXT);
+        assert_eq!(g.unswallowed(rb, false), rb);
+        // RB raised the keyboard and is still held: it must not send Enter there, nor reopen the chat line after.
+        assert_eq!(g.unswallowed(rb, true), 0);
+        assert_eq!(g.unswallowed(rb, true), 0);
+        assert_eq!(g.unswallowed(rb, false), 0);
+        assert_eq!(g.unswallowed(0, false), 0);
+        // Let go and pressed again, it acts.
+        assert_eq!(g.unswallowed(rb, false), rb);
+        // A button pressed after the change is not swallowed.
+        let a = bit(slot::CONFIRM);
+        assert_eq!(g.unswallowed(rb, true), 0);
+        assert_eq!(g.unswallowed(rb | a, true), a);
     }
 
     #[test]
