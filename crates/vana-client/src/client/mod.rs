@@ -12594,7 +12594,9 @@ impl App {
         // confirm / cancel / menu / d-pad slots stand for.
         let field = matches!(self.phase, Phase::World(_));
         let menu = self.input.window_active() || matches!(&self.phase, Phase::World(w) if w.prompt.is_some());
-        let pad = self.gamepad.poll(&self.cfg, gfx.window.has_focus(), menu, field, dt);
+        // Retail's macro gate (FUN_101a33e0): no window has the focus but the action menu.
+        let macros = matches!(&self.phase, Phase::World(w) if !window_over_actions(w) && !w.typing);
+        let pad = self.gamepad.poll(&self.cfg, gfx.window.has_focus(), menu, macros, field, dt);
         self.input.set_pad(pad.pad);
         for (code, down) in pad.keys {
             if let Some(k) = input::dik(code) {

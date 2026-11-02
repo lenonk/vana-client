@@ -170,11 +170,11 @@ const MACRO: [(u8, KeyCode); 8] = [
 
 /// The keys (DIK for `Input`, egui for the windows) a held pad word stands for, and the pad word left for the key
 /// functions. `menu`: the d-pad is the arrows.
-pub fn keys_of(held: u64, menu: bool) -> (Vec<KeyCode>, u64) {
+pub fn keys_of(held: u64, menu: bool, macros: bool) -> (Vec<KeyCode>, u64) {
     let mut keys = Vec::new();
     let mut pad = held;
     let (ctrl, alt) = (held & bit(slot::MACRO_CTRL) != 0, held & bit(slot::MACRO_ALT) != 0);
-    if ctrl || alt {
+    if (ctrl || alt) && macros {
         keys.push(if ctrl { KeyCode::ControlLeft } else { KeyCode::AltLeft });
         for (s, k) in MACRO {
             if held & bit(s) != 0 {
@@ -183,6 +183,12 @@ pub fn keys_of(held: u64, menu: bool) -> (Vec<KeyCode>, u64) {
             }
         }
         return (keys, pad);
+    }
+    // In a window LT / RT are the page modifier instead (key function 0xa8 reads them with Ctrl / Alt): the arrows
+    // carry Ctrl / Alt, so LT / RT + d-pad pages a list the way Ctrl / Alt + arrow does. The right-hand codes only
+    // set the egui modifier, never the DIK (no palette, no Ctrl shortcuts).
+    if ctrl || alt {
+        keys.push(if ctrl { KeyCode::ControlRight } else { KeyCode::AltRight });
     }
     for (s, k) in [(slot::CONFIRM, KeyCode::Enter), (slot::CANCEL, KeyCode::Escape), (slot::MENU, KeyCode::NumpadSubtract)] {
         if held & bit(s) != 0 {
@@ -244,7 +250,9 @@ pub struct Gamepad {
 impl Gamepad {
     /// Reads the pads. `focused`: the window has the focus (a pad in the background does nothing, as padmode's
     /// foreground default); `menu`: a window has the keys; `field`: in the world.
-    pub fn poll(&mut self, cfg: &Config, focused: bool, menu: bool, field: bool, dt: f32) -> Frame {
+    /// `macros`: retail's macro gate is open (field, no window but the action menu), so LT / RT + a button runs a
+    /// macro; otherwise they page the window.
+    pub fn poll(&mut self, cfg: &Config, focused: bool, menu: bool, macros: bool, field: bool, dt: f32) -> Frame {
         if !cfg.gamepad {
             return self.release_all();
         }
@@ -306,7 +314,7 @@ impl Gamepad {
         }
         self.prev = held;
         let menu = menu || !field;
-        let (keys, pad_bits) = keys_of(held, menu);
+        let (keys, pad_bits) = keys_of(held, menu, macros && field);
         let mut f = self.step(&keys, dt);
         f.pad = pad_bits;
         let cam_y = if cfg.gamepad_invert_y { -v[1] } else { v[1] };
@@ -323,12 +331,15 @@ impl Gamepad {
     /// Key edges against last frame's keys, and the arrows' repeats.
     fn step(&mut self, keys: &[KeyCode], dt: f32) -> Frame {
         let mut f = Frame::default();
+        let macro_layer = keys.iter().any(|k| matches!(k, KeyCode::ControlLeft | KeyCode::AltLeft));
         let mods = egui::Modifiers {
-            ctrl: keys.contains(&KeyCode::ControlLeft),
-            alt: keys.contains(&KeyCode::AltLeft),
+            ctrl: keys.iter().any(|k| matches!(k, KeyCode::ControlLeft | KeyCode::ControlRight)),
+            alt: keys.iter().any(|k| matches!(k, KeyCode::AltLeft | KeyCode::AltRight)),
             ..Default::default()
         };
         let event = |k: KeyCode, pressed: bool, repeat: bool| {
+            // The page modifier rides on the arrows only (Ctrl + Minus would zoom egui).
+            let mods = if macro_layer || nav(k) { mods } else { egui::Modifiers::default() };
             // egui reads the numpad's minus as Minus, as egui-winit maps it.
             egui::Key::from_name(&format!("{k:?}")).map(|key| egui::Event::Key { key, physical_key: Some(key), pressed, repeat, modifiers: mods })
         };
@@ -421,13 +432,18 @@ mod tests {
         let none = |_: u8| 0.0;
         // A and the d-pad up: Enter; the arrow only in a window; the bits stay for the key functions.
         let (held, _) = read(&m, &m, &dev(&[3, 6], &none), 0, 0.33);
-        assert_eq!(keys_of(held, false), (vec![KeyCode::Enter], bit(0) | bit(6)));
-        assert_eq!(keys_of(held, true).0, vec![KeyCode::Enter, KeyCode::ArrowUp]);
+        assert_eq!(keys_of(held, false, true), (vec![KeyCode::Enter], bit(0) | bit(6)));
+        assert_eq!(keys_of(held, true, true).0, vec![KeyCode::Enter, KeyCode::ArrowUp]);
         // LT held: Ctrl, and A / d-pad up press 7 / 1 instead of their slots.
         let (held, _) = read(&m, &m, &dev(&[9, 3, 6], &none), 0, 0.33);
-        let (keys, pad) = keys_of(held, false);
+        let (keys, pad) = keys_of(held, false, true);
         assert_eq!(keys, vec![KeyCode::ControlLeft, KeyCode::Digit1, KeyCode::Digit7]);
         assert_eq!(pad, bit(9));
+        // In a window LT pages instead: Ctrl rides on the arrow, A stays Enter, and every bit stays for the key
+        // functions (0x89 item compare reads LT).
+        let (keys, pad) = keys_of(held, true, false);
+        assert_eq!(keys, vec![KeyCode::ControlRight, KeyCode::Enter, KeyCode::ArrowUp]);
+        assert_eq!(pad, held);
         // Every key has a DIK code.
         for k in [KeyCode::Enter, KeyCode::Escape, KeyCode::NumpadSubtract, KeyCode::ArrowUp].into_iter().chain(MACRO.map(|m| m.1)) {
             assert!(crate::client::input::dik(k).is_some(), "{k:?}");
@@ -449,5 +465,11 @@ mod tests {
         // The macro layer's keys reach Input too.
         let f = g.step(&[KeyCode::ControlLeft, KeyCode::Digit1], 1.0 / 60.0);
         assert_eq!(f.keys, vec![(KeyCode::ControlLeft, true), (KeyCode::Digit1, true)]);
+        // A window's page modifier: Ctrl on the arrow, not on Enter, and no DIK.
+        let mut g = Gamepad::default();
+        let f = g.step(&[KeyCode::ControlRight, KeyCode::Enter, KeyCode::ArrowDown], 1.0 / 60.0);
+        assert!(f.keys.is_empty());
+        let ctrl = |key| f.events.iter().find_map(|e| matches!(e, egui::Event::Key { key: k, .. } if *k == key).then(|| matches!(e, egui::Event::Key { modifiers, .. } if modifiers.ctrl))).unwrap();
+        assert!(ctrl(egui::Key::ArrowDown) && !ctrl(egui::Key::Enter));
     }
 }

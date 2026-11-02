@@ -160,7 +160,7 @@ The default is FFXiPadConfig's XInput layout, the same as the official PC layout
 | D-pad | In a menu: the cursor. In the field: up / down the party members, left / right the actors on screen |
 | Left stick / right stick | Move / camera (also with a menu up; the sticks never drive menus) |
 | LB / L1 | Autorun |
-| LT / L2, RT / R2 | Macro palettes (Ctrl, Alt). While held, d-pad up / right / down / left and Y / B / A / X run macros 1 to 8 |
+| LT / L2, RT / R2 | Macro palettes (Ctrl, Alt). While held, d-pad up / right / down / left and Y / B / A / X run macros 1 to 8. With a window open they page instead: LT / RT + d-pad works like Ctrl / Alt + arrow |
 | L3 | Rest, or lock on with a target |
 | R3 | First / third person |
 | Back / Select | Hide or show the windows |
