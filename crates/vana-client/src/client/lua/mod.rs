@@ -7,6 +7,7 @@ mod api;
 mod docs;
 pub(super) mod input;
 mod manifest;
+mod pattern;
 mod runtime;
 mod state;
 mod vm;

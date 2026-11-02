@@ -12,7 +12,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 /// Memory a mod may hold.
-const MEMORY: usize = 64 << 20;
+pub(super) const MEMORY: usize = 64 << 20;
 /// A single call past this is stopped; repeated, the mod is suspended.
 const HARD_CAP: Duration = Duration::from_millis(100);
 /// A call past this is reported once (BG3SE's client default).
@@ -195,6 +195,8 @@ impl Vm {
         g.raw_set("load", text_only)?;
         let string: mlua::Table = g.get("string")?;
         string.raw_set("dump", Value::Nil)?;
+        // Patterns run in C, out of reach of the budget hook: ours count their steps against the deadline.
+        super::pattern::install(&lua, &string)?;
         let gc = lua.create_function(|lua, opt: Option<String>| match opt.as_deref().unwrap_or("collect") {
             "count" => Ok(lua.used_memory() as f64 / 1024.0),
             _ => Ok(0.0),

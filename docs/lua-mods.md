@@ -8,7 +8,7 @@ Built (client/lua/, modern/modwin.rs), each checked live:
 - **Runtime:**
   - a VM per mod (Lua 5.4, mlua 0.12): 38 to 64 KB each, measured on F12
   - restricted libraries, text-only `load`, a 64 MB memory limit
-  - a 100 ms budget per call (a runaway loop is stopped)
+  - a 100 ms budget per call (a runaway loop is stopped; string patterns count their steps against it too)
   - coroutine handlers (`sleep`, `sleep_frames`, `wait_until`)
   - errors reported once with file:line; 20 in a minute suspend the mod
   - `require` from the mod's folder

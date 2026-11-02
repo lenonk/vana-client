@@ -23,6 +23,7 @@ glam = "0.34.1"
 hex = "0.4.3"
 jiff = "0.2"
 log = "0.4.34"
+memchr = "2.8.3"
 # The Lua mod layer (docs/lua-mods.md): Lua 5.4, built from source.
 mlua = { version = "0.12", features = ["lua54", "vendored", "serde"] }
 md-5 = "0.11.0"
