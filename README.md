@@ -149,25 +149,29 @@ changed from the in-game Config menus. The fields you may need to set by hand:
 ### Gamepad
 
 Any controller SDL-style mappings know (Xbox, PlayStation, Switch Pro and most others) works on Linux and Windows.
-The pad acts as a keyboard: the left stick walks (analog), the right stick turns the camera, and each button holds a
-key. With a window open, and on the title and lobby screens, the left stick moves the cursor like the arrow keys.
+The defaults follow the official PC layout for an Xbox 360 pad from PlayOnline's
+[new player tips](https://www.playonline.com/ff11newplayer/tips/en/list.html). The left stick walks (analog, also
+with a menu up), the right stick turns the camera, and the d-pad drives the menus. The sticks never drive menus.
 
-| Button | Key | Does |
-|---|---|---|
-| South (A / Cross) | Enter | Confirm, act on the target |
-| East (B / Circle) | Escape | Cancel, back |
-| West (X / Square) | Num * | Lock on (or `/heal`) |
-| North (Y / Triangle), Start | Num - | Main menu |
-| D-pad | Arrows | Window cursor, camera |
-| LB / L1 | Tab | Next target |
-| RB / R1 | Num + | Other window, next tab |
-| LT / L2, RT / R2 | Ctrl, Alt | Held: the macro palettes. D-pad up / right / down / left and the face buttons N / E / S / W then press 1 to 8 |
-| Back / Select | F8 | Nearest monster |
-| Left stick click | Num 7 | Autorun |
-| Right stick click | Num 5 | First / third person |
+| Button | Does |
+|---|---|
+| A / Cross | Confirm, the action menu (Enter) |
+| B / Circle | Cancel (Escape) |
+| X / Square | Main menu (Num -) |
+| Y / Triangle | Active window (Num +) |
+| D-pad | In a menu: the cursor. In the field: up / down the party members, left / right the actors on screen |
+| LB / L1 | Autorun (Num 7) |
+| RB / R1 | Screenshot with the windows hidden (Print Screen); retail's software keyboard is not done |
+| LT / L2, RT / R2 | The macro palettes (Ctrl, Alt). While held, d-pad up / right / down / left and the face buttons Y / B / A / X press 1 to 8 |
+| Back / Select | Hide or show the windows (Scroll Lock) |
+| Start | Log out (Pause) |
+| L3 | Rest, or lock on with a target (Num *) |
+| R3 | First / third person (Num 5) |
 
-`gamepad_buttons` changes a button by gilrs's button name and winit's key name, for example
-`"gamepad_buttons": {"West": "F1", "Select": ""}` (an empty key unbinds it). Button names: `South`, `East`, `North`,
+`gamepad_buttons` changes a button by gilrs's button name and winit's key name or an action, for example
+`"gamepad_buttons": {"West": "F1", "Select": "", "RightTrigger": "Rest"}` (an empty key unbinds it). Actions:
+`TargetNext`, `TargetPrev`, `PartyUp`, `PartyDown` (field only; a d-pad button is still its arrow in a menu) and
+`Rest` (/heal). Button names: `South`, `East`, `North`,
 `West`, `LeftTrigger`, `RightTrigger`, `LeftTrigger2`, `RightTrigger2`, `Select`, `Start`, `Mode`, `LeftThumb`,
 `RightThumb`, `DPadUp`, `DPadDown`, `DPadLeft`, `DPadRight`. Building on Linux needs libudev's headers
 (`libudev-dev`, `systemd-devel`).

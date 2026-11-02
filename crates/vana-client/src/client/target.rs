@@ -787,6 +787,16 @@ pub fn slot_target(w: &World, slot: usize) -> Option<u32> {
     w.actors.get(&id).is_some_and(|a| a.character.is_some()).then_some(id)
 }
 
+/// A controller's d-pad up / down (not retail's code): the party member (slots 0 ..= 5, as F1 ..= F6) above or below the
+/// target's slot, wrapping and skipping slots with no one to target; from a target outside the party, ourselves.
+pub fn party_pad_step(w: &World, down: bool) -> Option<u32> {
+    let slots: Vec<Option<u32>> = (0..6).map(|s| slot_target(w, s)).collect();
+    let Some(at) = w.target.and_then(|t| slots.iter().position(|s| *s == Some(t))) else {
+        return slots[0].or(Some(w.my_id));
+    };
+    (1..6).map(|i| if down { (at + i) % 6 } else { (at + 6 - i) % 6 }).find_map(|s| slots[s])
+}
+
 /// FUN_101514a0: while engaged with no target, the first attackable actor we claimed that is alive.
 fn auto_target(w: &World) -> Option<u32> {
     let alive = |e: &super::Entity| e.flags & 1 != 0 && e.claim == w.my_id && !e.untargetable && !e.target_off && !matches!(e.motion.status, 2 | 3);

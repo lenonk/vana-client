@@ -3,42 +3,72 @@
 //! holds a key (by its DIK code into `Input`, and as an egui key event for the windows), the left stick is the
 //! movement axes and the right stick the camera axes (`Input::set_stick`).
 //!
-//! While a window has the keys (or outside the field: title, lobby) the left stick steps the cursor as the arrows.
-//! A button bound to Ctrl or Alt (the triggers by default) turns the d-pad and the face buttons into the macro keys
-//! 1 ..= 8 while held, so Ctrl / Alt + 1 ..= 8 run the palettes' macros.
+//! The defaults follow the official PC pad layout. The d-pad runs game actions instead of keys in the field: left /
+//! right the next actor on screen, up / down the party members.
 //!
-//! Buttons are rebound in config.json `gamepad_buttons` by gilrs's button name and winit's key name, e.g.
-//! `{"West": "Tab", "Select": ""}` (an empty key unbinds the button).
+//! While a window has the keys (a menu, the action menu, a target prompt) or outside the field (title, lobby) the
+//! d-pad steps the cursor as the arrows. The sticks never drive menus: the left stick walks even with a menu up, so a
+//! target can be approached from the action menu. A button bound to Ctrl or Alt (the triggers by default) turns the d-pad and the face
+//! buttons into the macro keys 1 ..= 8 while held, so Ctrl / Alt + 1 ..= 8 run the palettes' macros.
+//!
+//! Buttons are rebound in config.json `gamepad_buttons` by gilrs's button name and winit's key name or an action
+//! name, e.g. `{"West": "Tab", "LeftThumb": "Numpad7", "Select": ""}` (an empty key unbinds the button). Actions:
+//! `TargetNext`, `TargetPrev`, `PartyUp`, `PartyDown`, `Rest`.
 
 use crate::config::Config;
 use gilrs::{Axis, Button, GamepadId, Gilrs};
 use std::collections::BTreeMap;
 use winit::keyboard::KeyCode;
 
-/// The default layout. Face buttons by position (South = Xbox A, PlayStation Cross).
-const DEFAULTS: &[(Button, KeyCode)] = &[
-    (Button::South, KeyCode::Enter),
-    (Button::East, KeyCode::Escape),
-    // Num* : lock-on, or /heal with no target (key function 0x44).
-    (Button::West, KeyCode::NumpadMultiply),
-    // Num- : the main menu.
-    (Button::North, KeyCode::NumpadSubtract),
-    (Button::DPadUp, KeyCode::ArrowUp),
-    (Button::DPadDown, KeyCode::ArrowDown),
-    (Button::DPadLeft, KeyCode::ArrowLeft),
-    (Button::DPadRight, KeyCode::ArrowRight),
-    // Tab: the next target.
-    (Button::LeftTrigger, KeyCode::Tab),
-    // Num+ : the other window / the next tab (message 8).
-    (Button::RightTrigger, KeyCode::NumpadAdd),
-    (Button::LeftTrigger2, KeyCode::ControlLeft),
-    (Button::RightTrigger2, KeyCode::AltLeft),
-    // F8: the nearest monster.
-    (Button::Select, KeyCode::F8),
-    (Button::Start, KeyCode::NumpadSubtract),
-    // Num7: autorun; Num5: first / third person.
-    (Button::LeftThumb, KeyCode::Numpad7),
-    (Button::RightThumb, KeyCode::Numpad5),
+/// A game action a button runs on its press (the field only; with a window up a d-pad button is its arrow).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Action {
+    /// The next / previous actor on screen (Tab / Shift + Tab, key functions 0x84 / 0x97).
+    TargetNext,
+    TargetPrev,
+    /// The party member above / below the target (F1 ..= F6 in steps).
+    PartyUp,
+    PartyDown,
+    /// /heal (on, or off while resting).
+    Rest,
+}
+
+const ACTIONS: &[Action] = &[Action::TargetNext, Action::TargetPrev, Action::PartyUp, Action::PartyDown, Action::Rest];
+
+/// What a button does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Bind {
+    Key(KeyCode),
+    Act(Action),
+}
+
+/// The default layout: the official PC layout for an Xbox 360 pad (PlayOnline's new-player tips,
+/// ff11newplayer/tips/en/list.html), each function through the key that does it. Face buttons by position (South =
+/// Xbox A, PlayStation Cross).
+const DEFAULTS: &[(Button, Bind)] = &[
+    // A: confirm, the action menu. B: cancel.
+    (Button::South, Bind::Key(KeyCode::Enter)),
+    (Button::East, Bind::Key(KeyCode::Escape)),
+    // X: the main menu (Num-). Y: the active window (Num+, message 8).
+    (Button::West, Bind::Key(KeyCode::NumpadSubtract)),
+    (Button::North, Bind::Key(KeyCode::NumpadAdd)),
+    // The d-pad: targets in the field (up / down the party, left / right the actors on screen), the cursor in a window.
+    (Button::DPadUp, Bind::Act(Action::PartyUp)),
+    (Button::DPadDown, Bind::Act(Action::PartyDown)),
+    (Button::DPadLeft, Bind::Act(Action::TargetPrev)),
+    (Button::DPadRight, Bind::Act(Action::TargetNext)),
+    // LB: autorun (Num7). RB: retail's software keyboard (not done); a screenshot with the windows hidden (Print Screen).
+    (Button::LeftTrigger, Bind::Key(KeyCode::Numpad7)),
+    (Button::RightTrigger, Bind::Key(KeyCode::PrintScreen)),
+    // LT / RT: the macro palettes (Ctrl / Alt).
+    (Button::LeftTrigger2, Bind::Key(KeyCode::ControlLeft)),
+    (Button::RightTrigger2, Bind::Key(KeyCode::AltLeft)),
+    // Back: hide / show the windows (Scroll Lock). Start: log out (Pause, the prompt).
+    (Button::Select, Bind::Key(KeyCode::ScrollLock)),
+    (Button::Start, Bind::Key(KeyCode::Pause)),
+    // L3: rest, or lock on with a target (Num*, key function 0x44). R3: first / third person (Num5).
+    (Button::LeftThumb, Bind::Key(KeyCode::NumpadMultiply)),
+    (Button::RightThumb, Bind::Key(KeyCode::Numpad5)),
 ];
 
 /// The macro keys a button presses while Ctrl or Alt is held from the pad.
@@ -94,11 +124,24 @@ const KEYS: &[KeyCode] = {
 /// `REPEAT_EVERY` (seconds; about a keyboard's).
 const REPEAT_AFTER: f32 = 0.4;
 const REPEAT_EVERY: f32 = 0.08;
-/// How far the left stick goes before it steps a window's cursor.
-const NAV_TILT: f32 = 0.5;
 
 pub fn key_by_name(name: &str) -> Option<KeyCode> {
     KEYS.iter().copied().find(|k| format!("{k:?}").eq_ignore_ascii_case(name))
+}
+
+pub fn action_by_name(name: &str) -> Option<Action> {
+    ACTIONS.iter().copied().find(|a| format!("{a:?}").eq_ignore_ascii_case(name))
+}
+
+/// The arrow a d-pad button is in a window.
+fn arrow(b: Button) -> Option<KeyCode> {
+    Some(match b {
+        Button::DPadUp => KeyCode::ArrowUp,
+        Button::DPadDown => KeyCode::ArrowDown,
+        Button::DPadLeft => KeyCode::ArrowLeft,
+        Button::DPadRight => KeyCode::ArrowRight,
+        _ => return None,
+    })
 }
 
 pub fn button_by_name(name: &str) -> Option<Button> {
@@ -106,8 +149,8 @@ pub fn button_by_name(name: &str) -> Option<Button> {
 }
 
 /// The button layout: the defaults with config.json's overrides.
-pub fn layout(overrides: &BTreeMap<String, String>) -> Vec<(Button, KeyCode)> {
-    let mut map: Vec<(Button, KeyCode)> = DEFAULTS.to_vec();
+pub fn layout(overrides: &BTreeMap<String, String>) -> Vec<(Button, Bind)> {
+    let mut map: Vec<(Button, Bind)> = DEFAULTS.to_vec();
     for (b, k) in overrides {
         let Some(b) = button_by_name(b) else {
             log::warn!("gamepad_buttons: no button {b:?}");
@@ -117,9 +160,9 @@ pub fn layout(overrides: &BTreeMap<String, String>) -> Vec<(Button, KeyCode)> {
         if k.is_empty() {
             continue;
         }
-        match key_by_name(k) {
-            Some(k) => map.push((b, k)),
-            None => log::warn!("gamepad_buttons: no key {k:?}"),
+        match key_by_name(k).map(Bind::Key).or_else(|| action_by_name(k).map(Bind::Act)) {
+            Some(bind) => map.push((b, bind)),
+            None => log::warn!("gamepad_buttons: no key or action {k:?}"),
         }
     }
     map
@@ -144,35 +187,23 @@ pub fn dead_zone(x: f32, y: f32, dz: f32) -> (f32, f32) {
     (x * s, y * s)
 }
 
-/// The keys held from the buttons and the left stick this frame. `menu`: the stick steps the cursor.
-pub fn held_keys(map: &[(Button, KeyCode)], pressed: &[Button], left: (f32, f32), menu: bool) -> Vec<KeyCode> {
-    let layer = pressed.iter().any(|b| map.iter().any(|&(x, k)| x == *b && modifier(k)));
+/// The keys held from the buttons this frame, and the buttons whose action runs. `menu`: the d-pad steps the cursor
+/// and no action runs.
+pub fn held_keys(map: &[(Button, Bind)], pressed: &[Button], menu: bool) -> (Vec<KeyCode>, Vec<(Button, Action)>) {
+    let layer = pressed.iter().any(|b| map.iter().any(|&(x, k)| x == *b && matches!(k, Bind::Key(k) if modifier(k))));
     let mut keys = Vec::new();
+    let mut acts = Vec::new();
     for b in pressed {
-        let macro_key = MACRO.iter().find(|m| m.0 == *b).map(|m| m.1).filter(|_| layer);
-        let k = macro_key.or_else(|| map.iter().find(|m| m.0 == *b).map(|m| m.1));
-        if let Some(k) = k
-            && !keys.contains(&k)
-        {
-            keys.push(k);
+        let macro_key = MACRO.iter().find(|m| m.0 == *b).map(|m| Bind::Key(m.1)).filter(|_| layer);
+        let menu_key = arrow(*b).map(Bind::Key).filter(|_| menu);
+        let bind = macro_key.or(menu_key).or_else(|| map.iter().find(|m| m.0 == *b).map(|m| m.1));
+        match bind {
+            Some(Bind::Key(k)) if !keys.contains(&k) => keys.push(k),
+            Some(Bind::Act(a)) if !menu => acts.push((*b, a)),
+            _ => {}
         }
     }
-    if menu {
-        let (x, y) = left;
-        let k = if x.abs().max(y.abs()) < NAV_TILT {
-            None
-        } else if x.abs() > y.abs() {
-            Some(if x > 0.0 { KeyCode::ArrowRight } else { KeyCode::ArrowLeft })
-        } else {
-            Some(if y > 0.0 { KeyCode::ArrowDown } else { KeyCode::ArrowUp })
-        };
-        if let Some(k) = k
-            && !keys.contains(&k)
-        {
-            keys.push(k);
-        }
-    }
-    keys
+    (keys, acts)
 }
 
 /// A frame's worth of pad input for the client.
@@ -184,6 +215,8 @@ pub struct Frame {
     pub events: Vec<egui::Event>,
     /// Left X / Y, right X / Y for `Input::set_stick`.
     pub stick: [f32; 4],
+    /// Actions whose button went down this frame.
+    pub actions: Vec<Action>,
     /// A button went down (hides the mouse cursor, as a key does).
     pub pressed: bool,
 }
@@ -193,15 +226,18 @@ pub struct Gamepad {
     gilrs: Option<Gilrs>,
     tried: bool,
     active: Option<GamepadId>,
-    map: Vec<(Button, KeyCode)>,
+    map: Vec<(Button, Bind)>,
     map_from: Option<BTreeMap<String, String>>,
+    /// The buttons whose action ran, until they are let go.
+    acted: Vec<Button>,
     /// Keys held now, with the time to their next cursor repeat.
     down: Vec<(KeyCode, f32)>,
 }
 
 impl Gamepad {
-    /// Reads the pads. `focused`: the window has the focus (a pad in the background does nothing).
-    pub fn poll(&mut self, cfg: &Config, focused: bool, menu: bool, dt: f32) -> Frame {
+    /// Reads the pads. `focused`: the window has the focus (a pad in the background does nothing); `menu`: a window
+    /// has the keys; `field`: in the world (else the d-pad is always the arrows and the left stick does nothing).
+    pub fn poll(&mut self, cfg: &Config, focused: bool, menu: bool, field: bool, dt: f32) -> Frame {
         if !cfg.gamepad {
             return self.release_all();
         }
@@ -249,13 +285,27 @@ impl Gamepad {
         let (lx, ly) = dead_zone(pad.value(Axis::LeftStickX), -pad.value(Axis::LeftStickY), dz);
         let (rx, ry) = dead_zone(pad.value(Axis::RightStickX), -pad.value(Axis::RightStickY), dz);
         let ry = if cfg.gamepad_invert_y { -ry } else { ry };
-        let keys = held_keys(&self.map, &pressed, (lx, ly), menu);
+        let menu = menu || !field;
+        let (keys, acts) = held_keys(&self.map, &pressed, menu);
         let mut f = self.step(&keys, dt);
-        f.stick = if menu { [0.0, 0.0, rx, ry] } else { [lx, ly, rx, ry] };
+        self.acted.retain(|b| pressed.contains(b));
+        for (b, a) in acts {
+            if !self.acted.contains(&b) {
+                self.acted.push(b);
+                f.actions.push(a);
+                f.pressed = true;
+            }
+        }
+        // A button held into a window does not fire when the window closes.
+        if menu {
+            self.acted = pressed.clone();
+        }
+        f.stick = if field { [lx, ly, rx, ry] } else { [0.0, 0.0, rx, ry] };
         f
     }
 
     fn release_all(&mut self) -> Frame {
+        self.acted.clear();
         let mut f = self.step(&[], 0.0);
         f.stick = [0.0; 4];
         f
@@ -311,26 +361,30 @@ mod tests {
         assert_eq!(button_by_name("LeftTrigger2"), Some(Button::LeftTrigger2));
         let o: BTreeMap<String, String> = [("West".into(), "Tab".into()), ("Select".into(), String::new()), ("Nope".into(), "Tab".into())].into();
         let m = layout(&o);
-        assert!(m.contains(&(Button::West, KeyCode::Tab)));
+        assert!(m.contains(&(Button::West, Bind::Key(KeyCode::Tab))));
+        let m2 = layout(&[("South".into(), "rest".into())].into());
+        assert!(m2.contains(&(Button::South, Bind::Act(Action::Rest))));
         assert!(!m.iter().any(|x| x.0 == Button::Select));
         assert_eq!(m.len(), DEFAULTS.len() - 1);
-        // Every default key has a DIK code and every one but the modifiers and Num* (egui has no name for it; only the
-        // key functions read it) an egui key.
-        for &(_, k) in DEFAULTS.iter().chain(MACRO) {
+        // Every default key has a DIK code (egui has no name for some, such as Num* or Print Screen: only the key
+        // functions read those).
+        let keys = DEFAULTS.iter().filter_map(|d| if let Bind::Key(k) = d.1 { Some(k) } else { None });
+        for k in keys.chain(MACRO.iter().map(|m| m.1)) {
             assert!(crate::client::input::dik(k).is_some(), "{k:?}");
-            assert!(modifier(k) || k == KeyCode::NumpadMultiply || egui::Key::from_name(&format!("{k:?}")).is_some(), "{k:?}");
         }
     }
 
     #[test]
-    fn macro_layer_and_stick_nav() {
+    fn macro_layer_and_dpad() {
         let m = layout(&BTreeMap::new());
-        assert_eq!(held_keys(&m, &[Button::South], (0.0, 0.0), false), vec![KeyCode::Enter]);
-        let k = held_keys(&m, &[Button::LeftTrigger2, Button::South, Button::DPadUp], (0.0, 0.0), false);
+        assert_eq!(held_keys(&m, &[Button::South], false).0, vec![KeyCode::Enter]);
+        let k = held_keys(&m, &[Button::LeftTrigger2, Button::South, Button::DPadUp], false).0;
         assert_eq!(k, vec![KeyCode::ControlLeft, KeyCode::Digit7, KeyCode::Digit1]);
-        assert_eq!(held_keys(&m, &[], (0.2, 0.9), true), vec![KeyCode::ArrowDown]);
-        assert!(held_keys(&m, &[], (0.2, 0.9), false).is_empty());
-        assert!(held_keys(&m, &[], (0.3, 0.1), true).is_empty());
+        // The d-pad targets in the field and steps the cursor in a window; L3 is Num* (rest / lock on).
+        let (k, a) = held_keys(&m, &[Button::DPadLeft, Button::LeftThumb], false);
+        assert!(k == vec![KeyCode::NumpadMultiply] && a == vec![(Button::DPadLeft, Action::TargetPrev)]);
+        let (k, a) = held_keys(&m, &[Button::DPadLeft, Button::LeftThumb], true);
+        assert!(k == vec![KeyCode::ArrowLeft, KeyCode::NumpadMultiply] && a.is_empty());
     }
 
     #[test]

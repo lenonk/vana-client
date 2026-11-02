@@ -6505,6 +6505,8 @@ pub struct App {
     /// Keys Lua mods pressed this frame, as egui events.
     synth_events: Vec<egui::Event>,
     gamepad: gamepad::Gamepad,
+    /// Controller actions to run in the next key_functions.
+    pad_actions: Vec<gamepad::Action>,
     /// Frames per second, 0 = unlimited (config frame_limit), and the present mode must be picked again.
     frame_limit: u32,
     present_dirty: bool,
@@ -6751,6 +6753,7 @@ impl App {
             input: input::Input::default(),
             synth_events: Vec::new(),
             gamepad: gamepad::Gamepad::default(),
+            pad_actions: Vec::new(),
             frame_limit,
             present_dirty: false,
             window_dirty: false,
@@ -10519,6 +10522,24 @@ impl App {
                 }
             }
         }
+        // A controller's actions (client/gamepad.rs): the d-pad targets in the field, as on retail's pad.
+        for a in std::mem::take(&mut self.pad_actions) {
+            if event::active(world) || world.ko_open || world.ko_offer == 2 {
+                continue;
+            }
+            match a {
+                gamepad::Action::TargetNext | gamepad::Action::TargetPrev => {
+                    let view = Self::camera(world).view();
+                    target::cycle(world, view, a == gamepad::Action::TargetNext);
+                }
+                gamepad::Action::PartyUp | gamepad::Action::PartyDown => {
+                    if let Some(t) = target::party_pad_step(world, a == gamepad::Action::PartyDown) {
+                        target::pick(world, Some(t));
+                    }
+                }
+                gamepad::Action::Rest => send_chat(world, "/heal".into()),
+            }
+        }
     }
 
     /// FUN_10125360's kind for this frame: a drag shows the arrow (both buttons the move arrow pointing ahead,
@@ -12575,10 +12596,12 @@ impl App {
         // (status_0@2x is 2184 wide) fail its debug check.
         raw.max_texture_side = Some(gfx.gpu.device.limits().max_texture_dimension_2d as usize);
         raw.events.append(&mut self.synth_events);
-        // A game controller as keys and sticks (not retail): outside the field or with a window up, its left stick
-        // steps the cursor.
-        let menu = !matches!(self.phase, Phase::World(_)) || self.input.window_active();
-        let pad = self.gamepad.poll(&self.cfg, gfx.window.has_focus(), menu, dt);
+        // A game controller as keys, sticks and actions (not retail's pad path): with a window up or a target prompt,
+        // or outside the field, its d-pad steps the cursor; its actions run in key_functions.
+        let field = matches!(self.phase, Phase::World(_));
+        let menu = self.input.window_active() || matches!(&self.phase, Phase::World(w) if w.prompt.is_some());
+        let pad = self.gamepad.poll(&self.cfg, gfx.window.has_focus(), menu, field, dt);
+        self.pad_actions.extend(pad.actions);
         for (code, down) in pad.keys {
             if let Some(k) = input::dik(code) {
                 self.input.set(k, down);
