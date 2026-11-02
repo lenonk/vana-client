@@ -19,6 +19,12 @@ pub struct Keys {
 }
 
 impl Keys {
+    /// Made-up tables for tests without FFXiMain.dll (dat/fuzz.rs).
+    #[cfg(test)]
+    pub(crate) fn for_tests() -> Self {
+        Self { t1: std::array::from_fn(|i| i as u8), t2: std::array::from_fn(|i| (i as u8).wrapping_mul(7)) }
+    }
+
     pub fn from_ffximain(dll: &[u8]) -> Result<Self> {
         let table = |at: usize, want: &str| -> Result<[u8; 256]> {
             let t: [u8; 256] = dll.get(at..at + 256).and_then(|s| s.try_into().ok()).ok_or_else(|| anyhow::anyhow!("FFXiMain.dll too short"))?;
@@ -52,7 +58,12 @@ fn name_at(b: &[u8], o: usize, len: usize) -> String {
 
 /// Byte-wise key stream, then (when flagged 0xFFFF) a keyed swap of 8-byte blocks between halves.
 pub fn decode_mmb(keys: &Keys, p: &mut [u8]) {
-    let len = (p[0] as usize | (p[1] as usize) << 8 | (p[2] as usize) << 16).min(p.len());
+    // The 8-byte header holds the length and keys; without it there is nothing to decode, and a length under 8 has
+    // no body (issue #87: both used to panic).
+    if p.len() < 8 {
+        return;
+    }
+    let len = (p[0] as usize | (p[1] as usize) << 8 | (p[2] as usize) << 16).clamp(8, p.len());
     if p[3] >= 5 {
         let mut key = keys.t1[(p[5] ^ 0xF0) as usize] as u32;
         let mut counter = 0u32;
@@ -84,6 +95,10 @@ pub fn decode_mmb(keys: &Keys, p: &mut [u8]) {
 
 /// Inverts runs of 16..23 bytes chosen by the key (versions >= 0x1b; parse_mzb XORs their names with 0x55).
 pub fn decode_mzb(keys: &Keys, p: &mut [u8]) -> Result<()> {
+    // The header's length, version and key bytes (issue #87: a shorter chunk used to panic here).
+    if p.len() < 8 {
+        bail!("MZB too short");
+    }
     if p[3] < 0x1B {
         return Ok(());
     }
@@ -158,7 +173,8 @@ pub fn parse_mmb(p: &[u8]) -> Result<Mmb> {
             offsets.push_back(64);
         } else {
             for i in 0..8 {
-                let o = u32_at(p, 64 + i * 4) as usize;
+                // A table cut by the end of the chunk has no more offsets (issue #87).
+                let Some(o) = p.get(64 + i * 4..68 + i * 4).map(|_| u32_at(p, 64 + i * 4) as usize) else { break };
                 if o != 0 {
                     offsets.push_back(o);
                 }
@@ -167,7 +183,8 @@ pub fn parse_mmb(p: &[u8]) -> Result<Mmb> {
     } else {
         offsets.push_back(first);
         let mut at = 64;
-        while at + 4 <= first {
+        // The offset table runs up to the first piece; a first offset past the end stops at the end (issue #87).
+        while at + 4 <= first.min(p.len()) {
             let o = u32_at(p, at) as usize;
             if o != 0 {
                 offsets.push_back(o);
@@ -357,17 +374,26 @@ pub fn camera_lists(p: &[u8]) -> std::collections::HashMap<u32, Vec<u32>> {
 /// FUN_10172530: version byte 3 > 0x11 and u32 @0x18: the light list, 256 records of 0x4c with the key at +0
 /// (empty without one).
 pub fn light_list(p: &[u8]) -> Vec<u32> {
+    if p.len() < 0x1c {
+        return Vec::new();
+    }
     let list = u32_at(p, 0x18) as usize;
-    if p.len() < 0x1c || p[3] <= 0x11 || list == 0 || list + 256 * 0x4c > p.len() {
+    if p[3] <= 0x11 || list == 0 || list + 256 * 0x4c > p.len() {
         return Vec::new();
     }
     (0..256).map(|k| u32_at(p, list + k * 0x4c)).collect()
 }
 
 pub fn parse_mzb(p: &mut [u8]) -> Result<Vec<Placement>> {
+    if p.len() < 32 {
+        bail!("MZB too short");
+    }
     let count = (p[4] as usize) | (p[5] as usize) << 8 | (p[6] as usize) << 16;
     let end = u32_at(p, 20) as usize;
     let stride = [100usize, 84, 92].into_iter().find(|s| count * s + 32 == end).ok_or_else(|| anyhow::anyhow!("unknown MZB record size ({count} records end at {end})"))?;
+    if end > p.len() {
+        bail!("MZB: {count} records end at {end}, past the chunk");
+    }
     let version = p[3];
     let keys = light_list(p);
     let world = p.get(0x1c) == Some(&2);
@@ -640,7 +666,9 @@ impl Region {
 /// RID chunk (0x36): count @0x30, 0x40-byte entries from 0x40 (pos, rot, scale, name[8] @0x24).
 pub fn parse_rid(p: &[u8]) -> Vec<Region> {
     let count = p.get(0x30..0x34).map(|_| u32_at(p, 0x30) as usize).unwrap_or(0);
-    (0..count)
+    // Entries from p.len() / 0x40 on end past the chunk and are dropped below anyway; stopping there keeps a bad
+    // count from looping up to u32::MAX times (issue #87).
+    (0..count.min(p.len() / 0x40))
         .filter_map(|i| {
             let e = 0x40 + i * 0x40;
             (e + 0x38 <= p.len()).then(|| Region {

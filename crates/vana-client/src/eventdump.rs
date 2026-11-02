@@ -62,7 +62,8 @@ pub fn cs_shot(zone: u32, n: u32, sched: &str, steps: u32, out_dir: &std::path::
         if let Op::Camera { path, ticks, .. } = op {
             let p = evte.path(path)?;
             println!("camera {path}: {} keys, ease {}, flags {:#x}, attach {:#x}, {ticks} ticks", p.keys.len(), p.ease, p.flags, p.attach);
-            for i in 0..steps.max(1) {
+            // A path with no keys has no camera to sample.
+            for i in 0..if p.keys.is_empty() { 0 } else { steps.max(1) } {
                 let t = if steps <= 1 { 0.0 } else { i as f32 / (steps - 1) as f32 };
                 let k = sample(p, t);
                 println!("  t {t:.2}: eye {} target {} fov_y {:.1}", k.eye, k.target, fov_y(k.focal).to_degrees());

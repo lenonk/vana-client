@@ -31,6 +31,8 @@ pub fn parse(file: &[u8]) -> Result<Vec<Block>> {
     let u32_at = |b: &[u8], o: usize| -> Result<u32> { Ok(u32::from_le_bytes(b.get(o..o + 4).context("event data truncated")?.try_into().unwrap())) };
     let u16_at = |b: &[u8], o: usize| -> Result<u16> { Ok(u16::from_le_bytes(b.get(o..o + 2).context("event data truncated")?.try_into().unwrap())) };
     let n = (u32_at(file, 0)? & 0x3fff_ffff) as usize;
+    // The size table alone must fit, or a bad count would reserve gigabytes below (issue #87).
+    ensure!(n <= file.len().saturating_sub(4) / 4, "event data: {n} blocks overrun the size table");
     let mut p = 4 + 4 * n;
     let mut out = Vec::with_capacity(n);
     for i in 0..n {

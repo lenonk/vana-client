@@ -198,3 +198,6 @@ pub mod actions;
 pub mod autotrans;
 pub mod furniture;
 pub mod tpoints;
+
+#[cfg(test)]
+mod fuzz;

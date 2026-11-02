@@ -38,7 +38,8 @@ impl Dialog {
         let body = &d[4..];
         let u32_at = |o: usize| body.get(o..o + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize);
         let count = u32_at(0).context("no offset table")? / 4;
-        let mut entries = Vec::with_capacity(count);
+        // Each entry has a 4-byte offset; a bad count must not reserve more than the body holds (issue #87).
+        let mut entries = Vec::with_capacity(count.min(body.len() / 4));
         for i in 0..count {
             let start = u32_at(i * 4).context("offset table")?;
             let end = if i + 1 < count { u32_at(i * 4 + 4).context("offset table")? } else { body.len() };

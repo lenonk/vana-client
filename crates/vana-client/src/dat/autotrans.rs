@@ -128,7 +128,8 @@ impl Dictionary {
             if h[0] != GROUP_KIND || h[1] != LANG_EN {
                 continue;
             }
-            let mut phrases = Vec::with_capacity(count);
+            // Each phrase takes at least 5 bytes; a bad count must not reserve more than the group holds (issue #87).
+            let mut phrases = Vec::with_capacity(count.min(body.len() / 5));
             let mut p = 0;
             while p + 5 <= body.len() && phrases.len() < count {
                 let (lang, id, len) = (body[p + 1], body[p + 3], body[p + 4] as usize);

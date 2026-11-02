@@ -55,6 +55,9 @@ pub struct Skeleton {
 
 /// u16 ?, u16 bone count, then 30-byte bones: parent u8, term u8, quat xyzw, translation xyz.
 pub fn parse_skeleton(name: String, d: &[u8]) -> Result<Skeleton> {
+    if d.len() < 4 {
+        bail!("skeleton {name}: chunk too short");
+    }
     let n = u16_at(d, 2) as usize;
     if 4 + n * 30 > d.len() {
         bail!("skeleton {name}: {n} bones overrun the chunk");

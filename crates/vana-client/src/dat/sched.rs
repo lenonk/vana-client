@@ -36,7 +36,8 @@ pub fn ops(data: &[u8]) -> Vec<Op<'_>> {
 /// FUN_10056e10: the end stream (header u32 @0x18, chunk-relative) until op 0; an op 0x01 there means the task starts
 /// over at its end (FUN_10057c20).
 pub fn loops(data: &[u8]) -> bool {
-    let Some(mut at) = data.get(0x18..0x1c).map(|b| (u32::from_le_bytes(b.try_into().unwrap()) as usize).wrapping_sub(0x10)) else { return false };
+    // An offset inside the chunk header (below 0x10) points at no stream: no loop. It used to wrap (issue #87).
+    let Some(mut at) = data.get(0x18..0x1c).and_then(|b| (u32::from_le_bytes(b.try_into().unwrap()) as usize).checked_sub(0x10)) else { return false };
     while at + 4 <= data.len() {
         let (code, len) = (data[at], (data[at + 1] & 0x1f) as usize * 4);
         if code == 1 {

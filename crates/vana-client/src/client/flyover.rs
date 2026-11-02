@@ -147,6 +147,10 @@ impl Flyover {
     pub fn camera(&self) -> Option<Camera> {
         let s = self.shot?;
         let path = &self.data.title.paths[s.path];
+        // A path with no keys has no camera (as in event.rs's camera); sampling it would index an empty list.
+        if path.keys.is_empty() {
+            return None;
+        }
         let k = sample(path, (self.tick - s.start) / s.ticks);
         Some(Camera { eye: k.eye, target: k.target, up: crate::dat::title::up_of(k.eye, k.target, k.roll), fov_y: fov_y(k.focal) })
     }

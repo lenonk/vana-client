@@ -108,6 +108,9 @@ pub fn parse_sprite_lib(p: &[u8]) -> Result<SpriteLib> {
         textures.push(norm_name(p.get(at..at + 16).ok_or_else(|| anyhow::anyhow!("{name}: texture list cut"))?));
         at += 16;
     }
+    if at + 2 > p.len() {
+        bail!("{name}: sprite count cut");
+    }
     let nsprites = u16_at(p, at) as usize;
     at += 2;
     let mut sprites = Vec::with_capacity(nsprites);

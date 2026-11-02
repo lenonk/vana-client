@@ -2054,7 +2054,8 @@ fn flyover_shot(scheduler: &str, out_dir: &std::path::Path, steps: u32, flat: bo
                 let env = env_override.or_else(|| weather.at(&tag, minute));
                 let lighting = if flat { None } else { env.map(|e| Lighting::from_env(&e, minute)) };
                 println!("camera {path}: {} keys, ease {}, {ticks} ticks, next op after {wait}; light {}", p.keys.len(), p.ease, if lighting.is_some() { "retail" } else { "flat" });
-                for i in 0..steps.max(1) {
+                // A path with no keys has no camera to sample.
+                for i in 0..if p.keys.is_empty() { 0 } else { steps.max(1) } {
                     let t = if steps <= 1 { 0.0 } else { i as f32 / (steps - 1) as f32 };
                     let k = sample(p, t);
                     let cam = render::Camera { eye: k.eye, target: k.target, up: glam::Vec3::NEG_Y, fov_y: fov_y(k.focal) };
