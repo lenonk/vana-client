@@ -56,6 +56,8 @@ Playable on a local LSB server. Working today:
   texture packs (install from an archive, order, enable, uninstall). Our HD pack, the game's textures upscaled 4x, is
   on the [releases page](https://github.com/lenonk/vana-client/releases/tag/hd-pack-1)
 - Music and sound effects
+- Lua mods: commands, windows and HUD elements in the game's look, drawing in the world, chat filters, and game
+  actions with the player's permission. See [writing mods](docs/modding/README.md)
 
 Not done yet:
 

@@ -31,7 +31,6 @@ pub use creator::{ScreenShot as CreatorScreenShot, screen_shot as creator_screen
 pub use modern::shot::{Opts as ModernShotOpts, shot as modern_shot};
 pub use hudtop::topbar_shot;
 pub use lua::stubs as lua_stubs;
-pub use lua::api_doc as lua_api_doc;
 mod event;
 mod buffs;
 mod game_ui;

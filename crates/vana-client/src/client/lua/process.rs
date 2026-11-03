@@ -15,6 +15,9 @@ fn tasks() -> Vec<i32> {
 #[cfg(target_os = "linux")]
 fn set_affinity(cores: &[usize]) -> Result<(), String> {
     // SAFETY: a zeroed cpu_set_t is the empty set; the libc macros only write inside it.
+    if let Some(c) = cores.iter().find(|&&c| c >= libc::CPU_SETSIZE as usize) {
+        return Err(format!("no core {c} (cores count from 0)"));
+    }
     let mut set: libc::cpu_set_t = unsafe { std::mem::zeroed() };
     for &c in cores {
         unsafe { libc::CPU_SET(c, &mut set) };

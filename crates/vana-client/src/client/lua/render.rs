@@ -55,7 +55,10 @@ pub(super) fn install(lua: &Lua, g: &Table, mod_id: &str) -> mlua::Result<()> {
                 return Ok(());
             };
             let tint = match s.get::<Value>("tint")? {
-                Value::Table(c) => Some([c.get::<Option<f32>>(1)?.unwrap_or(1.0), c.get::<Option<f32>>(2)?.unwrap_or(1.0), c.get::<Option<f32>>(3)?.unwrap_or(1.0)]),
+                Value::Table(c) => {
+                    let get = |k: &str, i: i64| -> mlua::Result<f32> { Ok(c.get::<Option<f32>>(k)?.or(c.get::<Option<f32>>(i)?).unwrap_or(1.0)) };
+                    Some([get("r", 1)?, get("g", 2)?, get("b", 3)?])
+                }
                 _ => None,
             };
             let look = Look {
@@ -106,13 +109,16 @@ pub(super) fn install(lua: &Lua, g: &Table, mod_id: &str) -> mlua::Result<()> {
     let me = mod_id.to_string();
     t.set(
         "shader_params",
-        lua.create_function(move |lua, (id, params): (String, Vec<Vec<f32>>)| {
+        lua.create_function(move |lua, (id, params): (String, Vec<Table>)| {
             let info = info(lua);
             let mut f = info.borrow_mut();
             let Some(s) = f.shaders.iter_mut().find(|s| s.0 == me && s.1 == id) else { return Err(mlua::Error::runtime(format!("no shader {id}"))) };
+            // Each a {x, y, z, w} or a plain list; a value left out keeps what it was.
             for (k, v) in params.iter().take(4).enumerate() {
-                for (j, x) in v.iter().take(4).enumerate() {
-                    s.4[k][j] = *x;
+                for (j, name) in ["x", "y", "z", "w"].into_iter().enumerate() {
+                    if let Some(x) = v.get::<Option<f32>>(name)?.or(v.get::<Option<f32>>(j as i64 + 1)?) {
+                        s.4[k][j] = x;
+                    }
                 }
             }
             Ok(())

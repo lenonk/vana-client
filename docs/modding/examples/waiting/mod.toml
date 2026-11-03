@@ -1,0 +1,4 @@
+name = "Waiting"
+version = "1.0.0"
+description = "/nearest targets whoever is closest, then waits until the target has changed."
+permissions = ["actions"]

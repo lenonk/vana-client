@@ -248,6 +248,11 @@ fn table() -> &'static Table {
     &commands().map
 }
 
+/// A game command's name (without the slash), as /item or /ma.
+pub(super) fn is_game_command(name: &str) -> bool {
+    table().contains_key(format!("/{name}").as_str())
+}
+
 /// FUN_10076830: tokens split at spaces (and tabs outside typed lines); a token opening with a quote runs to the
 /// matching one, and the quotes go (FUN_10076a70: only when the last char matches the first). At most 17; the
 /// 17th takes the rest.

@@ -201,6 +201,11 @@ pub(super) fn install(lua: &Lua, g: &Table, vm: &super::vm::Vm) -> mlua::Result<
         fs.set(
             "remove",
             lua.create_function(move |lua, path: String| {
+                // A whole data folder (the mod's, or the shared one) is never removed by one call.
+                let bare = path.trim_matches(|c| c == '/' || c == '\\' || c == '.' || c == ' ');
+                if bare.is_empty() || bare.eq_ignore_ascii_case("shared") {
+                    return Err(mlua::Error::runtime(format!("fs.remove {path:?}: name a file or folder inside the data folder")));
+                }
                 let p = place(lua, &data, &path)?;
                 let r = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
                 match r {
@@ -229,8 +234,12 @@ pub(super) fn install(lua: &Lua, g: &Table, vm: &super::vm::Vm) -> mlua::Result<
     let json = lua.create_table()?;
     json.set(
         "encode",
-        lua.create_function(|lua, (v, opts): (Value, Option<Table>)| {
-            let j: serde_json::Value = lua.from_value(v)?;
+        lua.create_function(|_, (v, opts): (Value, Option<Table>)| {
+            let mut skipped = Vec::new();
+            let j = super::api::plain(&v, "value", &mut skipped).map_err(|e| mlua::Error::runtime(format!("json.encode: {e}")))?;
+            if let Some(s) = skipped.first() {
+                return Err(mlua::Error::runtime(format!("json.encode: {s} is not plain data")));
+            }
             let pretty = opts.and_then(|o| o.get::<Option<bool>>("pretty").ok().flatten()).unwrap_or(false);
             let s = if pretty { serde_json::to_string_pretty(&j) } else { serde_json::to_string(&j) };
             s.map_err(|e| mlua::Error::runtime(format!("json.encode: {e}")))
@@ -304,7 +313,7 @@ pub(super) fn install(lua: &Lua, g: &Table, vm: &super::vm::Vm) -> mlua::Result<
     mods.set(
         "emit",
         lua.create_function(move |lua, (event, args): (String, mlua::Variadic<Value>)| {
-            let vals = args.into_iter().map(|v| lua.from_value::<serde_json::Value>(v)).collect::<mlua::Result<Vec<_>>>()?;
+            let vals = copies(args, "mods.emit value")?;
             directory(lua).borrow_mut().emitted.push((me.clone(), event, vals));
             Ok(())
         })?,
@@ -486,6 +495,21 @@ pub(super) fn phrase(b: [u8; 4]) -> String {
     b.iter().enumerate().filter_map(|(k, &x)| char::from_u32(crate::dat::font::PHRASE_BASE + 0x100 * k as u32 + x as u32)).collect()
 }
 
+/// Values copied between mods: plain data only (api::plain), an error naming what is not.
+fn copies(args: impl IntoIterator<Item = Value>, what: &str) -> mlua::Result<Vec<serde_json::Value>> {
+    args.into_iter()
+        .enumerate()
+        .map(|(k, v)| {
+            let mut skipped = Vec::new();
+            let j = super::api::plain(&v, &format!("{what} {}", k + 1), &mut skipped).map_err(mlua::Error::runtime)?;
+            match skipped.first() {
+                Some(s) => Err(mlua::Error::runtime(format!("{s} is not plain data"))),
+                None => Ok(j),
+            }
+        })
+        .collect()
+}
+
 /// mods.call: the other mod's provided function with copies of the values (plain data), in its own VM.
 fn call(lua: &Lua, id: &str, name: &str, args: mlua::Variadic<Value>) -> mlua::Result<MultiValue> {
     let dir = directory(lua);
@@ -503,7 +527,7 @@ fn call(lua: &Lua, id: &str, name: &str, args: mlua::Variadic<Value>) -> mlua::R
         let p = s.provided.iter().find(|p| p.0 == name).ok_or_else(|| mlua::Error::runtime(format!("mods.call: {id} provides no {name}")))?;
         tl.registry_value(&p.1)?
     };
-    let vals = args.into_iter().map(|v| lua.from_value::<serde_json::Value>(v)).collect::<mlua::Result<Vec<_>>>()?;
+    let vals = copies(args, "mods.call argument")?;
     let targs = vals.iter().map(|j| super::api::to_lua(&tl, j)).collect::<mlua::Result<Vec<_>>>()?;
     // The callee reads the world the caller was lent, under its own budget.
     let lent = tl.app_data_ref::<super::api::WorldRef>().is_some();
@@ -517,7 +541,7 @@ fn call(lua: &Lua, id: &str, name: &str, args: mlua::Variadic<Value>) -> mlua::R
         tl.remove_app_data::<super::api::WorldRef>();
     }
     let out = r.map_err(|e| mlua::Error::runtime(format!("mods.call {id}.{name}: {e}")))?;
-    let back = out.into_iter().map(|v| tl.from_value::<serde_json::Value>(v)).collect::<mlua::Result<Vec<_>>>()?;
+    let back = copies(out, "mods.call result")?;
     Ok(MultiValue::from_vec(back.iter().map(|j| super::api::to_lua(lua, j)).collect::<mlua::Result<Vec<_>>>()?))
 }
 

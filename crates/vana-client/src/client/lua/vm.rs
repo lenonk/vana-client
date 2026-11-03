@@ -66,6 +66,8 @@ pub(super) struct Vm {
 
 #[derive(Default)]
 pub(super) struct ModState {
+    /// Frames this mod has run (sleepers wake in a later frame than they slept).
+    pub frame_no: u64,
     pub handlers: Vec<Handler>,
     pub commands: Vec<(String, RegistryKey)>,
     pub timers: Vec<Timer>,
@@ -160,6 +162,8 @@ pub(super) struct Timer {
 pub(super) struct Sleeper {
     pub thread: RegistryKey,
     pub wake: Wake,
+    /// The frame it went to sleep in: it wakes in a later one, after that frame's actions applied.
+    pub born: u64,
     /// Begun with the player's input (ModState::input), kept across sleeps.
     pub input: bool,
 }
@@ -364,7 +368,10 @@ impl Vm {
         };
         let input = self.st.borrow().input;
         match self.lua.create_registry_value(thread) {
-            Ok(k) => self.st.borrow_mut().sleepers.push(Sleeper { thread: k, wake, input }),
+            Ok(k) => {
+                let born = self.st.borrow().frame_no;
+                self.st.borrow_mut().sleepers.push(Sleeper { thread: k, wake, input, born });
+            }
             Err(e) => self.error(&e),
         }
     }
@@ -372,10 +379,15 @@ impl Vm {
     /// Wakes the sleepers whose time has come.
     pub fn wake(&self) {
         let now = Instant::now();
+        let frame = self.st.borrow().frame_no;
         let sleepers = std::mem::take(&mut self.st.borrow_mut().sleepers);
         let mut keep = Vec::new();
         let mut due = Vec::new();
         for mut s in sleepers {
+            if s.born == frame {
+                keep.push(s);
+                continue;
+            }
             let ready = match &mut s.wake {
                 Wake::At(t) => now >= *t,
                 Wake::Frames(n) => {
@@ -475,6 +487,7 @@ impl Vm {
     /// Ends the frame's accounting: the running average and peak (ms).
     pub fn end_frame(&self) {
         let mut st = self.st.borrow_mut();
+        st.frame_no += 1;
         let ms = st.stats.frame.as_secs_f32() * 1000.0;
         st.stats.avg = st.stats.avg * 0.95 + ms * 0.05;
         st.stats.peak = st.stats.peak.max(ms);

@@ -1,7 +1,7 @@
 # Lua mods: design
 
-The API as mod authors use it, every function, event and type: [lua-api.md](lua-api.md). This document is the design
-and the state of the work.
+Writing mods (tutorial, guide, reference, examples): [modding/](modding/README.md). This document is the design and
+the state of the work.
 
 The add-on surveys behind it are in MODLOG "Lua mods: the add-on surveys".
 
@@ -413,8 +413,9 @@ never cancels other mods' handlers; only filter hooks can block.
 - **Mod commands:** `commands.register("name", fn)` for `//name` and `/name`, with aliases, and an unhandled-command
   hook.
 - **Running commands:** `commands.run("a; wait 1; b")` takes the same path as typed text: game commands, our native
-  commands, and other mods' commands. `/lua` is the player's only: `commands.run` refuses it, and a mod's bind
-  line or action that reaches it is refused too, so a mod can't grant itself permissions or run code in another.
+  commands, and other mods' commands. `/lua grant`, `revoke`, `run`, `set` and `watch` are the player's only: from
+  `commands.run`, a mod's bind or an action they're refused, leading spaces included (a mod's lines are trimmed
+  before they're sorted, so `" /lua grant ..."` can't slip through as typed text).
 - **Binds:** `binds.set(key with modifiers, command, {down/up, chat-open})` and `unset`. Binds also appear in our key
   assignment.
 - **Scripts and macros:** script files and `/exec`; macros (read books, pages and lines, run them, set the book / set).

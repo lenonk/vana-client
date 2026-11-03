@@ -1,0 +1,3 @@
+name = "Target Ring"
+version = "1.0.0"
+description = "A ring on the ground around your target, and its distance over its head."

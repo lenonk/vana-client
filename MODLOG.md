@@ -20311,16 +20311,14 @@ Lessons from other games' mod layers (BG3 Script Extender, WoW, Skyrim, Factorio
 - Live: a committed 日本語 (script step `ime:`) in both UIs, sent with /echo and printed in the game font and the modern
   one. A real composition (preedit and candidate window from a Japanese input method) not tried.
 
-## Lua mods: /lua only from the player (ours, 2026-11-02)
+## Lua mods: a mod's /lua line is trimmed before the player-only check (ours, 2026-11-02)
 
-- `commands.run("//lua grant <own id> ...")` used to need no permission (a `//` line skips the actions check) and
-  reached `/lua` like a typed line, so any mod could grant itself every permission its mod.toml lists, or
-  `/lua run` code in another mod with that mod's grants (akreao/vana-client#68).
-- Lines for the mods now carry where they came from: the player (the chat line, a macro), a mod's bind the player
-  pressed, or a mod's own line (`commands.run`, an action). `/lua` runs only from the player; a mod's command still
-  runs from a bind as the player's input and from a mod's line as the mod's own.
-- `commands.run` refuses a line whose first word is `lua` with an error. Mod lines are trimmed before the check, so a
-  leading space no longer sends one down the typed path as the player's.
+- Upstream refuses `/lua grant`, `revoke`, `run`, `set` and `watch` unless the player typed them, but it sorted a mod's
+  line with `starts_with('/')` on the line as given, while textcmd::run trims it: `commands.run(" /lua grant <own id>
+  ...")` (or the same as a bind or an action) skipped the mods' queue and reached `/lua` as the player's line
+  (akreao/vana-client#68).
+- Mod, bind and action lines now go through one `run_line` that trims first and queues a `/`-line the mods take with
+  its source, so the gate sees every one of them.
 
 ## Lua mods: wait_until budget, require paths, links in mod folders (ours, 2026-11-02)
 
@@ -20344,14 +20342,13 @@ Lessons from other games' mod layers (BG3 Script Extender, WoW, Skyrim, Factorio
   options (check the caller's grants too during the call, or treat providing as delegating and show it on the grant
   page) are upstream's permission model to decide; docs/lua-mods.md now says so where `mods.call` is listed.
 
-## Lua mods: injected packets fit their size field (ours, 2026-11-02)
+## Lua mods: a whole injected packet gets its size field set (ours, 2026-11-02)
 
-- `packets.inject_in` / `inject_out` took a whole sub-packet as it came (4 bytes or more), so its header's size
-  field could disagree with its bytes; a hook's result was already fitted. Injected packets now go through the same
-  fit: padded to a word, the size field set from the length (akreao/vana-client#69).
-- The size field is 7 bits of 4-byte words, so a sub-packet is at most 508 bytes. `build`, the `(id, body)` form of
-  inject and a whole injected packet over that raise an error; a hook result over it (or under 4 bytes) is reported
-  as the mod's error and the packet goes on unchanged. An id over 0x1ff is refused instead of being cut to 9 bits.
+- `packets.inject_in` / `inject_out` with a whole sub-packet used it as given, so a wrong size field in its header threw
+  off the packets after it (akreao/vana-client#69). It now goes through `fit` like a hook's result: padded to a word,
+  the size field set from the length. Its id is kept.
+- Upstream's manual says a whole packet is used as given; this changes that, so it's a design point for upstream. The
+  508-byte and id limits are upstream's own checks (`build_packet`, `packet_bytes`).
 
 ## Lua mods: string patterns keep to the time budget (ours, 2026-11-02)
 

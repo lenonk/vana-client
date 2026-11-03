@@ -28,8 +28,8 @@ pub struct Event {
 pub const FUNCS: &[Func] = &[
     Func { ns: "", name: "print", doc: "Writes its arguments to the chat log (dim) and vana-client.log.", params: &[("...", "any", "values, tab-separated")], ret: "" },
     Func { ns: "", name: "require", doc: "Loads a Lua file from the mod's folder once (a.b is a/b.lua or a/b/init.lua) and returns what it returned.", params: &[("name", "string", "module name")], ret: "any" },
-    Func { ns: "", name: "sleep", doc: "Pauses the running handler for `seconds` (other handlers and the game go on).", params: &[("seconds?", "number", "default 0: the next frame")], ret: "" },
-    Func { ns: "", name: "sleep_frames", doc: "Pauses the running handler for `n` frames.", params: &[("n?", "integer", "default 1")], ret: "" },
+    Func { ns: "", name: "sleep", doc: "Pauses the running handler for `seconds` (other handlers and the game go on).", params: &[("seconds?", "number", "default 0: the next frame (it always wakes in a later frame, after this one's actions)")], ret: "" },
+    Func { ns: "", name: "sleep_frames", doc: "Pauses the running handler for `n` frames: 1 wakes it in the next frame, after this frame's actions took effect.", params: &[("n?", "integer", "default 1")], ret: "" },
     Func { ns: "", name: "wait_until", doc: "Pauses the running handler until `test()` returns true (checked once a frame), or `timeout` seconds pass.", params: &[("test", "fun(): boolean", "the condition"), ("timeout?", "number", "seconds; none waits for ever")], ret: "" },
     Func { ns: "", name: "clock", doc: "Seconds since the mod was loaded (monotonic).", params: &[], ret: "number" },
     Func { ns: "log", name: "info", doc: "Writes a line to vana-client.log.", params: &[("text", "string", "")], ret: "" },
@@ -41,7 +41,7 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "commands", name: "register", doc: "Adds a command: typed as //name or /name, it calls `handler` with the words after it.", params: &[("name", "string", "without the slash"), ("handler", "fun(...: string)", "")], ret: "" },
     Func { ns: "commands", name: "run", doc: "Runs a line as if the player had typed it (game commands, our commands, other mods' commands). Any line but a //mod command is a game action: it needs actions (while handling the player's input) or automation.", params: &[("line", "string", "e.g. '/ma \"Cure\" <t>'")], ret: "" },
     Func { ns: "filters", name: "chat", doc: "Runs `filter` on every chat line before it is kept: return nil to keep it, false to drop it, or new text (and optionally a new mode) to replace it. Runs inline: it cannot sleep or read game state.", params: &[("filter", "fun(text: string, mode: integer?, battle: boolean): (string|false|nil, integer?)", "")], ret: "integer" },
-    Func { ns: "filters", name: "typed", doc: "Runs `filter` on every line typed or run (macros, mods) before the command parser: nil keeps it, false drops it, a string replaces it. Runs inline.", params: &[("filter", "fun(line: string): string|false|nil", "")], ret: "integer" },
+    Func { ns: "filters", name: "typed", doc: "Runs `filter` on every line typed or run (macros, mods) before the command parser: nil keeps it, false drops it, a string replaces it. Runs inline: it cannot sleep (it can read game state).", params: &[("filter", "fun(line: string): string|false|nil", "")], ret: "integer" },
     Func { ns: "filters", name: "off", doc: "Removes a filter.", params: &[("id", "integer", "what filters.chat / filters.typed returned")], ret: "" },
     Func { ns: "timers", name: "add", doc: "Adds or replaces a row in the Timers window (shown for mods' rows even with the Timers Extra off), counting down `seconds`: options section ('recast' | 'buff' (default) | 'debuff'), group (a heading, e.g. a target's name), icon {kind = 'status' | 'spell' | 'ability', id}, total (the gauge's whole length), fills (toward ready, as recasts do).", params: &[("name", "string", ""), ("seconds", "number", ""), ("options?", "table", "")], ret: "" },
     Func { ns: "timers", name: "remove", doc: "Removes the mod's row by name.", params: &[("name", "string", "")], ret: "" },
@@ -81,12 +81,12 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "ui.native", name: "set_config", doc: "Sets a game config value by id and applies it, as the Config window does (saved with the character's settings). Needs ui.native.", params: &[("id", "integer", ""), ("value", "integer", "")], ret: "" },
     Func { ns: "render", name: "entity", doc: "How an entity draws while the mod is loaded: {hidden (model and plate), name (its plate's), name_colour {r, g, b, a}, alpha (0..1, at most its own), tint {r, g, b} multipliers, scale}. nil clears the mod's look for it; the newest mod's look wins.", params: &[("id", "integer", "server id (ourselves too)"), ("look", "table?", "")], ret: "" },
     Func { ns: "render", name: "clear", doc: "Clears every look the mod set.", params: &[], ret: "" },
-    Func { ns: "render", name: "shader", doc: "A post-process pass over the world, drawn in the order set, under the screen fades and the 2D layer (nil removes it). The source is WGSL with `@fragment fn fs_main(in: VsOut) -> @location(0) vec4<f32>`; it has `scene` (the frame so far) and `samp`, `depth` (texture_depth_2d), `post.size`, `post.time` and `post.p[0..3]` (shader_params), and `in.uv`. A WGSL error is a log line, the pass then skipped.", params: &[("id", "string", ""), ("wgsl", "string?", "")], ret: "" },
+    Func { ns: "render", name: "shader", doc: "A post-process pass over the world, drawn in the order set, under the screen fades and the 2D layer (nil removes it). The source is WGSL with `@fragment fn fs_main(in: VsOut) -> @location(0) vec4<f32>`; it has `scene` (the frame so far) and `samp`, `depth` (texture_depth_2d), `post.size`, `post.time` and `post.p[0..3]` (shader_params), and `in.uv`. A WGSL error is a red line in the chat log (its line numbers count 15 header lines first) and the pass is skipped.", params: &[("id", "string", ""), ("wgsl", "string?", "")], ret: "" },
     Func { ns: "render", name: "shader_params", doc: "A pass's four parameter vectors (post.p): up to four {x, y, z, w}.", params: &[("id", "string", ""), ("params", "number[][]", "")], ret: "" },
-    Func { ns: "render", name: "camera_distance", doc: "The drawn eye's distance as a share of retail's (1 unless a mod sets it).", params: &[], ret: "number" },
-    Func { ns: "render", name: "set_camera_distance", doc: "Sets the drawn eye's distance as a share of retail's (not in first person); as set_camera's distance.", params: &[("scale", "number", "0.5..3")], ret: "" },
-    Func { ns: "render", name: "camera", doc: "The camera: {distance (the drawn eye's distance as a share of retail's, 1 unless a mod sets it), max_distance, speed (the pan speed's scale), battle_distance, first_person, eye, look (as drawn)}.", params: &[], ret: "table" },
-    Func { ns: "render", name: "set_camera", doc: "Changes the camera (only the fields given): distance (the drawn eye's distance as a share of retail's, for this session; the camera keeps retail's distances for its swing, and the eye stops short of walls), max_distance (the most a distance may be, up to 10; 3 by default), speed (the pan speed's scale, 0.1..5), battle_distance (the distance while engaged, back to the player's after; false clears it).", params: &[("camera", "{distance: number?, max_distance: number?, speed: number?, battle_distance: number|false|nil}", "")], ret: "" },
+    Func { ns: "render", name: "camera_distance", doc: "The drawn eye's distance as a share of the game's usual one, as a mod set it (0 when none did; render.camera().distance gives 1 then).", params: &[], ret: "number" },
+    Func { ns: "render", name: "set_camera_distance", doc: "Sets the drawn eye's distance as a share of the game's usual one (not in first person); as set_camera's distance.", params: &[("scale", "number", "0.5 up to the camera's max_distance (10 at most); no effect while locked on a target")], ret: "" },
+    Func { ns: "render", name: "camera", doc: "The camera: {distance (the drawn eye's distance as a share of the game's usual one, 1 unless a mod sets it), max_distance, speed (the pan speed's scale), battle_distance, first_person, eye, look (as drawn)}.", params: &[], ret: "table" },
+    Func { ns: "render", name: "set_camera", doc: "Changes the camera (only the fields given): distance (the drawn eye's distance as a share of the game's usual one, for this session; the camera keeps the game's distances for its swing, and the eye stops short of walls), max_distance (the most a distance may be, up to 10; 3 by default), speed (the pan speed's scale, 0.1..5), battle_distance (the distance while engaged, back to the player's after; false clears it).", params: &[("camera", "{distance: number?, max_distance: number?, speed: number?, battle_distance: number|false|nil}", "")], ret: "" },
     Func { ns: "audio", name: "play", doc: "Plays a sound file from the mod's folder (16-bit PCM WAV, mono or stereo, any rate; or a game SeWave file) at the effects volume.", params: &[("path", "string", ""), ("volume?", "number", "0..1, default 1")], ret: "" },
     Func { ns: "audio", name: "play_se", doc: "Plays one of the game's sound effects by id (sound/win/se).", params: &[("id", "integer", ""), ("volume?", "number", "0..1")], ret: "" },
     Func { ns: "audio", name: "music", doc: "Holds the music on a game track by id (the zone's choice of field, battle, night tracks stops until given back); nil gives it back, and the context's track plays again.", params: &[("id?", "integer", "")], ret: "" },
@@ -100,7 +100,7 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "draw", name: "remove", doc: "Removes a shape.", params: &[("id", "string", "")], ret: "" },
     Func { ns: "draw", name: "clear", doc: "Removes every shape of the mod.", params: &[], ret: "" },
     Func { ns: "draw", name: "to_screen", doc: "Where a world point is on the screen this frame (window pixels, as hud places take), or nil behind the camera.", params: &[("point", "{x: number, y: number, z: number}", "")], ret: "{x: integer, y: integer, on_screen: boolean}?" },
-    Func { ns: "net", name: "request", doc: "Starts an HTTP(S) request on its own thread: {url, method (GET, POST, PUT, PATCH, DELETE, HEAD), body, headers, timeout (s)}; the callback later gets {status, body, headers} or {error}. Bodies past 16 MB are cut. Needs net.", params: &[("spec", "table", ""), ("callback", "fun(res: table)", "")], ret: "integer" },
+    Func { ns: "net", name: "request", doc: "Starts an HTTP(S) request on its own thread: {url, method (GET, POST, PUT, PATCH, DELETE, HEAD), body, headers, timeout (s)}; the callback later gets {status, body, headers} or {error}. A body of 16 MB or more gives {error}. Needs net.", params: &[("spec", "table", ""), ("callback", "fun(res: table)", "")], ret: "integer" },
     Func { ns: "net", name: "connect", doc: "Opens a TCP connection (for a companion program); handlers {open(id), data(id, bytes), close(id, error?)} run in later mod phases. Needs net.", params: &[("host", "string", ""), ("port", "integer", ""), ("handlers", "table", "")], ret: "integer" },
     Func { ns: "net", name: "pipe", doc: "Opens a local endpoint another program offers (Discord's IPC and the like): a Unix socket (a bare name is in the runtime folder, e.g. 'discord-ipc-0'; a path as given), on Windows the named pipe \\\\.\\pipe\\<name>; handlers and sending as net.connect's. Needs net.", params: &[("name", "string", ""), ("handlers", "table", "")], ret: "integer" },
     Func { ns: "net", name: "listen", doc: "Listens for TCP connections (on 127.0.0.1 unless options.host); port 0 picks one. handlers {accept(listener, id, peer_ip, peer_port), data(id, bytes), close(id, error?)} serve every connection. Returns the listener's id and its port. Needs net.", params: &[("port", "integer", ""), ("handlers", "table", ""), ("options?", "{host: string?}", "")], ret: "integer, integer" },
@@ -127,31 +127,31 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "input", name: "modifiers", doc: "The modifier keys held.", params: &[], ret: "{ctrl: boolean, alt: boolean, shift: boolean, win: boolean}" },
     Func { ns: "input", name: "mouse", doc: "The pointer (window pixels) and its buttons.", params: &[], ret: "{x: number, y: number, left: boolean, right: boolean, middle: boolean}" },
     Func { ns: "input", name: "typing", doc: "Whether a text field (the chat line, a search, the map's...) has the keys.", params: &[], ret: "boolean" },
-    Func { ns: "input", name: "press", doc: "Presses and releases a key, with modifiers (\"enter\", \"ctrl+f1\", \"^1\"), as the keyboard would this frame. Needs input.capture.", params: &[("key", "string", "")], ret: "" },
+    Func { ns: "input", name: "press", doc: "Presses and releases a key, with modifiers (\"enter\", \"ctrl+f1\", \"^1\"), as the keyboard would this frame (mods' on_key handlers and binds do not see it). Needs input.capture.", params: &[("key", "string", "")], ret: "" },
     Func { ns: "input", name: "send", doc: "Holds a key down or lets it go. Needs input.capture.", params: &[("key", "string", ""), ("down", "boolean", "")], ret: "" },
-    Func { ns: "binds", name: "set", doc: "Binds a key with exact modifiers (\"f9\", \"ctrl+1\", Windower's \"^!f1\": ^ Ctrl, ! Alt, ~ Shift, @ Win) to a line run as typed or a function. The key is taken from the game. A line other than a //mod command is a game action (needs actions). Options: up (fire on release), typing (fire while a text field is open too).", params: &[("key", "string", ""), ("action", "string|function", ""), ("options?", "{up: boolean?, typing: boolean?}", "")], ret: "" },
+    Func { ns: "binds", name: "set", doc: "Binds a key with exact modifiers (\"f9\", \"ctrl+1\", or \"^!f1\": ^ Ctrl, ! Alt, ~ Shift) to a line run as typed or a function. The key is taken from the game. A line other than a //mod command is a game action (needs actions). Options: up (fire on release), typing (fire while a text field is open too).", params: &[("key", "string", ""), ("action", "string|function", ""), ("options?", "{up: boolean?, typing: boolean?}", "")], ret: "" },
     Func { ns: "binds", name: "unset", doc: "Removes the mod's binds of a key.", params: &[("key", "string", "")], ret: "" },
     Func { ns: "binds", name: "list", doc: "The mod's binds.", params: &[], ret: "{key: string, line: string?, up: boolean, typing: boolean}[]" },
     Func { ns: "timer", name: "after", doc: "Calls `handler` once after `seconds`.", params: &[("seconds", "number", ""), ("handler", "function", "")], ret: "integer" },
     Func { ns: "timer", name: "every", doc: "Calls `handler` every `seconds` until cancelled.", params: &[("seconds", "number", "at least 0.01"), ("handler", "function", "")], ret: "integer" },
     Func { ns: "timer", name: "cancel", doc: "Stops a timer.", params: &[("id", "integer", "what timer.after / timer.every returned")], ret: "" },
     Func { ns: "game", name: "player", doc: "Our character: name, id, index, zone, pos {x, y, z}, heading, status, hp / mp / tp and their percents, maxima, jobs and levels, target id.", params: &[], ret: "vana.Player" },
-    Func { ns: "game", name: "zone", doc: "The zone id, or nil while zoning.", params: &[], ret: "integer?" },
+    Func { ns: "game", name: "zone", doc: "The zone id: nil before the first zone; while zoning, the old zone until the new one loads (zone_change).", params: &[], ret: "integer?" },
     Func { ns: "game", name: "entity", doc: "An entity in range by server id or index, or nil.", params: &[("key", "integer", "server id or index")], ret: "vana.Entity?" },
     Func { ns: "game", name: "entities", doc: "Every entity in range, by index.", params: &[("filter?", "{distance: number?, kinds: ('player'|'npc'|'mob')[]?}", "")], ret: "vana.Entity[]" },
     Func { ns: "game", name: "target", doc: "The current target, or nil.", params: &[], ret: "vana.Entity?" },
     Func { ns: "game", name: "party", doc: "The party and alliance members (slot 0..5 our party, 6..17 the others).", params: &[], ret: "vana.Member[]" },
     Func { ns: "game", name: "items", doc: "A bag's items in the list's order (0 inventory, 1 safe, 2 storage, 3 temporary, 4 locker, 5 satchel, 6 sack, 7 case, 8.. wardrobes).", params: &[("bag", "integer", "")], ret: "vana.Item[]" },
-    Func { ns: "game", name: "bag_size", doc: "How many slots a bag has (nil before the server said).", params: &[("bag", "integer", "")], ret: "integer?" },
-    Func { ns: "game", name: "equipment", doc: "What is equipped, by equipment slot (0 main .. 15 back): {bag, slot, id}.", params: &[], ret: "table<integer, {bag: integer, slot: integer, id: integer}>" },
+    Func { ns: "game", name: "bag_size", doc: "How many slots a bag has (0 before the server says; nil for a bag number above 17).", params: &[("bag", "integer", "")], ret: "integer?" },
+    Func { ns: "game", name: "equipment", doc: "What is equipped, by equipment slot (0 main .. 15 back): {bag, slot, id} (id nil when the slot is empty).", params: &[], ret: "table<integer, {bag: integer, slot: integer, id: integer?}>" },
     Func { ns: "game", name: "buffs", doc: "Our status effects: id, and seconds remaining when timed.", params: &[], ret: "{id: integer, remaining: number?}[]" },
-    Func { ns: "game", name: "recasts", doc: "Seconds left on recasts: spells by spell id, abilities by recast id (only those still counting).", params: &[], ret: "{spells: table<integer, number>, abilities: table<integer, number>}" },
+    Func { ns: "game", name: "recasts", doc: "Seconds left on recasts: spells by spell id, abilities by recast id (0 once ready).", params: &[], ret: "{spells: table<integer, number>, abilities: table<integer, number>}" },
     Func { ns: "game", name: "time", doc: "The Vana'diel clock: earth (seconds since the Vana'diel epoch), year, month, day, hour, minute, weekday (0 Firesday), moon_phase, moon (percent).", params: &[], ret: "vana.Time" },
     Func { ns: "game", name: "weather", doc: "The weather id.", params: &[], ret: "integer" },
     Func { ns: "game", name: "key_items", doc: "The key item ids we hold.", params: &[], ret: "integer[]" },
     Func { ns: "game", name: "treasure", doc: "The treasure pool: {slot (0..9), item, count, dropper, lotted, passed, lot, high_lot, high_name} per item in it.", params: &[], ret: "table[]" },
     Func { ns: "game", name: "event", doc: "The event (cutscene, NPC talk) under way, or nil: {menu = {question, options, cursor}} while it shows a menu (cursor from 1).", params: &[], ret: "table?" },
-    Func { ns: "game", name: "entity_by_tag", doc: "The entity a target tag names (t, st, bt, pet, me, ht, scan, p0..p5, a10..a25, with or without <>), a player's name or a server id; nil when none.", params: &[("tag", "string", "")], ret: "vana.Entity?" },
+    Func { ns: "game", name: "entity_by_tag", doc: "The entity a target tag names (t, bt, pet, me, ht, scan, p0..p5, a10..a25, with or without <>), a player's name or a server id; nil when none.", params: &[("tag", "string", "")], ret: "vana.Entity?" },
     Func { ns: "game", name: "skills", doc: "Our skills by id: combat (1..31) and magic (32..47) {level, capped}; crafts (48..) {rank, level, capped}.", params: &[], ret: "{combat: table<integer, table>, magic: table<integer, table>, crafts: table<integer, table>}" },
     Func { ns: "game", name: "jobs", doc: "Each unlocked job's level, and the master levels, by job id.", params: &[], ret: "{levels: table<integer, integer>, master: table<integer, integer>}" },
     Func { ns: "game", name: "stats", doc: "Base and bonus stats (STR..CHR), attack, defense, resistances, item and superior level, title, rank and points, nation, home point, experience and the next level's, master level and exemplar points, limit and merit points; nil before the server sent them.", params: &[], ret: "table?" },
@@ -159,7 +159,7 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "game", name: "job_points", doc: "Capacity points, job points and job points spent, by job id.", params: &[], ret: "table<integer, {capacity: integer, points: integer, spent: integer}>" },
     Func { ns: "game", name: "gil", doc: "Our gil.", params: &[], ret: "integer" },
     Func { ns: "game", name: "spells", doc: "The spell ids we have learned.", params: &[], ret: "integer[]" },
-    Func { ns: "game", name: "abilities", doc: "The ability ids (res.ability) we can use now: job abilities, weapon skills, pet commands with a pet.", params: &[], ret: "integer[]" },
+    Func { ns: "game", name: "abilities", doc: "The ability ids (res.ability) we can use now: job abilities, weapon skills and pet commands.", params: &[], ret: "integer[]" },
     Func { ns: "game", name: "job_data", doc: "The job setups of main and sub: job, raw (the server's bytes), and for BLU blue_spells (ids), for PUP head, frame and attachments (item ids).", params: &[], ret: "{main: table?, sub: table?}" },
     Func { ns: "game", name: "macros", doc: "The macro palette: {book, set (1-based), book_title, books (the 40 titles), ctrl, alt (10 macros each: {title, lines (6)})}; nil before the macros load.", params: &[], ret: "table?" },
     Func { ns: "game", name: "map", doc: "The map the client shows where we stand (a map it has and we own): {zone, number (the map's page), file (its DAT id), scale, origin {x, y} (the image's top left in map pixels), size (512), px_per_unit (map pixels per world unit)}; nil with none.", params: &[], ret: "table?" },
@@ -173,10 +173,10 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "game", name: "camera", doc: "The camera: eye and look points, and their distance.", params: &[], ret: "{eye: {x: number, y: number, z: number}, look: {x: number, y: number, z: number}, distance: number}" },
     Func { ns: "game", name: "shop", doc: "The open NPC shop's rows ({index from 1, item, price}), or nil (no shop, or a guild's).", params: &[], ret: "table[]?" },
     Func { ns: "game", name: "npc_names", doc: "The zone's NPC list by server id, spawned or not (Wide Scan's names).", params: &[], ret: "table<integer, string>" },
-    Func { ns: "actions", name: "cast", doc: "Casts a spell by id, with the magic menu's checks (recast, MP, learned, status) and its refusal lines.", params: &[("spell", "integer", "spell id"), ("target", "integer|string?", "a server id, a tag (<t>, <me>, <bt>, <st>...) or a name; none: the current target")], ret: "" },
+    Func { ns: "actions", name: "cast", doc: "Casts a spell by id, with the magic menu's checks (recast, MP, learned, status) and its refusal lines.", params: &[("spell", "integer", "spell id"), ("target", "integer|string?", "a server id, a tag (<t>, <me>, <bt>, <st>...) or a name; none: yourself for a self-only spell, else your target (yourself when nothing is targeted and you can be)")], ret: "" },
     Func { ns: "actions", name: "ability", doc: "Uses a job ability, weapon skill or pet command by record id (res.ability), with the ability menu's checks.", params: &[("id", "integer", "ability id"), ("target", "integer|string?", "as actions.cast")], ret: "" },
     Func { ns: "actions", name: "weaponskill", doc: "As actions.ability (weapon skills are ability records).", params: &[("id", "integer", "ability id"), ("target", "integer|string?", "as actions.cast")], ret: "" },
-    Func { ns: "actions", name: "ranged", doc: "A ranged attack (/range).", params: &[("target", "integer|string?", "as actions.cast")], ret: "" },
+    Func { ns: "actions", name: "ranged", doc: "A ranged attack (/range).", params: &[("target", "integer|string?", "as actions.cast; none: your target")], ret: "" },
     Func { ns: "actions", name: "use_item", doc: "Uses an item by id, as /item finds it (temporary items, inventory, wardrobes).", params: &[("item", "integer", "item id"), ("target", "integer|string?", "as actions.cast")], ret: "" },
     Func { ns: "actions", name: "use_slot", doc: "Uses the item in a bag slot, as the item menu does.", params: &[("bag", "integer", ""), ("index", "integer", ""), ("target", "integer?", "a server id; none: ourselves")], ret: "" },
     Func { ns: "actions", name: "macro", doc: "Runs a macro of the current set, as its key does: row 'ctrl' or 'alt', 1..10.", params: &[("row", "string", ""), ("n", "integer", "")], ret: "" },
@@ -184,11 +184,11 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "actions", name: "macro_edit", doc: "Changes a macro of the current set (and saves the set): its line 1..6, or 'title'.", params: &[("row", "string", ""), ("n", "integer", ""), ("line", "integer|'title'", ""), ("text", "string", "")], ret: "" },
     Func { ns: "actions", name: "attack", doc: "Engages a target, or switches to it while engaged (/attack).", params: &[("target", "integer|string?", "none: the current target")], ret: "" },
     Func { ns: "actions", name: "disengage", doc: "Disengages (/attack off).", params: &[], ret: "" },
-    Func { ns: "actions", name: "assist", doc: "Assists a player (/assist).", params: &[("target", "integer|string", "")], ret: "" },
+    Func { ns: "actions", name: "assist", doc: "Assists a player (/assist); an id or name not in the zone is an error.", params: &[("target", "integer|string?", "none: your target")], ret: "" },
     Func { ns: "actions", name: "target", doc: "Sets the current target, or clears it with nil.", params: &[("id", "integer?", "server id")], ret: "" },
     Func { ns: "actions", name: "lock", doc: "Locks on to the current target, or lets go.", params: &[("on", "boolean", "")], ret: "" },
     Func { ns: "actions", name: "heal", doc: "Rests (/heal): true on, false off, none toggles.", params: &[("on", "boolean?", "")], ret: "" },
-    Func { ns: "actions", name: "equip", doc: "Wears pieces as the equipment window does: (slot, item) or ({slot = item, ...}). A slot is 0..15 or a name (main, sub, range, ammo, head, body, hands, legs, feet, neck, waist, left_ear, right_ear, left_ring, right_ring, back); an item is an id, {bag = , index = }, or false to take it off. Pieces already worn stay.", params: &[("slot_or_set", "integer|string|table", ""), ("item", "integer|table|false|nil", "")], ret: "" },
+    Func { ns: "actions", name: "equip", doc: "Wears pieces as the equipment window does: (slot, item) or ({slot = item, ...}). A slot is 0..15 or a name (main, sub, range, ammo, head, body, hands, legs, feet, neck, waist, left_ear, right_ear, left_ring, right_ring, back); an item is an id, {bag = , index = }, or false (or 0) to take it off. Pieces already worn stay.", params: &[("slot_or_set", "integer|string|table", ""), ("item", "integer|table|false|nil", "")], ret: "" },
     Func { ns: "actions", name: "unequip", doc: "Takes off what a slot wears.", params: &[("slot", "integer|string", "")], ret: "" },
     Func { ns: "actions", name: "equip_set", doc: "Wears an equip set (/equipset).", params: &[("n", "integer", "1..200")], ret: "" },
     Func { ns: "actions", name: "move", doc: "Moves an item to another bag (its first free slot).", params: &[("bag", "integer", ""), ("index", "integer", ""), ("to", "integer", "bag"), ("count", "integer?", "none: the whole stack")], ret: "" },
@@ -214,7 +214,7 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "actions", name: "decline", doc: "Declines a party invitation (/decline).", params: &[], ret: "" },
     Func { ns: "actions", name: "mount", doc: "Calls a mount by name (/mount).", params: &[("name", "string", "")], ret: "" },
     Func { ns: "actions", name: "dismount", doc: "Dismounts (/dismount).", params: &[], ret: "" },
-    Func { ns: "actions", name: "talk", doc: "Talks to an NPC (or checks it), as Enter on it does.", params: &[("id", "integer", "server id")], ret: "" },
+    Func { ns: "actions", name: "talk", doc: "Talks to an NPC, as Enter on it does.", params: &[("id", "integer", "server id")], ret: "" },
     Func { ns: "actions", name: "scan", doc: "Asks for the Wide Scan list.", params: &[], ret: "" },
     Func { ns: "actions", name: "track", doc: "Tracks an entity with Wide Scan.", params: &[("index", "integer", "its index (entity.index)")], ret: "" },
     Func { ns: "actions", name: "untrack", doc: "Stops Wide Scan tracking.", params: &[], ret: "" },
@@ -262,11 +262,11 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "mods", name: "installed", doc: "Every mod on disk and bundled: {id, name, version, enabled, bundled, loaded}. Load or unload one with commands.run('/lua load <id>') / '/lua unload <id>'.", params: &[], ret: "table[]" },
     Func { ns: "mods", name: "provide", doc: "Offers a function to other mods (mods.call). Values cross as copies of plain data.", params: &[("name", "string", ""), ("func", "function", "")], ret: "" },
     Func { ns: "mods", name: "call", doc: "Calls another mod's provided function now, in its VM, and returns what it returned (copies). It cannot sleep.", params: &[("mod", "string", "its id"), ("name", "string", ""), ("...", "any", "")], ret: "any" },
-    Func { ns: "mods", name: "emit", doc: "Raises an event in every other mod: their events.on handlers get the values once the running handler is done (the same mod phase). Prefix the name with your mod's id.", params: &[("event", "string", ""), ("...", "any", "plain data")], ret: "" },
+    Func { ns: "mods", name: "emit", doc: "Raises an event in every other mod: their events.on handlers get the values after the running handler (in this frame or the next). Prefix the name with your mod's id.", params: &[("event", "string", ""), ("...", "any", "plain data")], ret: "" },
     Func { ns: "text", name: "from_shift_jis", doc: "Shift-JIS bytes (packets, game files) as text.", params: &[("bytes", "string", "")], ret: "string" },
     Func { ns: "text", name: "to_shift_jis", doc: "Text as Shift-JIS bytes.", params: &[("text", "string", "")], ret: "string" },
     Func { ns: "text", name: "phrase", doc: "An auto-translate phrase as a line holds it (group, id from res.autotranslate); put it in chat text.", params: &[("group", "integer", ""), ("id", "integer", "")], ret: "string" },
-    Func { ns: "text", name: "autotranslate", doc: "The phrase whose text is exactly `text` (ignoring case), as a line holds it; nil when the dictionary has none.", params: &[("text", "string", "")], ret: "string?" },
+    Func { ns: "text", name: "autotranslate", doc: "The phrase whose text is exactly `text` (ignoring case and spaces at the ends; a group title matches too), as a line holds it; nil when the dictionary has none.", params: &[("text", "string", "")], ret: "string?" },
     Func { ns: "text", name: "plain", doc: "A line with its auto-translate phrases as plain words.", params: &[("text", "string", "")], ret: "string" },
     Func { ns: "client", name: "copy", doc: "Puts text on the clipboard.", params: &[("text", "string", "")], ret: "" },
     Func { ns: "client", name: "paste", doc: "Reads the clipboard's text after this frame and hands it to the handler. Needs clipboard.", params: &[("handler", "fun(text: string)", "")], ret: "" },
@@ -274,14 +274,14 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "devices", name: "open", doc: "Opens a device by its path; handlers {open(id), data(id, report), close(id, error?)} run in later mod phases, one data call a report (the report id first where the device numbers them). Returns its id. Needs devices.", params: &[("path", "string", ""), ("handlers", "table", "")], ret: "integer" },
     Func { ns: "devices", name: "write", doc: "Sends an output report (its report id first, 0 when the device has none; on Windows exactly the report's length). Needs devices.", params: &[("id", "integer", ""), ("report", "string", "")], ret: "" },
     Func { ns: "devices", name: "close", doc: "Closes a device.", params: &[("id", "integer", "")], ret: "" },
-    Func { ns: "client", name: "record", doc: "Records the game window as drawn to an H.264 video (ffmpeg must be installed) under the client's ffxiuser/videos folder, as `name`.mp4 (the date and time when none): options {fps (30)}. It ends with stop_recording, a new window size, or the mod unloading. Returns the file's path. Needs exec.", params: &[("name?", "string", ""), ("options?", "{fps: integer?}", "")], ret: "string" },
+    Func { ns: "client", name: "record", doc: "Records the game window as drawn to an H.264 video (ffmpeg must be installed) under the client's ffxiuser/videos folder, as `name`.mp4 (the date and time when none): options {fps (30)}. It ends with stop_recording (any mod's), a new recording, a new window size, or the mod unloading; a file of that name is replaced; no sound. Returns the file's path (when ffmpeg cannot start, client.recording() stays nil and the reason is in vana-client.log). Needs exec.", params: &[("name?", "string", ""), ("options?", "{fps: integer?}", "")], ret: "string" },
     Func { ns: "client", name: "stop_recording", doc: "Ends the recording (ffmpeg finishes the file).", params: &[], ret: "" },
     Func { ns: "client", name: "recording", doc: "The file being recorded, or nil (as of the last frame).", params: &[], ret: "string?" },
     Func { ns: "client", name: "process", doc: "The client's process: pid, cores (how many), affinity (the cores it may run on, from 0; empty where unknown) and priority (idle, low, below_normal, normal, above_normal, high).", params: &[], ret: "{pid: integer, cores: integer, affinity: integer[], priority: string}" },
     Func { ns: "client", name: "set_affinity", doc: "Runs every thread of the client on these cores (from 0). Needs process. Returns true, or false and why.", params: &[("cores", "integer[]", "")], ret: "boolean, string?" },
     Func { ns: "client", name: "set_priority", doc: "The client's scheduling priority: idle, low, below_normal, normal, above_normal or high (above normal usually needs privileges on Linux). Needs process. Returns true, or false and why.", params: &[("level", "string", "")], ret: "boolean, string?" },
     Func { ns: "client", name: "option", doc: "A behaviour switch's value (see set_option); a value set shows from the next frame.", params: &[("name", "string", "")], ret: "boolean|number|table" },
-    Func { ns: "client", name: "set_option", doc: "Sets a behaviour switch while the mod is loaded (retail's back when it unloads): macro_palette_delay (false: the Ctrl / Alt palette opens at once, not at the next whole second), ah_result_delay (false: a bid's result prints at once), equipset_delay (false: no 0.9 s wait between equip sets), log_slide (false: new log lines show at once), cutscene_speed (1..4: events play that much faster), animation_rate (0.25..4: the actors' animation speed), clear_colour and ambient ({r, g, b} 0..255 in place of the zone's background colour and ambient light; false gives the zone's back), minimap_span (the minimap's zoom, map pixels across, 48..512; kept as the minimap's own wheel keeps it); rules: move_lock (false: our abilities' and the weapon draw's move lock is lifted), all_maps (true: every map without its key item), dead_commands (true: text commands while K.O.), compass_monsters (true: monster dots on the compass for every job), player_collision (false: moving players never hold a step), occlusion (false: characters behind scenery still draw and target), menu_reach (false: the auction house and the nomad moogle menu stay open as we move away); send_interval (ms between the datagrams we send, 50..1000; retail 400); wireframe (true: the scenery drawn as lines, where the GPU draws them); ttf_text (true: the game font's text in the UI's TrueType face in the classic UI too: the log, the windows' text; sprite numbers and captions stay retail's).", params: &[("name", "string", ""), ("value", "boolean|number|table", "")], ret: "" },
+    Func { ns: "client", name: "set_option", doc: "Sets a behaviour switch while the mod is loaded (the game's usual behaviour back when it unloads): macro_palette_delay (false: the Ctrl / Alt palette opens at once, not at the next whole second), ah_result_delay (false: a bid's result prints at once), equipset_delay (false: no 0.9 s wait between equip sets), log_slide (false: new log lines show at once), cutscene_speed (1..4: events play that much faster), animation_rate (0.25..4: the actors' animation speed), clear_colour and ambient ({r, g, b} 0..255 in place of the zone's background colour and ambient light; false gives the zone's back), minimap_span (the minimap's zoom, map pixels across, 48..512; kept as the minimap's own wheel keeps it); rules: move_lock (false: our abilities' and the weapon draw's move lock is lifted), all_maps (true: every map without its key item), dead_commands (true: text commands while K.O.), compass_monsters (true: monster dots on the compass for every job), player_collision (false: moving players never hold a step), occlusion (false: characters behind scenery still draw and target), menu_reach (false: the auction house and the nomad moogle menu stay open as we move away); send_interval (ms between the datagrams we send, 50..1000; the game's is 400); wireframe (true: the scenery drawn as lines, where the GPU draws them); ttf_text (true: the game font's text in the UI's TrueType face in the classic UI too: the log, the windows' text; sprite numbers and captions stay as the game draws them).", params: &[("name", "string", ""), ("value", "boolean|number|table", "")], ret: "" },
     Func { ns: "client", name: "window", doc: "The game window: {x, y (its place on the desktop, when the system tells it), w, h (pixels), focused}.", params: &[], ret: "{x: integer?, y: integer?, w: integer, h: integer, focused: boolean}" },
     Func { ns: "client", name: "set_window", doc: "Changes the game window: moves ({x, y}), sizes ({w, h}), top (always on top), minimised, fullscreen (borderless, on its monitor), border (the system frame), capture = false (kept out of screen captures where the system allows it). Only the fields given change. Needs multibox.", params: &[("window", "{x: integer?, y: integer?, w: integer?, h: integer?, top: boolean?, minimised: boolean?, fullscreen: boolean?, border: boolean?, capture: boolean?}", "")], ret: "" },
     Func { ns: "client", name: "focus", doc: "Asks for the keyboard focus for this game window (switching between clients). Needs multibox.", params: &[], ret: "" },
@@ -291,8 +291,8 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "storage", name: "seal", doc: "Seals text (a password) with this machine's key, for storage: only this mod on this machine can open it.", params: &[("text", "string", "")], ret: "string" },
     Func { ns: "storage", name: "unseal", doc: "Opens text storage.seal made; nil when it does not open (another machine or mod, or damaged).", params: &[("sealed", "string", "")], ret: "string?" },
     Func { ns: "lobby", name: "state", doc: "The lobby before login (a mod with `lobby = true` in mod.toml runs there): screen (login, title, select, create, delete, config, connecting, world), server, account, playonline, busy (a fade, a reply awaited or an error up: actions wait), error, selected (a slot) and characters {slot, name, world, race, job, level, sub_job, zone, available}.", params: &[], ret: "table" },
-    Func { ns: "lobby", name: "sign_in", doc: "Signs in from the login screen as its Log in button does: {account, password, otp?, server?}, and for a PlayOnline server pol_id and pol_password. Needs automation (or actions in the player's input).", params: &[("login", "table", "")], ret: "" },
-    Func { ns: "lobby", name: "play", doc: "Logs in with a character from the title or select screen, as the select screen's Play does: its name or its slot. Needs automation (or actions in the player's input).", params: &[("character", "string|integer", "")], ret: "" },
+    Func { ns: "lobby", name: "sign_in", doc: "Signs in from the login screen as its Log in button does: {account, password, otp?, server?}, and for a PlayOnline server pol_id and pol_password. Needs automation.", params: &[("login", "table", "")], ret: "" },
+    Func { ns: "lobby", name: "play", doc: "Logs in with a character from any character screen (title, select...) while the lobby is not busy, as the select screen's Play does: its name or its slot. Needs automation.", params: &[("character", "string|integer", "")], ret: "" },
     Func { ns: "settings", name: "get", doc: "A setting declared in mod.toml: the user's value, else its default.", params: &[("key", "string", "")], ret: "any" },
 ];
 
@@ -338,25 +338,28 @@ pub const EVENTS: &[Event] = &[
 
 /// LuaLS stubs (`---@meta`) for the whole API.
 pub fn stubs() -> String {
-    let mut s = String::from("---@meta\n-- vana-client mod API (generated by `vana-client lua-stubs`; docs/lua-mods.md).\n\n");
+    let mut s = String::from("---@meta\n-- vana-client mod API (generated by `vana-client lua-stubs`; the manual is docs/modding).\n\n");
     s += "---@alias vana.Event\n";
     for e in EVENTS {
         s += &format!("---| \"{}\" # {}\n", e.name, e.doc);
     }
     s += "\n";
     for c in CLASSES {
-        s += &format!("---@class {}\n", c.name);
+        s += &format!("--- {}\n---@class {}\n", c.doc, c.name);
         for (f, ty, doc) in c.fields {
             s += &format!("---@field {f} {ty}{}\n", if doc.is_empty() { String::new() } else { format!(" {doc}") });
         }
         s += "\n";
     }
     s += "---@type vana.Mod\n---@diagnostic disable-next-line: missing-fields\nmod = {}\n\n";
-    s += "storage = {\n    ---@type table plain data kept for every character of the account\n    account = {},\n    ---@type table plain data kept for this character\n    character = {},\n}\n\n";
+    s += "storage = {\n    ---@type table plain data shared by every character on this computer\n    account = {},\n    ---@type table plain data kept for this character\n    character = {},\n}\n\n";
     let mut seen = Vec::new();
     for f in FUNCS {
         if !f.ns.is_empty() && !seen.contains(&f.ns) {
             seen.push(f.ns);
+            if let Some((_, what)) = NAMESPACES.iter().find(|n| n.0 == f.ns) {
+                s += &format!("--- {what}\n");
+            }
             if f.ns != "storage" {
                 s += &format!("{} = {{}}\n", f.ns);
             }
@@ -385,7 +388,7 @@ pub fn stubs() -> String {
     s
 }
 
-/// Each namespace's one-line description, in the reference's order ("" the globals).
+/// Each namespace's one-line description, for the stubs ("" the globals).
 pub const NAMESPACES: &[(&str, &str)] = &[
     ("", "Functions every mod has: printing, modules, waiting, the clock."),
     ("log", "Lines in vana-client.log."),
@@ -419,58 +422,6 @@ pub const NAMESPACES: &[(&str, &str)] = &[
     ("lobby", "The screens before login, for lobby mods."),
     ("settings", "The settings declared in mod.toml."),
 ];
-
-/// A GitHub heading anchor.
-fn anchor(heading: &str) -> String {
-    heading.to_lowercase().chars().filter_map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { Some(c) } else if c == ' ' { Some('-') } else { None }).collect()
-}
-
-fn ns_title(ns: &str) -> String {
-    if ns.is_empty() { "Globals".into() } else { format!("`{ns}`") }
-}
-
-/// The reference part of docs/lua-api.md: every namespace's functions, the events and the types.
-pub fn reference_md() -> String {
-    let cell = |t: &str| t.replace('|', "\\|");
-    let mut s = String::new();
-    s += "### Namespaces\n\n| Namespace | Functions | What it is |\n| --- | --: | --- |\n";
-    for (ns, what) in NAMESPACES {
-        let n = FUNCS.iter().filter(|f| f.ns == *ns).count();
-        s += &format!("| [{}](#{}) | {n} | {what} |\n", ns_title(ns), anchor(&ns_title(ns)));
-    }
-    s += &format!("| [Event list](#event-list) | {} | What `events.on` can watch. |\n| [Types](#types) | {} | The tables the API hands out and takes. |\n\n", EVENTS.len(), CLASSES.len());
-    for (ns, what) in NAMESPACES {
-        s += &format!("### {}\n\n{what}\n\n", ns_title(ns));
-        for f in FUNCS.iter().filter(|f| f.ns == *ns) {
-            let full = if f.ns.is_empty() { f.name.to_string() } else { format!("{}.{}", f.ns, f.name) };
-            let args: Vec<&str> = f.params.iter().map(|p| p.0).collect();
-            s += &format!("#### `{full}({})`\n\n{}\n\n", args.join(", "), f.doc);
-            for (name, ty, doc) in f.params {
-                s += &format!("- `{name}` `{ty}`{}\n", if doc.is_empty() { String::new() } else { format!(": {doc}") });
-            }
-            if !f.ret.is_empty() {
-                s += &format!("{}Returns `{}`.\n", if f.params.is_empty() { "" } else { "\n" }, f.ret);
-            }
-            if !f.params.is_empty() || !f.ret.is_empty() {
-                s += "\n";
-            }
-        }
-    }
-    s += "### Event list\n\nEach is watched with `events.on(name, handler)`; the handler gets the arguments listed.\n\n| Event | Arguments | When |\n| --- | --- | --- |\n";
-    for e in EVENTS {
-        let args: Vec<String> = e.args.iter().map(|(n, t)| format!("`{n}: {}`", cell(t))).collect();
-        s += &format!("| `{}` | {} | {} |\n", e.name, if args.is_empty() { "-".into() } else { args.join(", ") }, cell(e.doc));
-    }
-    s += "\n### Types\n\nTables the API hands out or takes. A type ending in `?` may be nil.\n\n";
-    for c in CLASSES {
-        s += &format!("#### `{}`\n\n{}\n\n| Field | Type | Note |\n| --- | --- | --- |\n", c.name, c.doc);
-        for (f, ty, doc) in c.fields {
-            s += &format!("| `{f}` | `{}` | {} |\n", cell(ty), cell(doc));
-        }
-        s += "\n";
-    }
-    s
-}
 
 pub const CLASSES: &[Class] = &[
     Class { name: "vana.Player", doc: "Our character (game.player): its ids, zone, place, vitals, jobs and target.", fields: &[
@@ -567,7 +518,9 @@ pub const CLASSES: &[Class] = &[
         ("frame", "boolean?", ""),
         ("x", "number?", ""),
         ("y", "number?", ""),
-        ("elements", "table[]?", ""),
+        ("elements", "table[]?", "see ui.window"),
+        ("modal", "boolean?", "keeps the keys and the pointer while open"),
+        ("popup", "boolean?", "modal, opened at the pointer, closed by a click outside it"),
     ] },
     Class { name: "vana.Packet", doc: "A packet as a hook sees it (packets.on_in / on_out).", fields: &[
         ("id", "integer", ""),
@@ -589,9 +542,9 @@ pub const CLASSES: &[Class] = &[
     ] },
     Class { name: "vana.MouseEvent", doc: "The mouse as input.on_mouse sees it.", fields: &[
         ("kind", "'down'|'up'|'move'|'wheel'", ""),
-        ("button", "string?", ""),
-        ("x", "number", ""),
-        ("y", "number", ""),
+        ("button", "string?", "left, right, middle, back, forward or other"),
+        ("x", "integer", "window pixels"),
+        ("y", "integer", "window pixels"),
         ("delta", "number?", ""),
         ("blocked", "boolean", ""),
     ] },
@@ -610,7 +563,7 @@ pub const CLASSES: &[Class] = &[
         ("id", "string", ""),
         ("name", "string", ""),
         ("version", "string", ""),
-        ("api", "integer", ""),
+        ("api", "integer", "the API version this client speaks"),
         ("path", "string", ""),
     ] },
 ];

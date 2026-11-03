@@ -1,0 +1,3 @@
+name = "Chat Tools"
+version = "1.0.0"
+description = "Hides chat lines with a word you choose, a /gg shortcut, a /countdown and a confirmation prompt."

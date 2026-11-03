@@ -1,0 +1,13 @@
+name = "Hello"
+version = "1.0.0"
+description = "The getting-started mod: greetings, an HP readout, a warning, saved visits and a nearby list."
+permissions = ["actions"]
+
+[settings.warn_below]
+type = "int"
+default = 50
+min = 10
+max = 90
+step = 10
+label = "Warn Below"
+help = "Warn in the log when your HP drops below this percent."

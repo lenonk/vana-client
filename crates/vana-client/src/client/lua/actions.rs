@@ -48,6 +48,8 @@ pub(in crate::client) enum Action {
     Walk(bool),
     Stop,
     Turn(f32),
+    /// A party invite by name: someone in the zone directly, anyone else through the server's name lookup.
+    Invite(String),
     /// A main menu row (page, child), as a pick there runs it; the nomad moogle menu.
     Menu(u8, u16),
     Moogle,
@@ -90,6 +92,27 @@ pub(in crate::client) enum Piece {
 /// The bags gear is worn from: the inventory and the wardrobes.
 const WEAR_BAGS: [u8; 9] = [0, 8, 10, 11, 12, 13, 14, 15, 16];
 
+/// The target when a mod gives none, from the action's valid targets (1 self): ourselves for a self-only action,
+/// else the current target, else ourselves when we may be its target.
+fn default_target(w: &World, targets: u16) -> Target {
+    Some(if targets == 1 || (w.target.is_none() && targets & 1 != 0) { "<me>" } else { "<t>" }.to_string())
+}
+
+/// A target a mod named must be there: a tag (<t>, <me>...) passes, an id or a name must be in the zone (the text
+/// commands would otherwise fall back to the current target).
+fn check_target(lua: &Lua, t: &Target) -> mlua::Result<()> {
+    let Some(s) = t.as_deref() else { return Ok(()) };
+    if s.starts_with('<') {
+        return Ok(());
+    }
+    let w = super::api::world(lua)?;
+    let here = match s.parse::<u32>() {
+        Ok(id) => id == w.my_id || w.entities.contains_key(&id),
+        Err(_) => s.eq_ignore_ascii_case(&w.name) || w.entities.values().any(|e| e.name.eq_ignore_ascii_case(s)),
+    };
+    if here { Ok(()) } else { Err(mlua::Error::runtime(format!("no {s} in the zone"))) }
+}
+
 fn token(t: &Target) -> String {
     t.as_deref().map_or(String::new(), |s| if s.contains(' ') && !s.starts_with('<') { format!(" \"{s}\"") } else { format!(" {s}") })
 }
@@ -103,6 +126,8 @@ pub(super) fn apply(w: &mut World, gu: Option<&GameUi>, a: Action) {
                 return;
             }
             let name = magic::spell_name(w, spell);
+            let targets = w.actions.as_ref().and_then(|x| x.spells.iter().find(|s| s.id == spell)).map_or(0x20, |s| s.targets);
+            let t = t.or_else(|| default_target(w, targets));
             textcmd::run(w, &format!("/magic \"{name}\"{}", token(&t)), textcmd::Mode::Internal);
         }
         Action::Ability(id, t) => {
@@ -119,6 +144,7 @@ pub(super) fn apply(w: &mut World, gu: Option<&GameUi>, a: Action) {
                 return;
             }
             let name = magic::ability_name(w, i as u16);
+            let t = t.or_else(|| default_target(w, a.targets));
             let cmd = if a.kind == 3 { "/weaponskill" } else if a.kind == 0x14 { "/monsterskill" } else { "/jobability" };
             textcmd::run(w, &format!("{cmd} \"{name}\"{}", token(&t)), textcmd::Mode::Internal);
         }
@@ -189,6 +215,14 @@ pub(super) fn apply(w: &mut World, gu: Option<&GameUi>, a: Action) {
             }
         }
         Action::Menu(page, id) => w.menu_click = Some((page, id)),
+        Action::Invite(name) => {
+            let here = w.entities.values().any(|e| e.name.eq_ignore_ascii_case(&name));
+            if here {
+                textcmd::run(w, &format!("/pcmd add {name}"), textcmd::Mode::Internal);
+            } else {
+                super::super::search::lookup(w, &name, super::super::search::Then::PartyAdd);
+            }
+        }
         Action::Moogle => super::super::moogle::open(w, true),
         Action::Advance => {
             if event::active(w) {
@@ -323,12 +357,21 @@ pub(super) fn install(lua: &Lua, g: &Table) -> mlua::Result<()> {
     for name in ["ability", "weaponskill"] {
         t.set(name, lua.create_function(|lua, (id, to): (u16, Option<Value>)| queue(lua, Action::Ability(id, target_arg(to)?)))?)?;
     }
-    t.set("ranged", lua.create_function(|lua, to: Option<Value>| queue(lua, Action::Line(format!("/range{}", token(&target_arg(to)?)))))?)?;
+    t.set(
+        "ranged",
+        lua.create_function(|lua, to: Option<Value>| {
+            let t = target_arg(to)?.unwrap_or_else(|| "<t>".into());
+            queue(lua, Action::Line(format!("/range{}", token(&Some(t)))))
+        })?,
+    )?;
     t.set(
         "use_item",
         lua.create_function(|lua, (item, to): (u16, Option<Value>)| {
-            let name = super::api::world(lua)?.item_info.as_ref().and_then(|c| c.item(item)).map(|it| it.name.clone()).ok_or_else(|| mlua::Error::runtime(format!("no item {item}")))?;
-            queue(lua, Action::Line(format!("/item \"{name}\"{}", token(&target_arg(to)?))))
+            let w = super::api::world(lua)?;
+            let it = w.item_info.as_ref().and_then(|c| c.item(item)).ok_or_else(|| mlua::Error::runtime(format!("no item {item}")))?;
+            let (name, targets) = (it.name.clone(), it.targets);
+            let t = target_arg(to)?.or_else(|| default_target(w, targets));
+            queue(lua, Action::Line(format!("/item \"{name}\"{}", token(&t))))
         })?,
     )?;
     t.set("use_slot", lua.create_function(|lua, (bag, index, to): (u8, u8, Option<u32>)| queue(lua, Action::UseSlot { bag, index, target: to }))?)?;
@@ -336,11 +379,19 @@ pub(super) fn install(lua: &Lua, g: &Table) -> mlua::Result<()> {
         "attack",
         lua.create_function(|lua, to: Option<Value>| {
             let t = target_arg(to)?;
+            check_target(lua, &t)?;
             queue(lua, Action::Line(if t.is_some() { format!("/attack{}", token(&t)) } else { "/attack on".into() }))
         })?,
     )?;
     t.set("disengage", lua.create_function(|lua, ()| queue(lua, Action::Line("/attack off".into())))?)?;
-    t.set("assist", lua.create_function(|lua, to: Value| queue(lua, Action::Line(format!("/assist{}", token(&target_arg(Some(to))?)))))?)?;
+    t.set(
+        "assist",
+        lua.create_function(|lua, to: Option<Value>| {
+            let t = target_arg(to)?;
+            check_target(lua, &t)?;
+            queue(lua, Action::Line(format!("/assist{}", token(&t))))
+        })?,
+    )?;
     t.set("target", lua.create_function(|lua, id: Option<u32>| queue(lua, Action::Target(id)))?)?;
     t.set("lock", lua.create_function(|lua, on: bool| queue(lua, Action::Lock(on)))?)?;
     t.set(
@@ -421,7 +472,10 @@ pub(super) fn install(lua: &Lua, g: &Table) -> mlua::Result<()> {
     t.set("blue_remove", lua.create_function(|lua, slot: usize| queue(lua, Action::BlueSlot(slot.saturating_sub(1), 0)))?)?;
     t.set("attach", lua.create_function(|lua, (slot, item): (usize, u16)| queue(lua, Action::PupSlot(slot, item)))?)?;
     t.set("detach", lua.create_function(|lua, slot: usize| queue(lua, Action::PupSlot(slot, 0)))?)?;
-    t.set("invite", lua.create_function(|lua, name: String| queue(lua, Action::Line(format!("/pcmd add {name}"))))?)?;
+    t.set(
+        "invite",
+        lua.create_function(|lua, name: String| queue(lua, Action::Invite(name)))?,
+    )?;
     t.set("party_leave", lua.create_function(|lua, ()| queue(lua, Action::Line("/pcmd leave".into())))?)?;
     t.set("party_kick", lua.create_function(|lua, name: String| queue(lua, Action::Line(format!("/pcmd kick {name}"))))?)?;
     t.set("join", lua.create_function(|lua, ()| queue(lua, Action::Line("/join".into())))?)?;
@@ -472,7 +526,13 @@ pub(super) fn install(lua: &Lua, g: &Table) -> mlua::Result<()> {
     t.set("untrack", lua.create_function(|lua, ()| queue(lua, Action::Untrack))?)?;
     t.set("run", lua.create_function(|lua, heading: Option<f32>| queue(lua, Action::Run(heading)))?)?;
     t.set("run_to", lua.create_function(|lua, (x, z, within): (f32, f32, Option<f32>)| queue(lua, Action::RunTo(x, z, within.unwrap_or(1.0))))?)?;
-    t.set("follow", lua.create_function(|lua, id: u32| queue(lua, Action::Follow(id)))?)?;
+    t.set(
+        "follow",
+        lua.create_function(|lua, id: u32| {
+            check_target(lua, &Some(id.to_string()))?;
+            queue(lua, Action::Follow(id))
+        })?,
+    )?;
     t.set("walk", lua.create_function(|lua, on: bool| queue(lua, Action::Walk(on)))?)?;
     t.set("stop", lua.create_function(|lua, ()| queue(lua, Action::Stop))?)?;
     t.set("turn", lua.create_function(|lua, heading: f32| queue(lua, Action::Turn(heading)))?)?;

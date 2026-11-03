@@ -175,6 +175,10 @@ pub(super) fn install(lua: &Lua, g: &Table) -> mlua::Result<()> {
         "open",
         lua.create_function(|lua, (path, handlers): (String, Table)| {
             need(lua, "devices")?;
+            // Only a HID device: the permission is not a way to any file.
+            if !list().iter().any(|d| d.path == path) {
+                return Err(mlua::Error::runtime(format!("{path}: not a HID device (devices.list gives them)")));
+            }
             let id = next_id(&state(lua));
             let report = super::sock::reports(lua);
             let (tx, rx) = channel::<Vec<u8>>();

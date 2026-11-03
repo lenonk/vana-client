@@ -139,8 +139,10 @@ pub struct Window {
     pub modal: bool,
     pub popup: bool,
     pub anchor: Option<(f32, f32)>,
-    /// A canvas being dragged: its element and the last place reported.
+    /// A canvas being dragged: its element and the last place reported; a press on one that has not moved yet (the
+    /// classic UI: a press and release in place is a click, a move past 3 units starts the drag).
     pub drag: Option<(usize, f32, f32)>,
+    pub press: Option<(usize, f32, f32)>,
 }
 
 /// What happened in a window, for the mod's handler.
@@ -241,6 +243,7 @@ impl Window {
             popup: false,
             anchor: None,
             drag: None,
+            press: None,
         }
     }
 
@@ -771,6 +774,22 @@ impl Window {
             }
             self.drag = None;
         }
+        if let Some((pi, px, py)) = self.press {
+            if released || !down {
+                self.press = None;
+            } else if let Some(r) = self.classic_controls(gu, x, y).into_iter().find(|c| c.0 == pi).map(|c| c.2) {
+                let (cx, cy) = (p.0 - r[0], p.1 - r[1]);
+                if (cx - px).abs() + (cy - py).abs() > 3.0 {
+                    self.press = None;
+                    let mut ev = self.canvas_drag(pi, 0, px, py).0;
+                    ev.extend(self.canvas_drag(pi, 1, cx, cy).0);
+                    return (true, ev, Vec::new());
+                }
+                return (true, Vec::new(), Vec::new());
+            } else {
+                self.press = None;
+            }
+        }
         let Some((i, k, r)) = self.classic_controls(gu, x, y).into_iter().find(|c| inside(&c.2)) else { return (false, Vec::new(), Vec::new()) };
         let mut se = Vec::new();
         #[derive(PartialEq)]
@@ -795,9 +814,9 @@ impl Window {
         let (list, buttons) = (e == K::List, e == K::Buttons);
         if e == K::Canvas {
             let (cx, cy) = (p.0 - r[0], p.1 - r[1]);
-            let mut ev = if clicked { self.canvas_click(i, cx, cy).0 } else { Vec::new() };
+            let ev = if clicked { self.canvas_click(i, cx, cy).0 } else { Vec::new() };
             if pressed {
-                ev.extend(self.canvas_drag(i, 0, cx, cy).0);
+                self.press = Some((i, cx, cy));
             }
             return (false, ev, Vec::new());
         }
