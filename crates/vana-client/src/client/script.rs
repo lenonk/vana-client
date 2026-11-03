@@ -1,7 +1,8 @@
 //! Scripted input for test drives: synthetic egui events fed in before each frame, so the client's
 //! own input handling runs without OS-level injection. Steps are separated by ';':
 //! `wait:SECS`, `until:PHASE[,SECS]` (go on after SECS anyway; login, title, lobby, event, world; also `cam:TAG` while an event shot plays and
-//! `msg:ID` while that event message is open, `noevent` while none runs), `type:TEXT`, `user`, `pass`,
+//! `msg:ID` while that event message is open, `noevent` while none runs), `type:TEXT`, `preedit:TEXT` / `ime:TEXT` (an
+//! IME's composition and committed text), `user`, `pass`,
 //! `key:[shift+|ctrl+|alt+]NAME` (egui key names: Tab, Enter, Escape, Space, Minus, ArrowDown...),
 //! `move:X,Y`, `click:X,Y`, `rclick:X,Y`, `ldown:X,Y` / `lup` (physical pixels), `shot:PATH`, and `press:KEY,SECS,PHASE` (press KEY every
 //! SECS until the client reaches PHASE; event prompts), `every:KEY,SECS` (press KEY every SECS alongside the
@@ -18,6 +19,8 @@ enum Step {
     /// A phase or probe, and an optional limit in seconds after which the script goes on anyway.
     Until(String, Option<f32>),
     Text(String),
+    /// An IME's composition (`preedit:`) or its committed text (`ime:`), as egui-winit hands them on.
+    Ime(String, bool),
     Key(egui::Key, egui::Modifiers),
     Move(f32, f32),
     Button(bool),
@@ -66,6 +69,8 @@ impl Script {
                     steps.push(Step::Until(p.to_string(), secs));
                 }
                 "type" => steps.push(Step::Text(arg.to_string())),
+                "preedit" => steps.push(Step::Ime(arg.to_string(), false)),
+                "ime" => steps.push(Step::Ime(arg.to_string(), true)),
                 "user" | "pass" => {
                     let (u, p) = creds.ok_or_else(|| anyhow!("{op} needs --credentials"))?;
                     logs_in = true;
@@ -176,6 +181,10 @@ impl Script {
             // One event a character, as typing sends them (a whole string at once is a paste).
             Step::Text(t) => {
                 events.extend(t.chars().map(|c| egui::Event::Text(c.to_string())));
+                true
+            }
+            Step::Ime(t, commit) => {
+                events.push(egui::Event::Ime(if *commit { egui::ImeEvent::Commit(t.clone()) } else { egui::ImeEvent::Preedit { text: t.clone(), active_range_chars: None } }));
                 true
             }
             Step::Key(key, modifiers) => {

@@ -207,6 +207,19 @@ pub(super) fn kept(s: &Screen) -> Vec<(&'static str, u16)> {
     v
 }
 
+/// A slot set or emptied without the window (a Lua mod's): 0 head, 1 frame, 2..13 attachments; `item` the head /
+/// frame / attachment item id, 0 to empty.
+pub(super) fn set_slot(w: &mut World, i: usize, item: u16) -> Result<(), &'static str> {
+    let side = w.stats.as_ref().and_then(|st| if st.main.0 == 0x12 { Some(0) } else if st.sub.0 == 0x12 { Some(1) } else { None }).ok_or("not a puppetmaster")?;
+    if i > 13 {
+        return Err("slot 0..13");
+    }
+    let base = if i < 2 { 0x2000 } else { 0x2100 };
+    let v = if item == 0 { 0 } else { item.checked_sub(base).filter(|&x| x > 0 && x < 0x100).ok_or("not an item for that slot")? as u8 };
+    send(w, side, i, v);
+    Ok(())
+}
+
 /// FUN_100fcf80: c2s 0x102 {u8 value @4, the block's first dword @8, the slot's byte @0xc + slot}: a set puts the
 /// value in the slot, a removal (0) names the slot's current byte. Nothing when the byte is already the value, nor
 /// within a second of the last 0x102 (FUN_100fc3c0).

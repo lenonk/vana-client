@@ -758,7 +758,7 @@ fn where_view(p: Look, w: &World) -> Option<WhereView> {
         day: (day, name),
         weather: Some(w.weather).filter(|&id| id < 20),
         compass: compass_view(w),
-        clock: w.earth_clock.then(|| super::super::clock::parts(w)).flatten(),
+        clock: (w.earth_clock && !w.lua.hides("clock")).then(|| super::super::clock::parts(w)).flatten(),
     })
 }
 

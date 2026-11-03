@@ -4380,6 +4380,7 @@ dependencies = [
  "hex",
  "indexmap",
  "jiff",
+ "libc",
  "log",
  "md-5",
  "mlua",

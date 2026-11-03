@@ -1,5 +1,8 @@
 # Lua mods: design
 
+The API as mod authors use it, every function, event and type: [lua-api.md](lua-api.md). This document is the design
+and the state of the work.
+
 The add-on surveys behind it are in MODLOG "Lua mods: the add-on surveys".
 
 ## State
@@ -33,7 +36,28 @@ Built (client/lua/, modern/modwin.rs), each checked live:
     points), `merits`, `job_points`, `gil`, `spells` (learned), `abilities` (usable), `job_data` (BLU spells, PUP head,
     frame, attachments, raw), `info` (server, Mog House, chat / menu open, combat, lock, autorun, follow, pet, map
     grid), `camera`, `npc_names` (the zone list); checked live
-  - `res.item`, `spell`, `ability`, `status`, `zone`, `title`, `key_item`, `job`
+  - an entity's `target_index` / `target_id` (its face target from 0x00D / 0x00E; ours our target; LSB fills it for
+    players only, never a monster's battle target), our pet's `mpp` / `tp` (s2c 0x068), `game.cast` (our cast bar:
+    spell, total, left, progress); checked live (our target, a Cure's bar)
+  - `game.macros` (the palette's book, set, titles and the current set's 20 macros) and `actions.macro` /
+    `macro_set` / `macro_edit` (run one as its key does, switch book and set, change a line or title and save);
+    checked live
+  - `res.item`, `spell`, `ability`, `status`, `zone`, `title`, `key_item`, `job`, `augments` (an item's extdata
+    decoded as the item window shows it: lines, the short line, message id / value pairs; checked live)
+  - `res.message` (a battle / system message expanded as the log prints it, with actor, target and values),
+    `mob_skill`, `skill`, `day`, `moon`, `weather` / `weather_element`, `element`, `mount`; checked live
+  - the zone's collision: `game.collision(x, z, radius)` (triangles near a point with normals and surface kinds),
+    `game.collision_mesh` (the whole mesh packed for export), `game.raycast`, `game.floor`; checked live (Port Jeuno:
+    the floor under us, a ray down and across the corridor to its walls)
+  - `res.name(kind, id, lang)` (item, key item, spell, ability, zone and title names in ja / en / de / fr; another
+    language loads on a thread, nil until in), `res.dat` / `dat_path` (a file's bytes through the DAT overlay, and
+    where it is read from), `res.model_files` (an NPC model's file, a look's skeleton and part files); checked live
+    (Japanese item, zone and spell names, a DAT read, a look and a model resolved)
+  - `res.autotranslate(word?, group?)` (the dictionary's entries: text, group, id and the phrase as a string) and
+    `autotranslate_groups`; `text.phrase(group, id)` and `text.autotranslate(text)` (an exact entry) give a phrase to
+    put in `chat.send` / `chat.add` / `/echo`, which print it braced as the log does; checked live
+  - events `emote` (s2c 0x05A), `party_invite` (0x0DC), `examined` (message 89); an entity's `hitbox` (its model
+    radius, ours from 0x037); emote and hitbox checked live, invite and examined not (they need a second player)
 - **Chat and commands:**
   - `chat.add` (mode colours)
   - `filters.chat` (keep, drop or rewrite every line) and `filters.typed` (typed lines before the parser)
@@ -41,11 +65,92 @@ Built (client/lua/, modern/modwin.rs), each checked live:
 - **Settings and storage:**
   - declared settings (bool, enum, int, number) on an Extras page per mod, in both UIs; per-scope files
   - `storage.account` / `storage.character`
+- **Timers** (`timers.add` / `remove` / `clear`): a mod's rows in the Timers window (recasts, buffs or debuffs,
+  under a heading, with a status, spell or ability icon), shown even with the Timers Extra off; dropped when the mod
+  unloads. Checked live in both UIs.
 - **Windows:**
-  - `ui.window` / `update` / `open` / `show` / `close` / `on`
-  - elements: text, buttons and options, slider, scrolling list, gauge, separator
+  - `ui.window` / `update` / `get` / `open` / `show` / `close` / `on` / `prompt` / `menu`
+  - elements: text, buttons and options, slider, scrolling list, gauge, separator; tabs (elements on pages), typed
+    lines (edit / change events, Escape undoes), choices (Left / Right), colours (RGBA, a channel at a time; the
+    classic UI shows channel sliders, the modern UI the kit's picker), folding sections, list columns with headings
+    (a click sends sort), right-aligned cells, row icons (item, status) and colours; a tip on any element (the help
+    bar in classic, the help line in modern); a canvas element the mod draws in (lines, rects with gradients or
+    outlines, circles, triangles, text, icons; clicks report where, drags their start, moves and release, both UIs
+    checked live); coloured text; modal windows, `ui.prompt`
+    (a question with buttons) and `ui.menu` (a popup list at the pointer, closed by a click outside it); checked
+    live in both UIs
   - keys and mouse in both UIs: the classic UI draws Config pages, the modern UI kit panels with saved places
   - HUD windows (no focus, frameless, placed)
+  - the HUD layer (`hud`): retained text (size, colour, background, alignment, lines), rects, bars and item / status
+    icons in window pixels (negative from the right or bottom edge), drawn under the windows and hidden with the UI;
+    text in the active UI's face or a chosen one in either UI (the game font, alpha blended so dark text shows; the
+    modern regular or bold), with an outline (colour, width) or a drop shadow (checked live in both UIs);
+    `hud.map` (a window onto the zone's map, where the client shows one: centred on us or a world point, its span in
+    map pixels), `game.map` (the map's page, file, scale, origin) and `game.map_pos` (world to map image pixels);
+    checked live; PNG images from the mod's folder (`hud.image`, sized and tinted); `hud.on` takes left / right clicks on an element from the game; `hud.screen` (size,
+    pixels per UI unit), `hud.bounds`. Checked live in both UIs, clicks too
+- **Native windows** (`ui.native`): the game's open windows by name and whether one has the keys; the whole
+  interface hidden or shown; HUD pieces hidden in both UIs while the mod runs (party, target, buffs, compass /
+  location, minimap, cast bar, name plates, the alliance lists alone, the log windows (back while an event, a prompt
+  or the chat line needs them), Timers, the training regime window; undone when it unloads); game config values read and set through the
+  Config window's apply (`ui.native` for changes); `actions.advance` moves event text on. Checked live in both UIs.
+  `ui.native.highlighted` (the item, spell, ability, mount, emote or key item under the cursor of the window with the
+  keys, an item's bag and slot) and `ui.native.list` (that list's rows, cursor and top: the item lists and storage,
+  magic, abilities, key items, shops, the auction house's lists and menus), driven with `input.press`; checked live
+  on the item, ability, weapon skill and key item lists (modern UI); shops and the auction house not tried live.
+  `ui.native.item_colour` colours an item's name in the shop and auction lists (checked live in the AH's crystals).
+- **Render** (`render`): per entity, while the mod runs (the newest mod's wins): hidden (model and plate), plate name and
+  colour, alpha, tint, size; the camera's distance read and set; `render.camera` / `set_camera`: the drawn eye's
+  distance (a share of retail's, up to 10), the pan speed's scale, a distance while engaged. Checked live (a renamed, tinted, doubled NPC,
+  a hidden one, ourselves translucent, the camera pulled back and out to 6); the engaged distance not seen live.
+- **Audio** (`audio`): the mod's WAV files (16-bit PCM, any rate) through our mixer at the effects volume, the game's
+  sound effects and interface sounds by id; the music held on a track or silenced and given back (`audio.music`,
+  `mute_music`). Checked live (a WAV, a game effect, an 8-bit file refused; track 115 over the zone's, muted, back).
+- **World space** (`draw`): lines, rings (outline or filled) and wire boxes in entity coordinates, drawn after the
+  effects and tested against the scene's depth (no writes); `draw.to_screen` for labels (window pixels, as `hud` takes).
+  Checked live (rings at our feet, a line and a box at an NPC, a label over her head). `draw.text` (text at a world
+  point) and `draw.image` (a PNG of the mod's on a world quad: on the ground, upright toward a yaw, or turned to the
+  camera; in 8 x 8 pieces for its perspective), both drawn with the HUD behind what stands in front; checked live (a
+  circle under us, a label over us, an upright and a camera-facing panel).
+- **Network and other windows:** `net.request` (HTTP(S) on its own thread, the answer to a callback in a later mod
+  phase; `net`), `net.open_url`; `ipc.send` and the `ipc_message` event between game windows on one machine (local
+  UDP, ports listed in the runtime folder; `multibox`). Checked live against a local server and a stand-in window.
+  Sockets for companion programs (`net`): `net.connect` / `listen` (TCP out and in, 127.0.0.1 unless asked),
+  `net.udp`, `net.pipe` (a Unix socket or a Windows named pipe another program offers, such as Discord's IPC),
+  `net.send`, `net.close`; reading on threads, handlers (open, data, accept, close) in later mod phases.
+  Checked live (a listener with an echo, UDP both ways, a refused connection).
+- **The game window and the system:** `client.window` (place, size, focus) and the `focus_change` event;
+  `client.set_window` (move, size through the Settings' sizing path; always on top, minimised, borderless full
+  screen, the frame, kept out of screen captures) and `client.focus` (`multibox`);
+  `client.screenshot` (under the screenshots folder, subfolders allowed); `client.paste` (`clipboard`) and
+  `client.copy`; `client.run` (a program without a shell, its exit code and output to a handler; `exec`);
+  `client.option` / `set_option`: behaviour switches while the mod runs, retail's back when it unloads (the macro
+  palette's wait for the next whole second, the AH bid result's wait, the 0.9 s between equip sets, the log's slide,
+  the cutscene speed 1..4, the actors' animation rate, the scene's background colour and ambient light, the minimap's
+  zoom; set, read and released checked live, the ambient light and the minimap's zoom seen, the rest not all seen). Checked
+  live but `client.focus` (not tried: it would take the desktop's focus); the place reads nil under Wayland.
+  - `devices.list` / `open` / `write` / `close` (`devices`): HID devices by their raw reports (G-keys, Stream Decks),
+    hidraw on Linux, the HID interfaces on Windows; checked live on Linux (the list with ids, interfaces and report
+    descriptors; a device opened and closed); Windows type-checked, not run
+  - `client.record` / `stop_recording` / `recording` (`exec`): the window as drawn to an H.264 file through ffmpeg
+    (a ring of readback buffers, never waited on; a frame due with none free repeats the last); checked live (4 s at
+    30 fps: 120 frames, 1920 x 1080)
+  - `render.shader(id, wgsl)` / `shader_params`: post-process passes over the world under the fades and the 2D layer,
+    each a WGSL `fs_main` given the frame so far, its depth, size, time and four parameter vectors; a WGSL error is a
+    log line (its line numbers count the 15 header lines first) and the pass is skipped; checked live (a cel-shading
+    pass with depth outlines; an error reported)
+  - `client.process` / `set_affinity` / `set_priority` (`process`): the cores every thread may run on and the
+    scheduling priority; checked live on Linux (cores 0-3, low, back to normal).
+  - Rules as switches too: `move_lock` (our abilities' and the weapon draw's move lock, scheduler op 0x2e), `all_maps`
+    (every map without its key item), `dead_commands`, `compass_monsters` (monster dots for every job),
+    `player_collision`, `occlusion` (characters behind scenery), `menu_reach` (the AH and the nomad moogle menu
+    closing 6 away), `send_interval` (ms between our datagrams, retail 400; checked live: 10 in 4 s at 400, 38 at
+    100), `wireframe` (the scenery as lines where the GPU has line polygons; seen live), `ttf_text` (the game font's
+    text in the TrueType face in the classic UI: the log, windows' text; seen live). A value set shows in `client.option` from the next frame. Checked live: Berserk held the walk
+    with `move_lock` on (4.2 yalms in 1.5 s) and not with it off (7.5), and `all_maps` gave the Port Jeuno map without
+    its key item; the rest not tried live.
+  - `actions.open_menu(name)`: a main menu row by name (status, items, magic, map, config ... log_out), run as a pick
+    there; `moogle` the nomad moogle menu. Checked live with status.
 - **Permissions:** each one a mod asks for is a row on its Extras page (ON / OFF, with what it allows on the help
   line), or `/lua grant` / `revoke`; kept in mod-data/grants.json. A mod loaded without them says where to allow them.
 - **Packets** (`packets.read` / `packets.write`):
@@ -60,6 +165,10 @@ Built (client/lua/, modern/modwin.rs), each checked live:
   - `equip` (one piece or a set table, by id or bag slot; worn pieces stay), `unequip`, `equip_set`, `move`, `sort`,
     `drop`, `lot`, `pass`, `cancel`, `choose` (an event menu option), `talk`, `scan`, `track`, `untrack`
   - movement on autorun: `run`, `run_to`, `follow`, `walk`, `stop`, `turn` (headings as entity.heading)
+  - `trade` (items and gil to an NPC within reach), `buy` / `sell` with the open NPC shop (`game.shop`), `blue_set` /
+    `blue_remove`, `attach` / `detach` (automaton), `invite`, `party_leave`, `party_kick`, `join`, `decline`, `mount`,
+    `dismount`, `advance`; trade and shop refusals are the mod's errors. Checked live: a bad trade refused, Eye Drops
+    bought from Gekko and sold back
   - `game.treasure`, `game.event` (the menu showing) to act on
   - checked live: the gate (a timer refused under `actions`), a cast refused with the menu's line, equip by id and
     off, run_to and turn in West Ronfaure
@@ -80,17 +189,26 @@ Built (client/lua/, modern/modwin.rs), each checked live:
   - `fs.read` / `write` / `append` / `exists` / `list` / `mkdir` / `remove` / `rename` in the mod's data folder
     (mod-data/<id>/files), reads falling back to the mod's own files; `shared/...` with `files.shared`; no `..`
   - `json.encode` / `decode`
-  - `mods.list`, `mods.provide` / `mods.call` (a function in another mod's VM, values copied), `mods.emit` (an event
-    to every other mod)
+  - `mods.list` (with each mod's time a frame, memory and errors), `mods.installed` (every mod on disk and bundled:
+    enabled, loaded), `mods.provide` / `mods.call` (a function in another mod's VM, values copied), `mods.emit` (an
+    event to every other mod); `/lua hide` / `show` hides every mod's HUD, windows and world drawing at once
   - `text.from_shift_jis` / `to_shift_jis` / `plain` (auto-translate phrases as words); `client.copy`
+  - `chat.icon(png)`: an inline image as a character in chat text, drawn in both UIs' logs (the classic UI's game-font
+    text keeps the colour in force across it); checked live in both UIs
+  - a JSON null reaches Lua as nil everywhere (event arguments, tables, `json.decode`, `mods.call`)
+- **Lobby mods** (`lobby = true` in mod.toml): `lobby.state` (the screen, the server and account, the character list),
+  the `lobby_screen` event, `lobby.sign_in` (as Log in) and `lobby.play` (as the select screen's Play), keys through
+  `input.press`, timers, sockets; `storage.seal` / `unseal` keep a password that only this mod on this machine can
+  open. Checked live: an autologin port signed in with its sealed password and played a character, stayed loaded
+  through the world and logout, and was unloaded as the client closed.
   - checked live: a call returning two values, an emitted table, files written, appended, listed and read back, the
     mod's own file read, `..` and `shared/` refused, JSON both ways, the os subset, Shift-JIS round trip
 - **Bundled mods:** `/dps` (the first Extra ported).
 - **Mods folder:** `mods/<id>/` (enabled through config `mods`); a test run uses `mods` beside its FFXI_CONFIG copy.
 
-Next (docs/lua-mods.md 6): packet layouts and decoded views, batch order (the rest of
-phase 4); the rest of phase 5 (trade, shops, BLU / PUP sets as actions; `ui.native`; `render`); the other Extras as
-bundled mods; then world-space drawing, audio, ipc / net, and the coverage table.
+Next (docs/lua-mods.md 6): packet layouts and decoded views, batch order (the rest of phase 4); the rest of phase 5
+(engine settings such as draw distance and frame limit); the other Extras as bundled mods; then the gaps in
+docs/lua-coverage.md.
 
 ## 1. The bar
 
@@ -200,7 +318,10 @@ through the main thread, only while some mod hooks that direction (an atomic fla
   - Loading: `dependencies` (required / optional, with version ranges), `load_after`, `lobby` (the VM lives from
     process start instead of from login), `entry`.
   - `permissions`, `settings`, and localised strings.
-- **Lifetime:** the VM is created at character login and dropped at logout; per-character data loads with it.
+- **Lifetime:** the VM is created at character login and dropped at logout; per-character data loads with it. A
+  `lobby` mod is created on the login screen and lives until the client closes: it gets `logout` but stays loaded,
+  its `storage.character` and character settings load at each login, and in the lobby no world is lent (game state
+  errors; its prints go to vana-client.log).
 - **Hot reload:** per mod, keeping storage. `/lua reload <mod>`, plus a developer mode that watches the folder.
 - **Errors:**
   - Every call is guarded with a traceback.
@@ -227,7 +348,11 @@ and revoke them there.
 | `files.shared` | read and write outside the mod's folder, in a shared data area | Logger, findAll, organizer |
 | `net` | HTTP(S), UDP and TCP, open URLs | Pricer, CurePlease, Guildwork-style tools |
 | `exec` | run programs | Rich Presence helpers, update |
-| `multibox` | the local bus between clients, window focus | send, switch_focus, FastFollow |
+| `multibox` | the local bus between clients, window focus, moving and sizing the game window | send, switch_focus, FastFollow, WinControl |
+| `clipboard` | read the clipboard's text (writing it needs nothing) | paste helpers, chat tools |
+| `ui.native` | hide HUD pieces, the whole interface, set game config values | XIUI, hideui, config tools |
+| `process` | CPU affinity and scheduling priority of the client | Affinity |
+| `devices` | HID devices by their raw reports | Binder, GBinder, Stream Deck tools |
 
 Never exposed to any mod, not even read-only: the password, the 2FA secret, `secret.key`, session keys and the
 Blowfish state. Outgoing chat, commands and packets are rate-limited per mod. There is no WoW-style taint or combat
@@ -401,7 +526,7 @@ Requires `actions` or `automation`.
 - **Per-entity overrides:** visibility and occlusion, alpha, tint, name, name colour, model size, look slots, race and
   face, effect bubbles.
 - **World:** music override or mute per context, weather shown, screenshots.
-- Shader-level changes (toon, cel shading) are a later shader-pack interface, not Lua.
+- Shader-level changes (toon, cel shading) are WGSL post-process passes a mod sets (`render.shader`).
 
 ### 4.12 `settings`, `storage`, `fs`, data formats
 - **Settings:** declared in `mod.toml`, drawn by us in both themes under Mods.
@@ -430,9 +555,9 @@ mute music. The chime.
 
 ## 5. Proving the bar
 
-- **Coverage table:** the surveys' scan data gives every add-on and plugin as a row: its operations mapped to API
-  calls, and a status (covered / partly / missing). It is generated from the add-ons' sources, committed beside this file, and re-run
-  as the API grows. A missing row is a bug in the API.
+- **Coverage table:** [lua-coverage.md](lua-coverage.md), every add-on and plugin as a row: its operations mapped to
+  API calls, and a status (covered / partly / missing), with the open gaps ranked by the rows they block (615 rows, 554
+  covered as of 478e408). Re-rated as the API grows. A missing row is a bug in the API.
 - **Reference ports,** written as real mods, chosen to cover the hard classes:
   - **GearSwap:** the platform, the 20 callbacks, a stock Mote-libs job file.
   - **battlemod:** filtering and rewriting combat text.
