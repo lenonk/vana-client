@@ -1905,6 +1905,26 @@ From the research notes:
 - Q / E (0xaa / 0xa9, keyboard type 2, free camera, X input 0, camera axes idle): player yaw += ticks x 0.0174528 x
   1.57075 x (E - Q) (_DAT_10322260 = 1.57075; 94 degrees a second); the camera turns with it (FUN_1001d4c0).
 - Face-camera 0x9c (LShift held, type 2, free): the player faces the camera yaw, so A / D strafe; camera axes and Q / E off.
+- The heading (actor +0xe4 rotation, vt+0x1c0 FUN_100a3350) is set at once to the move vector's direction (FUN_100a48d0
+  end, -atan2), the move vector being the input turned by the camera's forward (camera +0x24 / +0x2c, FUN_100a6030).
+  What is drawn eases: FUN_100c4390 (vt+0x330, player +0xf9 set) takes the step's direction when the actor moved 0.01
+  or more this frame (else the heading) and eases actor +0x61c (+0x187 dwords) 0.125 a tick toward it (a scheduler's
+  rate instead when one is set, vt+0x13c x _DAT_10326194); moving and not first person, +0x44 (the model's rotation,
+  first person's yaw) is copied from it. Ours: World::my_draw_yaw, powf per tick (2026-11-02).
+- The chase's hold (2019 0x1001ec85) tests [ESP+0x20] / [ESP+0x24] with EBP still pushed (1001e1d9 .. 1001f96f): axis 6
+  (Q / E folded in) and axis 7 after their inversions, so camera input holds it, never the move keys. With chase on
+  (0x91 = 1) a forward + left run turns the camera about 1 rad/s (ours measured 58.7 deg/s, a 4.7 radius at 4.8 / s);
+  spring alone about 0.3..0.6 rad/s.
+- The mouse camera: mode 5 (DAT_104cf33c +0x4d, entered on a button held and dragged over 8 px in the field) makes
+  axes 6 / 7 the pointer's offset from the drag's start, (x - +0x38) / (screen w x _DAT_1031f20c) and likewise y
+  (FUN_10122600 / FUN_10122590, clamped -1..1), read by FUN_1011f300 cases 3 / 4 under axis 6 / 7's sources
+  (FUN_1011f7b0 / FUN_1011f910); then the camera inverts them as the keys (0x8b / 0x8c, first person 0x8d / 0x8e). Down
+  is positive: with 0x8c on (the default) dragging down raises the eye (y down). Ours had the third-person sign the
+  other way (fixed 2026-11-02, the free and locked drags). First person: by the decompile a positive axis 7 turns the
+  look (5, 0.25, 0) about Z by +pitch, below the eye, which ours matched; the user reports retail's first-person mouse
+  Y the other way (2026-11-02), so ours now follows that *(inf: our reading of the Z rotation's sense or of the mode-5
+  axis in first person is off somewhere)*. Screen-edge panning (FUN_10120fc0, 0x8f = 0) feeds the same
+  axes while a window is up or outside the field.
 
 ### Free camera (FUN_1001e030 free branch; client/camera.rs; traced by a sub-agent from all.c 22024..22887)
 - State: eye (camera +0x44) and look (+0x50) only; +0x48 is the eye's y. One state serves the free, locked and first
@@ -1923,7 +1943,13 @@ From the research notes:
   -0.5 < dot < 0.99 off the player's back, eye.xz += (look + d behind - eye) x 0.025 a tick.
 - Zoom: 0x4f / 0x50 held change focal by ticks x 6 (242..900), saved as config 0x49; both held ease to 350 by 25 % a
   frame (DAT_1044446c). Type 2: FUN_10253af0 *(inf: wheel)* zooms too. Ours: the wheel zooms 12 a notch (user's choice:
-  FOV, not distance).
+  FOV, not distance). Later ours had the wheel scale the eye's distance (0.5..3); a scaled spring trailed further back
+  and a forward + left run swung in a wider arc than retail's, whose zoom (the focal length) leaves the path alone
+  (user, live, 2026-11-02). Since 2026-11-02 the wheel zooms the focal length again, as the keys, and the eye is at
+  retail's distance (user: "keep the eye at the same distance behind the character as retail does"). Only a Lua mod
+  (render.set_camera) scales the distance, and then only the drawn eye: view() draws it at look + (eye - look) x the
+  scale, 0.5 short of what the look -> drawn eye ray hits (in at once, out 20 % a tick), the camera itself at retail's
+  distances.
 - Home 0x51: 8 frames (ours 16 ticks) of eye += (3 behind the player at look height - eye) x 0.125 a tick, until the
   camera's yaw is within 0.05 of the player's.
 - Collision: ray look -> eye puts the eye 0.5 in front of a hit; 0.17 clear of the floor (FUN_1017a310, within 10) and
@@ -4495,6 +4521,9 @@ From the targeting spec (scratchpad target_spec/SPEC.md; current-build addresses
 From the targeting spec section 3 (FUN_100d5b10, FUN_1002a140, FUN_1002ac60, FUN_1002b140).
 - Who: the local player looks at its target; every other actor at its face target, 0x00E / 0x00D
   (u32 @0x18 >> 17) & 0x7fff with the position (actor +0x1f8; LSB facetarget). No client-side "look at the player".
+  LSB sets facetarget (m_TargID) only for players (their c2s 0x015 target) and NPC look-ats (zone LookAt, event
+  look-ats): a monster's battle target never reaches it, so on LSB monsters send 0 (seen 2026-11-02, a Provoked
+  Snipper attacking us). Lua mods read it as an entity's target_index.
   Looker status 0, 5, 0x2f, 0x30, 0x55 or 0x3f..0x53 only; target type +0xee not 3 / 4 / 5 (ours: not a door); aim
   at the target's point 3, 1.2 higher (y - 1.2) when it is hidden. Event looks (ops 0x1e / 0x4a / 0x79) win.
 - Weight K+0xbc ramps 0.04 a frame (30 fps: 0.02 a tick, inf), fading with no target, a target at local x < -0.1 or
@@ -20267,6 +20296,20 @@ Ashita, beyond the above:
 - Controller input (tCrossBar, cBind) waits on gamepad support.
 
 Lessons from other games' mod layers (BG3 Script Extender, WoW, Skyrim, Factorio) are in docs/lua-mods.md 2.
+
+## Chat line: the system IME (2026-11-02, ours)
+
+- Not retail (the English client takes no IME input: the Windower and Ashita IME plugins add it). Ours takes the
+  desktop's input method while the chat line is open (both UIs): the frame's platform output carries an IME area at the
+  caret (classic: the line's caret in GameUi units over ui_k and pixels per point; modern: chat.rs input's caret rect),
+  so egui-winit allows the IME and places its candidate window there; with the line closed there is no area and the IME
+  is off, so it never takes game keys.
+- Ime::Commit inserts at the caret as typed text does (fep::insert); Ime::Preedit is drawn at the caret, underlined,
+  over what follows it; while a preedit is up the line ignores key events (the IME's Enter, Backspace and arrows).
+- Seen: with the IME allowed, the desktop's input method sends an empty preedit nearly every frame (egui-winit sets the
+  cursor area whenever there are events); harmless.
+- Live: a committed 日本語 (script step `ime:`) in both UIs, sent with /echo and printed in the game font and the modern
+  one. A real composition (preedit and candidate window from a Japanese input method) not tried.
 
 ## Gamepad (2026-11-02)
 

@@ -209,7 +209,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     };
     super::topbar::draw(m, ctx, &top);
     let (mut changed, mut chat_font) = (false, opts.chat_font);
-    let mut p = Panels { m, ctx, gu: None, layout, changed: &mut changed, chat_font: &mut chat_font, battle_in_all: &mut true, condense: &mut true, folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: Some("target") };
+    let mut p = Panels { m, ctx, gu: None, layout, changed: &mut changed, chat_font: &mut chat_font, battle_in_all: &mut true, condense: &mut true, folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: Some("target"), hidden: Vec::new() };
     // The chat window first, as the layer draws it: the location panel sits on it.
     let wh = [0x80, 0x80, 0x80, 0x80];
     let lines = vec![
@@ -231,7 +231,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     let mut unread = [0; 11];
     unread[2] = 3;
     let named = |l: &str, mode: u16| mode == 13 && chat::mentions(l, "Lenon");
-    chat::draw(&mut p, &ChatView { lines: lines.iter().enumerate().map(|(k, (a, b, c, d))| (a.clone(), *b, *c, *d, named(b, *d), k)).collect(), input: Some(InputView { channel: "Party", sel: Some((0, 7)), pieces: vec![("Pulling now ".into(), false), ("Thank you.".into(), true)], caret: 22, fep: None }), waiting: false, unread }, shown, true);
+    chat::draw(&mut p, &ChatView { lines: lines.iter().enumerate().map(|(k, (a, b, c, d))| (a.clone(), *b, *c, *d, named(b, *d), k)).collect(), input: Some(InputView { channel: "Party", sel: Some((0, 7)), pieces: vec![("Pulling now ".into(), false), ("Thank you.".into(), true)], caret: 22, fep: None, preedit: String::new() }), waiting: false, unread }, shown, true);
     let fx = |icon, label: Option<&str>, ending| Effect { icon: Icon::Pack(icon), label: label.map(str::to_string), ending, tip: None };
     let mine = vec![fx("icons/protect", Some("25m"), false), fx("icons/haste", Some("2m"), false), fx("icons/refresh", Some("12"), true), fx("icons/poison", None, false)];
     hud::status_panel(&mut p, &StatusView { effects: mine, cursor: None }, false);

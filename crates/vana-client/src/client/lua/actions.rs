@@ -27,9 +27,18 @@ pub(in crate::client) enum Action {
     Pass(u8),
     Cancel(u16),
     Choose(usize),
+    /// The event's waiting page goes on, as Enter does.
+    Advance,
+    /// A macro of the current set run (0..9 Ctrl, 10..19 Alt), the book and set switched, a line or title edited.
+    Macro(usize),
+    MacroSet(usize, usize),
+    MacroEdit { n: usize, line: Option<usize>, text: String },
     Talk(u32),
     Target(Option<u32>),
     Lock(bool),
+    /// A BLU slot (0..19) set to a spell id or emptied (0), a PUP slot (0..13) to an item id or emptied.
+    BlueSlot(usize, u16),
+    PupSlot(usize, u16),
     Scan,
     Track(u16),
     Untrack,
@@ -39,7 +48,38 @@ pub(in crate::client) enum Action {
     Walk(bool),
     Stop,
     Turn(f32),
+    /// A main menu row (page, child), as a pick there runs it; the nomad moogle menu.
+    Menu(u8, u16),
+    Moogle,
 }
+
+/// The main menu's rows by name: (name, page, child).
+pub(super) const MENUS: &[(&str, u8, u16)] = &[
+    ("status", 0, 1),
+    ("equipment", 0, 2),
+    ("magic", 0, 3),
+    ("items", 0, 4),
+    ("abilities", 0, 5),
+    ("party", 0, 6),
+    ("trade", 0, 7),
+    ("search", 0, 8),
+    ("linkshell", 0, 9),
+    ("synthesis", 0, 10),
+    ("region", 0, 11),
+    ("map", 0, 12),
+    ("missions", 1, 1),
+    ("quests", 1, 2),
+    ("key_items", 1, 3),
+    ("view_house", 1, 4),
+    ("bazaar", 1, 5),
+    ("macros", 1, 6),
+    ("config", 1, 7),
+    ("help_desk", 1, 8),
+    ("communication", 1, 9),
+    ("clock", 1, 10),
+    ("shut_down", 1, 11),
+    ("log_out", 1, 12),
+];
 
 pub(in crate::client) enum Piece {
     At(u8, u8),
@@ -148,6 +188,36 @@ pub(super) fn apply(w: &mut World, gu: Option<&GameUi>, a: Action) {
                 super::super::buffs::cancel(gu, w, id);
             }
         }
+        Action::Menu(page, id) => w.menu_click = Some((page, id)),
+        Action::Moogle => super::super::moogle::open(w, true),
+        Action::Advance => {
+            if event::active(w) {
+                event::key(w, egui::Key::Enter);
+            }
+        }
+        Action::Macro(n) => {
+            if let Some(m) = w.macros.as_mut() {
+                m.start(n);
+            }
+        }
+        Action::MacroSet(book, set) => {
+            if let Some(m) = w.macros.as_mut() {
+                m.switch(book.min(39), set.min(9));
+            }
+        }
+        Action::MacroEdit { n, line, text } => {
+            let mon = super::super::monstrosity::active(w);
+            if let Some(m) = w.macros.as_mut() {
+                let b = crate::dat::font::encode_sjis(&text);
+                let ok = match line {
+                    Some(k) => m.set_line(n, k, &b),
+                    None => m.set_title(n, &b),
+                };
+                if ok {
+                    m.save(mon);
+                }
+            }
+        }
         Action::Choose(k) => {
             if event::choice(w).is_some_and(|c| k < c.options.len()) {
                 event::set_choice(w, k);
@@ -158,6 +228,16 @@ pub(super) fn apply(w: &mut World, gu: Option<&GameUi>, a: Action) {
             event::talk(w, id);
         }
         Action::Target(t) => target::set(w, t),
+        Action::BlueSlot(i, spell) => {
+            if let Err(e) = super::super::bluset::set_slot(w, i, spell) {
+                w.chat.push_colour(format!("actions.blue_set: {e}"), super::ERROR);
+            }
+        }
+        Action::PupSlot(i, item) => {
+            if let Err(e) = super::super::pupset::set_slot(w, i, item) {
+                w.chat.push_colour(format!("actions.attach: {e}"), super::ERROR);
+            }
+        }
         Action::Lock(on) => target::lock(w, on, "mod"),
         Action::Scan => super::super::scan_request(w),
         Action::Track(index) => super::super::scan_track(w, index),
@@ -310,6 +390,83 @@ pub(super) fn install(lua: &Lua, g: &Table) -> mlua::Result<()> {
         })?,
     )?;
     t.set("talk", lua.create_function(|lua, id: u32| queue(lua, Action::Talk(id)))?)?;
+    // Trade and shops send at once, as the windows' confirmations do; a refusal is the mod's error.
+    t.set(
+        "trade",
+        lua.create_function(|lua, (npc, items, gil): (u32, Option<Table>, Option<u32>)| {
+            super::api::need_action(lua)?;
+            let list: Vec<(u8, u32)> = match items {
+                Some(t) => t.sequence_values::<Table>().map(|e| e.and_then(|e| Ok((e.get::<u8>("slot")?, e.get::<Option<u32>>("count")?.unwrap_or(1))))).collect::<mlua::Result<_>>()?,
+                None => Vec::new(),
+            };
+            super::super::trade::hand_over(super::api::world(lua)?, npc, &list, gil.unwrap_or(0)).map_err(|e| mlua::Error::runtime(format!("actions.trade: {e}")))
+        })?,
+    )?;
+    t.set(
+        "buy",
+        lua.create_function(|lua, (index, qty): (usize, Option<u32>)| {
+            super::api::need_action(lua)?;
+            let index = index.checked_sub(1).ok_or_else(|| mlua::Error::runtime("rows count from 1"))?;
+            super::super::shop::buy(super::api::world(lua)?, index, qty.unwrap_or(1)).map_err(|e| mlua::Error::runtime(format!("actions.buy: {e}")))
+        })?,
+    )?;
+    t.set(
+        "sell",
+        lua.create_function(|lua, (slot, qty): (u8, Option<u32>)| {
+            super::api::need_action(lua)?;
+            super::super::shop::sell(super::api::world(lua)?, slot, qty.unwrap_or(1)).map_err(|e| mlua::Error::runtime(format!("actions.sell: {e}")))
+        })?,
+    )?;
+    t.set("blue_set", lua.create_function(|lua, (slot, spell): (usize, u16)| queue(lua, Action::BlueSlot(slot.saturating_sub(1), spell)))?)?;
+    t.set("blue_remove", lua.create_function(|lua, slot: usize| queue(lua, Action::BlueSlot(slot.saturating_sub(1), 0)))?)?;
+    t.set("attach", lua.create_function(|lua, (slot, item): (usize, u16)| queue(lua, Action::PupSlot(slot, item)))?)?;
+    t.set("detach", lua.create_function(|lua, slot: usize| queue(lua, Action::PupSlot(slot, 0)))?)?;
+    t.set("invite", lua.create_function(|lua, name: String| queue(lua, Action::Line(format!("/pcmd add {name}"))))?)?;
+    t.set("party_leave", lua.create_function(|lua, ()| queue(lua, Action::Line("/pcmd leave".into())))?)?;
+    t.set("party_kick", lua.create_function(|lua, name: String| queue(lua, Action::Line(format!("/pcmd kick {name}"))))?)?;
+    t.set("join", lua.create_function(|lua, ()| queue(lua, Action::Line("/join".into())))?)?;
+    t.set("decline", lua.create_function(|lua, ()| queue(lua, Action::Line("/decline".into())))?)?;
+    t.set("mount", lua.create_function(|lua, name: String| queue(lua, Action::Line(format!("/mount \"{name}\""))))?)?;
+    t.set("dismount", lua.create_function(|lua, ()| queue(lua, Action::Line("/dismount".into())))?)?;
+    t.set("advance", lua.create_function(|lua, ()| queue(lua, Action::Advance))?)?;
+    t.set(
+        "open_menu",
+        lua.create_function(|lua, name: String| {
+            if name == "moogle" {
+                return queue(lua, Action::Moogle);
+            }
+            let Some(&(_, page, id)) = MENUS.iter().find(|m| m.0 == name) else {
+                let names: Vec<&str> = MENUS.iter().map(|m| m.0).chain(["moogle"]).collect();
+                return Err(mlua::Error::runtime(format!("no menu {name:?} ({})", names.join(", "))));
+            };
+            queue(lua, Action::Menu(page, id))
+        })?,
+    )?;
+    // A macro of the current set: row "ctrl" | "alt", 1..10.
+    let slot = |row: &str, n: usize| -> mlua::Result<usize> {
+        let base = match row {
+            "ctrl" => 0,
+            "alt" => 10,
+            _ => return Err(mlua::Error::runtime("a macro row is \"ctrl\" or \"alt\"")),
+        };
+        if !(1..=10).contains(&n) {
+            return Err(mlua::Error::runtime("a macro is 1..10"));
+        }
+        Ok(base + n - 1)
+    };
+    t.set("macro", lua.create_function(move |lua, (row, n): (String, usize)| queue(lua, Action::Macro(slot(&row, n)?)))?)?;
+    t.set("macro_set", lua.create_function(|lua, (book, set): (usize, usize)| queue(lua, Action::MacroSet(book.clamp(1, 40) - 1, set.clamp(1, 10) - 1)))?)?;
+    t.set(
+        "macro_edit",
+        lua.create_function(move |lua, (row, n, line, text): (String, usize, Value, String)| {
+            let line = match line {
+                Value::Integer(k) if (1..=6).contains(&k) => Some(k as usize - 1),
+                Value::String(s) if s.to_str()?.as_ref() as &str == "title" => None,
+                _ => return Err(mlua::Error::runtime("a macro line is 1..6, or \"title\"")),
+            };
+            queue(lua, Action::MacroEdit { n: slot(&row, n)?, line, text })
+        })?,
+    )?;
     t.set("scan", lua.create_function(|lua, ()| queue(lua, Action::Scan))?)?;
     t.set("track", lua.create_function(|lua, index: u16| queue(lua, Action::Track(index)))?)?;
     t.set("untrack", lua.create_function(|lua, ()| queue(lua, Action::Untrack))?)?;

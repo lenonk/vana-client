@@ -772,6 +772,11 @@ pub(super) fn on_message_std(w: &mut World, id: u16, cas: u32, para: [i32; 4], s
     if cas != 0 && cas >> 24 == 0 && super::partyreq::sender_blocked(w, cas, id, 0) || super::textcmd::sys_filtered(w, id) {
         return;
     }
+    // Message 89 "X examines you." (a /check on us) for the mods.
+    if id == 89 && cas != 0 {
+        let name = w.entities.get(&cas).map_or_else(String::new, |e| e.name.clone());
+        w.lua.raise("examined", vec![cas.into(), name.into()]);
+    }
     let Some(bt) = w.battle.clone() else { return };
     let ctx = Ctx { actor: if cas != 0 { who(w, cas) } else { None }, target: None, me: w.name.clone(), work: [para[0], para[1], para[2], para[3], 0], strings, keys: keys(w) };
     match bt.system(id, &ctx) {

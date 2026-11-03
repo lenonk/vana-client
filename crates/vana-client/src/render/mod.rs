@@ -15,6 +15,7 @@ pub mod invwin;
 pub mod screenfx;
 pub mod movie;
 pub mod scale;
+pub mod postfx;
 pub mod gputime;
 pub mod cull;
 pub mod shadow;
@@ -128,7 +129,7 @@ impl Gpu {
         // BC textures go up compressed when the adapter has them (zone and model DXT1 / DXT3); timestamps between
         // passes give the F12 overlay its GPU times (render/gputime.rs); indirect draws from any instance let the
         // scenery be culled on the GPU (render/cull.rs).
-        let mut wanted = wgpu::Features::TEXTURE_COMPRESSION_BC | wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS | wgpu::Features::INDIRECT_FIRST_INSTANCE;
+        let mut wanted = wgpu::Features::TEXTURE_COMPRESSION_BC | wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS | wgpu::Features::INDIRECT_FIRST_INSTANCE | wgpu::Features::POLYGON_MODE_LINE;
         // FFXI_NO_GPU_TIME / FFXI_NO_CULL: without the timestamps or the culling's indirect draws (driver checks).
         if std::env::var_os("FFXI_NO_GPU_TIME").is_some() {
             wanted.remove(wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS);
@@ -343,12 +344,19 @@ pub struct ZoneRenderer {
     pub light_keys: Vec<u32>,
     scenery: [[wgpu::RenderPipeline; 3]; 4],
     scenery_bump: [wgpu::RenderPipeline; 3],
+    /// The scenery as lines by cull, where the device draws lines (a mod's wireframe switch).
+    scenery_wire: Option<[wgpu::RenderPipeline; 3]>,
+    pub wireframe: bool,
     actor_pipeline: wgpu::RenderPipeline,
     sky_pipeline: wgpu::RenderPipeline,
     line_pipeline: wgpu::RenderPipeline,
     /// Layout mode's overlay lines (set_lines): the buffer and its capacity in vertices, and what it holds.
     line_buf: Option<(wgpu::Buffer, usize)>,
     lines: Vec<LineVertex>,
+    /// The Lua mods' world shapes (set_world_shapes): line and triangle lists tested against the scene's depth.
+    world_pipelines: [wgpu::RenderPipeline; 2],
+    world_bufs: [Option<(wgpu::Buffer, usize)>; 2],
+    world_shapes: [Vec<LineVertex>; 2],
     texture_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     uniforms: wgpu::Buffer,
@@ -461,6 +469,9 @@ pub struct ZoneRenderer {
     pub now: f32,
     /// FUN_10178b30's V for the world slot (zone +0x38e1c).
     pub voyage: Mat4,
+    /// A Lua mod's scene background colour and ambient light in place of the zone's (gamma-space RGB).
+    pub mod_clear: Option<[f32; 3]>,
+    pub mod_ambient: Option<[f32; 3]>,
     /// The scenery's draw distance D and Clipping factor K (dat/weather.rs clipping); D 0 draws at any distance.
     pub clip: [f32; 2],
     /// Retail's D whatever the Draw Distance setting: where the camera list's reach ends (set_camera_list).
@@ -752,6 +763,11 @@ fn shine_wrap() -> f32 {
 }
 
 impl ZoneRenderer {
+    /// The wireframe pipeline for a cull while a mod has it on.
+    fn wire(&self, c: usize) -> Option<&wgpu::RenderPipeline> {
+        self.scenery_wire.as_ref().filter(|_| self.wireframe).map(|w| &w[c])
+    }
+
     /// A skinned actor's shine group: the shared uniform slots and its own vertices.
     fn shine_group<'a>(&self, gpu: &Gpu, skin: &'a Skinned) -> &'a wgpu::BindGroup {
         skin.shine.get_or_init(|| {
@@ -808,6 +824,7 @@ pub struct ZonePipes {
     /// Scenery by Draw::mode (opaque, cut out, blend, blend + cut out) and cull (none, back, front).
     scenery: [[wgpu::RenderPipeline; 3]; 4],
     scenery_bump: [wgpu::RenderPipeline; 3],
+    scenery_wire: Option<[wgpu::RenderPipeline; 3]>,
     actor_pipeline: wgpu::RenderPipeline,
     sky_pipeline: wgpu::RenderPipeline,
     skin_pipeline: wgpu::RenderPipeline,
@@ -816,6 +833,7 @@ pub struct ZonePipes {
     shine_pipeline: wgpu::RenderPipeline,
     refract_pipeline: wgpu::RenderPipeline,
     line_pipeline: wgpu::RenderPipeline,
+    world_pipelines: [wgpu::RenderPipeline; 2],
     /// The shadow silhouette pass (render/shadow.rs): its group 3 layout and pipeline.
     sil_layout: wgpu::BindGroupLayout,
     sil_pipeline: wgpu::RenderPipeline,
@@ -974,11 +992,11 @@ impl ZonePipes {
         // Scenery: front faces clockwise as D3D's; normal placements cull CCW (back), mirrored ones CW (front).
         // Bit-31 models: SRCALPHA / INVSRCALPHA, depth tested (LESSEQUAL) but not written, ZBIAS 8 *(inf: as a constant
         // depth bias of -8)*.
-        let make_scenery = |fragment: &str, blend: bool, cull: Option<wgpu::Face>| device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let make_scenery = |fragment: &str, blend: bool, cull: Option<wgpu::Face>, wire: bool| device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(fragment),
             layout: Some(&layout),
             vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_main"), compilation_options: Default::default(), buffers: &vertex_layouts },
-            primitive: wgpu::PrimitiveState { front_face: wgpu::FrontFace::Cw, cull_mode: cull, ..Default::default() },
+            primitive: wgpu::PrimitiveState { front_face: wgpu::FrontFace::Cw, cull_mode: cull, polygon_mode: if wire { wgpu::PolygonMode::Line } else { wgpu::PolygonMode::Fill }, ..Default::default() },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
                 depth_write_enabled: Some(!blend),
@@ -997,7 +1015,8 @@ impl ZonePipes {
             cache: None,
         });
         let culls = [None, Some(wgpu::Face::Back), Some(wgpu::Face::Front)];
-        let scenery = [("fs_opaque", false), ("fs_alpha_test", false), ("fs_blend", true), ("fs_blend_test", true)].map(|(f, b)| culls.map(|c| make_scenery(f, b, c)));
+        let scenery = [("fs_opaque", false), ("fs_alpha_test", false), ("fs_blend", true), ("fs_blend_test", true)].map(|(f, b)| culls.map(|c| make_scenery(f, b, c, false)));
+        let scenery_wire = device.features().contains(wgpu::Features::POLYGON_MODE_LINE).then(|| culls.map(|c| make_scenery("fs_opaque", false, c, true)));
         // Config 0017's type-3 meshes (FUN_10175ac0 case 3): the colour texture, then the normal map at group 2.
         let bump_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("zone bumped"), bind_group_layouts: &[Some(&globals_layout), Some(&texture_layout), Some(&texture_layout)], immediate_size: 0 });
         let scenery_bump = culls.map(|cull| {
@@ -1184,12 +1203,40 @@ impl ZonePipes {
             multiview_mask: None,
             cache: None,
         });
+        // The Lua mods' world shapes: the same shader, tested against the scene's depth (not written), alpha blended.
+        let world_pipelines = [wgpu::PrimitiveTopology::LineList, wgpu::PrimitiveTopology::TriangleList].map(|topology| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("world shapes"),
+                layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("world shapes"), bind_group_layouts: &[Some(&globals_layout)], immediate_size: 0 })),
+                vertex: wgpu::VertexState {
+                    module: &lines,
+                    entry_point: Some("vs_line"),
+                    compilation_options: Default::default(),
+                    buffers: &[Some(wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<LineVertex>() as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4],
+                    })],
+                },
+                primitive: wgpu::PrimitiveState { topology, ..Default::default() },
+                depth_stencil: Some(wgpu::DepthStencilState { format: DEPTH_FORMAT, depth_write_enabled: Some(false), depth_compare: Some(wgpu::CompareFunction::LessEqual), stencil: Default::default(), bias: Default::default() }),
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &lines,
+                    entry_point: Some("fs_line"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState { format: color_format, blend: Some(wgpu::BlendState::ALPHA_BLENDING), write_mask: wgpu::ColorWrites::ALL })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        });
         // Culling binds the globals (camera, voyage, door parts) at group 0 and its own buffers at group 3.
         let cull_layout = cull::layout(device);
         let cull_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("cull"), bind_group_layouts: &[Some(&globals_layout), None, None, Some(&cull_layout)], immediate_size: 0 });
         let make_cull = |entry: &str| device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some(entry), layout: Some(&cull_pl), module: &shader, entry_point: Some(entry), compilation_options: Default::default(), cache: None });
         let cull = [make_cull("cs_cull_vis"), make_cull("cs_cull_compact")];
-        Self { globals_layout, texture_layout, pose_layout, scenery, scenery_bump, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_wrap_layout, shine_pipeline, refract_pipeline, line_pipeline, sil_layout, sil_pipeline, cull_layout, cull }
+        Self { globals_layout, texture_layout, pose_layout, scenery, scenery_bump, scenery_wire, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_wrap_layout, shine_pipeline, refract_pipeline, line_pipeline, world_pipelines, sil_layout, sil_pipeline, cull_layout, cull }
     }
 }
 
@@ -1629,11 +1676,16 @@ impl ZoneRenderer {
             bump_mode: true,
             scenery_bump: p.scenery_bump,
             scenery: p.scenery,
+            scenery_wire: p.scenery_wire,
+            wireframe: false,
             actor_pipeline: p.actor_pipeline,
             sky_pipeline: p.sky_pipeline,
             line_pipeline: p.line_pipeline,
             line_buf: None,
             lines: Vec::new(),
+            world_pipelines: p.world_pipelines,
+            world_bufs: [None, None],
+            world_shapes: [Vec::new(), Vec::new()],
             texture_layout: p.texture_layout,
             sampler,
             uniforms,
@@ -1708,6 +1760,8 @@ impl ZoneRenderer {
             parts_gpu,
             now: 0.0,
             voyage: Mat4::IDENTITY,
+            mod_clear: None,
+            mod_ambient: None,
             clip: [0.0, 1.0],
             retail_reach: 0.0,
         }
@@ -1956,6 +2010,62 @@ impl ZoneRenderer {
             }
         }
         self.lines = lines;
+    }
+
+    /// The Lua mods' world shapes: line pairs and triangles (gamma-space colours); written only when they change.
+    pub fn set_world_shapes(&mut self, gpu: &Gpu, mut shapes: [Vec<LineVertex>; 2]) {
+        if !self.encode_gamma {
+            for v in shapes.iter_mut().flatten() {
+                for c in &mut v.color[..3] {
+                    *c = c.powf(2.2);
+                }
+            }
+        }
+        for (k, list) in shapes.into_iter().enumerate() {
+            if list == self.world_shapes[k] {
+                continue;
+            }
+            if !list.is_empty() {
+                if self.world_bufs[k].as_ref().is_none_or(|b| b.1 < list.len()) {
+                    let cap = list.len().next_power_of_two().max(256);
+                    let buf = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some("world shapes"),
+                        size: (cap * std::mem::size_of::<LineVertex>()) as u64,
+                        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                        mapped_at_creation: false,
+                    });
+                    self.world_bufs[k] = Some((buf, cap));
+                }
+                if let Some((buf, _)) = &self.world_bufs[k] {
+                    gpu.queue.put(buf, 0, bytemuck::cast_slice(&list));
+                }
+            }
+            self.world_shapes[k] = list;
+        }
+    }
+
+    /// The Lua mods' world shapes over the finished scene, behind what stands in front of them.
+    pub fn render_world_shapes(&self, encoder: &mut wgpu::CommandEncoder, color: &wgpu::TextureView, depth: &wgpu::TextureView) {
+        if self.world_shapes.iter().all(|s| s.is_empty()) {
+            return;
+        }
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("world shapes"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: color, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store } })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: depth, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }), stencil_ops: None }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_bind_group(0, &self.globals, &[]);
+        // Triangles first, so outlines draw over their fills.
+        for k in [1, 0] {
+            if let (Some((buf, _)), false) = (self.world_bufs[k].as_ref(), self.world_shapes[k].is_empty()) {
+                pass.set_pipeline(&self.world_pipelines[k]);
+                pass.set_vertex_buffer(0, buf.slice(..));
+                pass.draw(0..self.world_shapes[k].len() as u32, 0..1);
+            }
+        }
     }
 
     /// The overlay over the finished scene (after effects); uses this frame's globals from render().
@@ -2473,6 +2583,14 @@ impl ZoneRenderer {
             let lin = |c: f32| if self.encode_gamma { c } else { c.powf(2.2) };
             clear = [lin(l.clear.x), lin(l.clear.y), lin(l.clear.z)];
         }
+        if let Some(c) = self.mod_clear {
+            let lin = |c: f32| if self.encode_gamma { c } else { c.powf(2.2) };
+            clear = c.map(lin);
+            u.clear = [c[0], c[1], c[2], 1.0];
+        }
+        if let Some(a) = self.mod_ambient {
+            (u.ambient, u.actor_ambient) = ([a[0], a[1], a[2], 1.0], [a[0], a[1], a[2], 1.0]);
+        }
         // FUN_10183da0: instances with an area are lit by its environment; flagged models by 'ev10' while a sub-area
         // is in (+0x50, FUN_101787c0).
         u.area_info[1] = self.now;
@@ -2487,6 +2605,9 @@ impl ZoneRenderer {
         for (slot, l) in self.area_lights.iter().enumerate().take(AREAS - 1) {
             if let Some(l) = l {
                 areas[slot + 1] = AreaGpu { sun: v4(l.dir, 1.0), sun_color: v4(l.diffuse, 1.0), ambient: v4(l.ambient, 1.0), fog_color: v4(l.fog, 1.0), fog: [l.fog_start, l.fog_end, 0.0, 0.0], actor_sun: v4(l.actor_dir, 1.0), actor_color: v4(l.actor_diffuse, 1.0), actor_ambient: v4(l.actor_ambient, 1.0), two: l.two.map(|v| v4(v, 1.0)) };
+                if let Some(a) = self.mod_ambient {
+                    (areas[slot + 1].ambient, areas[slot + 1].actor_ambient) = ([a[0], a[1], a[2], 1.0], [a[0], a[1], a[2], 1.0]);
+                }
             }
         }
         gpu.queue.put(&self.areas, 0, bytemuck::cast_slice(&areas));
@@ -2584,7 +2705,7 @@ impl ZoneRenderer {
                         }
                         pass.set_bind_group(1, &m.textures[d.texture.min(m.textures.len() - 1)], &[]);
                         if pipe != c {
-                            pass.set_pipeline(&self.scenery[mode as usize][c]);
+                            pass.set_pipeline(self.wire(c).unwrap_or(&self.scenery[mode as usize][c]));
                             pipe = c;
                         }
                         pass.draw_indexed(d.first_index..d.first_index + d.index_count, d.base_vertex, range);
@@ -2758,7 +2879,7 @@ impl ZoneRenderer {
             }
             let want = if bump.is_some() { 8 + c } else { c };
             if *pipe != want {
-                pass.set_pipeline(if bump.is_some() { &self.scenery_bump[c] } else { &self.scenery[mode as usize][c] });
+                pass.set_pipeline(self.wire(c).unwrap_or(if bump.is_some() { &self.scenery_bump[c] } else { &self.scenery[mode as usize][c] }));
                 *pipe = want;
             }
             match culled {

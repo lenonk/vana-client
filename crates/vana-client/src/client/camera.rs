@@ -59,44 +59,95 @@ pub struct State {
     path_mode: bool,
     /// DAT_10456d80: ticks after a zone load that run the floor / ceiling / bar tests with the eye at rest.
     zone_in: i32,
-    /// Ours (the wheel, as modern MMOs): the rest distances' scale (0 = 1, retail's 3..6); and in first person the
+    /// A Lua mod's scale of the drawn eye's distance (0 = 1, retail's; render.set_camera); and in first person the
     /// mouse's look (pitch, absolute yaw) once dragged.
     pub dist: f32,
     fp_mouse: Option<(f32, f32)>,
+    /// Set by Lua mods (render.set_camera): the pan speed's scale (0 = 1), the farthest distance (0 = DIST.1), the
+    /// distance while engaged, and the one to go back to.
+    pub speed: f32,
+    pub dist_max: f32,
+    pub battle: Option<f32>,
+    battle_on: bool,
+    normal: f32,
+    /// The drawn eye's distance over the camera's own (a mod's scale, held in by what lies behind; 0 unset): the
+    /// camera itself always runs at retail's distances.
+    out: f32,
 }
 
-/// The wheel's distance range: retail's rest 3..6 at 1.
+/// The farthest a mod may set the distance.
+pub const DIST_LIMIT: f32 = 10.0;
+
+/// The pan speed's scale.
+pub fn speed(st: &State) -> f32 {
+    if st.speed > 0.0 { st.speed } else { 1.0 }
+}
+
+/// The farthest distance a mod may set now.
+pub fn max_dist(st: &State) -> f32 {
+    if st.dist_max > 0.0 { st.dist_max } else { DIST.1 }
+}
+
+/// A mod's distance range: retail's rest 3..6 at 1.
 pub const DIST: (f32, f32) = (0.5, 3.0);
 
 fn scale(st: &State) -> f32 {
     if st.dist > 0.0 { st.dist } else { 1.0 }
 }
 
-/// A wheel's notches (+ in): the eye moves in or out about the look at once, 15 % a notch; fully in, a notch more
-/// goes to first person, and out of it the first notch back. Locked, nothing. True when it changed something.
-pub fn zoom_distance(w: &mut World, notches: f32) -> bool {
-    if w.locked || notches == 0.0 {
-        return false;
-    }
+/// A distance set by a Lua mod: the drawn eye's scale (1 = retail's), not kept past the session.
+pub fn set_distance(w: &mut World, to: f32) {
+    set_dist(w, to);
+}
+
+fn set_dist(w: &mut World, to: f32) {
     if w.camst.first {
-        if notches < 0.0 {
-            toggle_first(w);
-            return true;
+        return;
+    }
+    w.camst.dist = to.clamp(DIST.0, max_dist(&w.camst));
+}
+
+/// A mod's camera settings: the pan speed's scale, the wheel's farthest distance, the distance while engaged.
+pub fn set_mod(w: &mut World, speed: Option<f32>, max: Option<f32>, battle: Option<Option<f32>>) {
+    if let Some(s) = speed {
+        w.camst.speed = s.clamp(0.1, 5.0);
+    }
+    if let Some(m) = max {
+        w.camst.dist_max = m.clamp(DIST.0, DIST_LIMIT);
+        if scale(&w.camst) > max_dist(&w.camst) {
+            let m = max_dist(&w.camst);
+            set_dist(w, m);
         }
-        return false;
     }
-    let k = scale(&w.camst);
-    if notches > 0.0 && k <= DIST.0 + 1e-3 {
-        toggle_first(w);
-        return true;
+    if let Some(b) = battle {
+        let on = w.camst.battle_on;
+        w.camst.battle = b.map(|d| d.clamp(DIST.0, DIST_LIMIT));
+        match (on, w.camst.battle) {
+            (true, Some(d)) => set_dist(w, d),
+            (true, None) if w.camst.normal > 0.0 => {
+                let n = w.camst.normal;
+                set_dist(w, n);
+            }
+            _ => {}
+        }
     }
-    let to = (k * 0.85f32.powf(notches)).clamp(DIST.0, DIST.1);
-    for c in [&mut w.cam, &mut w.camst.prev] {
-        c.eye = c.look + (c.eye - c.look) * (to / k);
+}
+
+/// The battle distance on engaging and back on disengaging.
+fn battle_switch(w: &mut World) {
+    let engaged = w.my_motion.status == 1;
+    if engaged == w.camst.battle_on {
+        return;
     }
-    w.camst.dist = to;
-    w.camst.hold = MANUAL_HOLD;
-    true
+    w.camst.battle_on = engaged;
+    let Some(b) = w.camst.battle else { return };
+    if engaged {
+        w.camst.normal = scale(&w.camst);
+        set_dist(w, b);
+    } else if w.camst.normal > 0.0 {
+        let n = w.camst.normal;
+        set_dist(w, n);
+    }
 }
 
 /// First person: the mouse turns the look (radians; pitch kept within 80 degrees).
@@ -191,10 +242,6 @@ impl State {
         Self { self_alpha: 1.0, ..Default::default() }
     }
 
-    /// With the wheel's distance kept from the last session.
-    pub fn with_dist(dist: f32) -> Self {
-        Self { dist: dist.clamp(DIST.0, DIST.1), ..Self::new() }
-    }
 }
 
 /// This frame's camera input.
@@ -325,6 +372,7 @@ pub fn step(w: &mut World, dt: f32, inp: &Inputs) {
         let yaw = w.yaw;
         face(w, yaw);
     }
+    battle_switch(w);
     let fade = if w.camst.first { -0.0625 } else { 0.0625 };
     w.camst.self_alpha = (w.camst.self_alpha + fade * ticks).clamp(0.0, 1.0);
     if w.locked {
@@ -373,6 +421,25 @@ pub fn step(w: &mut World, dt: f32, inp: &Inputs) {
     if let Some(y) = view_yaw(&w.cam) {
         w.yaw = y;
     }
+    drawn_out(w, ticks);
+}
+
+/// The drawn eye's factor (State::out): the wheel's scale, held 0.5 short of what the look -> drawn eye ray hits; in
+/// at once, out again eased.
+fn drawn_out(w: &mut World, ticks: f32) {
+    let k = scale(&w.camst);
+    let tgt = if w.camst.first || w.locked || (k - 1.0).abs() < 1e-4 {
+        1.0
+    } else {
+        let (eye, look) = (w.cam.eye, w.cam.look);
+        let d = (eye - look).length().max(1e-3);
+        match w.ground.as_ref().filter(|g| !g.is_empty()).and_then(|g| g.cam_ray(look, look + (eye - look) * k)) {
+            Some(h) => (((h - look).length() - 0.5) / d).clamp(k.min(1.0), k),
+            None => k,
+        }
+    };
+    let st = &mut w.camst;
+    st.out = if st.out <= 0.0 || tgt < st.out { tgt } else { st.out + (tgt - st.out) * (1.0 - 0.8f32.powf(ticks)) };
 }
 
 /// One tick of the free branch: look easing, the axes, the spring (or path mode), chase, height memory, the look ->
@@ -382,7 +449,8 @@ fn tick(w: &mut World, target: Vec3, player: Vec3, facing: Vec3, chase: bool, in
     let unlocked = w.unlock_ticks <= 0.0;
     let ground = w.ground.as_ref().filter(|g| !g.is_empty());
     let st = &mut w.camst;
-    let k = scale(st);
+    // Retail's distances: the wheel scales only the drawn eye (drawn_out).
+    let k = 1.0;
     let c = &mut w.cam;
     let start = frame_start.unwrap_or(c.eye);
     c.look += (target - c.look) * 0.25;
@@ -391,11 +459,11 @@ fn tick(w: &mut World, target: Vec3, player: Vec3, facing: Vec3, chase: bool, in
     } else {
         if w.unlock_ticks <= 0.0 {
             if inp.v6 != 0.0 {
-                orbit(c, -inp.v6 * YAW_RATE);
+                orbit(c, -inp.v6 * YAW_RATE * speed(st));
                 st.hold = MANUAL_HOLD;
             }
             if inp.v7 != 0.0 {
-                c.eye.y += inp.v7 * RISE_RATE;
+                c.eye.y += inp.v7 * RISE_RATE * speed(st);
                 st.hold = MANUAL_HOLD;
             }
         }
@@ -612,8 +680,9 @@ fn zoom(w: &mut World, ticks: f32, inp: &Inputs) {
 /// Section 7: the eye behind the head, the view where the stick points (eased), springing back when released.
 fn first_person(w: &mut World, ticks: f32, inp: &Inputs) {
     let p = super::drawn_pos(w);
+    // The view turns with the model's drawn facing (FUN_1001fd70: actor +0x48, the eased rotation while moving).
     let dir = w.net.me.lock().map_or(0, |m| m.dir);
-    let f = super::forward_from_dir(dir);
+    let f = w.my_draw_yaw.map_or_else(|| super::forward_from_dir(dir), |t| Vec3::new(t.cos(), 0.0, -t.sin()));
     let status = w.my_motion.status;
     // FUN_10020ba0: attach point 6 resting or seated, else point 12 (vt+0x1c4, the posed point), 0.91 x its height
     // at most 2.
@@ -668,7 +737,8 @@ pub fn view(w: &World) -> Camera {
     let t = s.acc.clamp(0.0, 1.0);
     // Not glam's lerp (a(1 - t) + bt): a camera at rest must not wobble in the last bit with t.
     let (eye, look) = (s.prev.eye + (c.eye - s.prev.eye) * t, s.prev.look + (c.look - s.prev.look) * t);
-    Camera { eye, target: look, up: Vec3::NEG_Y, fov_y: crate::dat::title::fov_y(focal(w)) }
+    let f = if s.first || w.locked || s.out <= 0.0 { 1.0 } else { s.out };
+    Camera { eye: look + (eye - look) * f, target: look, up: Vec3::NEG_Y, fov_y: crate::dat::title::fov_y(focal(w)) }
 }
 
 #[cfg(test)]

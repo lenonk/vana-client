@@ -67,7 +67,7 @@ fn eligible(w: &World, id: u32, e: &Entity) -> bool {
         && !matches!(e.motion.status, 2 | 3)
         && !(e.sub_kind == 0 && (50..=59).contains(&e.model))
         && w.actors.get(&id).is_some_and(|a| a.alpha >= super::actmotion::OPAQUE)
-        && (id >> 24 != 0 || e.active > 0.0)
+        && (id >> 24 != 0 || (w.opts.player_bump && e.active > 0.0))
 }
 
 /// One player step from `from` by `delta` (also a zero one: standing still clears the hold): true when it is held.

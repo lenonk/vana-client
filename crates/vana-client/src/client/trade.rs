@@ -146,6 +146,29 @@ fn send(w: &World, h: &Handover) -> bool {
     true
 }
 
+/// A hand-over without the window (a Lua mod's): the NPC within reach, up to 8 entries with the gil, inventory
+/// items that are neither worn nor linkshell items; sent as the window's Trade does.
+pub(super) fn hand_over(w: &World, npc: u32, items: &[(u8, u32)], gil: u32) -> Result<(), &'static str> {
+    let e = w.entities.get(&npc).ok_or("no such NPC")?;
+    if e.pos.distance_squared(w.pos) > REACH * REACH {
+        return Err("too far away");
+    }
+    if items.len() + usize::from(gil > 0) > 8 {
+        return Err("at most 8 entries");
+    }
+    let mut slots = [None; 8];
+    for (k, &(slot, n)) in items.iter().enumerate() {
+        let &(id, held) = w.inv.slots.get(&(super::items::INVENTORY, slot)).ok_or("an empty inventory slot")?;
+        let worn = w.inv.equip.iter().flatten().any(|&(b, i)| b == super::items::INVENTORY && i == slot);
+        if (0x201..=0x203).contains(&id) || worn || n == 0 || n > held {
+            return Err("an item that cannot be traded (worn, a linkshell item, or not that many)");
+        }
+        slots[k] = Some((id, slot, n));
+    }
+    let h = Handover { npc: (npc, e.index), slots, gil, cursor: 1, focus: Focus::Window, list: (0, 0), qty: None, money: None };
+    if send(w, &h) { Ok(()) } else { Err("nothing to trade") }
+}
+
 /// Per frame (FUN_10139b00): the NPC out of reach (or gone) closes it with "Target out of range."; an event closes it
 /// (the 0x838 hook).
 fn handover_update(w: &mut World) {

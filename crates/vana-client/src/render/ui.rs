@@ -82,6 +82,15 @@ pub struct UiBatch {
     /// modern layer's edge windows give way to them).
     pub modern: Option<ModernFrame>,
     pub frames: Vec<[f32; 4]>,
+    /// The game font's text in the TrueType face without the modern skin (a mod's switch).
+    pub ttf: bool,
+}
+
+impl UiBatch {
+    /// The game font's text is drawn in the TrueType face (the modern skin, or a mod's switch).
+    pub fn ttf_text(&self) -> bool {
+        self.modern.is_some() || self.ttf
+    }
 }
 
 /// The margin between a retail window's rect and the modern frame's border, as a share of the frame's corner.
@@ -506,6 +515,10 @@ impl UiBatch {
         }
     }
 
+    pub fn push_corners(&mut self, corners: [[f32; 2]; 4], rgba: [[f32; 4]; 4]) {
+        self.push_quad(None, Blend::Alpha, corners, [[0.0; 2]; 4], rgba);
+    }
+
     pub fn push_rect(&mut self, x: f32, y: f32, w: f32, h: f32, rgba: [f32; 4]) {
         self.push_quad(None, Blend::Alpha, [[x, y], [x + w, y], [x, y + h], [x + w, y + h]], [[0.0; 2]; 4], [rgba; 4]);
     }
@@ -530,19 +543,29 @@ impl UiBatch {
     }
 
     /// A whole texture stretched over a rect, alpha blended.
+    /// A texture over any four corners (top left, top right, bottom left, bottom right) with their uvs.
+    pub fn push_image_corners(&mut self, texture: &str, corners: [[f32; 2]; 4], uvs: [[f32; 2]; 4], rgba: [f32; 4]) {
+        self.push_quad(Some(texture), Blend::Alpha, corners, uvs, [rgba; 4]);
+    }
+
     pub fn push_image(&mut self, texture: &str, x: f32, y: f32, w: f32, h: f32, rgba: [f32; 4]) {
         self.push_quad(Some(texture), Blend::Alpha, [[x, y], [x + w, y], [x, y + h], [x + w, y + h]], [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]], [rgba; 4]);
     }
 
     /// Game-font quads; `atlas` is the texture name the font atlas was loaded under.
     pub fn push_text(&mut self, quads: &[crate::dat::font::Quad], atlas: &str) {
+        self.push_text_as(quads, atlas, false);
+    }
+
+    /// As push_text; `alpha` blends the glyphs over what is under them instead of adding (dark text, outlines).
+    pub fn push_text_as(&mut self, quads: &[crate::dat::font::Quad], atlas: &str, alpha: bool) {
         use crate::dat::font::{BLEND_ADD, Source};
         for q in quads {
             let texture = match &q.source {
                 Source::Atlas => atlas.to_string(),
                 Source::Texture(n) => crate::dat::ui::norm_name(n.as_bytes()),
             };
-            let blend = if q.blend == BLEND_ADD { Blend::Glyph } else { Blend::from_ps2(q.blend[0], q.blend[1], q.blend[2]) };
+            let blend = if q.blend == BLEND_ADD { if alpha { Blend::Alpha } else { Blend::Glyph } } else { Blend::from_ps2(q.blend[0], q.blend[1], q.blend[2]) };
             // BGRA, 0x80 = 1.0; the shader's texture * colour is MODULATE2X on that scale.
             let color = [ps2(q.color[2]), ps2(q.color[1]), ps2(q.color[0]), ps2(q.color[3])];
             let [u0, v0, u1, v1] = q.uv;

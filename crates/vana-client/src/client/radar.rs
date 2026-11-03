@@ -121,7 +121,7 @@ pub fn dots(w: &World, a: u32, s: &Sample) -> Vec<(f64, f64, u32)> {
             if dist > s.range as f64 || h > 4.0 {
                 return None;
             }
-            let rgb = colour(kind_bits(w, id, e), e.monstrosity, e.motion.status, s.mobs)?;
+            let rgb = colour(kind_bits(w, id, e), e.monstrosity, e.motion.status, s.mobs || w.opts.radar_mobs)?;
             Some((lx, ly, alpha(a, dist, h, s) << 24 | rgb))
         })
         .collect()

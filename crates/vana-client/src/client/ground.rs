@@ -445,6 +445,31 @@ impl Ground {
     }
 
     /// Triangle `i` counts: not the box of an open door.
+    /// The live triangles with a corner within `r` of (x, z) horizontally (mods: game.collision), with their normals
+    /// and surface kinds.
+    pub fn tris_near(&self, x: f32, z: f32, r: f32) -> Vec<([Vec3; 3], Vec3, u8)> {
+        let (lo, hi) = (cell(x - r, z - r), cell(x + r, z + r));
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for cx in lo.0..=hi.0 {
+            for cz in lo.1..=hi.1 {
+                for &i in self.cells.get(&(cx, cz)).into_iter().flatten() {
+                    let i = i as usize;
+                    let t = self.tris[i];
+                    if self.live(i) && !self.degenerate[i] && seen.insert(i) && t.iter().any(|v| (v.x - x).powi(2) + (v.z - z).powi(2) <= r * r) {
+                        out.push((t, self.normals[i], self.kinds[i]));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Every live triangle (mods: game.collision_mesh).
+    pub fn all_tris(&self) -> impl Iterator<Item = &[Vec3; 3]> + '_ {
+        self.tris.iter().enumerate().filter(|&(i, _)| self.live(i) && !self.degenerate[i]).map(|(_, t)| t)
+    }
+
     fn live(&self, i: usize) -> bool {
         match self.doors.get(i) {
             Some(&d) if d != 0 => !self.open.borrow().contains(&d),
