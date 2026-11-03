@@ -541,6 +541,9 @@ fn scroll_spell(w: &World, arg: u16) -> Option<u16> {
 /// but 7) green when unlocked (FUN_102092b0); white else. Not done: dice (kind 2, green only with Monstrosity data,
 /// which LSB never sends).
 pub(super) fn name_tint(w: &World, id: u16) -> u32 {
+    if let Some(t) = w.lua.item_tint(id) {
+        return t;
+    }
     let Some(it) = w.item_info.as_ref().and_then(|c| c.item(id)) else { return WHITE };
     let extra = |at: u16| it.extra.iter().find(|e| e.0 == at).map(|e| e.1);
     if it.level != 0 {
@@ -718,6 +721,34 @@ fn rows(w: &World, s: &Shop) -> Vec<Row> {
 
 fn packet(w: &World, id: u16, body: Vec<u8>) {
     let _ = w.net.commands.send(NetCommand::Packet { id, body });
+}
+
+/// The open NPC shop's stock (not a guild's): (index, item, price).
+pub(super) fn stock(w: &World) -> Option<Vec<(usize, u16, u32)>> {
+    let s = w.shop.as_ref().filter(|s| !s.guild)?;
+    Some(s.stock.iter().enumerate().filter_map(|(k, e)| e.map(|e| (k, e.item, e.price))).collect())
+}
+
+/// Buys from the open NPC shop without the window (a Lua mod's), as its Buy does.
+pub(super) fn buy(w: &World, index: usize, qty: u32) -> Result<(), &'static str> {
+    let s = w.shop.as_ref().filter(|s| !s.guild).ok_or("no shop open")?;
+    if s.stock.get(index).copied().flatten().is_none() || qty == 0 {
+        return Err("no such row");
+    }
+    send_buy(w, index as u8, qty);
+    Ok(())
+}
+
+/// Sells an inventory slot to the open NPC shop without the window, as its Sell does (0x084 then 0x085).
+pub(super) fn sell(w: &World, slot: u8, qty: u32) -> Result<(), &'static str> {
+    w.shop.as_ref().filter(|s| !s.guild).ok_or("no shop open")?;
+    let held = w.inv.slots.get(&(super::items::INVENTORY, slot)).map_or(0, |s| s.1);
+    if qty == 0 || qty > held {
+        return Err("not that many in the slot");
+    }
+    send_sell_req(w, slot, qty);
+    packet(w, 0x085, vec![1, 0, 0, 0]);
+    Ok(())
 }
 
 /// c2s 0x083 (FUN_100f8970): ItemNum, ShopNo 0, ShopItemIndex, PropertyItemIndex 0.
@@ -1112,6 +1143,25 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>)> {
         View::Bazaar => sell_rows(w).get(at).map(slot),
         View::Wares => w.wares.rows().get(at).map(|r| (r.item, Some(r.attr))),
     }
+}
+
+/// The shop list for mods (ui.native.list): its view, rows (item, price, count, inventory slot), cursor and top.
+pub(in crate::client) fn native_list(w: &World) -> Option<(&'static str, Vec<serde_json::Value>, usize, usize)> {
+    use serde_json::json;
+    let s = w.shop.as_ref()?;
+    let slot = |r: &crate::inventory::Slot| json!({"item": r.id, "count": r.count, "bag": super::items::INVENTORY, "slot": r.index, "price": price_of(s, r.id)});
+    let (name, rows): (&str, Vec<serde_json::Value>) = match s.view? {
+        View::Buy if s.guild => ("buy", w.guild[0].items.iter().map(|g| json!({"item": g.item, "count": g.count, "price": g.price})).collect()),
+        View::Buy => ("buy", buy_rows(s).iter().map(|r| json!({"item": r.1.item, "price": r.1.price})).collect()),
+        View::Sell => ("sell", sell_rows(w).iter().map(slot).collect()),
+        // The wanted list's first row is its header.
+        View::Wanted => ("wanted", std::iter::once(json!({})).chain(wanted(w).iter().map(|g| json!({"item": g.item, "count": g.count, "price": g.price & 0x7fff_ffff}))).collect()),
+        View::Inv(_) if s.guild => ("sell", Vec::new()),
+        View::Inv(filter) => ("sell", inv_rows(w, filter).iter().map(slot).collect()),
+        View::Bazaar => ("bazaar", sell_rows(w).iter().map(slot).collect()),
+        View::Wares => ("wares", w.wares.rows().iter().map(|r| json!({"item": r.item, "count": r.count, "price": r.price})).collect()),
+    };
+    Some((name, rows, s.list.0 + s.list.1, s.list.0))
 }
 
 /// The bars: the list's title "Shop" / "Guild Shop" (group 0xd 0xc / 0xd), help 0xe 0x2f buy, 0x30 sell, 0x33 the

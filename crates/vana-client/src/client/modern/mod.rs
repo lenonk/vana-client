@@ -134,6 +134,8 @@ pub struct Modern {
     log_text: std::cell::RefCell<Option<String>>,
     line_req: std::cell::Cell<Option<(usize, Option<usize>)>>,
     line_sel: std::cell::Cell<bool>,
+    /// The chat line's caret this frame, for an IME's candidate window.
+    pub ime_caret: std::cell::Cell<Option<egui::Rect>>,
     chat_menu: std::cell::RefCell<Option<chatsel::Menu>>,
     chat_act: std::cell::RefCell<Option<chatsel::Act>>,
     /// The retail windows drawn this frame: the edge windows give way to them (they draw under every panel).
@@ -188,6 +190,7 @@ impl Modern {
             log_text: Default::default(),
             line_req: Default::default(),
             line_sel: Default::default(),
+            ime_caret: Default::default(),
             chat_menu: Default::default(),
             chat_act: Default::default(),
             dirty: false,
@@ -244,7 +247,7 @@ impl Modern {
         pointers(self, ctx, w);
         let layout = cfg.modern_places.entry(w.name.clone()).or_default();
         let mut changed = false;
-        let mut p = Panels { m: self, ctx, gu: Some(gu), layout, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, battle_in_all: &mut cfg.modern_battle_in_all, condense: &mut cfg.modern_condense, folded: &mut cfg.modern_folded, scan_kinds: &mut cfg.modern_scan_kinds, this: HashMap::new(), retail: HashMap::new(), focus: focus_panel(w) };
+        let mut p = Panels { m: self, ctx, gu: Some(gu), layout, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, battle_in_all: &mut cfg.modern_battle_in_all, condense: &mut cfg.modern_condense, folded: &mut cfg.modern_folded, scan_kinds: &mut cfg.modern_scan_kinds, this: HashMap::new(), retail: HashMap::new(), focus: focus_panel(w), hidden: modern_hidden(w) };
         // The chat window first: what sits on it places by this frame's height.
         self.chat_edge.set(None);
         chat::panel(&mut p, w);
@@ -382,6 +385,15 @@ struct Look<'a> {
     gu: Option<&'a GameUi>,
 }
 
+/// The panels Lua mods hid; the chat window stays while typed in or needed by an event.
+fn modern_hidden(w: &World) -> Vec<&'static str> {
+    let mut h = w.lua.hidden_panels();
+    if w.typing || super::event::active(w) || super::event::prompt(w) {
+        h.retain(|p| *p != "chat");
+    }
+    h
+}
+
 /// What a frame's panels share.
 struct Panels<'a> {
     m: &'a Modern,
@@ -403,6 +415,8 @@ struct Panels<'a> {
     retail: HashMap<String, Place>,
     /// The panel with the keys (focus_panel): drawn in the focused frame.
     focus: Option<&'static str>,
+    /// Panels a Lua mod hid (ui.native.hide).
+    hidden: Vec<&'static str>,
 }
 
 /// The panel that takes the keys now, as the key dispatch (client/mod.rs) routes them: the prompt, the chat line, an
@@ -868,6 +882,9 @@ impl<'a> Panels<'a> {
     /// The panel itself: the pack's window frame behind its title row and contents, moved by a drag on its background
     /// unless placed beside another; a resizable one has the resize glyph in its corner. Returns its rect.
     fn show(&mut self, id: &str, o: Show, add: impl FnOnce(&mut Ui, Vec2)) -> Option<Rect> {
+        if self.hidden.contains(&id) {
+            return None;
+        }
         let (m, ctx) = (self.m, self.ctx);
         let screen = ctx.content_rect();
         let mut place = self.place(id);
@@ -1052,6 +1069,17 @@ impl Modern {
         let mut images = self.images.borrow_mut();
         let t = images.entry(key.clone()).or_insert_with(|| {
             let (w, h, rgba) = gu.sprite_rgba(lib, index)?;
+            Some(ctx.load_texture(key, egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba), egui::TextureOptions::LINEAR))
+        });
+        t.as_ref().map(|t| t.id())
+    }
+
+    /// A mod's chat icon (chaticons.rs) as an egui texture, made once.
+    pub fn chat_icon(&self, ctx: &Context, k: usize) -> Option<egui::TextureId> {
+        let key = super::chaticons::texture(k);
+        let mut images = self.images.borrow_mut();
+        let t = images.entry(key.clone()).or_insert_with(|| {
+            let (w, h, rgba) = super::chaticons::get(k)?;
             Some(ctx.load_texture(key, egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba), egui::TextureOptions::LINEAR))
         });
         t.as_ref().map(|t| t.id())

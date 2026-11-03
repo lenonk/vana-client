@@ -285,6 +285,11 @@ enum Cmd {
         #[arg(long)]
         out: PathBuf,
     },
+    /// The Lua mod API reference: rewrites the generated part of the file (docs/lua-api.md).
+    LuaDocs {
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// The stock status icons as PNGs plus status.tsv (id, name, description, icon key).
     StatusDump {
         #[arg(long)]
@@ -1687,6 +1692,12 @@ fn main() -> Result<()> {
         Cmd::MovieShot { frames, out, size } => movie_shot(&frames, &out, size.as_deref()),
         Cmd::TexExport { out } => texpack::export(&out),
         Cmd::StatusDump { out } => texpack::status_dump(&out),
+        Cmd::LuaDocs { out } => {
+            let doc = client::lua_api_doc(&std::fs::read_to_string(&out)?)?;
+            std::fs::write(&out, doc)?;
+            println!("{}", out.display());
+            Ok(())
+        }
         Cmd::LuaStubs { out } => {
             std::fs::write(&out, client::lua_stubs())?;
             println!("{}", out.display());

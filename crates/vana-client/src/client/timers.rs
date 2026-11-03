@@ -116,11 +116,26 @@ pub enum Hit {
     Section(usize),
 }
 
+/// A Lua mod's timer (timers.add): its section (0 recasts, 1 buffs, 2 debuffs), group, row and when it ends.
+#[derive(Clone, Debug)]
+pub struct ModTimer {
+    pub mod_id: String,
+    pub section: usize,
+    pub group: Option<String>,
+    pub icon: Icon,
+    pub name: String,
+    pub end: Instant,
+    pub total: f32,
+    pub fills: bool,
+}
+
 /// The window's hot areas.
 pub type Hits = Vec<(Hit, [f32; 4])>;
 
 pub struct Timers {
     pub on: HashMap<u32, Bearer>,
+    /// Lua mods' timers (shown even with the Extra off).
+    pub mods: Vec<ModTimer>,
     /// The longest time left seen per recast and per status of ours: the gauge's full length.
     totals: HashMap<(u8, u32), f32>,
     /// The drawer is out; `slide` runs 0 (in) .. 1 (out).
@@ -165,6 +180,7 @@ impl Default for Timers {
     fn default() -> Self {
         Self {
             on: HashMap::new(),
+            mods: Vec::new(),
             totals: HashMap::new(),
             out: true,
             slide: 1.0,
@@ -842,7 +858,29 @@ pub fn sections(w: &mut World, gu: &GameUi) -> [Vec<Group>; 3] {
     mobs.sort_by_key(|(id, b)| (Some(**id) != w.target, b.effects.iter().map(|e| e.start).max().map(std::cmp::Reverse), b.name.clone()));
     let debuffs = mobs.into_iter().map(|(_, b)| Group { name: Some(b.name.clone()), rows: applied_rows(b, now) }).collect();
     let recasts = if recasts.is_empty() { Vec::new() } else { vec![Group { name: None, rows: recasts }] };
-    [recasts, buffs, debuffs]
+    // With the Extra off only the mods' timers show.
+    let mut secs = if w.extra_timers { [recasts, buffs, debuffs] } else { Default::default() };
+    mod_rows(w, now, &mut secs);
+    secs
+}
+
+/// The Lua mods' timers in their sections and groups (those of unloaded mods and a second past their end dropped).
+fn mod_rows(w: &mut World, now: Instant, secs: &mut [Vec<Group>; 3]) {
+    let loaded = w.lua.mod_ids();
+    w.timers.mods.retain(|t| loaded.contains(&t.mod_id) && (t.end > now || now.duration_since(t.end).as_secs_f32() < 1.0));
+    for t in &w.timers.mods {
+        let left = if t.end > now { t.end.duration_since(now).as_secs_f32() } else { 0.0 };
+        let row = Row { icon: t.icon, name: t.name.clone(), left, total: t.total, fills: t.fills };
+        let sec = &mut secs[t.section.min(2)];
+        let name = t.group.clone().or_else(|| (t.section > 0).then(|| "Timers".to_string()));
+        match sec.iter_mut().find(|g| g.name == name) {
+            Some(g) => {
+                g.rows.push(row);
+                g.rows.sort_by(|a, b| a.left.total_cmp(&b.left));
+            }
+            None => sec.push(Group { name, rows: vec![row] }),
+        }
+    }
 }
 
 // ---- The window ----
@@ -1096,7 +1134,7 @@ pub fn prepare(gu: &GameUi, w: &mut World, sw: f32, sh: f32, foot: f32) {
     let step = dt * 60.0 / SLIDE_TICKS;
     w.timers.slide = if w.timers.out { (w.timers.slide + step).min(1.0) } else { (w.timers.slide - step).max(0.0) };
     w.timers.frame = None;
-    if !w.extra_timers || super::event::active(w) || w.map.is_some() || w.cnq.is_some() {
+    if !(w.extra_timers || !w.timers.mods.is_empty()) || super::event::active(w) || w.map.is_some() || w.cnq.is_some() {
         return;
     }
     let secs = sections(w, gu);

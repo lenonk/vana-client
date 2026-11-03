@@ -675,7 +675,8 @@ fn bid_result(w: &mut World, p: &AucPacket) {
     w.bid.pending = false;
     let ticks = ((p.pc as u32).wrapping_mul(p.p8) % 120 + 180) as f32;
     w.bid.result = Some((kind, ticks, p.pc, p.p10, p.p8));
-    if w.auction.is_none() {
+    // A Lua mod's no-wait switch (client.set_option "ah_result_delay") prints it at once.
+    if w.auction.is_none() || !w.opts.ah_delay {
         print_result(w, true);
     }
 }
@@ -732,7 +733,7 @@ pub fn update(w: &mut World, dt: f32) {
     }
     let Some(mut a) = w.auction.take() else { return };
     let d = w.pos - a.origin;
-    if d.x * d.x + d.z * d.z > 36.0 || super::event::active(w) {
+    if (w.opts.menu_reach && d.x * d.x + d.z * d.z > 36.0) || super::event::active(w) {
         w.auction = Some(a);
         close(w);
         return;
@@ -858,6 +859,37 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>, u8)> {
         }
         _ => None,
     }
+}
+
+/// The auction window with the keys for mods (ui.native.list): its layer (a menu's name, list, history, sell),
+/// rows, cursor and top; a menu has no rows (its cursor is the child id).
+pub(in crate::client) fn native_list(w: &World) -> Option<(String, Vec<serde_json::Value>, usize, usize)> {
+    use serde_json::json;
+    let a = w.auction.as_ref()?;
+    Some(match a.top()? {
+        Layer::Menu(name, cursor) => (name.trim_start_matches("menu").trim().to_string(), Vec::new(), cursor as usize, 0),
+        Layer::List => {
+            let l = a.list.as_ref()?;
+            let rows = l
+                .rows
+                .iter()
+                .map(|r| match *r {
+                    Row::Single { item, single, stack } | Row::Stack { item, single, stack } => json!({"item": item, "stack": r.stack(), "single_count": single, "stack_count": stack}),
+                    Row::Slot(k) => json!({"item": w.ah_slots[k as usize].item, "sale_slot": k, "price": w.ah_slots[k as usize].price}),
+                })
+                .collect();
+            ("list".into(), rows, l.scroll + l.cursor, l.scroll)
+        }
+        Layer::History => {
+            let h = a.history.as_ref()?;
+            let rows = h.sales.iter().map(|s| json!({"item": h.item, "price": s.price, "date": s.date, "seller": s.seller.as_str(), "buyer": s.buyer.as_str()})).collect();
+            ("history".into(), rows, h.scroll + h.cursor, h.scroll)
+        }
+        Layer::Sell(scroll, cursor) => {
+            let rows = sell_rows(w).iter().map(|s| json!({"item": s.id, "count": s.count, "bag": 0, "slot": s.index})).collect();
+            ("sell".into(), rows, scroll + cursor, scroll)
+        }
+    })
 }
 
 /// The inventory rows offered for sale (the view's order, gil left out).
@@ -1581,7 +1613,7 @@ fn draw_list(gu: &mut GameUi, w: &World, a: &Auction, focused: bool, sw: f32, sh
                 gu.shape_text(&format!("[{single}]"), ox + 275.0, y + 4.0, WHITE, true);
             }
             Row::Stack { stack: n, .. } => {
-                gu.text(&name, ox + 18.0, y + 2.0, 0, STACK_NAME.to_le_bytes());
+                gu.text(&name, ox + 18.0, y + 2.0, 0, w.lua.item_tint(item).unwrap_or(STACK_NAME).to_le_bytes());
                 gu.shape_text(&stack.to_string(), ox + 16.0, y + 4.0, WHITE, true);
                 gu.shape_text(&format!("[{n}]"), ox + 275.0, y + 4.0, WHITE, true);
             }
@@ -1743,7 +1775,7 @@ pub(super) fn look(w: &World) -> Option<Look> {
                         let stack = info.item(item).map_or(1, |it| it.stack.max(1) as u32);
                         match *r {
                             Row::Single { single, .. } => PaneRow { item, tint: super::shop::name_tint(w, item), stack: None, right: format!("[{single}]") },
-                            Row::Stack { stack: n, .. } => PaneRow { item, tint: STACK_NAME, stack: Some(stack), right: format!("[{n}]") },
+                            Row::Stack { stack: n, .. } => PaneRow { item, tint: w.lua.item_tint(item).unwrap_or(STACK_NAME), stack: Some(stack), right: format!("[{n}]") },
                             Row::Slot(k) => {
                                 let p = &w.ah_slots[k as usize];
                                 PaneRow { item, tint: stat_look(w, p).0, stack: (p.qty != 1).then_some(stack), right: crate::inventory::gil_text(p.price as i64) }

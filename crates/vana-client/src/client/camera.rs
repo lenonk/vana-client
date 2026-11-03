@@ -59,10 +59,96 @@ pub struct State {
     path_mode: bool,
     /// DAT_10456d80: ticks after a zone load that run the floor / ceiling / bar tests with the eye at rest.
     zone_in: i32,
-    /// In first person the mouse's look (pitch, absolute yaw) once dragged.
+    /// A Lua mod's scale of the drawn eye's distance (0 = 1, retail's; render.set_camera); and in first person the
+    /// mouse's look (pitch, absolute yaw) once dragged.
+    pub dist: f32,
     fp_mouse: Option<(f32, f32)>,
+    /// Set by Lua mods (render.set_camera): the pan speed's scale (0 = 1), the farthest distance (0 = DIST.1), the
+    /// distance while engaged, and the one to go back to.
+    pub speed: f32,
+    pub dist_max: f32,
+    pub battle: Option<f32>,
+    battle_on: bool,
+    normal: f32,
+    /// The drawn eye's distance over the camera's own (a mod's scale, held in by what lies behind; 0 unset): the
+    /// camera itself always runs at retail's distances.
+    out: f32,
 }
 
+/// The farthest a mod may set the distance.
+pub const DIST_LIMIT: f32 = 10.0;
+
+/// The pan speed's scale.
+pub fn speed(st: &State) -> f32 {
+    if st.speed > 0.0 { st.speed } else { 1.0 }
+}
+
+/// The farthest distance a mod may set now.
+pub fn max_dist(st: &State) -> f32 {
+    if st.dist_max > 0.0 { st.dist_max } else { DIST.1 }
+}
+
+/// A mod's distance range: retail's rest 3..6 at 1.
+pub const DIST: (f32, f32) = (0.5, 3.0);
+
+fn scale(st: &State) -> f32 {
+    if st.dist > 0.0 { st.dist } else { 1.0 }
+}
+
+/// A distance set by a Lua mod: the drawn eye's scale (1 = retail's), not kept past the session.
+pub fn set_distance(w: &mut World, to: f32) {
+    set_dist(w, to);
+}
+
+fn set_dist(w: &mut World, to: f32) {
+    if w.camst.first {
+        return;
+    }
+    w.camst.dist = to.clamp(DIST.0, max_dist(&w.camst));
+}
+
+/// A mod's camera settings: the pan speed's scale, the wheel's farthest distance, the distance while engaged.
+pub fn set_mod(w: &mut World, speed: Option<f32>, max: Option<f32>, battle: Option<Option<f32>>) {
+    if let Some(s) = speed {
+        w.camst.speed = s.clamp(0.1, 5.0);
+    }
+    if let Some(m) = max {
+        w.camst.dist_max = m.clamp(DIST.0, DIST_LIMIT);
+        if scale(&w.camst) > max_dist(&w.camst) {
+            let m = max_dist(&w.camst);
+            set_dist(w, m);
+        }
+    }
+    if let Some(b) = battle {
+        let on = w.camst.battle_on;
+        w.camst.battle = b.map(|d| d.clamp(DIST.0, DIST_LIMIT));
+        match (on, w.camst.battle) {
+            (true, Some(d)) => set_dist(w, d),
+            (true, None) if w.camst.normal > 0.0 => {
+                let n = w.camst.normal;
+                set_dist(w, n);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The battle distance on engaging and back on disengaging.
+fn battle_switch(w: &mut World) {
+    let engaged = w.my_motion.status == 1;
+    if engaged == w.camst.battle_on {
+        return;
+    }
+    w.camst.battle_on = engaged;
+    let Some(b) = w.camst.battle else { return };
+    if engaged {
+        w.camst.normal = scale(&w.camst);
+        set_dist(w, b);
+    } else if w.camst.normal > 0.0 {
+        let n = w.camst.normal;
+        set_dist(w, n);
+    }
+}
 
 /// First person: the mouse turns the look (radians; pitch kept within 80 degrees).
 pub fn first_look(w: &mut World, dyaw: f32, dpitch: f32) {
@@ -286,6 +372,7 @@ pub fn step(w: &mut World, dt: f32, inp: &Inputs) {
         let yaw = w.yaw;
         face(w, yaw);
     }
+    battle_switch(w);
     let fade = if w.camst.first { -0.0625 } else { 0.0625 };
     w.camst.self_alpha = (w.camst.self_alpha + fade * ticks).clamp(0.0, 1.0);
     if w.locked {
@@ -334,6 +421,25 @@ pub fn step(w: &mut World, dt: f32, inp: &Inputs) {
     if let Some(y) = view_yaw(&w.cam) {
         w.yaw = y;
     }
+    drawn_out(w, ticks);
+}
+
+/// The drawn eye's factor (State::out): the wheel's scale, held 0.5 short of what the look -> drawn eye ray hits; in
+/// at once, out again eased.
+fn drawn_out(w: &mut World, ticks: f32) {
+    let k = scale(&w.camst);
+    let tgt = if w.camst.first || w.locked || (k - 1.0).abs() < 1e-4 {
+        1.0
+    } else {
+        let (eye, look) = (w.cam.eye, w.cam.look);
+        let d = (eye - look).length().max(1e-3);
+        match w.ground.as_ref().filter(|g| !g.is_empty()).and_then(|g| g.cam_ray(look, look + (eye - look) * k)) {
+            Some(h) => (((h - look).length() - 0.5) / d).clamp(k.min(1.0), k),
+            None => k,
+        }
+    };
+    let st = &mut w.camst;
+    st.out = if st.out <= 0.0 || tgt < st.out { tgt } else { st.out + (tgt - st.out) * (1.0 - 0.8f32.powf(ticks)) };
 }
 
 /// One tick of the free branch: look easing, the axes, the spring (or path mode), chase, height memory, the look ->
@@ -343,6 +449,8 @@ fn tick(w: &mut World, target: Vec3, player: Vec3, facing: Vec3, chase: bool, in
     let unlocked = w.unlock_ticks <= 0.0;
     let ground = w.ground.as_ref().filter(|g| !g.is_empty());
     let st = &mut w.camst;
+    // Retail's distances: the wheel scales only the drawn eye (drawn_out).
+    let k = 1.0;
     let c = &mut w.cam;
     let start = frame_start.unwrap_or(c.eye);
     c.look += (target - c.look) * 0.25;
@@ -351,11 +459,11 @@ fn tick(w: &mut World, target: Vec3, player: Vec3, facing: Vec3, chase: bool, in
     } else {
         if w.unlock_ticks <= 0.0 {
             if inp.v6 != 0.0 {
-                orbit(c, -inp.v6 * YAW_RATE);
+                orbit(c, -inp.v6 * YAW_RATE * speed(st));
                 st.hold = MANUAL_HOLD;
             }
             if inp.v7 != 0.0 {
-                c.eye.y += inp.v7 * RISE_RATE;
+                c.eye.y += inp.v7 * RISE_RATE * speed(st);
                 st.hold = MANUAL_HOLD;
             }
         }
@@ -389,8 +497,8 @@ fn tick(w: &mut World, target: Vec3, player: Vec3, facing: Vec3, chase: bool, in
             // 2019 0x1001eb4a: with chase cam on and the eye 1..3 out horizontally, a wall within 3.1 out from the look
             // stops the spring's push this tick.
             let h = Vec3::new(c.eye.x - c.look.x, 0.0, c.eye.z - c.look.z);
-            let push = !(chase && h.length() > 1.0 && h.length() < REST_NEAR && ground.is_some_and(|g| g.cam_ray(c.look, c.look + h.normalize() * 3.1).is_some()));
-            if spring(c, d_vec, push) {
+            let push = !(chase && h.length() > 1.0 && h.length() < REST_NEAR * k && ground.is_some_and(|g| g.cam_ray(c.look, c.look + h.normalize() * 3.1 * k).is_some()));
+            if spring(c, d_vec, push, k) {
                 st.hold = MANUAL_HOLD;
             }
         }
@@ -420,7 +528,7 @@ fn tick(w: &mut World, target: Vec3, player: Vec3, facing: Vec3, chase: bool, in
     }
     // Home (0x51): eases 1/8 a tick toward 3 behind the player at its look height, until the view is behind.
     if st.home > 0 {
-        let behind = player - Vec3::new(facing.x, 0.0, facing.z).normalize_or_zero() * 3.0 + Vec3::new(0.0, target.y - player.y, 0.0);
+        let behind = player - Vec3::new(facing.x, 0.0, facing.z).normalize_or_zero() * 3.0 * k + Vec3::new(0.0, target.y - player.y, 0.0);
         let off = view_yaw(c).zip(Some(facing.x.atan2(facing.z))).map_or(0.0, |(a, b)| (a - b + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI);
         if off.abs() >= 0.05 {
             c.eye += (behind - c.eye) * 0.125;
@@ -510,10 +618,10 @@ fn side_bar(g: &Ground, eye: Vec3, look: Vec3) -> Vec3 {
 }
 
 /// The distance spring, one tick, `d_vec` = look - eye before the chase: reeled in beyond 6 (past 100 by half the
-/// excess), pushed out below 3 and to 3 horizontally unless `push` is off. True when it pushed (that holds like manual
-/// input).
-fn spring(c: &mut LockCam, d_vec: Vec3, push: bool) -> bool {
-    let (near, far) = (REST_NEAR, REST_FAR);
+/// excess), pushed out below 3 and to 3 horizontally unless `push` is off; both rests scaled by `k` (the wheel's
+/// distance, ours). True when it pushed (that holds like manual input).
+fn spring(c: &mut LockCam, d_vec: Vec3, push: bool, k: f32) -> bool {
+    let (near, far) = (REST_NEAR * k, REST_FAR * k);
     let d = d_vec.length();
     if d > 100.0 {
         c.eye += d_vec / d * (d - 100.0) * 0.5;
@@ -629,7 +737,8 @@ pub fn view(w: &World) -> Camera {
     let t = s.acc.clamp(0.0, 1.0);
     // Not glam's lerp (a(1 - t) + bt): a camera at rest must not wobble in the last bit with t.
     let (eye, look) = (s.prev.eye + (c.eye - s.prev.eye) * t, s.prev.look + (c.look - s.prev.look) * t);
-    Camera { eye, target: look, up: Vec3::NEG_Y, fov_y: crate::dat::title::fov_y(focal(w)) }
+    let f = if s.first || w.locked || s.out <= 0.0 { 1.0 } else { s.out };
+    Camera { eye: look + (eye - look) * f, target: look, up: Vec3::NEG_Y, fov_y: crate::dat::title::fov_y(focal(w)) }
 }
 
 #[cfg(test)]
@@ -666,7 +775,7 @@ mod tests {
             let mut c = LockCam { eye: Vec3::new(0.0, 0.0, -start), look: Vec3::ZERO };
             for _ in 0..2000 {
                 let d = c.look - c.eye;
-                spring(&mut c, d, true);
+                spring(&mut c, d, true, 1.0);
             }
             let d = (c.eye - c.look).length();
             assert!((d - rest).abs() < 0.02, "{start} -> {d}");

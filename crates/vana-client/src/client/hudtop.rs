@@ -9,6 +9,8 @@ use std::time::Instant;
 
 #[derive(Default)]
 pub struct HudTop {
+    /// A Lua mod hides the Network window (ui.native.hide "network").
+    net_hidden: bool,
     /// netstat: S / R bytes a second (stat[1] / stat[0]), the percentage, totals at the last 3 s tick.
     sent_rate: u64,
     recv_rate: u64,
@@ -236,7 +238,7 @@ impl HudTop {
                 alpha: self.fade.alpha(),
                 shown: self.fade.fade == Fade::Shown,
                 title_up: gu.want("menu    titlewin"),
-                net_up: gu.want("menu    netstat"),
+                net_up: gu.want("menu    netstat") && !w.lua.hides("network"),
                 busy: busy.then_some(self.busy_frame),
                 pct: self.pct,
                 sent: self.sent_rate,
@@ -250,10 +252,11 @@ impl HudTop {
                 mail: (self.net_page == 0).then_some(self.mail),
             };
         } else {
+            self.net_hidden = w.lua.hides("network");
             self.draw_bars(gu, sw, sh, title, help, ticks, busy);
         }
         // The compass alone is hidden in events, and in the modern layer (its location panel).
-        self.draw_compass(gu, w, log_top, ticks, !super::event::active(w) && !w.modern, camera_forward);
+        self.draw_compass(gu, w, log_top, ticks, !super::event::active(w) && !w.modern && !w.lua.hides("compass"), camera_forward);
     }
 
     /// titlewin, helpwind and netstat at the current fade (also the offscreen topbar-shot).
@@ -316,7 +319,9 @@ impl HudTop {
         // content is drawn whatever the fade.
         // Page 0 (FUN_10201180): the envelope (windowps 2, 418 with a system message) and the unread count at
         // (+0x6c, +0x10).
-        if self.net_page == 0
+        let net_hidden = self.net_hidden;
+        if net_hidden {
+        } else if self.net_page == 0
             && let Some((x, y)) = gu.window_alpha("menu    netstat", sw, sh, a)
         {
             gu.sprite("menu    windowps", if self.mail.1 { 418 } else { 2 }, x, y, 0x8080_8080);
@@ -461,6 +466,7 @@ impl HudTop {
             // Ours (the Clock extra): Earth time and the moon over the next day, right of the compass and its time
             // (under it is the log).
             if w.earth_clock
+                && !w.lua.hides("clock")
                 && let Some(c) = super::clock::parts(w)
             {
                 let x = end.max(cx + 40.0) + 16.0;

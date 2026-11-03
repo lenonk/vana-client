@@ -1987,9 +1987,14 @@ pub fn grid_text(w: &World, regions: &[Region]) -> String {
     }
 }
 
+/// The map shown for where we stand (one the client would show: a map it needs and we own), for Lua mods.
+pub(super) fn current(w: &World, regions: &[Region]) -> Option<Region> {
+    Region::here(regions, w).filter(|r| r.need() != Need::Nothing && owned(w, r))
+}
+
 fn owned(w: &World, region: &Region) -> bool {
     match region.need() {
-        Need::Item(id) => w.has_key_item(id),
+        Need::Item(id) => w.opts.all_maps || w.has_key_item(id),
         _ => true,
     }
 }
@@ -2150,6 +2155,24 @@ impl Overlay {
     /// `pos`, the dots (world x, z, colour, the target drawn larger) and our marker, coloured as the overlay's at
     /// opacity `mix` (user, 2026-10-25: the two markers alike).
     #[allow(clippy::too_many_arguments)]
+    /// The map's region and its image's texture once loaded (a Lua mod's map).
+    pub fn region(&self) -> Option<Region> {
+        self.region
+    }
+
+    /// A window onto the image (a Lua HUD map): `rect`, centred on world (x, z), `span` map pixels across, at
+    /// `alpha`; clipped to the rect.
+    pub fn draw_window(&mut self, gu: &mut GameUi, rect: [f32; 4], centre: (f32, f32), span: f32, alpha: f32) {
+        self.poll(gu);
+        let (Some(region), Some(t)) = (self.region, self.texture.clone()) else { return };
+        let (z, s) = (rect[2] / span.max(1.0), super::minimap::px_per_unit(&region));
+        let (cx, cy) = (rect[0] + rect[2] / 2.0, rect[1] + rect[3] / 2.0);
+        let (px, py) = (centre.0 * s, -centre.1 * s);
+        gu.clip(Some(rect));
+        gu.image_rect(&t, cx + (region.ox as f32 - px) * z, cy + (region.oy as f32 - py) * z, 512.0 * z, 512.0 * z, [1.0, 1.0, 1.0, alpha]);
+        gu.clip(None);
+    }
+
     pub fn draw_mini(&mut self, gu: &mut GameUi, rect: [f32; 4], pos: (f32, f32), facing: f32, span: f32, dots: &[(f32, f32, u32, bool)], mix: f32) {
         self.poll(gu);
         let (Some(region), Some(t)) = (self.region, self.texture.clone()) else { return };

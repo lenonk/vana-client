@@ -106,6 +106,21 @@ pub(super) struct ModState {
     pub binds: Vec<super::input::Bind>,
     /// Functions other mods may call (mods.provide).
     pub provided: Vec<(String, RegistryKey)>,
+    /// HUD elements (docs/lua-mods.md 4.10) and their click handlers.
+    pub hud: Vec<super::hud::Elem>,
+    pub hud_handlers: Vec<(String, RegistryKey)>,
+    /// World shapes (draw.*).
+    pub shapes: Vec<super::draw::Shape>,
+    /// HTTP requests in flight (net.request): their callbacks, and the channel their answers come back on.
+    pub net_pending: Vec<(u64, RegistryKey)>,
+    pub net_rx: Option<std::sync::mpsc::Receiver<super::net::Answer>>,
+    pub net_tx: Option<std::sync::mpsc::Sender<super::net::Answer>>,
+    /// client.paste's handlers, waiting for the clipboard.
+    pub paste_handlers: Vec<RegistryKey>,
+    /// Open sockets and their threads' reports.
+    pub socks: Vec<super::sock::Sock>,
+    pub sock_rx: Option<std::sync::mpsc::Receiver<super::sock::Msg>>,
+    pub sock_tx: Option<std::sync::mpsc::Sender<super::sock::Msg>>,
 }
 
 impl ModState {
