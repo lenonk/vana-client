@@ -12,6 +12,13 @@ pub struct Func {
     pub ret: &'static str,
 }
 
+/// A table type the API hands out or takes (LuaLS `---@class`): (field, type, doc).
+pub struct Class {
+    pub name: &'static str,
+    pub doc: &'static str,
+    pub fields: &'static [(&'static str, &'static str, &'static str)],
+}
+
 pub struct Event {
     pub name: &'static str,
     pub doc: &'static str,
@@ -36,13 +43,72 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "filters", name: "chat", doc: "Runs `filter` on every chat line before it is kept: return nil to keep it, false to drop it, or new text (and optionally a new mode) to replace it. Runs inline: it cannot sleep or read game state.", params: &[("filter", "fun(text: string, mode: integer?, battle: boolean): (string|false|nil, integer?)", "")], ret: "integer" },
     Func { ns: "filters", name: "typed", doc: "Runs `filter` on every line typed or run (macros, mods) before the command parser: nil keeps it, false drops it, a string replaces it. Runs inline.", params: &[("filter", "fun(line: string): string|false|nil", "")], ret: "integer" },
     Func { ns: "filters", name: "off", doc: "Removes a filter.", params: &[("id", "integer", "what filters.chat / filters.typed returned")], ret: "" },
-    Func { ns: "ui", name: "window", doc: "Creates or replaces a window: title, width, help, and elements in order. Element types: text {id, text, dim}; buttons {id, label, items, marked} (marked makes them options); slider {id, label, steps, at, shown}; list {id, rows, at, height}; gauge {id, label, value 0..1, text, kind hp|mp|tp|cast|experience|recast}; separator. Indexes are 1-based. Window options: hud (never takes the keys), frame = false (no frame), x / y (its place in the classic UI). It draws in the active UI's look (classic Config page or modern panel).", params: &[("id", "string", ""), ("spec", "vana.WindowSpec", "")], ret: "" },
+    Func { ns: "timers", name: "add", doc: "Adds or replaces a row in the Timers window (shown for mods' rows even with the Timers Extra off), counting down `seconds`: options section ('recast' | 'buff' (default) | 'debuff'), group (a heading, e.g. a target's name), icon {kind = 'status' | 'spell' | 'ability', id}, total (the gauge's whole length), fills (toward ready, as recasts do).", params: &[("name", "string", ""), ("seconds", "number", ""), ("options?", "table", "")], ret: "" },
+    Func { ns: "timers", name: "remove", doc: "Removes the mod's row by name.", params: &[("name", "string", "")], ret: "" },
+    Func { ns: "timers", name: "clear", doc: "Removes every row of the mod's.", params: &[], ret: "" },
+    Func { ns: "ui", name: "window", doc: "Creates or replaces a window: title, width, help, and elements in order. Element types: text {id, text, dim, colour}; buttons {id, label, items, marked} (marked makes them options); slider {id, label, steps, at, shown}; list {id, rows, columns, at, height} (a row is a string or {cells..., icon = {kind = 'item' | 'status', id}, colour}; columns {title, width, align = 'right'}, a heading click sends 'sort'); gauge {id, label, value 0..1, text, kind hp|mp|tp|cast|experience|recast}; separator; tabs {id, items, at} (pages: an element's page = n shows only on page n of the tabs above it); input {id, label, text, max} (a typed line: Enter starts and ends it, Escape undoes it); choice {id, label, items, at} (Left / Right turn it); colour {id, label, value = {r, g, b, a}, alpha} (Enter edits it a channel at a time); section {id, label, open} (folds what is under it, to the next section or tabs); canvas {id, w, h, draw} (a region the mod draws in, in its own units: draw is a list of {type = 'line', x1, y1, x2, y2, width} | {type = 'rect', x, y, w, h, to (a bottom colour: a gradient), line (outline width)} | {type = 'circle', x, y, r, line} | {type = 'tri', x1, y1, x2, y2, x3, y3} | {type = 'text', x, y, text} | {type = 'icon', x, y, size, kind = 'item' | 'status', id}, each with a colour; ui.update(window, canvas, {draw = ...}) redraws it; a click sends 'click' {x, y}, a drag 'drag_start', 'drag' and 'drag_end' {x, y, dx, dy}, held to the release wherever the pointer goes). Every element may have tip (the help shown while the cursor or pointer is on it) and page. Indexes are 1-based. Window options: hud (never takes the keys), frame = false (no frame), x / y (its place in the classic UI), modal (keeps the keys and the pointer while open; centred unless placed), popup (modal, opened at the pointer, closed by a click outside it). It draws in the active UI's look (classic Config page or modern panel).", params: &[("id", "string", ""), ("spec", "vana.WindowSpec", "")], ret: "" },
     Func { ns: "ui", name: "update", doc: "Changes one element of a window (only the fields given): e.g. a list's rows, a text's text, a slider's at and shown.", params: &[("id", "string", "window"), ("element", "string", "element id"), ("fields", "table", "")], ret: "" },
+    Func { ns: "ui", name: "prompt", doc: "A modal question in the UI's own look: the text and buttons (default Yes / No); the handler gets the button's 1-based index, or nil when Escape closes it.", params: &[("text", "string", ""), ("buttons?", "string[]", ""), ("handler", "fun(index: integer?)", "")], ret: "" },
+    Func { ns: "ui", name: "menu", doc: "A popup list at the pointer (a right-click menu): the handler gets the row's 1-based index, or nil when it is closed (Escape, a click outside it).", params: &[("items", "string[]", ""), ("handler", "fun(index: integer?)", "")], ret: "" },
+    Func { ns: "ui", name: "get", doc: "An element's value as the player left it: {text} (text, input), {at} (buttons with options, slider, list, tabs, choice), {value} (gauge; a colour's {r, g, b, a}), {open} (section).", params: &[("id", "string", "window"), ("element", "string", "element id")], ret: "table" },
     Func { ns: "ui", name: "open", doc: "Shows a window and gives it the keys (arrows, Enter, Escape); the mouse works in both UIs.", params: &[("id", "string", "")], ret: "" },
     Func { ns: "ui", name: "show", doc: "Shows a window without giving it the keys (a HUD: hud = true windows never take them; a click still acts).", params: &[("id", "string", "")], ret: "" },
     Func { ns: "ui", name: "close", doc: "Hides a window.", params: &[("id", "string", "")], ret: "" },
     Func { ns: "ui", name: "is_open", doc: "Whether a window shows.", params: &[("id", "string", "")], ret: "boolean" },
-    Func { ns: "ui", name: "on", doc: "The window's handler: called with the window id and an event {kind = 'press' | 'set' | 'select' | 'close', id = element id, index = 1-based}.", params: &[("id", "string", ""), ("handler", "fun(window: string, event: {kind: string, id: string?, index: integer?})", "")], ret: "" },
+    Func { ns: "ui", name: "on", doc: "The window's handler: called with the window id and an event {kind, id = element id, ...}: 'press' / 'set' / 'select' {index, 1-based} (buttons, options, slider, list, tabs, choice), 'edit' {text} as a line is typed and 'change' {text} when Enter ends it, 'change' {value = {r, g, b, a}} (colour), 'toggle' {open} (section), 'sort' {column} (a list heading), 'click' {x, y} (a canvas), 'close'.", params: &[("id", "string", ""), ("handler", "fun(window: string, event: {kind: string, id: string?, index: integer?, text: string?, value: table?, open: boolean?, column: integer?, x: number?, y: number?})", "")], ret: "" },
+    Func { ns: "hud", name: "text", doc: "Creates or replaces a HUD text: x, y (window pixels; negative from the right or bottom edge), text (\\n for lines), size (1 = the UI's text), colour and bg ({r, g, b, a} 0..255), align (left, center, right), pad, layer, visible, font ('game' the game's font, 'regular' / 'bold' the modern faces, in either UI; else the active UI's), outline ({r, g, b, a}) and outline_width, shadow. It draws under the windows and hides with the UI.", params: &[("id", "string", ""), ("spec", "table", "")], ret: "" },
+    Func { ns: "hud", name: "rect", doc: "Creates or replaces a filled rectangle: x, y, w, h (window pixels; hud.screen().ui_scale converts UI units), colour.", params: &[("id", "string", ""), ("spec", "table", "")], ret: "" },
+    Func { ns: "hud", name: "bar", doc: "Creates or replaces a bar: x, y, w, h, value (0..1), kind (hp, mp, tp, cast, experience, recast: its colour) or colour.", params: &[("id", "string", ""), ("spec", "table", "")], ret: "" },
+    Func { ns: "hud", name: "map", doc: "Creates or replaces a HUD map: the zone's map where the client shows one, x, y, w, h, centre {x, z} (world; default: us), span (map pixels across, 16..2048; default 256), alpha. Draw markers over it with other elements at game.map_pos.", params: &[("id", "string", ""), ("spec", "table", "")], ret: "" },
+    Func { ns: "hud", name: "image", doc: "Creates or replaces an image from a PNG in the mod's folder: x, y, path, w and h (window pixels; default the image's size), colour (a tint).", params: &[("id", "string", ""), ("spec", "table", "")], ret: "" },
+    Func { ns: "hud", name: "icon", doc: "Creates or replaces an icon: x, y, icon (status or item), id, size.", params: &[("id", "string", ""), ("spec", "table", "")], ret: "" },
+    Func { ns: "hud", name: "set", doc: "Changes an element's fields (only those given).", params: &[("id", "string", ""), ("fields", "table", "")], ret: "" },
+    Func { ns: "hud", name: "remove", doc: "Removes an element.", params: &[("id", "string", "")], ret: "" },
+    Func { ns: "hud", name: "clear", doc: "Removes every element of the mod.", params: &[], ret: "" },
+    Func { ns: "hud", name: "on", doc: "An element's click handler: a left or right press on it is the mod's (not the game's): handler(id, {kind = 'click', id, button}). It is the player's input: actions may act here.", params: &[("id", "string", ""), ("handler", "fun(id: string, e: table)", "")], ret: "" },
+    Func { ns: "hud", name: "screen", doc: "The window in pixels, and ui_scale: pixels per UI unit (sizes given in UI units look the same at any resolution).", params: &[], ret: "{width: number, height: number, ui_scale: number}" },
+    Func { ns: "hud", name: "bounds", doc: "Where an element was drawn last frame, in window pixels.", params: &[("id", "string", "")], ret: "{x: number, y: number, w: number, h: number}?" },
+    Func { ns: "ui.native", name: "windows", doc: "The game's windows open now, by name (menu, items, magic, ability, map, config, status, shop, trade, event, choice...).", params: &[], ret: "string[]" },
+    Func { ns: "ui.native", name: "highlighted", doc: "What the cursor is on in the game window with the keys: {window, kind (item, spell, ability (its name-table id), mount, emote, key_item), id, bag and slot for an item in a bag}; nil when none.", params: &[], ret: "{window: string, kind: string, id: integer, bag: integer?, slot: integer?}?" },
+    Func { ns: "ui.native", name: "list", doc: "The game list with the keys: window (items, magic, ability, keyitems, shop buy / sell / wanted / bazaar / wares, auction list / history / sell or an auction menu's name), rows (each its item, spell, ability, mount, emote or key_item id, and count, price, bag, slot, equipped, stack counts where the list has them), cursor and top (the first row shown), both from 1. An auction menu has no rows; its cursor is the row's child id. Drive it with input.press.", params: &[], ret: "{window: string, rows: table[], cursor: integer, top: integer}?" },
+    Func { ns: "ui.native", name: "menu_open", doc: "Whether any game window has the keys (a HUD may hide meanwhile).", params: &[], ret: "boolean" },
+    Func { ns: "ui.native", name: "interface_hidden", doc: "Whether the interface is hidden (the UI-hide key).", params: &[], ret: "boolean" },
+    Func { ns: "ui.native", name: "interface", doc: "Shows or hides the whole interface, as the UI-hide key does. Needs ui.native.", params: &[("show", "boolean", "")], ret: "" },
+    Func { ns: "ui.native", name: "hide", doc: "Hides a HUD piece of the game in both UIs while the mod is loaded: party (party and alliance lists, their status icons), target, buffs (our status icons), compass (the modern location panel), minimap, cast (the cast bar), plates (name plates), alliance (the alliance lists alone), log (the log windows: back while an event, a prompt or the chat line needs them), timers, regime (the training regime window), network (the connection panel), palette (the macro palette's drawing; its keys still run macros), clock (the Clock Extra's Earth time line). Needs ui.native.", params: &[("piece", "string", ""), ("hidden?", "boolean", "default true; false shows it again")], ret: "" },
+    Func { ns: "ui.native", name: "hidden", doc: "Whether any mod hides a HUD piece.", params: &[("piece", "string", "")], ret: "boolean" },
+    Func { ns: "ui.native", name: "item_colour", doc: "Colours an item's name in the game's shop and auction house lists while the mod is loaded ({r, g, b, a} 0..255; nil gives the game's colour back).", params: &[("item", "integer", ""), ("colour", "table?", "")], ret: "" },
+    Func { ns: "ui.native", name: "config", doc: "A game config value by id (the Config window's settings).", params: &[("id", "integer", "")], ret: "integer" },
+    Func { ns: "ui.native", name: "set_config", doc: "Sets a game config value by id and applies it, as the Config window does (saved with the character's settings). Needs ui.native.", params: &[("id", "integer", ""), ("value", "integer", "")], ret: "" },
+    Func { ns: "render", name: "entity", doc: "How an entity draws while the mod is loaded: {hidden (model and plate), name (its plate's), name_colour {r, g, b, a}, alpha (0..1, at most its own), tint {r, g, b} multipliers, scale}. nil clears the mod's look for it; the newest mod's look wins.", params: &[("id", "integer", "server id (ourselves too)"), ("look", "table?", "")], ret: "" },
+    Func { ns: "render", name: "clear", doc: "Clears every look the mod set.", params: &[], ret: "" },
+    Func { ns: "render", name: "shader", doc: "A post-process pass over the world, drawn in the order set, under the screen fades and the 2D layer (nil removes it). The source is WGSL with `@fragment fn fs_main(in: VsOut) -> @location(0) vec4<f32>`; it has `scene` (the frame so far) and `samp`, `depth` (texture_depth_2d), `post.size`, `post.time` and `post.p[0..3]` (shader_params), and `in.uv`. A WGSL error is a log line, the pass then skipped.", params: &[("id", "string", ""), ("wgsl", "string?", "")], ret: "" },
+    Func { ns: "render", name: "shader_params", doc: "A pass's four parameter vectors (post.p): up to four {x, y, z, w}.", params: &[("id", "string", ""), ("params", "number[][]", "")], ret: "" },
+    Func { ns: "render", name: "camera_distance", doc: "The drawn eye's distance as a share of retail's (1 unless a mod sets it).", params: &[], ret: "number" },
+    Func { ns: "render", name: "set_camera_distance", doc: "Sets the drawn eye's distance as a share of retail's (not in first person); as set_camera's distance.", params: &[("scale", "number", "0.5..3")], ret: "" },
+    Func { ns: "render", name: "camera", doc: "The camera: {distance (the drawn eye's distance as a share of retail's, 1 unless a mod sets it), max_distance, speed (the pan speed's scale), battle_distance, first_person, eye, look (as drawn)}.", params: &[], ret: "table" },
+    Func { ns: "render", name: "set_camera", doc: "Changes the camera (only the fields given): distance (the drawn eye's distance as a share of retail's, for this session; the camera keeps retail's distances for its swing, and the eye stops short of walls), max_distance (the most a distance may be, up to 10; 3 by default), speed (the pan speed's scale, 0.1..5), battle_distance (the distance while engaged, back to the player's after; false clears it).", params: &[("camera", "{distance: number?, max_distance: number?, speed: number?, battle_distance: number|false|nil}", "")], ret: "" },
+    Func { ns: "audio", name: "play", doc: "Plays a sound file from the mod's folder (16-bit PCM WAV, mono or stereo, any rate; or a game SeWave file) at the effects volume.", params: &[("path", "string", ""), ("volume?", "number", "0..1, default 1")], ret: "" },
+    Func { ns: "audio", name: "play_se", doc: "Plays one of the game's sound effects by id (sound/win/se).", params: &[("id", "integer", ""), ("volume?", "number", "0..1")], ret: "" },
+    Func { ns: "audio", name: "music", doc: "Holds the music on a game track by id (the zone's choice of field, battle, night tracks stops until given back); nil gives it back, and the context's track plays again.", params: &[("id?", "integer", "")], ret: "" },
+    Func { ns: "audio", name: "mute_music", doc: "Silences the music while held (true, the default) or gives it back (false).", params: &[("on?", "boolean", "")], ret: "" },
+    Func { ns: "audio", name: "play_ui", doc: "Plays an interface sound by id (the menus' cursor, select, cancel...).", params: &[("id", "integer", "")], ret: "" },
+    Func { ns: "draw", name: "line", doc: "Creates or replaces a line in the world: from, to ({x, y, z}, entity coordinates), colour {r, g, b, a}. It draws over the scene but behind what stands in front of it.", params: &[("id", "string", ""), ("spec", "table", "")], ret: "" },
+    Func { ns: "draw", name: "ring", doc: "Creates or replaces a horizontal ring: at, radius (yalms), colour, segments (default 48), filled.", params: &[("id", "string", ""), ("spec", "table", "")], ret: "" },
+    Func { ns: "draw", name: "box", doc: "Creates or replaces an axis-aligned wire box: at (its centre), size {x, y, z}, colour.", params: &[("id", "string", ""), ("spec", "table", "")], ret: "" },
+    Func { ns: "draw", name: "text", doc: "Creates or replaces a text at a world point: at {x, y, z}, text, size, colour, outline ({r, g, b, a}); centred there, drawn with the HUD and hidden behind what stands in front of it.", params: &[("id", "string", ""), ("spec", "table", "")], ret: "" },
+    Func { ns: "draw", name: "image", doc: "Creates or replaces a PNG from the mod's folder on a world quad: at {x, y, z} (its centre), w, h (world units), facing ('ground' (default): flat, the image's top toward yaw; 'upright': standing, its front toward yaw (read from there); 'camera': always turned to the camera), yaw (radians, 0 east as entity headings), colour (a tint); behind what stands in front of it.", params: &[("id", "string", ""), ("spec", "table", "")], ret: "" },
+    Func { ns: "draw", name: "remove", doc: "Removes a shape.", params: &[("id", "string", "")], ret: "" },
+    Func { ns: "draw", name: "clear", doc: "Removes every shape of the mod.", params: &[], ret: "" },
+    Func { ns: "draw", name: "to_screen", doc: "Where a world point is on the screen this frame (window pixels, as hud places take), or nil behind the camera.", params: &[("point", "{x: number, y: number, z: number}", "")], ret: "{x: integer, y: integer, on_screen: boolean}?" },
+    Func { ns: "net", name: "request", doc: "Starts an HTTP(S) request on its own thread: {url, method (GET, POST, PUT, PATCH, DELETE, HEAD), body, headers, timeout (s)}; the callback later gets {status, body, headers} or {error}. Bodies past 16 MB are cut. Needs net.", params: &[("spec", "table", ""), ("callback", "fun(res: table)", "")], ret: "integer" },
+    Func { ns: "net", name: "connect", doc: "Opens a TCP connection (for a companion program); handlers {open(id), data(id, bytes), close(id, error?)} run in later mod phases. Needs net.", params: &[("host", "string", ""), ("port", "integer", ""), ("handlers", "table", "")], ret: "integer" },
+    Func { ns: "net", name: "pipe", doc: "Opens a local endpoint another program offers (Discord's IPC and the like): a Unix socket (a bare name is in the runtime folder, e.g. 'discord-ipc-0'; a path as given), on Windows the named pipe \\\\.\\pipe\\<name>; handlers and sending as net.connect's. Needs net.", params: &[("name", "string", ""), ("handlers", "table", "")], ret: "integer" },
+    Func { ns: "net", name: "listen", doc: "Listens for TCP connections (on 127.0.0.1 unless options.host); port 0 picks one. handlers {accept(listener, id, peer_ip, peer_port), data(id, bytes), close(id, error?)} serve every connection. Returns the listener's id and its port. Needs net.", params: &[("port", "integer", ""), ("handlers", "table", ""), ("options?", "{host: string?}", "")], ret: "integer, integer" },
+    Func { ns: "net", name: "udp", doc: "Binds a UDP socket (127.0.0.1 unless options.host; nil or 0 picks a port); handlers {data(id, bytes, from_ip, from_port)}. Returns its id and port. Needs net.", params: &[("port?", "integer", ""), ("handlers", "table", ""), ("options?", "{host: string?}", "")], ret: "integer, integer" },
+    Func { ns: "net", name: "send", doc: "Sends bytes on a TCP connection, or a UDP datagram to host and port. Needs net.", params: &[("id", "integer", ""), ("data", "string", ""), ("host?", "string", "UDP"), ("port?", "integer", "UDP")], ret: "" },
+    Func { ns: "net", name: "close", doc: "Closes a socket (a connection, a listener, a UDP socket).", params: &[("id", "integer", "")], ret: "" },
+    Func { ns: "net", name: "open_url", doc: "Opens an http(s) URL in the browser. Needs net.", params: &[("url", "string", "")], ret: "" },
+    Func { ns: "ipc", name: "send", doc: "Sends text to the same mod in the other game windows on this machine (their ipc_message event), or only to one character's. Needs multibox.", params: &[("text", "string", ""), ("character?", "string", "")], ret: "" },
     Func { ns: "packets", name: "on_in", doc: "Hooks received packets (one id, or every one when nil) before the client reads them. The handler gets {id, data, original, injected, blocked, outgoing} (data and original are the whole sub-packet, header included) and returns nil to leave it, false to block it, or new bytes. Hooks chain across mods: a blocked packet still reaches later ones. Needs packets.read; changing or blocking needs packets.write.", params: &[("id", "integer?", "packet id"), ("handler", "fun(p: vana.Packet): (string|false|nil)", "")], ret: "integer" },
     Func { ns: "packets", name: "on_out", doc: "Hooks packets about to be sent, after the client built them; as on_in.", params: &[("id", "integer?", "packet id"), ("handler", "fun(p: vana.Packet): (string|false|nil)", "")], ret: "integer" },
     Func { ns: "packets", name: "off", doc: "Removes a packet hook.", params: &[("id", "integer", "what on_in / on_out returned")], ret: "" },
@@ -50,6 +116,7 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "packets", name: "inject_out", doc: "Sends a packet to the server (it passes the hooks, injected = true). Needs packets.write.", params: &[("id_or_data", "integer|string", "an id, or a whole sub-packet"), ("body?", "string", "the body after the 4-byte header")], ret: "" },
     Func { ns: "packets", name: "build", doc: "A whole sub-packet from an id and its body (the header's size made to fit; at most 508 bytes in all).", params: &[("id", "integer", ""), ("body", "string", "")], ret: "string" },
     Func { ns: "packets", name: "last", doc: "The last packet of an id seen each way, or nil. Needs packets.read.", params: &[("direction", "'in'|'out'", ""), ("id", "integer", "")], ret: "string?" },
+    Func { ns: "chat", name: "icon", doc: "A PNG of the mod's folder as an inline chat icon: a character to put in chat text (chat.add, a filters.chat rewrite), drawn where it stands at the line's height in both UIs' logs and the classic UI's game-font text.", params: &[("path", "string", "")], ret: "string" },
     Func { ns: "chat", name: "add", doc: "Adds a line to the chat log. With a mode it takes that mode's colour, filters and indent, like a game line; {colour = mode} takes only the mode's colour.", params: &[("text", "string", ""), ("how?", "integer|{mode: integer?, colour: integer?}", "the game's chat mode (0..255), or a table")], ret: "" },
     Func { ns: "chat", name: "line", doc: "The chat line: whether it is open, and its text.", params: &[], ret: "{open: boolean, text: string}" },
     Func { ns: "chat", name: "set_line", doc: "Opens the chat line with `text` (the player still presses Enter), or closes it with open = false.", params: &[("text?", "string", ""), ("open?", "boolean", "default true")], ret: "" },
@@ -94,8 +161,17 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "game", name: "spells", doc: "The spell ids we have learned.", params: &[], ret: "integer[]" },
     Func { ns: "game", name: "abilities", doc: "The ability ids (res.ability) we can use now: job abilities, weapon skills, pet commands with a pet.", params: &[], ret: "integer[]" },
     Func { ns: "game", name: "job_data", doc: "The job setups of main and sub: job, raw (the server's bytes), and for BLU blue_spells (ids), for PUP head, frame and attachments (item ids).", params: &[], ret: "{main: table?, sub: table?}" },
+    Func { ns: "game", name: "macros", doc: "The macro palette: {book, set (1-based), book_title, books (the 40 titles), ctrl, alt (10 macros each: {title, lines (6)})}; nil before the macros load.", params: &[], ret: "table?" },
+    Func { ns: "game", name: "map", doc: "The map the client shows where we stand (a map it has and we own): {zone, number (the map's page), file (its DAT id), scale, origin {x, y} (the image's top left in map pixels), size (512), px_per_unit (map pixels per world unit)}; nil with none.", params: &[], ret: "table?" },
+    Func { ns: "game", name: "map_pos", doc: "A world position (x, z) as a pixel on the current map's 512 x 512 image; nil without a map.", params: &[("x", "number", ""), ("z", "number", "")], ret: "integer?, integer?" },
+    Func { ns: "game", name: "collision", doc: "The zone's collision triangles with a corner within `radius` (8 by default, 64 at most) of (x, z): each {1, 2, 3 (corners {x, y, z}), normal, kind (the surface type)}, in world coordinates (y down, as positions); open doors left out. nil before the zone's collision loads.", params: &[("x", "number", ""), ("z", "number", ""), ("radius?", "number", "")], ret: "table[]?" },
+    Func { ns: "game", name: "collision_mesh", doc: "Every collision triangle of the zone as packed little-endian floats, 36 bytes a triangle (three corners x, y, z): for export and navmesh building. nil before it loads.", params: &[], ret: "string?" },
+    Func { ns: "game", name: "raycast", doc: "The first collision triangle on the segment from -> to: the hit {x, y, z, distance}, or nil.", params: &[("from", "{x: number, y: number, z: number}", ""), ("to", "{x: number, y: number, z: number}", "")], ret: "table?" },
+    Func { ns: "game", name: "floor", doc: "The height a character at (x, y, z) stands on (the first floor below, else the nearest surface); y defaults to ours.", params: &[("x", "number", ""), ("z", "number", ""), ("y?", "number", "")], ret: "number?" },
+    Func { ns: "game", name: "cast", doc: "Our cast bar while it shows: {spell (none for an event's bar), total and left (seconds), progress 0..1, event}.", params: &[], ret: "table?" },
     Func { ns: "game", name: "info", doc: "The session: zone, server, mog_house, chat_open, menu_open, event, in_combat, locked (target lock), autorun, follow (server id), pet_index, map_grid (as <pos>), modern_ui.", params: &[], ret: "table" },
     Func { ns: "game", name: "camera", doc: "The camera: eye and look points, and their distance.", params: &[], ret: "{eye: {x: number, y: number, z: number}, look: {x: number, y: number, z: number}, distance: number}" },
+    Func { ns: "game", name: "shop", doc: "The open NPC shop's rows ({index from 1, item, price}), or nil (no shop, or a guild's).", params: &[], ret: "table[]?" },
     Func { ns: "game", name: "npc_names", doc: "The zone's NPC list by server id, spawned or not (Wide Scan's names).", params: &[], ret: "table<integer, string>" },
     Func { ns: "actions", name: "cast", doc: "Casts a spell by id, with the magic menu's checks (recast, MP, learned, status) and its refusal lines.", params: &[("spell", "integer", "spell id"), ("target", "integer|string?", "a server id, a tag (<t>, <me>, <bt>, <st>...) or a name; none: the current target")], ret: "" },
     Func { ns: "actions", name: "ability", doc: "Uses a job ability, weapon skill or pet command by record id (res.ability), with the ability menu's checks.", params: &[("id", "integer", "ability id"), ("target", "integer|string?", "as actions.cast")], ret: "" },
@@ -103,6 +179,9 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "actions", name: "ranged", doc: "A ranged attack (/range).", params: &[("target", "integer|string?", "as actions.cast")], ret: "" },
     Func { ns: "actions", name: "use_item", doc: "Uses an item by id, as /item finds it (temporary items, inventory, wardrobes).", params: &[("item", "integer", "item id"), ("target", "integer|string?", "as actions.cast")], ret: "" },
     Func { ns: "actions", name: "use_slot", doc: "Uses the item in a bag slot, as the item menu does.", params: &[("bag", "integer", ""), ("index", "integer", ""), ("target", "integer?", "a server id; none: ourselves")], ret: "" },
+    Func { ns: "actions", name: "macro", doc: "Runs a macro of the current set, as its key does: row 'ctrl' or 'alt', 1..10.", params: &[("row", "string", ""), ("n", "integer", "")], ret: "" },
+    Func { ns: "actions", name: "macro_set", doc: "Switches the macro palette to a book (1..40) and set (1..10).", params: &[("book", "integer", ""), ("set", "integer", "")], ret: "" },
+    Func { ns: "actions", name: "macro_edit", doc: "Changes a macro of the current set (and saves the set): its line 1..6, or 'title'.", params: &[("row", "string", ""), ("n", "integer", ""), ("line", "integer|'title'", ""), ("text", "string", "")], ret: "" },
     Func { ns: "actions", name: "attack", doc: "Engages a target, or switches to it while engaged (/attack).", params: &[("target", "integer|string?", "none: the current target")], ret: "" },
     Func { ns: "actions", name: "disengage", doc: "Disengages (/attack off).", params: &[], ret: "" },
     Func { ns: "actions", name: "assist", doc: "Assists a player (/assist).", params: &[("target", "integer|string", "")], ret: "" },
@@ -119,6 +198,22 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "actions", name: "pass", doc: "Passes on a treasure pool item.", params: &[("slot", "integer", "0..9")], ret: "" },
     Func { ns: "actions", name: "cancel", doc: "Cancels a status effect we have, when it can be cancelled.", params: &[("status", "integer", "status id")], ret: "" },
     Func { ns: "actions", name: "choose", doc: "Picks an option of the event menu showing (game.event().menu), as the cursor and Enter would.", params: &[("option", "integer", "from 1")], ret: "" },
+    Func { ns: "actions", name: "advance", doc: "Moves the event's waiting text on, as Enter does (enternity, stepdialog).", params: &[], ret: "" },
+    Func { ns: "actions", name: "open_menu", doc: "Opens a game window as its main menu row does (refused as there when the row is off): status, equipment, magic, items, abilities, party, trade, search, linkshell, synthesis, region, map (the moogle in a Mog House), missions, quests, key_items, view_house, bazaar, macros, config, help_desk, communication, clock, shut_down, log_out; or moogle (the nomad moogle menu, as a nomad moogle opens it).", params: &[("name", "string", "")], ret: "" },
+    Func { ns: "actions", name: "trade", doc: "Hands items (and gil) to an NPC within reach, as the trade window's Trade does: items {{slot = inventory slot, count = n}, ...}, at most 8 entries with the gil. Not worn or linkshell items. A refusal is an error.", params: &[("npc", "integer", "server id"), ("items?", "table", ""), ("gil?", "integer", "")], ret: "" },
+    Func { ns: "actions", name: "buy", doc: "Buys from the open NPC shop (game.shop()'s rows), as its Buy does.", params: &[("row", "integer", "from 1"), ("count?", "integer", "default 1")], ret: "" },
+    Func { ns: "actions", name: "sell", doc: "Sells from an inventory slot to the open NPC shop, as its Sell does.", params: &[("slot", "integer", "inventory slot"), ("count?", "integer", "default 1")], ret: "" },
+    Func { ns: "actions", name: "blue_set", doc: "Sets a blue magic slot (1..20) to a spell id, as Set Spells does.", params: &[("slot", "integer", ""), ("spell", "integer", "")], ret: "" },
+    Func { ns: "actions", name: "blue_remove", doc: "Empties a blue magic slot (1..20).", params: &[("slot", "integer", "")], ret: "" },
+    Func { ns: "actions", name: "attach", doc: "Sets an automaton slot to an item id: 0 head, 1 frame, 2..13 attachments.", params: &[("slot", "integer", ""), ("item", "integer", "")], ret: "" },
+    Func { ns: "actions", name: "detach", doc: "Empties an automaton slot (0..13).", params: &[("slot", "integer", "")], ret: "" },
+    Func { ns: "actions", name: "invite", doc: "Invites a player to the party (/pcmd add).", params: &[("name", "string", "")], ret: "" },
+    Func { ns: "actions", name: "party_leave", doc: "Leaves the party (/pcmd leave).", params: &[], ret: "" },
+    Func { ns: "actions", name: "party_kick", doc: "Removes a member from the party (/pcmd kick).", params: &[("name", "string", "")], ret: "" },
+    Func { ns: "actions", name: "join", doc: "Accepts a party invitation (/join).", params: &[], ret: "" },
+    Func { ns: "actions", name: "decline", doc: "Declines a party invitation (/decline).", params: &[], ret: "" },
+    Func { ns: "actions", name: "mount", doc: "Calls a mount by name (/mount).", params: &[("name", "string", "")], ret: "" },
+    Func { ns: "actions", name: "dismount", doc: "Dismounts (/dismount).", params: &[], ret: "" },
     Func { ns: "actions", name: "talk", doc: "Talks to an NPC (or checks it), as Enter on it does.", params: &[("id", "integer", "server id")], ret: "" },
     Func { ns: "actions", name: "scan", doc: "Asks for the Wide Scan list.", params: &[], ret: "" },
     Func { ns: "actions", name: "track", doc: "Tracks an entity with Wide Scan.", params: &[("index", "integer", "its index (entity.index)")], ret: "" },
@@ -136,6 +231,22 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "res", name: "zone", doc: "A zone's name.", params: &[("id", "integer", "")], ret: "string?" },
     Func { ns: "res", name: "title", doc: "A title's name.", params: &[("id", "integer", "")], ret: "string?" },
     Func { ns: "res", name: "key_item", doc: "A key item's name and description.", params: &[("id", "integer", "")], ret: "{id: integer, name: string, description: string?}?" },
+    Func { ns: "res", name: "augments", doc: "An item's augments from its extdata (game.items' extdata): lines (the item window's text), short (its <...> line: an evolith, a serial, a rank) and pairs {id, value} (the message id and value of each); empty for an item without them. Mod phase only.", params: &[("item", "integer", "item id"), ("extdata", "string", "24 bytes")], ret: "{lines: string[]?, short: string?, pairs: {id: integer, value: integer}[]?}" },
+    Func { ns: "res", name: "message", doc: "A battle / system message expanded as the log prints it: options {actor, target (server ids or names), values {param1, param2, ...}}; {text, mode} or nil for an id without text.", params: &[("id", "integer", "message id"), ("options?", "table", "")], ret: "{text: string, mode: integer?}?" },
+    Func { ns: "res", name: "autotranslate", doc: "The auto-translate dictionary: the entries whose completion key starts with `word` (none: the group titles), or a group's entries: {text, group, id, phrase (the in-line string: put it in a chat line)}; nil before the dictionary loads.", params: &[("word?", "string", ""), ("group?", "integer", "")], ret: "table[]?" },
+    Func { ns: "res", name: "autotranslate_groups", doc: "The auto-translate groups: {group, title, count}.", params: &[], ret: "table[]?" },
+    Func { ns: "res", name: "name", doc: "A name in a language's tables: kind item, key_item, spell, ability (name-table id), zone or title; lang ja, en (the default), de or fr. Another language than the client's loads on its first call: nil until its tables are in (a moment).", params: &[("kind", "string", ""), ("id", "integer", ""), ("lang?", "string", "")], ret: "string?" },
+    Func { ns: "res", name: "dat", doc: "A game file's bytes by file id, as the client reads it (through the mods' DAT overlay); nil when the install has none.", params: &[("id", "integer", "file id")], ret: "string?" },
+    Func { ns: "res", name: "dat_path", doc: "Where a file id is read from (a mod's file when an overlay replaces it).", params: &[("id", "integer", "file id")], ret: "string?" },
+    Func { ns: "res", name: "model_files", doc: "The file ids a model loads: an NPC model id gives {file}; a look {race, face, head, body, hands, legs, feet, main, sub, range} (Entity.look with its race) gives {skeleton, parts = {slot, model, file}}.", params: &[("model", "integer|table", "")], ret: "table" },
+    Func { ns: "res", name: "weather", doc: "A weather's name by id (0 Clear .. 19 Darkness).", params: &[("id", "integer", "")], ret: "string?" },
+    Func { ns: "res", name: "weather_element", doc: "The element a weather brings (0 Fire, 1 Ice, 2 Wind, 3 Earth, 4 Lightning, 5 Water, 6 Light, 7 Dark), nil for none.", params: &[("id", "integer", "")], ret: "integer?" },
+    Func { ns: "res", name: "element", doc: "An element's name (0 Fire .. 7 Dark).", params: &[("id", "integer", "")], ret: "string?" },
+    Func { ns: "res", name: "mount", doc: "A mount's name by its list index.", params: &[("id", "integer", "")], ret: "string?" },
+    Func { ns: "res", name: "mob_skill", doc: "A monster ability's name (ids from 256).", params: &[("id", "integer", "")], ret: "string?" },
+    Func { ns: "res", name: "skill", doc: "A combat or magic skill's name by skill id.", params: &[("id", "integer", "")], ret: "string?" },
+    Func { ns: "res", name: "day", doc: "A Vana'diel weekday's name (0 Firesday).", params: &[("weekday", "integer", "")], ret: "string?" },
+    Func { ns: "res", name: "moon", doc: "A moon phase's name.", params: &[("phase", "integer", "")], ret: "string?" },
     Func { ns: "res", name: "job", doc: "A job's abbreviation (1 WAR .. 22 RUN).", params: &[("id", "integer", "")], ret: "string?" },
     Func { ns: "fs", name: "read", doc: "A file's bytes, or nil: the mod's data folder first (what it wrote), then its own files. \"shared/...\" is the area every mod with files.shared can reach.", params: &[("path", "string", "relative, / separated")], ret: "string?" },
     Func { ns: "fs", name: "write", doc: "Writes a file in the mod's data folder (folders made as needed).", params: &[("path", "string", ""), ("data", "string", "")], ret: "" },
@@ -147,25 +258,56 @@ pub const FUNCS: &[Func] = &[
     Func { ns: "fs", name: "rename", doc: "Moves a file or folder within the data folder.", params: &[("from", "string", ""), ("to", "string", "")], ret: "" },
     Func { ns: "json", name: "encode", doc: "Plain data as JSON text.", params: &[("value", "any", ""), ("options?", "{pretty: boolean?}", "")], ret: "string" },
     Func { ns: "json", name: "decode", doc: "JSON text as Lua values.", params: &[("text", "string", "")], ret: "any" },
-    Func { ns: "mods", name: "list", doc: "Every loaded mod: id, name, version and the functions it provides.", params: &[], ret: "{id: string, name: string, version: string, provides: string[]}[]" },
+    Func { ns: "mods", name: "list", doc: "Every loaded mod: id, name, version, the functions it provides, its time a frame (avg_ms, peak_ms), memory_kb and recent errors.", params: &[], ret: "{id: string, name: string, version: string, provides: string[], avg_ms: number, peak_ms: number, memory_kb: integer?, errors: integer}[]" },
+    Func { ns: "mods", name: "installed", doc: "Every mod on disk and bundled: {id, name, version, enabled, bundled, loaded}. Load or unload one with commands.run('/lua load <id>') / '/lua unload <id>'.", params: &[], ret: "table[]" },
     Func { ns: "mods", name: "provide", doc: "Offers a function to other mods (mods.call). Values cross as copies of plain data.", params: &[("name", "string", ""), ("func", "function", "")], ret: "" },
     Func { ns: "mods", name: "call", doc: "Calls another mod's provided function now, in its VM, and returns what it returned (copies). It cannot sleep.", params: &[("mod", "string", "its id"), ("name", "string", ""), ("...", "any", "")], ret: "any" },
     Func { ns: "mods", name: "emit", doc: "Raises an event in every other mod: their events.on handlers get the values once the running handler is done (the same mod phase). Prefix the name with your mod's id.", params: &[("event", "string", ""), ("...", "any", "plain data")], ret: "" },
     Func { ns: "text", name: "from_shift_jis", doc: "Shift-JIS bytes (packets, game files) as text.", params: &[("bytes", "string", "")], ret: "string" },
     Func { ns: "text", name: "to_shift_jis", doc: "Text as Shift-JIS bytes.", params: &[("text", "string", "")], ret: "string" },
+    Func { ns: "text", name: "phrase", doc: "An auto-translate phrase as a line holds it (group, id from res.autotranslate); put it in chat text.", params: &[("group", "integer", ""), ("id", "integer", "")], ret: "string" },
+    Func { ns: "text", name: "autotranslate", doc: "The phrase whose text is exactly `text` (ignoring case), as a line holds it; nil when the dictionary has none.", params: &[("text", "string", "")], ret: "string?" },
     Func { ns: "text", name: "plain", doc: "A line with its auto-translate phrases as plain words.", params: &[("text", "string", "")], ret: "string" },
     Func { ns: "client", name: "copy", doc: "Puts text on the clipboard.", params: &[("text", "string", "")], ret: "" },
+    Func { ns: "client", name: "paste", doc: "Reads the clipboard's text after this frame and hands it to the handler. Needs clipboard.", params: &[("handler", "fun(text: string)", "")], ret: "" },
+    Func { ns: "devices", name: "list", doc: "The HID devices: {path, vendor, product, name, interface (the USB interface, when known), descriptor (the report descriptor's bytes, Linux)}. On Linux the hidraw nodes (opening one needs read and write access to it); on Windows the HID interfaces (the system holds keyboards and mice itself). Needs devices.", params: &[], ret: "table[]" },
+    Func { ns: "devices", name: "open", doc: "Opens a device by its path; handlers {open(id), data(id, report), close(id, error?)} run in later mod phases, one data call a report (the report id first where the device numbers them). Returns its id. Needs devices.", params: &[("path", "string", ""), ("handlers", "table", "")], ret: "integer" },
+    Func { ns: "devices", name: "write", doc: "Sends an output report (its report id first, 0 when the device has none; on Windows exactly the report's length). Needs devices.", params: &[("id", "integer", ""), ("report", "string", "")], ret: "" },
+    Func { ns: "devices", name: "close", doc: "Closes a device.", params: &[("id", "integer", "")], ret: "" },
+    Func { ns: "client", name: "record", doc: "Records the game window as drawn to an H.264 video (ffmpeg must be installed) under the client's ffxiuser/videos folder, as `name`.mp4 (the date and time when none): options {fps (30)}. It ends with stop_recording, a new window size, or the mod unloading. Returns the file's path. Needs exec.", params: &[("name?", "string", ""), ("options?", "{fps: integer?}", "")], ret: "string" },
+    Func { ns: "client", name: "stop_recording", doc: "Ends the recording (ffmpeg finishes the file).", params: &[], ret: "" },
+    Func { ns: "client", name: "recording", doc: "The file being recorded, or nil (as of the last frame).", params: &[], ret: "string?" },
+    Func { ns: "client", name: "process", doc: "The client's process: pid, cores (how many), affinity (the cores it may run on, from 0; empty where unknown) and priority (idle, low, below_normal, normal, above_normal, high).", params: &[], ret: "{pid: integer, cores: integer, affinity: integer[], priority: string}" },
+    Func { ns: "client", name: "set_affinity", doc: "Runs every thread of the client on these cores (from 0). Needs process. Returns true, or false and why.", params: &[("cores", "integer[]", "")], ret: "boolean, string?" },
+    Func { ns: "client", name: "set_priority", doc: "The client's scheduling priority: idle, low, below_normal, normal, above_normal or high (above normal usually needs privileges on Linux). Needs process. Returns true, or false and why.", params: &[("level", "string", "")], ret: "boolean, string?" },
+    Func { ns: "client", name: "option", doc: "A behaviour switch's value (see set_option); a value set shows from the next frame.", params: &[("name", "string", "")], ret: "boolean|number|table" },
+    Func { ns: "client", name: "set_option", doc: "Sets a behaviour switch while the mod is loaded (retail's back when it unloads): macro_palette_delay (false: the Ctrl / Alt palette opens at once, not at the next whole second), ah_result_delay (false: a bid's result prints at once), equipset_delay (false: no 0.9 s wait between equip sets), log_slide (false: new log lines show at once), cutscene_speed (1..4: events play that much faster), animation_rate (0.25..4: the actors' animation speed), clear_colour and ambient ({r, g, b} 0..255 in place of the zone's background colour and ambient light; false gives the zone's back), minimap_span (the minimap's zoom, map pixels across, 48..512; kept as the minimap's own wheel keeps it); rules: move_lock (false: our abilities' and the weapon draw's move lock is lifted), all_maps (true: every map without its key item), dead_commands (true: text commands while K.O.), compass_monsters (true: monster dots on the compass for every job), player_collision (false: moving players never hold a step), occlusion (false: characters behind scenery still draw and target), menu_reach (false: the auction house and the nomad moogle menu stay open as we move away); send_interval (ms between the datagrams we send, 50..1000; retail 400); wireframe (true: the scenery drawn as lines, where the GPU draws them); ttf_text (true: the game font's text in the UI's TrueType face in the classic UI too: the log, the windows' text; sprite numbers and captions stay retail's).", params: &[("name", "string", ""), ("value", "boolean|number|table", "")], ret: "" },
+    Func { ns: "client", name: "window", doc: "The game window: {x, y (its place on the desktop, when the system tells it), w, h (pixels), focused}.", params: &[], ret: "{x: integer?, y: integer?, w: integer, h: integer, focused: boolean}" },
+    Func { ns: "client", name: "set_window", doc: "Changes the game window: moves ({x, y}), sizes ({w, h}), top (always on top), minimised, fullscreen (borderless, on its monitor), border (the system frame), capture = false (kept out of screen captures where the system allows it). Only the fields given change. Needs multibox.", params: &[("window", "{x: integer?, y: integer?, w: integer?, h: integer?, top: boolean?, minimised: boolean?, fullscreen: boolean?, border: boolean?, capture: boolean?}", "")], ret: "" },
+    Func { ns: "client", name: "focus", doc: "Asks for the keyboard focus for this game window (switching between clients). Needs multibox.", params: &[], ret: "" },
+    Func { ns: "client", name: "screenshot", doc: "Saves a screenshot of the next frame as drawn, under the game's screenshots folder (subfolders allowed; .png added); returns the name used.", params: &[("name?", "string", "")], ret: "string" },
+    Func { ns: "client", name: "run", doc: "Starts a program with its arguments (no shell). With a handler, it gets {status (exit code), body (stdout), headers = {stderr}} when the program ends, or {error}. Returns the process id. Needs exec.", params: &[("program", "string", ""), ("args?", "string[]", ""), ("handler?", "fun(result: table)", "")], ret: "integer" },
     Func { ns: "storage", name: "save", doc: "Writes storage.account and storage.character now (they are also written at logout and unload).", params: &[], ret: "" },
+    Func { ns: "storage", name: "seal", doc: "Seals text (a password) with this machine's key, for storage: only this mod on this machine can open it.", params: &[("text", "string", "")], ret: "string" },
+    Func { ns: "storage", name: "unseal", doc: "Opens text storage.seal made; nil when it does not open (another machine or mod, or damaged).", params: &[("sealed", "string", "")], ret: "string?" },
+    Func { ns: "lobby", name: "state", doc: "The lobby before login (a mod with `lobby = true` in mod.toml runs there): screen (login, title, select, create, delete, config, connecting, world), server, account, playonline, busy (a fade, a reply awaited or an error up: actions wait), error, selected (a slot) and characters {slot, name, world, race, job, level, sub_job, zone, available}.", params: &[], ret: "table" },
+    Func { ns: "lobby", name: "sign_in", doc: "Signs in from the login screen as its Log in button does: {account, password, otp?, server?}, and for a PlayOnline server pol_id and pol_password. Needs automation (or actions in the player's input).", params: &[("login", "table", "")], ret: "" },
+    Func { ns: "lobby", name: "play", doc: "Logs in with a character from the title or select screen, as the select screen's Play does: its name or its slot. Needs automation (or actions in the player's input).", params: &[("character", "string|integer", "")], ret: "" },
     Func { ns: "settings", name: "get", doc: "A setting declared in mod.toml: the user's value, else its default.", params: &[("key", "string", "")], ret: "any" },
 ];
 
 pub const EVENTS: &[Event] = &[
     Event { name: "load", doc: "The mod's entry file has run.", args: &[] },
-    Event { name: "unload", doc: "The mod is about to be unloaded (logout, /lua unload or reload).", args: &[] },
+    Event { name: "unload", doc: "The mod is about to be unloaded (logout, /lua unload or reload; a lobby mod as the client closes).", args: &[] },
     Event { name: "login", doc: "The character is in the world, once per session.", args: &[("name", "string")] },
+    Event { name: "lobby_screen", doc: "The lobby's screen changed (see lobby.state; world once in the world). Lobby mods get it from the start.", args: &[("screen", "string"), ("previous", "string?")] },
     Event { name: "logout", doc: "The character is leaving the world.", args: &[] },
     Event { name: "zone_change", doc: "A new zone has loaded.", args: &[("zone", "integer"), ("previous", "integer?")] },
     Event { name: "settings_changed", doc: "The user changed one of the mod's settings (its Extras page, or /lua set).", args: &[("key", "string"), ("value", "any")] },
+    Event { name: "focus_change", doc: "The game window gained or lost the keyboard focus.", args: &[("focused", "boolean")] },
+    Event { name: "emote", doc: "Someone used an emote (s2c 0x05A): who, at whom (0 none), the emote id, its mode (motion only, text only...).", args: &[("actor", "integer"), ("target", "integer"), ("emote", "integer"), ("mode", "integer")] },
+    Event { name: "party_invite", doc: "We were invited to a party or an alliance (s2c 0x0DC).", args: &[("from", "string"), ("kind", "'party'|'alliance'")] },
+    Event { name: "examined", doc: "Someone examined us (/check; message 89).", args: &[("id", "integer"), ("name", "string")] },
     Event { name: "frame", doc: "Every frame (prefer timers and events: this one costs time every frame).", args: &[("dt", "number")] },
     Event { name: "hp_change", doc: "Our HP changed.", args: &[("hp", "integer"), ("previous", "integer")] },
     Event { name: "mp_change", doc: "Our MP changed.", args: &[("mp", "integer"), ("previous", "integer")] },
@@ -190,6 +332,7 @@ pub const EVENTS: &[Event] = &[
     Event { name: "action", doc: "A decoded action packet (s2c 0x028): actor, category, param, info and targets with their results.", args: &[("action", "vana.Action")] },
     Event { name: "battle_message", doc: "A battle message (s2c 0x029 / 0x02D): actor, target, message id and its two parameters.", args: &[("actor", "integer"), ("target", "integer"), ("message", "integer"), ("param1", "integer"), ("param2", "integer")] },
     Event { name: "damage", doc: "A damage number: a battle message that puts one up (main and proc records), whatever the chat filters show.", args: &[("actor", "integer"), ("target", "integer"), ("value", "integer"), ("message", "integer")] },
+    Event { name: "ipc_message", doc: "Text the same mod sent from another game window on this machine (ipc.send; needs multibox).", args: &[("text", "string"), ("from", "string")] },
     Event { name: "item_change", doc: "A bag slot's count changed.", args: &[("bag", "integer"), ("slot", "integer"), ("id", "integer"), ("count", "integer"), ("previous", "integer")] },
 ];
 
@@ -200,17 +343,15 @@ pub fn stubs() -> String {
     for e in EVENTS {
         s += &format!("---| \"{}\" # {}\n", e.name, e.doc);
     }
-    s += "\n---@class vana.Player\n---@field name string\n---@field id integer\n---@field index integer\n---@field zone integer?\n---@field pos {x: number, y: number, z: number}\n---@field heading number\n---@field status integer\n---@field hp integer?\n---@field mp integer?\n---@field tp integer?\n---@field hpp integer?\n---@field mpp integer?\n---@field hp_max integer?\n---@field mp_max integer?\n---@field main_job integer?\n---@field main_level integer?\n---@field sub_job integer?\n---@field sub_level integer?\n---@field target integer?\n\n";
-    s += "---@class vana.Entity\n---@field id integer\n---@field index integer\n---@field name string\n---@field kind 'player'|'npc'|'mob'\n---@field pos {x: number, y: number, z: number}\n---@field heading number\n---@field distance number\n---@field hpp integer\n---@field status integer\n---@field speed number\n---@field claim integer\n---@field targetable boolean\n---@field hidden boolean\n---@field master integer the master's index (pets), 0 for none\n---@field me boolean? true for our own character\n---@field race integer?\n---@field model integer a monster or NPC model id (0 for a player-style look)\n---@field look {face: integer, head: integer, body: integer, hands: integer, legs: integer, feet: integer, main: integer, sub: integer, range: integer}? a player-style look\n---@field in_party boolean\n---@field in_alliance boolean\n\n";
-    s += "---@class vana.Member\n---@field slot integer\n---@field party integer\n---@field id integer\n---@field index integer\n---@field name string\n---@field hp integer\n---@field mp integer\n---@field tp integer\n---@field hpp integer\n---@field mpp integer\n---@field zone integer\n---@field in_zone boolean\n---@field main_job integer\n---@field main_level integer\n---@field sub_job integer\n---@field sub_level integer\n---@field leader boolean\n---@field alliance_leader boolean\n---@field buffs integer[]\n\n";
-    s += "---@class vana.Item\n---@field bag integer\n---@field slot integer\n---@field id integer\n---@field count integer\n---@field extdata string? 24 raw bytes\n---@field locked integer\n---@field price integer?\n\n";
-    s += "---@class vana.Action\n---@field actor integer\n---@field category integer\n---@field param integer\n---@field info integer\n---@field targets {id: integer, results: {miss: integer, kind: integer, animation: integer, info: integer, scale: integer, value: integer, message: integer, bit: integer, proc: table?, react: table?}[]}[]\n\n";
-    s += "---@class vana.WindowSpec\n---@field title string?\n---@field width number?\n---@field help string?\n---@field hud boolean?\n---@field frame boolean?\n---@field x number?\n---@field y number?\n---@field elements table[]?\n\n";
-    s += "---@class vana.Packet\n---@field id integer\n---@field data string\n---@field original string\n---@field injected boolean\n---@field blocked boolean\n---@field outgoing boolean\n\n";
-    s += "---@class vana.KeyEvent\n---@field key string a, 1, f1, enter, numpad+, lctrl...\n---@field down boolean\n---@field repeated boolean\n---@field ctrl boolean\n---@field alt boolean\n---@field shift boolean\n---@field typing boolean a text field has the keys\n---@field blocked boolean an earlier mod took it\n\n";
-    s += "---@class vana.MouseEvent\n---@field kind 'down'|'up'|'move'|'wheel'\n---@field button string?\n---@field x number\n---@field y number\n---@field delta number?\n---@field blocked boolean\n\n";
-    s += "---@class vana.Time\n---@field earth integer\n---@field year integer\n---@field month integer\n---@field day integer\n---@field hour integer\n---@field minute integer\n---@field weekday integer\n---@field moon_phase integer\n---@field moon integer\n\n";
-    s += "---@class vana.Mod\n---@field id string\n---@field name string\n---@field version string\n---@field api integer\n---@field path string\n\n---@type vana.Mod\n---@diagnostic disable-next-line: missing-fields\nmod = {}\n\n";
+    s += "\n";
+    for c in CLASSES {
+        s += &format!("---@class {}\n", c.name);
+        for (f, ty, doc) in c.fields {
+            s += &format!("---@field {f} {ty}{}\n", if doc.is_empty() { String::new() } else { format!(" {doc}") });
+        }
+        s += "\n";
+    }
+    s += "---@type vana.Mod\n---@diagnostic disable-next-line: missing-fields\nmod = {}\n\n";
     s += "storage = {\n    ---@type table plain data kept for every character of the account\n    account = {},\n    ---@type table plain data kept for this character\n    character = {},\n}\n\n";
     let mut seen = Vec::new();
     for f in FUNCS {
@@ -243,3 +384,233 @@ pub fn stubs() -> String {
     }
     s
 }
+
+/// Each namespace's one-line description, in the reference's order ("" the globals).
+pub const NAMESPACES: &[(&str, &str)] = &[
+    ("", "Functions every mod has: printing, modules, waiting, the clock."),
+    ("log", "Lines in vana-client.log."),
+    ("events", "Handlers for the client's events (see the event list)."),
+    ("commands", "The mod's own text commands, and running the game's."),
+    ("filters", "Chat lines and typed lines rewritten or dropped before the client takes them."),
+    ("timers", "Rows in the client's Timers window."),
+    ("ui", "The mod's windows, in the active UI's own look."),
+    ("hud", "Text, bars, images and maps drawn over the game, under the game's windows."),
+    ("ui.native", "The game's own windows and HUD pieces: what is open, what is highlighted, hiding, the config."),
+    ("render", "How entities and the camera draw, and post-process passes."),
+    ("audio", "The game's sounds and music, and the mod's own."),
+    ("draw", "Lines, shapes, text and images placed in the world."),
+    ("net", "HTTP, TCP, UDP, local pipes and sockets, and links (the net permission)."),
+    ("ipc", "Messages between game windows on this computer (multibox)."),
+    ("packets", "Hooks on the packets the server and the client send, and injecting them."),
+    ("chat", "The chat log and the chat line."),
+    ("input", "The keys and the mouse: watching, taking and pressing them."),
+    ("binds", "Key binds that run lines, as the game's own binds do."),
+    ("timer", "Calls after a delay or at an interval."),
+    ("game", "The game's state: our character, the zone, entities, party, items, jobs and more."),
+    ("actions", "Doing things in the game: casting, items, equipment, targeting, moving, menus (actions or automation)."),
+    ("res", "Game data from the DATs: items, spells, abilities, statuses, zones, messages, names."),
+    ("fs", "Files in the mod's data folder (and its own files, read only)."),
+    ("json", "JSON text to Lua tables and back."),
+    ("mods", "The other mods: the list, calls into them, events to them."),
+    ("text", "Shift-JIS and auto-translate phrases in strings."),
+    ("client", "The client itself: the window, the clipboard, screenshots, recording, programs, the process, switches."),
+    ("devices", "USB HID devices by their raw reports (the devices permission)."),
+    ("storage", "The mod's saved data (storage.account, storage.character) and sealed secrets."),
+    ("lobby", "The screens before login, for lobby mods."),
+    ("settings", "The settings declared in mod.toml."),
+];
+
+/// A GitHub heading anchor.
+fn anchor(heading: &str) -> String {
+    heading.to_lowercase().chars().filter_map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { Some(c) } else if c == ' ' { Some('-') } else { None }).collect()
+}
+
+fn ns_title(ns: &str) -> String {
+    if ns.is_empty() { "Globals".into() } else { format!("`{ns}`") }
+}
+
+/// The reference part of docs/lua-api.md: every namespace's functions, the events and the types.
+pub fn reference_md() -> String {
+    let cell = |t: &str| t.replace('|', "\\|");
+    let mut s = String::new();
+    s += "### Namespaces\n\n| Namespace | Functions | What it is |\n| --- | --: | --- |\n";
+    for (ns, what) in NAMESPACES {
+        let n = FUNCS.iter().filter(|f| f.ns == *ns).count();
+        s += &format!("| [{}](#{}) | {n} | {what} |\n", ns_title(ns), anchor(&ns_title(ns)));
+    }
+    s += &format!("| [Event list](#event-list) | {} | What `events.on` can watch. |\n| [Types](#types) | {} | The tables the API hands out and takes. |\n\n", EVENTS.len(), CLASSES.len());
+    for (ns, what) in NAMESPACES {
+        s += &format!("### {}\n\n{what}\n\n", ns_title(ns));
+        for f in FUNCS.iter().filter(|f| f.ns == *ns) {
+            let full = if f.ns.is_empty() { f.name.to_string() } else { format!("{}.{}", f.ns, f.name) };
+            let args: Vec<&str> = f.params.iter().map(|p| p.0).collect();
+            s += &format!("#### `{full}({})`\n\n{}\n\n", args.join(", "), f.doc);
+            for (name, ty, doc) in f.params {
+                s += &format!("- `{name}` `{ty}`{}\n", if doc.is_empty() { String::new() } else { format!(": {doc}") });
+            }
+            if !f.ret.is_empty() {
+                s += &format!("{}Returns `{}`.\n", if f.params.is_empty() { "" } else { "\n" }, f.ret);
+            }
+            if !f.params.is_empty() || !f.ret.is_empty() {
+                s += "\n";
+            }
+        }
+    }
+    s += "### Event list\n\nEach is watched with `events.on(name, handler)`; the handler gets the arguments listed.\n\n| Event | Arguments | When |\n| --- | --- | --- |\n";
+    for e in EVENTS {
+        let args: Vec<String> = e.args.iter().map(|(n, t)| format!("`{n}: {}`", cell(t))).collect();
+        s += &format!("| `{}` | {} | {} |\n", e.name, if args.is_empty() { "-".into() } else { args.join(", ") }, cell(e.doc));
+    }
+    s += "\n### Types\n\nTables the API hands out or takes. A type ending in `?` may be nil.\n\n";
+    for c in CLASSES {
+        s += &format!("#### `{}`\n\n{}\n\n| Field | Type | Note |\n| --- | --- | --- |\n", c.name, c.doc);
+        for (f, ty, doc) in c.fields {
+            s += &format!("| `{f}` | `{}` | {} |\n", cell(ty), cell(doc));
+        }
+        s += "\n";
+    }
+    s
+}
+
+pub const CLASSES: &[Class] = &[
+    Class { name: "vana.Player", doc: "Our character (game.player): its ids, zone, place, vitals, jobs and target.", fields: &[
+        ("name", "string", ""),
+        ("id", "integer", ""),
+        ("index", "integer", ""),
+        ("zone", "integer?", ""),
+        ("pos", "{x: number, y: number, z: number}", "where we stand: x and z on the ground, y down (a smaller y is higher)"),
+        ("heading", "number", "radians, 0 to 2π"),
+        ("status", "integer", "the server's status: 0 idle, 1 engaged, 2 and 3 K.O., 5 mounted, 33 resting"),
+        ("hp", "integer?", ""),
+        ("mp", "integer?", ""),
+        ("tp", "integer?", ""),
+        ("hpp", "integer?", ""),
+        ("mpp", "integer?", ""),
+        ("hp_max", "integer?", ""),
+        ("mp_max", "integer?", ""),
+        ("main_job", "integer?", ""),
+        ("main_level", "integer?", ""),
+        ("sub_job", "integer?", ""),
+        ("sub_level", "integer?", ""),
+        ("target", "integer?", "our target's server id"),
+    ] },
+    Class { name: "vana.Entity", doc: "A character, NPC or monster in the zone (game.entity, game.entities, game.target); ours too, with `me`.", fields: &[
+        ("id", "integer", ""),
+        ("index", "integer", ""),
+        ("name", "string", ""),
+        ("kind", "'player'|'npc'|'mob'", ""),
+        ("pos", "{x: number, y: number, z: number}", "x and z on the ground, y down"),
+        ("heading", "number", "radians, 0 to 2π"),
+        ("distance", "number", "from us, in yalms"),
+        ("hpp", "integer", ""),
+        ("status", "integer", ""),
+        ("speed", "number", ""),
+        ("claim", "integer", ""),
+        ("targetable", "boolean", ""),
+        ("hidden", "boolean", ""),
+        ("master", "integer", "the master's index (pets), 0 for none"),
+        ("me", "boolean?", "true for our own character"),
+        ("race", "integer?", ""),
+        ("model", "integer", "a monster or NPC model id (0 for a player-style look)"),
+        ("look", "{face: integer, head: integer, body: integer, hands: integer, legs: integer, feet: integer, main: integer, sub: integer, range: integer}?", "a player-style look"),
+        ("in_party", "boolean", ""),
+        ("in_alliance", "boolean", ""),
+        ("hitbox", "number", "the model radius the server gives (actor +0x208)"),
+        ("target_index", "integer?", "what it targets (its face target; ours: our target)"),
+        ("target_id", "integer?", "that target's server id, when known"),
+        ("pet", "boolean?", "true for our pet, which also has:"),
+        ("mpp", "integer?", "our pet's MP %"),
+        ("tp", "integer?", "our pet's TP"),
+    ] },
+    Class { name: "vana.Member", doc: "A party or alliance member (game.party).", fields: &[
+        ("slot", "integer", ""),
+        ("party", "integer", ""),
+        ("id", "integer", ""),
+        ("index", "integer", ""),
+        ("name", "string", ""),
+        ("hp", "integer", ""),
+        ("mp", "integer", ""),
+        ("tp", "integer", ""),
+        ("hpp", "integer", ""),
+        ("mpp", "integer", ""),
+        ("zone", "integer", ""),
+        ("in_zone", "boolean", ""),
+        ("main_job", "integer", ""),
+        ("main_level", "integer", ""),
+        ("sub_job", "integer", ""),
+        ("sub_level", "integer", ""),
+        ("leader", "boolean", ""),
+        ("alliance_leader", "boolean", ""),
+        ("buffs", "integer[]", ""),
+    ] },
+    Class { name: "vana.Item", doc: "An item in a bag (game.items).", fields: &[
+        ("bag", "integer", ""),
+        ("slot", "integer", ""),
+        ("id", "integer", ""),
+        ("count", "integer", ""),
+        ("extdata", "string?", "24 raw bytes"),
+        ("locked", "integer", ""),
+        ("price", "integer?", ""),
+    ] },
+    Class { name: "vana.Action", doc: "An action packet (s2c 0x028) decoded: the `action` event's argument.", fields: &[
+        ("actor", "integer", ""),
+        ("category", "integer", ""),
+        ("param", "integer", ""),
+        ("info", "integer", ""),
+        ("targets", "{id: integer, results: {miss: integer, kind: integer, animation: integer, info: integer, scale: integer, value: integer, message: integer, bit: integer, proc: table?, react: table?}[]}[]", ""),
+    ] },
+    Class { name: "vana.WindowSpec", doc: "A window's definition (ui.window).", fields: &[
+        ("title", "string?", ""),
+        ("width", "number?", ""),
+        ("help", "string?", ""),
+        ("hud", "boolean?", ""),
+        ("frame", "boolean?", ""),
+        ("x", "number?", ""),
+        ("y", "number?", ""),
+        ("elements", "table[]?", ""),
+    ] },
+    Class { name: "vana.Packet", doc: "A packet as a hook sees it (packets.on_in / on_out).", fields: &[
+        ("id", "integer", ""),
+        ("data", "string", ""),
+        ("original", "string", ""),
+        ("injected", "boolean", ""),
+        ("blocked", "boolean", ""),
+        ("outgoing", "boolean", ""),
+    ] },
+    Class { name: "vana.KeyEvent", doc: "A key as input.on_key sees it.", fields: &[
+        ("key", "string", "a, 1, f1, enter, numpad+, lctrl..."),
+        ("down", "boolean", ""),
+        ("repeated", "boolean", ""),
+        ("ctrl", "boolean", ""),
+        ("alt", "boolean", ""),
+        ("shift", "boolean", ""),
+        ("typing", "boolean", "a text field has the keys"),
+        ("blocked", "boolean", "an earlier mod took it"),
+    ] },
+    Class { name: "vana.MouseEvent", doc: "The mouse as input.on_mouse sees it.", fields: &[
+        ("kind", "'down'|'up'|'move'|'wheel'", ""),
+        ("button", "string?", ""),
+        ("x", "number", ""),
+        ("y", "number", ""),
+        ("delta", "number?", ""),
+        ("blocked", "boolean", ""),
+    ] },
+    Class { name: "vana.Time", doc: "The time (game.time): Vana'diel's date and clock, the moon, and Earth's.", fields: &[
+        ("earth", "integer", ""),
+        ("year", "integer", ""),
+        ("month", "integer", ""),
+        ("day", "integer", ""),
+        ("hour", "integer", ""),
+        ("minute", "integer", ""),
+        ("weekday", "integer", ""),
+        ("moon_phase", "integer", ""),
+        ("moon", "integer", ""),
+    ] },
+    Class { name: "vana.Mod", doc: "The running mod (the `mod` global).", fields: &[
+        ("id", "string", ""),
+        ("name", "string", ""),
+        ("version", "string", ""),
+        ("api", "integer", ""),
+        ("path", "string", ""),
+    ] },
+];

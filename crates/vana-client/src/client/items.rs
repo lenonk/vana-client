@@ -720,6 +720,16 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>, u8, u8, bool, u8
     Some((slot.id, w.inv.ext.get(&(container, slot.index)).copied(), container, slot.index, slot.equipped, mode))
 }
 
+/// The open item list for mods (ui.native.list): its container, rows, cursor and top.
+pub(in crate::client) fn native_list(w: &World) -> Option<(u8, Vec<Slot>, usize, usize)> {
+    match w.win.as_ref()? {
+        Win::Items { store: Some(b), .. } if b.on_bank || b.read_only => Some((b.bank, store_rows(w, b.bank), b.scroll + b.cursor, b.scroll)),
+        Win::Items { store: Some(b), scroll, cursor, .. } => Some((b.side, store_rows(w, b.side), scroll + cursor, *scroll)),
+        Win::Items { scroll, cursor, direct, .. } => Some((INVENTORY, listed(w, *direct), scroll + cursor, *scroll)),
+        Win::Equip(_) => None,
+    }
+}
+
 /// The item's target prompt is up (SubThen::Item).
 pub(super) fn item_prompt(w: &World) -> bool {
     matches!(w.prompt.as_ref().map(|p| &p.then), Some(super::target::SubThen::Item { .. }))

@@ -209,7 +209,30 @@ fn band_colours(w: &World, s: &Screen) -> Vec<u32> {
 /// the spell in its slot, a removal (spell 0) lists the slots to empty. Not sent when nothing changes or within a
 /// second of the last.
 fn send(w: &mut World, s: &mut Screen, spell: u8, slots: &[(usize, u8)]) {
-    let b = w.ext_job[s.side];
+    send_side(w, s.side, spell, slots);
+}
+
+/// A slot set or emptied without the window (a Lua mod's): `spell` the spell id, 0 to empty; slot 0..19.
+pub(super) fn set_slot(w: &mut World, i: usize, spell: u16) -> Result<(), &'static str> {
+    let side = side(w).ok_or("not a blue mage")?;
+    if i > 19 {
+        return Err("slot 1..20");
+    }
+    let cur = slot(w, side, i);
+    if spell == 0 {
+        if cur == 0 {
+            return Err("the slot is empty");
+        }
+        send_side(w, side, 0, &[(i, cur)]);
+    } else {
+        let idx = spell.checked_sub(0x200).filter(|&x| x > 0 && x < 0x100).ok_or("not a blue magic spell")? as u8;
+        send_side(w, side, idx, &[(i, idx)]);
+    }
+    Ok(())
+}
+
+fn send_side(w: &mut World, side: usize, spell: u8, slots: &[(usize, u8)]) {
+    let b = w.ext_job[side];
     if b[0] != 0x10 || slots.is_empty() || w.ext_job_sent.is_some_and(|t| t.elapsed() < THROTTLE) {
         return;
     }

@@ -1946,7 +1946,10 @@ From the research notes:
   FOV, not distance). Later ours had the wheel scale the eye's distance (0.5..3); a scaled spring trailed further back
   and a forward + left run swung in a wider arc than retail's, whose zoom (the focal length) leaves the path alone
   (user, live, 2026-11-02). Since 2026-11-02 the wheel zooms the focal length again, as the keys, and the eye is at
-  retail's distance (user: "keep the eye at the same distance behind the character as retail does").
+  retail's distance (user: "keep the eye at the same distance behind the character as retail does"). Only a Lua mod
+  (render.set_camera) scales the distance, and then only the drawn eye: view() draws it at look + (eye - look) x the
+  scale, 0.5 short of what the look -> drawn eye ray hits (in at once, out 20 % a tick), the camera itself at retail's
+  distances.
 - Home 0x51: 8 frames (ours 16 ticks) of eye += (3 behind the player at look height - eye) x 0.125 a tick, until the
   camera's yaw is within 0.05 of the player's.
 - Collision: ray look -> eye puts the eye 0.5 in front of a hit; 0.17 clear of the floor (FUN_1017a310, within 10) and
@@ -4518,6 +4521,9 @@ From the targeting spec (scratchpad target_spec/SPEC.md; current-build addresses
 From the targeting spec section 3 (FUN_100d5b10, FUN_1002a140, FUN_1002ac60, FUN_1002b140).
 - Who: the local player looks at its target; every other actor at its face target, 0x00E / 0x00D
   (u32 @0x18 >> 17) & 0x7fff with the position (actor +0x1f8; LSB facetarget). No client-side "look at the player".
+  LSB sets facetarget (m_TargID) only for players (their c2s 0x015 target) and NPC look-ats (zone LookAt, event
+  look-ats): a monster's battle target never reaches it, so on LSB monsters send 0 (seen 2026-11-02, a Provoked
+  Snipper attacking us). Lua mods read it as an entity's target_index.
   Looker status 0, 5, 0x2f, 0x30, 0x55 or 0x3f..0x53 only; target type +0xee not 3 / 4 / 5 (ours: not a door); aim
   at the target's point 3, 1.2 higher (y - 1.2) when it is hidden. Event looks (ops 0x1e / 0x4a / 0x79) win.
 - Weight K+0xbc ramps 0.04 a frame (30 fps: 0.02 a tick, inf), fading with no target, a target at local x < -0.1 or
@@ -20291,11 +20297,25 @@ Ashita, beyond the above:
 
 Lessons from other games' mod layers (BG3 Script Extender, WoW, Skyrim, Factorio) are in docs/lua-mods.md 2.
 
+## Chat line: the system IME (2026-11-02, ours)
+
+- Not retail (the English client takes no IME input: the Windower and Ashita IME plugins add it). Ours takes the
+  desktop's input method while the chat line is open (both UIs): the frame's platform output carries an IME area at the
+  caret (classic: the line's caret in GameUi units over ui_k and pixels per point; modern: chat.rs input's caret rect),
+  so egui-winit allows the IME and places its candidate window there; with the line closed there is no area and the IME
+  is off, so it never takes game keys.
+- Ime::Commit inserts at the caret as typed text does (fep::insert); Ime::Preedit is drawn at the caret, underlined,
+  over what follows it; while a preedit is up the line ignores key events (the IME's Enter, Backspace and arrows).
+- Seen: with the IME allowed, the desktop's input method sends an empty preedit nearly every frame (egui-winit sets the
+  cursor area whenever there are events); harmless.
+- Live: a committed 日本語 (script step `ime:`) in both UIs, sent with /echo and printed in the game font and the modern
+  one. A real composition (preedit and candidate window from a Japanese input method) not tried.
+
 ## Lua mods: /lua only from the player (ours, 2026-11-02)
 
 - `commands.run("//lua grant <own id> ...")` used to need no permission (a `//` line skips the actions check) and
   reached `/lua` like a typed line, so any mod could grant itself every permission its mod.toml lists, or
-  `/lua run` code in another mod with that mod's grants (issue #68).
+  `/lua run` code in another mod with that mod's grants (akreao/vana-client#68).
 - Lines for the mods now carry where they came from: the player (the chat line, a macro), a mod's bind the player
   pressed, or a mod's own line (`commands.run`, an action). `/lua` runs only from the player; a mod's command still
   runs from a bind as the player's input and from a mod's line as the mod's own.
@@ -20320,7 +20340,7 @@ Lessons from other games' mod layers (BG3 Script Extender, WoW, Skyrim, Factorio
 - A mod suspended for its errors (`Mod X suspended: ...`) ran nothing for the host, but other mods could still run
   its provided functions through `mods.call`, with its grants. The call now fails with "mods.call: X is suspended"
   until `/lua reload X`.
-- Not changed, still open (issue #70): a provided function runs with the provider's grants, not the caller's. The
+- Not changed, still open (akreao/vana-client#70): a provided function runs with the provider's grants, not the caller's. The
   options (check the caller's grants too during the call, or treat providing as delegating and show it on the grant
   page) are upstream's permission model to decide; docs/lua-mods.md now says so where `mods.call` is listed.
 
@@ -20328,7 +20348,7 @@ Lessons from other games' mod layers (BG3 Script Extender, WoW, Skyrim, Factorio
 
 - `packets.inject_in` / `inject_out` took a whole sub-packet as it came (4 bytes or more), so its header's size
   field could disagree with its bytes; a hook's result was already fitted. Injected packets now go through the same
-  fit: padded to a word, the size field set from the length (issue #69).
+  fit: padded to a word, the size field set from the length (akreao/vana-client#69).
 - The size field is 7 bits of 4-byte words, so a sub-packet is at most 508 bytes. `build`, the `(id, body)` form of
   inject and a whole injected packet over that raise an error; a hook result over it (or under 4 bytes) is reported
   as the mod's error and the packet goes on unchanged. An id over 0x1ff is refused instead of being cut to 9 bits.
@@ -20337,7 +20357,7 @@ Lessons from other games' mod layers (BG3 Script Extender, WoW, Skyrim, Factorio
 
 - `string.find` / `match` / `gmatch` / `gsub` ran Lua's matcher in C, which executes no VM instructions, so the
   budget hook (every 10,000 instructions) never fired while it backtracked: `string.find(string.rep('a', 40000),
-  '^.-.-b')` blocked the game thread for 3.6 s, and unanchored for hours (issue #83).
+  '^.-.-b')` blocked the game thread for 3.6 s, and unanchored for hours (akreao/vana-client#83).
 - The four are now a Rust port of Lua 5.4's lstrlib.c matcher (client/lua/pattern.rs), step for step: the same
   results and errors (a test runs a set of calls through both and compares), and every 1024 match steps it checks the
   mod's deadline. Past it the call fails with "ran past its time budget", as a runaway loop does. A plain find

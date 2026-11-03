@@ -96,6 +96,7 @@ pub fn update(w: &mut World) {
     }
     if let Some(m) = &w.moogle
         && m.nomad
+        && w.opts.menu_reach
         && (w.pos.x - m.origin.x).powi(2) + (w.pos.z - m.origin.z).powi(2) > 36.0
     {
         if matches!(w.win, Some(items::Win::Items { store: Some(_), .. })) {

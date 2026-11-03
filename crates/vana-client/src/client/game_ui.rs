@@ -180,6 +180,14 @@ impl GameUi {
     }
 }
 
+/// A face for HUD text whatever the UI: the game's font, or the modern UI's regular or bold.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum HudFace {
+    Game,
+    Regular,
+    Bold,
+}
+
 /// The English words of the interface's texts (menu help, titles, lobby, area names, item formats, augments), lower
 /// case: what settles a doubtful gap in a menu caption.
 fn caption_words(d: &GameUiData) -> std::collections::HashSet<String> {
@@ -196,6 +204,47 @@ fn caption_words(d: &GameUiData) -> std::collections::HashSet<String> {
     out
 }
 
+/// A line cut at its chat icons (chaticons.rs): text runs, each after the first opening with the colour code in force,
+/// and icons by index; None without icons.
+fn icon_runs(s: &str) -> Option<Vec<Result<String, usize>>> {
+    use super::chaticons::index;
+    if !s.chars().any(|c| index(c).is_some()) {
+        return None;
+    }
+    let (mut out, mut run, mut code) = (Vec::new(), String::new(), String::new());
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        if let Some(k) = index(c) {
+            if !run.is_empty() {
+                out.push(Ok(std::mem::take(&mut run)));
+            }
+            out.push(Err(k));
+            run.push_str(&code);
+            continue;
+        }
+        run.push(c);
+        match c {
+            '\u{1e}' | '\u{1f}' => {
+                if let Some(x) = it.next() {
+                    run.push(x);
+                    code = format!("{c}{x}");
+                }
+            }
+            c if (crate::dat::font::CODE_BASE..crate::dat::font::CODE_BASE + 0x200).contains(&(c as u32)) => code = c.to_string(),
+            _ => {}
+        }
+    }
+    if !run.is_empty() {
+        out.push(Ok(run));
+    }
+    Some(out)
+}
+
+/// A chat icon's drawn size: 14 high, its aspect kept.
+fn icon_size(k: usize) -> (f32, f32) {
+    super::chaticons::get(k).map_or((14.0, 14.0), |(w, h, _)| (14.0 * w as f32 / h.max(1) as f32, 14.0))
+}
+
 pub struct GameUi {
     data: GameUiData,
     renderer: Option<UiRenderer>,
@@ -208,6 +257,8 @@ pub struct GameUi {
     skin_on: bool,
     /// UI pixels per modern (egui) point: the retail windows' modern frame is drawn at the panels' size.
     pub modern_scale: f32,
+    /// The game font's text in the TrueType face in the classic UI too (client.set_option ttf_text).
+    pub ttf_text: bool,
     /// The lobby's help line for the modern layer's help bar (the login form sets it).
     pub modern_help: Option<(String, [u8; 4])>,
     started: Instant,
@@ -331,7 +382,7 @@ pub struct WorldView<'a> {
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
         crate::render::ui::set_caption_words(caption_words(&data));
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), modern_frame: None, skin_on: false, modern_scale: 1.0, modern_help: None, started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), modern_order: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, log_bottom: None, target_up: false, walk: Walk::default(), focus: (None, None), presses: Default::default() }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), modern_frame: None, skin_on: false, modern_scale: 1.0, ttf_text: false, modern_help: None, started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), modern_order: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, log_bottom: None, target_up: false, walk: Walk::default(), focus: (None, None), presses: Default::default() }
     }
 
     /// FUN_1015e530 / FUN_101177d0 for a window drawn this frame with frame rect `r`: false while it opens (only the
@@ -531,7 +582,10 @@ impl GameUi {
     }
 
     pub fn text_width(&self, s: &str) -> f32 {
-        if self.batch.modern.is_some() {
+        if let Some(runs) = icon_runs(s) {
+            return runs.iter().map(|r| r.as_ref().map_or_else(|&k| icon_size(k).0 + 1.0, |t| self.text_width(t))).sum();
+        }
+        if self.batch.ttf_text() {
             return self.modern_runs(s, [0x80; 4]).iter().map(|(t, _)| mtext::width(t, Face::Regular, mtext::TEXT_EM)).sum();
         }
         self.data.font.text_width(&encode_sjis(s)) as f32
@@ -568,7 +622,32 @@ impl GameUi {
 
     /// One line in the game font; align 0 = left at x, 1 = centred on x.
     pub fn text(&mut self, s: &str, x: f32, y: f32, align: u8, color: [u8; 4]) {
-        if self.batch.modern.is_some() {
+        // A line with mods' chat icons: its text runs, the icons between them.
+        if let Some(runs) = icon_runs(s) {
+            let mut x = if align == 1 { x - self.text_width(s) / 2.0 } else { x };
+            for r in runs {
+                match r {
+                    Ok(t) => {
+                        let w = self.text_width(&t);
+                        self.text(&t, x, y, 0, color);
+                        x += w;
+                    }
+                    Err(k) => {
+                        let name = super::chaticons::texture(k);
+                        if !self.has_image(&name)
+                            && let Some((w, h, rgba)) = super::chaticons::get(k)
+                        {
+                            self.image(&name, w, h, (*rgba).clone());
+                        }
+                        let (w, h) = icon_size(k);
+                        self.image_rect(&name, x, y + 1.0, w, h, [1.0; 4]);
+                        x += w + 1.0;
+                    }
+                }
+            }
+            return;
+        }
+        if self.batch.ttf_text() {
             let runs = self.modern_runs(s, color);
             let w: f32 = runs.iter().map(|(t, _)| mtext::width(t, Face::Regular, mtext::TEXT_EM)).sum();
             let mut x = if align == 1 { x - w / 2.0 } else { x };
@@ -582,6 +661,55 @@ impl GameUi {
         let x = if align == 1 { x - self.data.font.text_width(&sjis) as f32 / 2.0 } else { x };
         let mut quads = Vec::new();
         self.data.font.layout_line(&sjis, x.round() as i32, y.round() as i32, color, [1.0, 1.0], &mut quads);
+        self.batch.push_text(&quads, ATLAS);
+    }
+
+    /// A line of game text scaled about its top left (the modern skin's: its font at `scale` times the em).
+    /// Text in a chosen face in either UI (a Lua HUD's choice); None follows the UI. The game font is alpha
+    /// blended here (retail adds its glyphs), so dark text and outlines show.
+    pub fn text_in(&mut self, s: &str, x: f32, y: f32, color: [u8; 4], scale: f32, face: Option<HudFace>) {
+        let f = match face {
+            None if self.batch.ttf_text() => return self.text_scaled(s, x, y, color, scale),
+            None | Some(HudFace::Game) => {
+                let sjis = encode_sjis(s);
+                let mut quads = Vec::new();
+                // The glyphs are MODULATE2X with PS2 alpha (0x80 opaque): blended, colour and alpha double (0xff = 2.0).
+                let c2 = color.map(|v| v.saturating_mul(2));
+                self.data.font.layout_line(&sjis, x.round() as i32, y.round() as i32, c2, [scale, scale], &mut quads);
+                self.batch.push_text_as(&quads, ATLAS, true);
+                return;
+            }
+            Some(HudFace::Regular) => Face::Regular,
+            Some(HudFace::Bold) => Face::Bold,
+        };
+        let mut x = x;
+        for (t, c) in self.modern_runs(s, color) {
+            let col = [c[2], c[1], c[0], c[3]].map(|v| (v as f32 / 128.0).min(1.0));
+            x = self.batch.push_mtext(&t, f, mtext::TEXT_EM * scale, x, y + mtext::TEXT_DY * scale, col, false);
+        }
+    }
+
+    /// text_in's width at scale 1.
+    pub fn width_in(&self, s: &str, face: Option<HudFace>) -> f32 {
+        match face {
+            None => self.text_width(s),
+            Some(HudFace::Game) => self.data.font.text_width(&encode_sjis(s)) as f32,
+            Some(f) => self.modern_runs(s, [0x80; 4]).iter().map(|(t, _)| mtext::width(t, if f == HudFace::Bold { Face::Bold } else { Face::Regular }, mtext::TEXT_EM)).sum(),
+        }
+    }
+
+    pub fn text_scaled(&mut self, s: &str, x: f32, y: f32, color: [u8; 4], scale: f32) {
+        if self.batch.ttf_text() {
+            let mut x = x;
+            for (t, c) in self.modern_runs(s, color) {
+                let col = [c[2], c[1], c[0], c[3]].map(|v| (v as f32 / 128.0).min(1.0));
+                x = self.batch.push_mtext(&t, Face::Regular, mtext::TEXT_EM * scale, x, y + mtext::TEXT_DY * scale, col, false);
+            }
+            return;
+        }
+        let sjis = encode_sjis(s);
+        let mut quads = Vec::new();
+        self.data.font.layout_line(&sjis, x.round() as i32, y.round() as i32, color, [scale, scale], &mut quads);
         self.batch.push_text(&quads, ATLAS);
     }
 
@@ -1296,6 +1424,11 @@ impl GameUi {
         self.batch.modern = self.skin();
     }
 
+    /// The game font's text in the TrueType face, from now on (this frame's batch too).
+    pub fn set_ttf(&mut self, on: bool) {
+        (self.ttf_text, self.batch.ttf) = (on, on);
+    }
+
     /// How far the modern frame stands out past a retail window (0 with the skin off): windows placed by an edge keep
     /// that far in.
     pub fn modern_margin(&self) -> f32 {
@@ -1318,6 +1451,7 @@ impl GameUi {
     pub fn clear(&mut self) {
         self.batch = UiBatch::default();
         self.batch.modern = self.skin();
+        self.batch.ttf = self.ttf_text;
         self.log_top = None;
         self.log_bottom = None;
         self.target_up = false;
@@ -1625,6 +1759,11 @@ impl GameUi {
     }
 
     /// An uploaded image stretched over a rect; colour 1.0 = 0x80.
+    /// An image over any four corners (top left, top right, bottom left, bottom right) and their uvs.
+    pub fn image_corners(&mut self, name: &str, corners: [[f32; 2]; 4], uvs: [[f32; 2]; 4], rgba: [f32; 4]) {
+        self.batch.push_image_corners(name, corners, uvs, rgba);
+    }
+
     pub fn image_rect(&mut self, name: &str, x: f32, y: f32, w: f32, h: f32, rgba: [f32; 4]) {
         self.batch.push_image(name, x, y, w, h, rgba);
     }
@@ -1756,6 +1895,11 @@ impl GameUi {
 
     pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, rgba: [f32; 4]) {
         self.batch.push_rect(x, y, w, h, rgba);
+    }
+
+    /// An untextured quad: corners top left, top right, bottom left, bottom right, each with its colour.
+    pub fn quad(&mut self, corners: [[f32; 2]; 4], rgba: [[f32; 4]; 4]) {
+        self.batch.push_corners(corners, rgba);
     }
 
     /// A window cursor sprite (`lib`, e.g. the buff window's anc_equi box) scaled about (x, y) (FUN_1011ab50; the

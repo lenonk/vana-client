@@ -249,6 +249,8 @@ pub struct LogAnim {
     fade: super::hudtop::Fade,
     /// The chat line ("menu    inline") was open last frame.
     inline: bool,
+    /// New lines show at once, without the slide (a Lua mod's switch, client.set_option "log_slide").
+    pub instant: bool,
 }
 
 /// Retail's frame clock: whole frames of FRAME ticks from wall time, at most 20 ticks a call (FUN_10014cf0), the
@@ -329,6 +331,10 @@ impl LogAnim {
     /// to slide; the displayed line stays until the step reaches it.
     pub fn add_line(&mut self, cfg: &LogCfg) {
         self.extend(cfg);
+        // A Lua mod's switch (client.set_option "log_slide" false): the newest line shows at once.
+        if self.instant {
+            return self.settle();
+        }
         self.slide += 20;
         self.pending += 1;
     }

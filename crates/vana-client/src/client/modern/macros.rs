@@ -358,7 +358,7 @@ fn editor(ui: &mut Ui, m: &super::Modern, gu: &GameUi, e: &macroedit::EditorView
 
 /// The palette while Ctrl or Alt is held (FUN_101a3b20): its ten keys over the chat window, the cursor's cell lit.
 fn held_palette(p: &mut Panels, w: &World) {
-    let Some(mac) = w.macros.as_ref().filter(|_| w.palette.0 != 0) else { return };
+    let Some(mac) = w.macros.as_ref().filter(|_| w.palette.0 != 0 && !w.lua.hides("palette")) else { return };
     let (m, ctx) = (p.m, p.ctx);
     let pal = w.palette.0 as usize;
     let screen = ctx.content_rect();

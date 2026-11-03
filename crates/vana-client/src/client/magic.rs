@@ -1022,7 +1022,7 @@ pub fn open_cast_bar(w: &mut World, spell: u16) {
     let Some(r) = w.actions.as_ref().and_then(|a| a.spell(spell)) else { return };
     let total = r.cast as f32 * 20.0;
     if total > 0.0 {
-        (w.cast_bar, w.cast_event) = (Some((total, total)), false);
+        (w.cast_bar, w.cast_event, w.cast_spell) = (Some((total, total)), false, spell);
     }
 }
 

@@ -1374,7 +1374,7 @@ impl Host for LiveHost<'_> {
             Effect::Op { op: 0xb4, sub: Some(7), args, .. } => {
                 if self.w.cast_bar.is_none() {
                     let n = Self::arg_int(&args, 0).unwrap_or(0).max(0) as f32;
-                    (self.w.cast_bar, self.w.cast_event) = (Some((n, n)), true);
+                    (self.w.cast_bar, self.w.cast_event, self.w.cast_spell) = (Some((n, n)), true, 0);
                 }
             }
             Effect::Op { op: 0xb4, sub: Some(0xa), args, .. } => {

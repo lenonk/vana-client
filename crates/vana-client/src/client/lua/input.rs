@@ -242,8 +242,8 @@ pub(in crate::client) fn window_event(w: &mut World, event: &WindowEvent) -> boo
     }
 }
 
-/// A test drive's egui events through the mods, as the window's go: the ones no mod took. `ppp` is egui's points per
-/// window pixel.
+/// A test drive's egui events through the mods, as the window's go: the ones no mod took. `ppp` is egui's pixels per
+/// point, so a drive's pixel lands where the window's would.
 pub(in crate::client) fn drive_events(w: &mut World, events: Vec<egui::Event>, ppp: f64) -> Vec<egui::Event> {
     if !w.lua.started {
         return events;
@@ -315,6 +315,15 @@ fn moved(w: &mut World, x: f64, y: f64) -> bool {
 
 fn button_edge(w: &mut World, button: MouseButton, down: bool) -> bool {
     let st = w.lua.input.clone();
+    // A press on a HUD element with a click handler is its (and its release).
+    if down && matches!(button, MouseButton::Left | MouseButton::Right) {
+        let (x, y) = st.borrow().cursor;
+        if let Some((m, id)) = super::hud::hit(w, x, y) {
+            w.lua.hud_clicks.push((m, id, button_name(button)));
+            st.borrow_mut().taken_buttons.push(button);
+            return true;
+        }
+    }
     let (taken, (x, y)) = {
         let mut s = st.borrow_mut();
         if let Some(k) = [MouseButton::Left, MouseButton::Right, MouseButton::Middle].iter().position(|b| *b == button) {
@@ -355,10 +364,9 @@ fn filter(w: &mut World, mouse: bool, mut e: serde_json::Value) -> bool {
         }
         let capture = vm.st.borrow().granted.iter().any(|g| g == "input.capture");
         lend(vm, w, |vm| {
-            use mlua::LuaSerdeExt;
             for f in funcs {
                 e["blocked"] = blocked.into();
-                let t = vm.lua.to_value(&e).unwrap_or(Value::Nil);
+                let t = super::api::to_lua(&vm.lua, &e).unwrap_or(Value::Nil);
                 // The player's input: actions may act from here.
                 if let Some(r) = vm.call_filter(f, t, true)
                     && matches!(r.front(), Some(Value::Boolean(true)))
@@ -422,6 +430,12 @@ pub(super) fn run_binds(host: &mut super::Host, w: &World, out: &mut Vec<(String
         }
     }
     game
+}
+
+/// The pointer in window pixels.
+pub(super) fn cursor(lua: &mlua::Lua) -> (f32, f32) {
+    let c = shared(lua).borrow().cursor;
+    (c.0 as f32, c.1 as f32)
 }
 
 fn shared(lua: &mlua::Lua) -> std::rc::Rc<std::cell::RefCell<State>> {

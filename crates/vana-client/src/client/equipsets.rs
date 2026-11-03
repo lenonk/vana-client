@@ -200,7 +200,7 @@ pub fn equip(w: &mut World, id: usize, print: bool) -> bool {
     }
     let Some(es) = w.equipsets.as_mut() else { return false };
     let Some(set) = es.get(id) else { return false };
-    if es.last_equip.is_some_and(|t| t.elapsed() < Duration::from_millis(900)) {
+    if w.opts.equipset_delay && es.last_equip.is_some_and(|t| t.elapsed() < Duration::from_millis(900)) {
         return false;
     }
     (es.last_equip, es.print) = (Some(Instant::now()), print);
