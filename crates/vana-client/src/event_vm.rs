@@ -3344,6 +3344,20 @@ mod tests {
         assert_eq!(found[..2], [(0x5f, Some(0x010e_6030)), (0xc1, Some(0x010e_6030))]);
     }
 
+    /// Op 0xab 0x0f / 0x10 / 0x12 / 0x13 (FUN_100bac90): two bytes each, to the host in order.
+    #[test]
+    fn opab_flag_subs() {
+        let code = vec![0xab, 0x0f, 0xab, 0x10, 0xab, 0x12, 0xab, 0x13, 0x21, 0x00];
+        let actor = 0x010e_601b;
+        let blocks = vec![event::Block { actor, events: vec![(1, 0)], consts: vec![], code }];
+        let mut host = Scripted::new(&[]);
+        let start = Start { zone: 243, event: 1, target: actor, ..Default::default() };
+        let mut rt = Runtime::start(blocks, None, start, Memory::default(), &mut host);
+        run_scripted(&mut rt, &mut host, 60).expect("finished");
+        let subs: Vec<Option<u8>> = host.log.iter().filter_map(|e| if let Effect::Op { op: 0xab, sub, .. } = e { Some(*sub) } else { None }).collect();
+        assert_eq!(subs[..4], [Some(0x0f), Some(0x10), Some(0x12), Some(0x13)]);
+    }
+
     /// Op 0x5c 0xb0 / 0xb1 (FUN_100b6e30), as the ambient music loops of zones 210 / 232 / 236 / 239 use them: 0xb0
     /// stores the host's music state in four bytes, 0xb1 reaches the host in two.
     #[test]

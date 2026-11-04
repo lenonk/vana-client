@@ -461,6 +461,9 @@ pub struct State {
     pub event_rides: HashMap<u32, super::ride::Model>,
     /// Op 0xab sub 3 (+0x120 bit 2): the event status of these actors is not written (ops 0x7e, 0xac 1).
     status_lock: HashSet<u32>,
+    /// Op 0xab 0x0f / 0x10 (DAT_10489900): s2c 0x00D positions of player characters that are not bound keep the sent
+    /// height; the event's end clears it (FUN_100ae3f0).
+    pub raw_pc_y: bool,
     /// Snapped by 0x36 / 0x37 this frame (FUN_100917e0).
     snap: HashSet<u32>,
     /// Despawned while bound (0x1009a04d keeps an event participant); removed at the end.
@@ -527,6 +530,7 @@ impl State {
             no_name: HashSet::new(),
             no_turn_steps: HashSet::new(),
             no_038: HashSet::new(),
+            raw_pc_y: false,
             first_saved: false,
             poses: HashMap::new(),
             event_status: HashMap::new(),
@@ -1081,6 +1085,8 @@ impl Host for LiveHost<'_> {
                     a.blink_off = on == 0;
                 }
             }
+            // FUN_100bac90 0x0f / 0x10: DAT_10489900 = 1 / 0.
+            Effect::Op { op: 0xab, sub: Some(s @ (0x0f | 0x10)), .. } => self.st.raw_pc_y = s == 0x0f,
             // FUN_100bac90 sub 0x11: DAT_1035af3c = val@2; anything but -1 rebuilds the models after the event.
             Effect::Op { op: 0xab, sub: Some(0x11), args, .. } => {
                 if Self::arg_int(&args, 0).is_some_and(|v| v != -1) {
@@ -2416,6 +2422,12 @@ pub fn nameless(w: &World) -> HashSet<u32> {
 /// Op 0x5f sub 1 holds this actor out of s2c 0x038 schedulers while the event runs.
 pub fn no_038(w: &World, id: u32) -> bool {
     w.event.as_ref().is_some_and(|l| l.st.no_038.contains(&id))
+}
+
+/// LAB_10099ae0 (0x10099e89): a player character's s2c 0x00D height is not stood on the floor (FUN_10181290) while
+/// op 0xab 0x0f is on, an event runs and the character neither is bound (+0x120 bit 7) nor takes part (bit 8).
+pub fn raw_pc_y(w: &World, id: u32) -> bool {
+    w.event.as_ref().is_some_and(|l| l.st.raw_pc_y && !l.st.bound.contains(&id))
 }
 
 /// The running event binds this actor (+0x120 bit 7).

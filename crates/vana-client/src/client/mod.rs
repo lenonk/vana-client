@@ -9080,6 +9080,7 @@ impl App {
                         looks.push((e.id, Source::Npc(npc)));
                     }
                     let fresh = !world.entities.contains_key(&e.id);
+                    let raw_y = e.kind == EntityKind::Player && event::raw_pc_y(world, e.id);
                     let rising = e.hpp.is_some() && chair::rise(world, e.id, e.motion.status);
                     let held = rising || combat::held(world, e.id) || fishrod::walking_hold(world, e.id, e.motion.status);
                     let entry = world.entities.entry(e.id).or_insert(Entity {
@@ -9248,9 +9249,11 @@ impl App {
                         entry.server_y = p.y;
                         entry.grounded = e.ground;
                         entry.target = p;
-                        // FUN_10091220: a new actor stands on the floor under the server's position.
+                        // FUN_10091220: a new actor stands on the floor under the server's position (not a player character
+                        // while op 0xab 0x0f holds the sent height, event::raw_pc_y).
                         if fresh
                             && e.ground
+                            && !raw_y
                             && let Some(y) = world.ground.as_ref().filter(|_| world.zone == Some(world.pos_zone) && world.loading.is_none()).and_then(|g| g.snap(p.x, p.z, p.y))
                         {
                             p.y = y;
