@@ -294,7 +294,8 @@ fn handover_key(w: &mut World, gu: &GameUi, key: egui::Key) {
             }
             h.qty = Some((inv, v, max));
             match key {
-                K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => w.sounds.push(Ui::Cursor as u32),
+                // FUN_1013a6c0 / FUN_10140bc0 play nothing on the arrows or at a limit (only OK 0002 / cancel 0003).
+                K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => {}
                 K::Enter => {
                     w.sounds.push(Ui::Select as u32);
                     let item = w.inv.slots.get(&(super::items::INVENTORY, inv)).map_or(0, |x| x.0);
@@ -322,7 +323,8 @@ fn handover_key(w: &mut World, gu: &GameUi, key: egui::Key) {
             }
             h.money = Some((step, max, v));
             match key {
-                K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => w.sounds.push(Ui::Cursor as u32),
+                // FUN_1013a6c0 / FUN_10140bc0 play nothing on the arrows or at a limit (only OK 0002 / cancel 0003).
+                K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => {}
                 K::Enter | K::Escape => {
                     w.sounds.push(if key == K::Enter { Ui::Select } else { Ui::Cancel } as u32);
                     if key == K::Enter {
@@ -1077,7 +1079,8 @@ fn p2p_key(w: &mut World, gu: &GameUi, key: egui::Key) {
             }
             u.qty = Some((inv, v, max));
             match key {
-                K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => w.sounds.push(Ui::Cursor as u32),
+                // FUN_1013a6c0 / FUN_10140bc0 play nothing on the arrows or at a limit (only OK 0002 / cancel 0003).
+                K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => {}
                 K::Enter => {
                     w.sounds.push(Ui::Select as u32);
                     let item = w.inv.slots.get(&(super::items::INVENTORY, inv)).map_or(0, |x| x.0);
@@ -1104,7 +1107,8 @@ fn p2p_key(w: &mut World, gu: &GameUi, key: egui::Key) {
             }
             u.money = Some((step, max, v));
             match key {
-                K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => w.sounds.push(Ui::Cursor as u32),
+                // FUN_1013a6c0 / FUN_10140bc0 play nothing on the arrows or at a limit (only OK 0002 / cancel 0003).
+                K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => {}
                 K::Enter | K::Escape => {
                     w.sounds.push(if key == K::Enter { Ui::Select } else { Ui::Cancel } as u32);
                     if key == K::Enter {

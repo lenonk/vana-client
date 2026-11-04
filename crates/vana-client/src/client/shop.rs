@@ -917,7 +917,8 @@ pub fn key(w: &mut World, key: egui::Key) {
         }
         s.money = Some((step, max, v));
         match key {
-            egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowRight | egui::Key::ArrowLeft => w.sounds.push(Ui::Cursor as u32),
+            // FUN_1013a6c0 / FUN_10140bc0 play nothing on the arrows or at a limit (only OK 0002 / cancel 0003).
+            egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowRight | egui::Key::ArrowLeft => {}
             egui::Key::Enter => {
                 w.sounds.push(Ui::Select as u32);
                 s.money = None;
@@ -957,10 +958,8 @@ pub fn key(w: &mut World, key: egui::Key) {
                 (s.qty, s.busy) = (None, None);
                 w.sounds.push(Ui::Cancel as u32);
             }
-            _ if nv != v => {
-                s.qty = Some((nv, max));
-                w.sounds.push(Ui::Cursor as u32);
-            }
+            // Silent, as above.
+            _ if nv != v => s.qty = Some((nv, max)),
             _ => {}
         }
     } else if let Some(view) = s.view {

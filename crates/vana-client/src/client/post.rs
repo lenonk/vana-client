@@ -983,7 +983,8 @@ fn send_key(w: &mut World, gu: &GameUi, key: egui::Key) {
             }
             s.qty = Some((index, v, max));
             match key {
-                K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => w.sounds.push(Ui::Cursor as u32),
+                // FUN_1013a6c0 / FUN_10140bc0 play nothing on the arrows or at a limit (only OK 0002 / cancel 0003).
+                K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => {}
                 K::Enter => {
                     w.sounds.push(Ui::Select as u32);
                     let item = w.inv.slots.get(&(0, index)).map_or(0, |x| x.0);
@@ -1012,7 +1013,8 @@ fn send_key(w: &mut World, gu: &GameUi, key: egui::Key) {
             }
             s.money = Some((step, max, v));
             match key {
-                K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => w.sounds.push(Ui::Cursor as u32),
+                // FUN_1013a6c0 / FUN_10140bc0 play nothing on the arrows or at a limit (only OK 0002 / cancel 0003).
+                K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => {}
                 K::Enter | K::Escape => {
                     w.sounds.push(if key == K::Enter { Ui::Select } else { Ui::Cancel } as u32);
                     let placed = key == K::Enter && v > 0 && place(&mut s, 0, GIL, v);

@@ -1015,7 +1015,11 @@ fn key_inner(w: &mut World, a: &mut Auction, key: egui::Key) -> bool {
                 }
                 K::ArrowUp | K::ArrowDown => return walk(w, a, match b { 0..=2 => 6, 3..=5 => 7, 6 => 0, _ => 4 }),
                 K::Enter => match b {
-                    0..=3 => key = [K::ArrowDown, K::ArrowUp, K::ArrowLeft, K::ArrowRight][b as usize],
+                    // The modern buttons (ours) keep a sound for their press; the arrows below are silent.
+                    0..=3 => {
+                        key = [K::ArrowDown, K::ArrowUp, K::ArrowLeft, K::ArrowRight][b as usize];
+                        w.sounds.push(Ui::Cursor as u32);
+                    }
                     4 | 5 => {
                         a.money = Some((step, max, if b == 4 { max } else { 0 }, purpose));
                         w.sounds.push(Ui::Cursor as u32);
@@ -1042,7 +1046,8 @@ fn key_inner(w: &mut World, a: &mut Auction, key: egui::Key) -> bool {
         }
         a.money = Some((step, max, v, purpose));
         match key {
-            K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => w.sounds.push(Ui::Cursor as u32),
+            // FUN_1013a6c0 / FUN_10140bc0 play nothing on the arrows or at a limit (only OK 0002 / cancel 0003).
+            K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => {}
             K::Enter | K::Escape => {
                 w.sounds.push(if key == K::Enter { Ui::Select } else { Ui::Cancel } as u32);
                 a.money = None;
