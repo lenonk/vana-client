@@ -1,6 +1,7 @@
 # Build, clippy and tests on Linux and Windows for every push to master and every pull request.
 # Clippy fails on its errors (deny-by-default lints) only; its warnings are reported but don't fail the run.
-# The runners have no GPU: tests that need one skip when Gpu::headless() finds no adapter.
+# The runners have no GPU: GPU tests skip when Gpu::headless() finds no adapter. Windows always has one, WARP, its
+# software D3D12 renderer, so they run there (see the Windows WARP step).
 name: CI
 
 on:
@@ -32,6 +33,22 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpipewire-0.3-dev libclang-dev libasound2-dev libudev-dev pkg-config
       - uses: Swatinem/rust-cache@v2
+      # The WARP that ships with Windows Server (10.0.26100) crashes with an access violation when several GPU tests
+      # run at once: 6 of 25 runs of the render tests died on it, none of 25 one test at a time. WARP 1.0.20 from
+      # NuGet passed 50 of 50 in parallel. D3D12 loads a d3d10warp.dll next to the exe before the system one, so it
+      # goes beside the test binaries; wgpu's own CI does the same. After rust-cache, which restores target/ whole.
+      - name: Windows WARP
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          WARP_VERSION: 1.0.20
+        run: |
+          # Windows' own tar (bsdtar) opens zips; Git Bash's GNU tar doesn't, and reads "D:/..." as a host.
+          mkdir -p warp-tmp target/release/deps
+          curl -fsSL --retry 5 "https://www.nuget.org/api/v2/package/Microsoft.Direct3D.WARP/$WARP_VERSION" -o warp-tmp/warp.zip
+          /c/Windows/System32/tar.exe -xf warp-tmp/warp.zip -C warp-tmp build/native/bin/x64/d3d10warp.dll
+          cp warp-tmp/build/native/bin/x64/d3d10warp.dll target/release/deps/
+          rm -rf warp-tmp
       - name: Build
         run: cargo build --release --locked
       - name: Clippy
