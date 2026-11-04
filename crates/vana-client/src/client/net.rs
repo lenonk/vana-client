@@ -49,6 +49,9 @@ pub struct EntityUpdate {
     /// NPC ids without u32 @0x18 bit 15, kind (@0x30 & 7) not 2 / 3 (LAB_10099c80).
     pub counter: u16,
     pub ground: bool,
+    /// GroundFlag (+0x120 bit 20, u32 @0x18 bit 15) and HackMove (+0x128 bit 14, u32 @0x20 bit 27): either one, or
+    /// op 0x33's bit 21, stops the event ground snaps and the model's ground tilt (FUN_10084640, batch 6 item 14).
+    pub no_snap: Option<bool>,
     /// Update mask (u8 @0x0a) and status bits u8 @0x20 & 7 (actor +0x120 bits 13 / 14 / 18, 0x1009a397).
     pub mask: u8,
     pub status: u8,
@@ -166,6 +169,8 @@ pub struct SelfPlate {
     pub zone_pool: bool,
     /// u8 @0x59 x 0.1 (asm 0x1009d90c): our model radius, actor +0x208.
     pub hitbox: f32,
+    /// GroundFlag (flags0 bit 2) or HackMove (flags1 bit 12): no event ground snap, no ground tilt (batch 6 item 14).
+    pub no_snap: bool,
 }
 
 fn self_plate(p: &SubPacket) -> SelfPlate {
@@ -192,7 +197,7 @@ fn self_plate(p: &SubPacket) -> SelfPlate {
     };
     let r = p.u8(0x5a);
     let extra = PlateExtra { ballista: p.u8(0x39), trial: bit(f3, 1), job_master: p.u8(0x58) & 0x80 != 0, ranks: (r & 3) << 2 | (r >> 2 & 3) };
-    SelfPlate { marks, extra, invisible: bit(f1, 15), frozen: bit(f1, 13), charmed: bit(f1, 30), monstrosity: p.u16(0x54), mon_prefix: [p.u8(0x56), p.u8(0x57)], zone_pool: bit(f0, 9), hitbox: p.u8(0x59) as f32 * 0.1 }
+    SelfPlate { marks, extra, invisible: bit(f1, 15), frozen: bit(f1, 13), charmed: bit(f1, 30), monstrosity: p.u16(0x54), mon_prefix: [p.u8(0x56), p.u8(0x57)], zone_pool: bit(f0, 9), hitbox: p.u8(0x59) as f32 * 0.1, no_snap: bit(f0, 2) || bit(f1, 12) }
 }
 
 /// The rest of the plate's fields: u8 @0x32 (+0x294 Ballista info) and @0x33 bit 1 trial, bit 6 job master, bits 4..5 /
@@ -1040,6 +1045,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
         name_flags: (flags & 0x04 != 0 && p.data.len() >= 0x28).then(|| (p.u32(0x24) >> 29 & 1 != 0, p.u32(0x24) >> 30 & 1 != 0)),
         counter: p.u16(0x18) & 0x1fff,
         ground: p.u32(4) >> 24 == 1 && p.u32(0x18) & 0x8000 == 0 && !matches!(p.u8(0x30) & 7, 2 | 3),
+        no_snap: (flags & 0x04 != 0 && p.data.len() >= 0x24).then(|| p.u32(0x18) & 0x8000 != 0 || p.u32(0x20) >> 27 & 1 != 0),
         mask: flags,
         status: p.u8(0x20) & 7,
         look_kind: p.u8(0x30) & 7,
