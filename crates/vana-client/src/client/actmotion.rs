@@ -337,6 +337,16 @@ impl Play {
         self.cut = self.ticks;
     }
 
+    /// The scheduler task is deleted now (event op 0x50, model vtable +0x29c -> FUN_10056ef0): no later motion starts,
+    /// and the motion already playing runs on as the model has it (a loop until the status motion changes).
+    pub fn stop(&mut self) {
+        let t = self.ticks;
+        self.motions.retain(|m| m.at as f32 <= t);
+        // busy() runs one tick past the length.
+        self.length = self.length.min(t - 2.0);
+        self.stance_at = self.stance_at.filter(|s| *s <= t);
+    }
+
     /// 0x53: the scheduler task still exists.
     pub fn busy(&self) -> bool {
         self.ticks <= self.length + 1.0
@@ -726,6 +736,22 @@ impl Fade {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Event op 0x50: a scheduler stopped at tick 30 starts no later motion and is no longer busy; its looping motion
+    /// plays on, a counted one ends on its own.
+    #[test]
+    fn scheduler_stop_keeps_current() {
+        let m = |name: &str, at: u32, count: u8| sched::Motion { name: name.into(), at, speed: 1.0, ticks: 10, count, blend: 0 };
+        let mut p = Play { name: "tk00".into(), motions: vec![m("a", 0, 0), m("b", 60, 1)], length: 120.0, ticks: 30.0, base: "idl".into(), cut: -1.0, stance_at: Some(90.0) };
+        p.stop();
+        assert!(!p.busy());
+        assert_eq!(p.motions.len(), 1);
+        assert_eq!(p.stance_at, None);
+        p.ticks = 200.0;
+        assert_eq!(p.current().map(|m| m.name.as_str()), Some("a"));
+        assert!(!p.over("idl"));
+        assert!(p.over("run"));
+    }
 
     /// A hit pose of 2 frames (3 keys) at speed 1: in over a tick, full for 2 cycles (8 ticks), out over 24 on its
     /// last key, then gone.

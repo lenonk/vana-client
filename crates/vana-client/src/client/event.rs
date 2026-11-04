@@ -821,6 +821,29 @@ impl Host for LiveHost<'_> {
                     a.pending = Some(super::actmotion::Pending { files, name, kind: super::actmotion::Kind::Event });
                 }
             }
+            // FUN_100b4d10: both actors in the zone with a model, then actor@1's model vtable +0x29c(4cc@9, actor@5's
+            // model) (FUN_10084cc0: the type-7 resource of that name, its files first, then FUN_10056ef0 deletes
+            // the scheduler tasks of it on that pair). Ours: the 0x2c start that has not begun loses its name, a
+            // running one stops where it is, and its effects side stops.
+            Effect::Op { op: 0x50, args, .. } => {
+                let (Some(Arg::Actor(a1)), Some(Arg::Actor(a2)), Some(Arg::Name(name))) = (args.first(), args.get(1), args.get(2)) else { return };
+                let (id, target) = (self.wid(*a1), self.wid(*a2));
+                let model = |w: &World, id: u32| w.actors.get(&id).is_some_and(|a| a.character.is_some());
+                if !model(self.w, id) || !model(self.w, target) {
+                    return;
+                }
+                if let Some(a) = self.w.actors.get_mut(&id) {
+                    if let Some(p) = a.pending.as_mut().filter(|p| p.kind == super::actmotion::Kind::Event && p.name == *name) {
+                        p.name.clear();
+                    }
+                    if let Some(p) = a.play.as_mut().filter(|p| p.name == *name) {
+                        p.stop();
+                    }
+                }
+                if let Ok(n) = <[u8; 4]>::try_from(name.as_bytes()) {
+                    self.w.effects.stop_actor_scheduler(id, u32::from_le_bytes(n));
+                }
+            }
             // FUN_100b3870 (0x5f sub 2): drop the event motion files (FUN_100d2340(2)).
             Effect::Op { op: 0x5f, sub: Some(2), actor, .. } => {
                 let id = self.wid(actor);
