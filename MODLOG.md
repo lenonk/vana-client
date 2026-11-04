@@ -21155,3 +21155,990 @@ checked in the decompile before the change.
 - net/map/session.rs binds as FUN_100dc430 (the buffer sizes not copied). Seen live: our LSB zones from 54090 each
   time; the other server zoned in and out of the Mog House from 54346 (54090 was held by a second client); a
   PlayOnline (-net 3) sign-in zoned out of the Mog House and back with it too (user, 2026-11-04).
+
+## Zone ambient loop: crossfade at a change (2026-11-03)
+
+Checked in Steven's unpacked FFXiMain.dll (sha256 8097dbf8..., 2026-11-03); notes in
+`docs/re/notes/2026-11-03-modlog-gaps-batch3.md` §7.
+- FUN_10036170 starts a new ambient resource without stopping the old one. The sound engine (FUN_1024a7c0 ->
+  FUN_1024a1b0) fades every other playing flag-0x20 voice to level table[1] over 0x96 sound steps and keys it off,
+  while the new voice ramps in over the same 150 steps (about 2.5 s). So a time of day, weather or indoor change
+  crossfades.
+- FUN_10036170(0) keys the voice off at once. It comes from the zone's SeSep release (FUN_10037ac0) at a zone
+  change, and when a weather has no ambient: a hard cut, then the new zone's loop fades in.
+- Ours: the old loop now fades out over 150 steps while the new one fades in (two voice handles take turns). A
+  scene change or no loop still cuts at once. A loop still fading from a change moments before is cut when the next
+  change comes (retail lets it finish).
+
+## Misc. 2: Animation frame rate (2026-11-03)
+
+- Config 0x40 (Misc. 2 > animation frame rate, slider 0..3, default 3) was saved but never read. Retail
+  (FFXiMain.dll, checked 2026-11-03):
+  - LAB_101aa650 case 0x40 (FUN_10002e40): DAT_10456c00 = 3 - value.
+  - FUN_100cbde0 (0x100cc9b4), per actor, with the frame count FUN_10014d50 (DAT_104568fc +0x34) and the actor's
+    slot +0x9fc (0..3, the least used one when FUN_100c62e0 makes it): rate 1 skips the frame where count % 4 is
+    the slot, rate 2 the frames off the slot's parity, rate 3 every frame but the slot's; a frame is never skipped
+    twice running (+0xa00), nor while +0xa04 forces an update (set when the actor is made and by FUN_100a4b40). Not
+    for an actor whose vt +0x358 holds, one on a mount (status 0x55, FUN_100956a0), or with entity +0x120 bit 7 / 8.
+  - A skipped frame clears DAT_10457460, so FUN_100224d0 doesn't skin (FUN_10023290): the old pose stays.
+- Ours: anim_skip; an actor other than ours keeps last frame's whole pose (AnimHeld: motion frames, reaction
+  overlay frame and weight, head look) on a skipped frame, as long as it plays the same animations, and its cloth
+  step waits for the next posed frame *(inf: retail may drop that tick)*. The GPU still re-skins the held pose
+  each frame (the look matches; retail's saving of the skinning work is not mirrored). Slots are dealt in turn;
+  vt +0x358, +0x120 bits 7 / 8, the +0x34c / +0x768 check and FUN_100a4b40's callers are not mirrored *(inf)*.
+
+## The page arrows disable their list while hovered (2026-11-03)
+
+The paged-list base has a disable / enable pair (confirmed with the helpers read for batch 5 item 5):
+
+- `FUN_10221cd0` (disable): window +0x62 = 0, so no cursor and no hand, and list **+0x5c |= 2**.
+- `FUN_10221ce0` (enable): +0x62 = 1, and if bit 1 was set it rebuilds (`FUN_10221ed0`) and clears it.
+
+Hovering an arrow (children 9 / 10, message 9) disables; hovering a row enables; every rebuild clears the bit. While
+the bit is set the list ignores **every** message, keyboard pages included. A click on an arrow is Enter on child
+9 / 10, re-sent as Left / Right through `vt+0x18`, which tests the page modifier 0xa8 again
+(`FUN_10123a70(0x3e, 0xa8, 4, -1)`): with Ctrl or Alt held that is a page on the disabled list, so **nothing
+happens**; without it the log / area / week / category changes.
+
+Built for the three windows whose arrows take the test: miss00, questlst and primer. RoE's arrows and jbpcat's page
+areas skip it (a Ctrl-click switches there), so they are left as they are.
+
+`World::list_arrow_hover` carries the disabled bit. Retail keeps it until a row is hovered or the list is rebuilt;
+ours is recomputed from the pointer each frame, so a pointer that leaves the window cannot strand the keyboard.
+
+## Chat: the assist echoes' rank icon (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch7.md item 21): only the Assist channel echoes have
+  it. /assistj (FUN_10078be0, "%c%c%s(J) : %s") and /assiste (FUN_10078d80, "(E)") put 0xEF R before our name when
+  our mentor rank (G+0x40deb, s2c 0x01B @0x65) and mastery rank (G+0x40dec, @0x66) are both non-zero and MentorFlg
+  (s2c 0x0B4 byte 7 bit 1) is on. R = mentor x 10 + mastery + 0x24, or 0x2f outside 0x2f..0x4c. Otherwise the plain
+  "%s(J) : %s" is used. Other echoes have no icon.
+- Ours: client/textcmd.rs adds it to the two assist echoes. The R formula is now client/mod.rs rank_icon, shared with
+  the received 0x017 lines.
+
+## Gameplay Auto-sort: sorts and stacks new items (2026-11-03)
+
+- Config 0x9a (Gameplay > Auto-sort) was saved but never acted on, so a new item never sorted the inventory and
+  partial stacks of it never merged (with either Sort Type). Retail (FFXiMain.dll, checked 2026-11-03):
+  - FUN_101978e0: 0x9a != 0 sets +5 on the inventory's list record only (DAT_10666e2c); 0xca == 1 sets
+    DAT_10666e74 (Sort Type 2).
+  - FUN_1021c4c0, each frame in the field (FUN_1015fa00, state 0x60 / 0x70): the free slots in 1..size
+    (FUN_100eb8d0) against the last count (+8). With +5, a fall (an item took a new slot) and no hold (+6) calls
+    FUN_1021c7c0(0, 1, 0): the view by Sort Type (FUN_1021c7e0) and c2s 0x03A {0} (FUN_100ebf40). Any change clears
+    +6; the count is kept either way.
+  - +6 is set by Manual Sort's split of one off a stack (FUN_101f0b30 at 0x101f0c95; FUN_101dbed0 at 0x101dc0a0,
+    inventory only), so the split's new slot doesn't sort.
+  - Both Sort Types send the same 0x03A; the stacking is the server's (LSB GP_CLI_COMMAND_ITEM_STACK merges
+    partial stacks of the same item). Type 2 only changes the view: copies of an item gathered beside the first.
+- Ours: items::retail_auto_sort. The count starts once the inventory settles (s2c 0x01D state 1 with the
+  inventory's loaded bit) after login or a zone-in, since our zone-in empties the slots and LSB resends them.
+  An Auto-sort within 1 s of the last inventory 0x03A waits out the second: LSB drops a 0x03A sent sooner and logs
+  the player out at the 4th dropped (map.LIGHTLUGGAGE_BLOCK). The kept-sorted Auto of the sort window (ours,
+  2026-10-25) no longer also queues the inventory while config 0x9a is on.
+
+## Item lists: blue names for charged gear ready to use (2026-11-03)
+
+- FUN_100fbc70 (FUN_100febe0 in Steven's unpacked FFXiMain.dll, sha256 8097dbf8...; checked 2026-11-03) reads the
+  extdata only, never the item id: byte 0 == 1 (the charged / enchanted item layout, use times at +4 and +8) and
+  byte 3 bit 0x40 (ready to use; Windower calls it "usable"). The main item list (FUN_101e8700) draws an equipped
+  weapon or armour that passes it blue 0x80407090 instead of green 0x80509050.
+- Ours: `Inventory::slots_of` sets `Slot::equipped_ex` from it (`items::charged_ready`, also used by the direct
+  list's FUN_101f0810 rule, which tested the same bit as u16 @2 & 0x4000). Test items::charged_tests.
+
+## The bump needs the load fade finished, and has no event test (2026-11-03)
+
+**+0x59c is the actor's load fade.** It starts at 0, rises by frame ticks x 1/32 to 1.0 while the model object
+reports ready, and falls by ticks x 1/16 to 0 once the actor is going away (vt+0x36c). The draw multiplies by it, and
+`FUN_100a8898`'s bump test requires **+0x59c >= 1.0**: an actor is solid only once it has faded in, about half a
+second after its files land, not while it fades in or out. Ours is `Actor::appear`, which the bump now checks.
+
+**The bump has no event test of its own.** `FUN_100a8770` is called from the player's move step `FUN_100a6240` after
+the delta is built, and reads no event state; its gates are the GM level, the per-actor eligibility and the fade
+above. What stops it during an event is the move step itself, which returns before any movement when `FUN_100964f0`
+("can move") is false — no player, entity +0x12c bit 5, the talk watch, statuses 0 / 2 / 7 / 10 / 0x1c in the icon
+list, the zone-in not finished, fishing, and so on. The forced-follow path at the top of that function moves the
+player without the bump, and a script-driven walk never goes through it at all.
+
+Our `!in_event` gate on the bump call stands in for that early return, since our movement is already blocked in the
+same situations. Not built: the leaving half of the fade (ticks x 1/16 down), which needs a despawn state our client
+does not keep - actors are dropped when they go.
+
+## Event op 0x69 mask 0x10: the chat call sounds' level (2026-11-03)
+
+- Retail (docs/re/notes/2026-11-03-modlog-gaps-batch5-build.md §4): op 0x69 with mask 0x10 sets DAT_10351710 to the
+  level (1 if u8@1 is 0, else 0). FUN_100380f0, the chat `<call>` sound, plays at DAT_10351710 x 127; at 0 it starts
+  silent and its task (and the pad rumble) ends the next tick. The sound init sets 1; nothing else resets it (not the
+  event end, not a zone change). Op 0x6a ignores mask 0x10.
+- Ours ignored mask 0x10 and played call sounds as interface sounds (at the mask 2 level). Now `Audio::event_volume`
+  keeps the level for a 0x69 with mask 0x10 and the party call tags go through `Audio::play_call` at it (effects
+  setting x call level, not the interface level). At 0 ours plays nothing. The received-tell sound (ours) stays an
+  interface sound. event_ops.rs's 0x69 text names the channels as this build has them.
+- Not done: the call task's one-at-a-time slot (120 ticks) and its rumble pulses.
+
+## Cast bar: no bar under Chainspell (2026-11-03)
+
+`FUN_1022b3d0` (the 0x028 category 8 "ca??" handler on us) opens "menu    casttime" only when
+`FUN_1021e670(0x30) == 0`, that is only when status **48** (Chainspell) is not in our status icon list
+(`DAT_10485a30`, 32 u16, 0xffff holes). With Chainspell up the bar never appears; nothing else changes, and the
+"sp??" close still runs. The same scan helper serves any status id, so it is now `magic::has_status(&w.buffs, id)`.
+
+The other two openers already match retail, from the same trace:
+
+- Mode 1 at item use: the bar opens for item record +0x26 x 20 ticks before the c2s 0x037 send (and stays up if the
+  send is refused) - `items::use_slot`.
+- Mode 4 (event op 0xb4 sub 7): `FUN_1012bfe0` draws only the seconds left, white 0x80808080, with no gauge or
+  percent - `magic::draw_cast_bar`'s `cast_event` branch.
+
+## Chat: c2s 0x0B5 / 0x0B6 text size (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch5.md item 2): FUN_100e3400 (0x0B5) and
+  FUN_100e3570 (0x0B6) copy min(strlen, 0x96 = 150) bytes. 0x0B5 is 4 × ceil((len + 7) / 4) bytes, so its NUL is
+  always inside; 0x0B6 puts the text at @0x15 and is 4 × ceil((len + 0x15) / 4) bytes, so the NUL after the text is
+  left out when it would need another word (150 bytes of text give 172).
+- Ours already cut at 150 bytes and the chat line at 120 (fep::MAX). 0x0B6 always counted the NUL, one word over
+  retail's size when len + 0x15 is a multiple of 4. client/net.rs tell_packet now sizes it as retail; the padding is
+  the NUL otherwise.
+- LSB's GP_CLI_COMMAND_CHAT_STD takes 6..136 bytes (MODLOG L9110), so a full 150-byte 0x0B5 is dropped there. Only an
+  expanded auto-translate line can go over 129 text bytes.
+
+## Chat: received lines cut at a control byte (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch6.md item 20): FUN_1018fc40 walks the formatted
+  line by characters (FUN_1018fa80) and stops at the first byte FUN_1018fa20 rates 2 or 3: 0x1E, 0x1F, 0xEF, 0x7F not
+  followed by 0xFB / 0xFC, and any other byte below 0x20 except NUL, LF and CR. 0xFD auto-translate blocks are kept
+  whole. Every s2c 0x017 kind gets it except the assist kinds 0x22 / 0x23, whose lines carry an icon; those cut only
+  the name and the text.
+- Ours: dat/font.rs chat_cut does the walk on the raw Shift-JIS bytes. client/net.rs chat_text cuts 0x017's name and
+  text before decoding. Because retail cuts the whole formatted line, a cut in the name drops the text too, except
+  on 0x22 / 0x23.
+- Not done: MODLOG also counts the filtered shout / yell as an icon line that sanitises only the name and the text.
+  Which packet and Kind those arrive on is not traced yet, so only the assist kinds 0x22 / 0x23 are treated that way.
+- The cut only drops the text where the formatted line holds the name: the system kinds 6 / 7 and the NS kinds print
+  the text alone, so a control byte in their unused name cannot reach the line. Kind 0x19 picks its format from the
+  name the packet sent, so a name that is only a control byte still formats with it and loses the text.
+- Inferred: a 0x7F 0xFB / 0xFC pair is stepped over as two bytes. FUN_1018fa80's length for it was not read.
+
+## Misc. 4: Chat filter setting (2026-11-03)
+
+- Config 0xce (Misc. 4 chat filter: 1 hide, 2 replace, 0 off) was saved but never read. Retail (FFXiMain.dll,
+  checked 2026-11-03): turning it on (and login, as the callback runs on registration) loads prohibited.txt and
+  allowed.txt from the game folder (FUN_1019bec0 -> FUN_101bd820 -> FUN_101bd880); without prohibited.txt it
+  prints group 9 0x15a and sets the option back to 0. Shouts, yells and assist lines (s2c 0x017 kinds 1, 0x1a, 0x22,
+  0x23) from non-GMs are checked against the sender's name and the plain text (FUN_100da5e0 -> FUN_101bcf80): an
+  allowed.txt hit passes, a prohibited.txt hit hides the line (1) or swaps its text for group 9 0x159 (2).
+- Ours: client/spamfilter.rs ports the file parser ("(isn)" prefixes, "\" escapes, [..] / [^..] / [a-z] / [.]
+  patterns, folding of case, width and half-width katakana) and the matcher (FUN_101bd510). Its results were
+  checked against the retail functions run under an x86 emulator (about 1,500 random files and lines, all equal);
+  the unit test keeps a sample.
+- White space above U+00FF uses Rust's classes in place of Windows' GetStringTypeW; the "replaced" line's extra
+  flag (LAB_100e37a0 local 0x18) is not used.
+
+## Cinema mode: only the event text box draws (2026-11-03)
+
+- Retail (docs/re/notes/2026-11-03-modlog-gaps-batch5-build.md §1): rem4line +0x48 is cinema mode. While it is on,
+  FUN_101177d0 draws no window but rem4line's own (and mapframe / cnqframe, registry flag 0x40): no log, top bar,
+  netstat, party, target, status icons, gauges or chat line, and the compass skips its draw. The 3D passes (name plates)
+  are not gated. FUN_1015dce0 (cinema or UI hidden) blocks the menu keys, targeting, macros, hotkey categories 3 / 4 and
+  opening the chat line; movement still works and the event text still advances.
+- Set by event op 0x67 (x, y), text code 03 (y, with the x code 02 stored) and a zone-in event with Mode bit 0x80 (at
+  0, 0); cleared by op 0x68, the event end, and the select / logout path. Code 02 alone does not turn it on.
+- Ours had placement only (the narration drawn at x / y) and kept every window. Now `event::cinema` is the flag:
+  `world_hud` ends by clearing the frame and drawing the name plates, an open map and the event text box only; the
+  modern layer is off; Ctrl / Alt chat shortcuts and paste can't open the chat line. Code 02 alone no longer places the
+  window, and a login event with Mode 0x80 starts in cinema mode (`EventStart::login`). Test
+  `login_mode_80_starts_cinema`.
+- Not done: the log's shrink / fade is not frozen (its state still updates underneath); the compass's fade update; the
+  OS cursor's shape limits; hotkey categories 3 / 4 (event keys already take precedence).
+
+## Cloth: wind gusts and the cloth simulation (2026-11-03)
+
+- Retail's cloth is a particle simulation, not a sway (all from the DLL, FFXiMain 30261006_0). A 0x2A mesh with flags
+  & 0x7f == 1 is the cloth class (FUN_10029f70; fix-up FUN_10022470 converts the offsets only). Its header after the
+  vertex block: pins u16 @0x2a / @0x2c (the first pins of the one-bone / two-bone vertex blocks follow the skin, the
+  rest are free particles), edges @0x2e (u32 words; u16 words @0x32 in all, group 1 @0x34, group 2 @0x36; 8 bytes an
+  edge: u16 a, u16 b, f32 rest, bit 0x8000 = that end stays put), stiffness k1 / k2 f32 @0x38 / @0x3c, damping
+  @0x40, gravity @0x44, inertia @0x48, sphere indices @0x4c (u32 words, u16 count @0x50). One particle a vertex in
+  file order; mirrored cloth draws nothing (FUN_10023010; no retail cloth chunk is mirrored). 36 cloth chunks in 27
+  files, all whole-model files with their own skeleton (no PC gear): e.g. 2114 (ROM/7/95, skeleton "flag", 4 bones),
+  1367 (ROM/3/41, "e_de": hf_b 50 + 22 particles, 10 + 6 pinned, k 0.68, damping 0.85, gravity 0.10, inertia 0.05,
+  8 spheres), 1571 ("giga"), 53005 ("teo-", 119 bones, six cloth meshes).
+- The step (FUN_10023290, from the cloth draw 0x10025030 -> FUN_100224d0): the instance's first step snaps every
+  particle to the skin (reset byte +0x3c, set only by the constructor FUN_10025010). Later: pinned particles = the
+  skin (world bone matrices), free ones cur += (0.75 - inertia) x move, prev += 0.75 x move (model +0x34 = the actor's
+  world move this frame, 0 under 0.01, FUN_100c63d0). FUN_10023700: vel = (cur - prev) x damping, prev = cur, cur +=
+  vel, cur.y += gravity x 0.1; unless actor byte +0x17c, w = normal + wind (if |w|^2 < 0.01, wind - normal), cur +=
+  w x strength x 0.1. Then 4 passes over group 1 (k1) then group 2 (k2): d = B - A, if |d| > 1e-4, d x= (rest - |d|)
+  k / |d|, A -= d, B += d (free ends only). Then FUN_10023bd0: each edge takes the last of the mesh's spheres whose
+  centre (skeleton sphere {s16 bone, f32 radius, offset}: 64 slots of 0x12 bytes at the end of the point table
+  + 0x6c, FUN_10035290, unused ones 0xCD fill; checked on the files above) is within |a - c|^2 <= 1.5 r^2 of its first particle; each sphere sweeps from last step's centre in
+  steps of r against its edges both ways (FUN_10024020 / FUN_10024410), pushing the outside particles out. Last,
+  normals (FUN_10024900): (0, 1, 0) plus every triangle's cross(v2 - v0, v1 - v0), colour-only lists and strips too,
+  normalised; the wind uses the last step's. Particles are world positions (the bone matrices carry the actor's
+  world transform), so the wind blows along world -x.
+- Wind (DAT_1065cb04, FUN_10187050): direction (-1, 0, 0) for good, strength +0x134, gust base +0x138 = 4, spread
+  +0x13c = 10. FUN_10188a50 every frame, in play too: timer -= frame ticks; below 0 the state flips and timer =
+  rand() % 60 (x 1.2 when gusting); gusting strength = (rand() % spread + base) x 0.0025 each frame, calm -0.01 a
+  frame down to 0.
+- Op 0x97 (FUN_100ba0c0, `97 AA AA BB BB`): base = val@1, spread = val@3; the first in an event saves the old pair
+  (FUN_100ba040), the event's end puts it back (FUN_100ae3f0 -> FUN_100ba080); the event's start (FUN_100aed00)
+  clears the saved flag without restoring. Retail divides by the spread: 0 would crash it (ours treats it as 1).
+- An unused sphere slot (0xCD fill: bone -12851, radius -4.3e8) makes retail read a bone matrix from before the
+  table, so whether it takes edges in the 1.5 r^2 test depends on that memory. 1367 lists slot 1 last: if it took
+  every edge the cape would never collide and sinks into the robe; ours skips unused slots, and the cape drapes over
+  the king's back. An index past the 64 slots (1373 lists 16184) is skipped too.
+- Actor +0x17c (no wind): FUN_100a4ed0 sets it from the ground hit at the actor's build and ground re-probes: the
+  floor's MZB object flags bit 2 (map collision +0x34150 = (flags >> 2) & 1), the "covered" bit that also stops
+  weather. Ours checks the floor under the actor at each step.
+- Off screen (the frustum test fails) every particle just moves with the actor (FUN_100231f0). Other actors' steps
+  skip frames by the animation frame-skip option (config 64, DAT_10457460); ours never skips.
+- Ours: client/cloth.rs. Retail steps once a frame at its 30 fps with no time step; ours steps cloth and gusts on a
+  30 Hz clock (at most one step a frame), and between steps the particles ride along with the actor. The CPU poses
+  the bones for the step (character::pose, without the head look); pinned vertices still draw GPU-skinned, free ones
+  from the simulation. The particles go to the GPU after the bones in the actor's pose region (two vec4s each, model
+  space; SkinVertex.cloth points at them; up to 1024 an actor), and all cloth vertices now take the simulation's
+  normals (before, cloth had none). A sphere's first sweep starts at its current centre: retail's last-centre
+  buffer (instance +0x48) comes from the pool allocator (FUN_10028930) uncleared, so its first sweep starts from
+  leftover memory.
+- `vana-client cloth-shot --file 2114 --out-dir DIR` prints a model file's cloth headers and its skeleton's spheres,
+  then draws it standing in stock and 0x97-sized gusts and walking. Checked on 2114, 1366, 1367, 1373, 1571, 1688,
+  51795 and 53005 (banners and capes hang down and flutter, nothing blows up). Model id = file - 1300 below file
+  2800, 1500 + (file - 51795) from 51795: in game `!costume 814` (flag), 1500 (banner), 67 (King Destin), 2710
+  (Teodor), 271 (Gigas), 388 (Leshy, also mobs on Nyzul Isle).
+
+## Coded chat lines: message source 9 (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch6.md item 16): FUN_100964a0's table entry 9 is
+  FUN_10096440 -> FUN_100bd760 (the expander singleton) -> FUN_100c1620: the record cache at +0x858, language slot
+  0x22 (en file 55693, the trust lines; 12,201 entries), the id sign-extended. An id outside the table gives nothing
+  and the line is dropped.
+- Ours dropped source 9. client/event.rs source_text now reads it from the same slot 0x22 table grammar kind 0x88
+  uses (BattleText::grammar_line).
+
+## Costume: the trade and command refusal (2026-11-03)
+
+Checked in Steven's unpacked FFXiMain.dll (sha256 8097dbf8..., 2026-11-03); notes in
+`docs/re/notes/2026-11-03-modlog-gaps-batch1.md` §7, `-batch3.md` §1 and `-batch4.md` §1 / §4.
+- s2c 0x037 @0x44 (u16) is our costume id (an NPC model id). A new id sets actor +0x120 bit 4 (pending,
+  FUN_1008cce0). Once a frame FUN_10095e90 puts a pending costume on (bit 5) unless the actor is bound to the event
+  (+0x120 bit 7), or takes it off for id 0. While on, statuses 2, 3, 5, 6, 7, 0x21, 0x26..0x2c, 0x2f, 0x30,
+  0x32..0x35, 0x38..0x53 and 0x55 take it off and leave it pending again; they never stop it going on.
+- FUN_101cc0d0's mask 0x40 refuses with group 7 line 0xb1 while bit 5 is on, checked after 0x04 and before 0x08.
+- Ours: `client/costume.rs` keeps the id and the two bits for our own character; `gate_line` checks 0x40 in that
+  place (trade, the storage moogles' gate 0x44, every command passing 0x40). "Bound" is our character among the running
+  event's bound actors. Reset at zone-in. The costume model itself is not drawn.
+
+## Costumes: drawn as the NPC model, ours and other players' (2026-11-03)
+
+- Retail (docs/re/notes/2026-11-03-modlog-gaps-batch4.md §4, 2026-11-03-modlog-gaps-batch5-build.md §6): FUN_10095e90
+  runs for every actor. Another character's costume comes from s2c 0x00D u16 @0x30 (ours from 0x037 @0x44). When it
+  goes on the model is freed and reloaded as FUN_100d2f60 case 2: FUN_100c51c0(0, +0x166), the NPC model table, the
+  whole body. It comes off with id 0, while bound to an event, or in one of the listed statuses; then the look is
+  rebuilt.
+- Ours had the state for us only (the refusal, PR #136). Now `costume::step_all` steps ours and every other character's
+  (`World::costumes`) each frame. A costume going on keeps the actor's look aside (`World::costume_base`) and loads
+  `Source::Npc(Model(id))`; looks that arrive meanwhile are kept aside too; coming off loads the look kept. Costumes
+  reset with the actor table at zone-in.
+- *(inf, as retail)* In one of the statuses that take a costume off it goes back on the next frame, so it flips each
+  frame while the status lasts; models are cached, so this only swaps them.
+- Not done: +0x130 bit 21 (the Mog House furniture-item actor's type-2 table).
+
+## Event gender values and dialog speaker picks (2026-11-03)
+
+Checked in Steven's unpacked FFXiMain.dll (sha256 8097dbf8..., 2026-11-03); notes in
+`docs/re/notes/2026-11-03-modlog-gaps-batch3.md` §2 and `-batch4.md` §2..3.
+- Actor +0x124 bit 25 is the gender bit, 1 male. s2c 0x00D and 0x00E write it from u32 @0x20 bit 15 under update
+  mask 4, for every actor kind (NPCs and monsters too); the actor reset leaves it 0 (female) until then. Ours: the
+  bit is now read for every kind, and an entity made from a packet without mask 4 starts female.
+- Event values 0x7f0b / 0x7f8b (FUN_100af4c0) read it for the event owner / the player: scripts branching on
+  gender (~475 sites). Ours read 0 (female) for both; now the speaker's and the player's bit (ours from the race,
+  inf: retail copies 0x00A @0x20 bit 15).
+- Dialog `7f 85` picks the `[a/b]` form by the player's bit, `7f 90` / `7f 91` by the message's actors 1 / 2
+  (+0xbfe / +0xc00, FUN_100c2e20; male the first form). 0x036 / 0x043 / 0x02A set both to the speaker; 0x029,
+  0x02D and 0x05A the actor and the target. Ours used the player's gender for all three; now event and zone text
+  use the speaker for 7f 90 / 7f 91 (one not here: the first form, inf).
+
+## Event model filter: doors, lifts, ships and reserved actors keep their model (2026-11-03)
+
+- Retail (docs/re/notes/2026-11-03-modlog-gaps-batch5-build.md §2): FUN_1008e4d0 only marks an actor for unloading
+  (+0x120 bit 23); FUN_10095900 acts on the mark. It never unloads an actor that is bound, takes part or is held
+  (FUN_100961d0, +0xf2), nor a door, elevator or ship (+0xee 3..5, FUN_10096200), nor a client-made local actor
+  (+0x130 bit 3). The event's filter of non-participants ((DAT_104808fc | Mode) & 0x02 for PCs, & 0x10 for the rest)
+  also skips an event-reserved actor (+0x138 bit 31, op 0xac sub 2); /hidetrust's mark does not.
+- Ours (`event::hidden`, which the model and the name plate both follow) took doors, elevators, ships and reserved
+  actors out with the filter. Now `unloads` applies both exemptions. The server hide bit (0x00E @0x20 bit 1) still hides
+  them, as retail's separate hide. Test `unload_exemptions`.
+- Not done: the hold count +0xf2 (FUN_100833b0 / FUN_100833c0, callers not traced) and the +0x1ff status rule (P+0x130
+  bit 11 with statuses 2..6 / 40..43).
+
+## Events: op 0x46 sub 1 hides the status icons (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch5.md item 5): op 0x46 sub 1 (FUN_100b6440 at
+  0x100b652f) also calls FUN_10221c30 on "menu    buff" (DAT_106671b8): window +0x69 / +0x6a = 0 (not drawn), every
+  item disabled, +0x62 = 0 (no cursor), +0x5c |= 2 (changes kept for later). Sub 0 doesn't undo it. The event end
+  wrapper FUN_100ae960 (0x100ae98b) shows it again through FUN_10221c70, rebuilding the icons if anything changed.
+- Ours: event_vm emits Effect::HideBuffs after sub 1's camera flag. client/event.rs sets World::buffs_hidden and drops
+  the buff focus (log focus 2). The key 0x78 focus cycle skips the buff list while hidden, and buffs::draw draws
+  nothing. finish() clears it. Our icons come from the live 0x037 / 0x063 state, so nothing needs a rebuild.
+- The party icon object (DAT_106671bc) is a separate window and stays up. The modern status panel is ours and is
+  left as it was.
+- This answers MODLOG L7359: retail hides the buff window in a cutscene only when the script runs 0x46 sub 1, or
+  when cinema mode hides everything.
+
+## Faded actors: drawn offscreen, blended as one quad (2026-11-03)
+
+- Retail (docs/re/notes/2026-11-03-modlog-gaps-batch3.md §4): a translucent actor (draw alpha < 1) is drawn opaque,
+  alpha-tested and with z written, into a helper target cleared to 0 (FUN_1002b6e0 with FUN_1001d240), then that
+  target goes over the scene as one viewport quad, SRCALPHA / INVSRCALPHA, z off, point sampled, at the actor's alpha
+  (FUN_1001d3b0). So a faded model never shows its own back faces or overlapping parts through itself. Translucent
+  actors are drawn back to front (DAT_1047bc94).
+- Ours blended each triangle in the main pass. Now `ZoneRenderer::render` leaves GPU-skinned actors with alpha < 1 out
+  of its pass and `render_faded` draws them farthest first: an offscreen pass (`skin_solid_pipeline`, `fs_actor_solid`:
+  the actor's colour at alpha 1, its shine too) on the scene depth, then the composite (`faded_pipeline`, `vs_faded` /
+  `fs_faded`: the texel, alpha = target alpha x fade). `prepare_faded` makes the target at the scene size each frame;
+  callers that don't (the select screen, shot tools) keep the old blend. At most 64 a frame; more fall back.
+- *(inf)* The target's alpha where drawn is taken as 1 (retail's MODULATE4X saturates above the 0x45 alpha test).
+- Not done: CPU-posed actors (no skeleton on the GPU path) still blend per triangle; the DAT_104566e8+0x18 second-target
+  path and the +0x9c effects are not traced. `flash-shot` writes faded_40.png for a live look. Test zone_pipes_build.
+
+## Footsteps: areas 704..706 give surface 3 surface 2's sound (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch12.md item 72): the alt-name flag is scene +0x1cf.
+  FUN_1018b500(area) sets it only for areas 704..706 (area - 0x1bc in 0x104..0x106), and only when the session flag
+  word S+0x3c35c has bit 0x100 clear. With it set, a step on surface 3 is named "02.." (surface 2's sound).
+- Ours: client/footsteps.rs swaps the name's surface byte 3 -> 2 while the area shown (op 0x34's, else the zone) is
+  704..706. The dust and footprints keep surface 3. The session flag isn't known to us *(inf: taken as clear)*.
+- Checked against the same note:
+  - A failed fses / fser lookup already ran again on the next step (`Effects::foot_set` caches only a hit).
+- Open:
+  - The culled-pass skip: 2 passes with no step after a culled pass.
+  - The note finds no model-scope search in this build, but ours still falls back to the model file's folder and
+    then DAT 0's 'foot' (MODLOG "Footsteps"). Left as is until checked live.
+
+## Misc. 2: Footsteps setting (2026-11-03)
+
+- Config 0x3f (Misc. 2 > Footsteps, 0 On / 1 Off, `/footstep`) was saved but never read. Retail (FFXiMain.dll,
+  checked 2026-11-03): LAB_101aa650 case 0x3f sets DAT_10456a70 = 1 - value (FUN_10002e20). FUN_100d4bc0 tests it
+  at 0x100d4caa: Off skips the water surface for the wade point (it stays the position) and lands on FUN_100d6550,
+  which stops the wading ripple. At 0x100d51ab / 0x100d5351, after the step sound has played (0x100d514f), Off
+  skips the footprints (`fmrk`) and the dust generator. The step sound, its folder and the foot heights
+  (LAB_100d53bc) are unaffected.
+- Ours: footsteps::wade passes no water while config 0x3f != 0; footsteps::steps still plays the step sound but
+  passes no dust and no footprint.
+
+## Full log: Window 1 / 2 scroll back through 1000 rows (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch12.md item 77, handler FUN_10138230): the full
+  log's 100 rows are a window over the history store, not the history itself.
+  - At the older edge, Window 1 / 2 (tabs 0 / 8) load older rows from the store (FUN_1012a650). The store holds 20
+    rotating "%d_%d.log" pages of 50 rows.
+  - Channel tabs stop at the rows they hold (at most 100).
+  - The wheel moves one row per notch (0x16 older, 0x17 newer), the hand stays on its screen row, and SE 0001 plays
+    when the view moves.
+- Ours already matched the wheel, the keys and the channel tabs' 100 rows. Window 1 / 2 kept 512 rows; they now keep
+  1000 (logwin.rs `KEEP` = 20 x 50). A rewrap (resize, edit, route change) refills up to 1000 rows too; it used to
+  refill only the ~50 rows retail loads at an open, which dropped the older history.
+- Not modelled: the store's files on disk (ours keeps the rows in memory for the session).
+
+## Furniture: blended meshes keep their depth writes (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch7.md item 23): furniture and ship models are drawn
+  by FUN_101844c0 in the actor pass. Per mesh it sets ALPHABLENDENABLE from the mesh's bit-31 flag, but it never sets
+  ZWRITEENABLE and never sets ZBIAS, so the blended meshes keep the pass's depth writes (on) and bias 0. There is no
+  depth sort either: meshes go in file order, instances in actor order.
+- The zone scenery draws (FUN_1017c9c0 / FUN_1017de20) do the opposite: a bit-31 mesh gets ALPHABLEND on and
+  ZWRITE off. So retail's depth behaviour differs between scenery and furniture. This also answers MODLOG L4325 for
+  scenery.
+- Ours used the scenery blend pipeline for furniture (no depth write, bias -8). render/mod.rs now has furniture
+  copies of the two blended classes with depth writes on and no bias, used for furniture and for ship models.
+- Inferred: the depth compare. Retail leaves whatever the actor pass set; ours uses Less, as the opaque classes do.
+
+## GroundFlag and HackMove stop the ground snap and tilt (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch6.md item 14): the two unknown bits are LSB's
+  server flags.
+  - +0x120 bit 20 GroundFlag: s2c 0x00D / 0x00E u32 @0x18 bit 15, s2c 0x037 u32 @0x28 bit 2, at zone-in char
+    +0x40dac bit 13, and a locally made actor sets it.
+  - +0x128 bit 14 HackMove: s2c 0x00D u32 @0x20 bit 27, s2c 0x037 u32 @0x2c bit 12, at zone-in char +0x40de4 bit 0.
+  - FUN_10084640 is HackMove | +0x120 bit 21 | GroundFlag. When it holds, the model gets no ground tilt
+    (FUN_100cbde0), and the event snaps (ops 0x36 / 0x37 / 0xba and the walks) leave the height alone.
+- Ours: net.rs parses no_snap on the entity (0x00D / 0x00E) and on our own plate (0x037). client/event.rs's ground
+  hook returns None for such an actor, so every event snap site skips it, and client/mod.rs skips the ground tilt.
+- Not built: the zone-in sources (char +0x40dac bit 13 / +0x40de4 bit 0) are not mapped to 0x00A fields. LSB sends
+  0x00D / 0x037 right after zone-in, so the flags arrive a frame or two later.
+
+## Misc.: Hide PC armour (2026-11-03)
+
+- Config 0xa5 (Misc. > PC armour, `/hidearmor`) was saved but never read. Retail (FFXiMain.dll, checked
+  2026-11-03): FUN_1009afe0, the look of a PC (0x00D look mask), with 0xa5 != 0 and the actor not ours
+  (DAT_10485f7a), not a client-made model in the slot (+0x78 high byte, set by FUN_100ab750 for the menu preview
+  FUN_101cd3b0 and the lobby's FUN_10242cd0, never a server actor's 0x00D) and not a model look (+0xee): head,
+  body, hands, legs and feet become (slot << 12) | table 0x1032d678 (0, 8, 8, 8, 8); the face, main, sub and
+  ranged stay from the packet. Nothing re-reads the looks on a change (FUN_10080350 only sets the id and prints
+  line 0x100), so it shows as each PC's next look arrives.
+- Ours: client::hide_armour on the 0x00D look of every PC but us, for the model only; the entity's appearance
+  (and the Lua look) keeps the packet's gear.
+
+## Invisible and linkshell refusals (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch6.md item 19): +0x128 bit 6 is InvisFlag (LSB
+  Flags1 bit 29). It comes from s2c 0x00D / 0x00E u32 @0x20 bit 29, s2c 0x037 u32 @0x2c bit 15, and at zone-in from
+  char +0x40db2 bit 1. FUN_1007bf30 (talk, and the target actions that share it, e.g. /returntrust) refuses with
+  7031 0xac "You cannot use that command while invisible." after the mount refusal (7 0x4b) and before the range test.
+  FUN_100e3400 refuses /l, /l2 and the third shell with 7031 0x25 when that shell isn't equipped, and /p with
+  7031 0x24 with no party; the typed line is still echoed.
+- Ours already had the talk refusal, the linkshell and party refusals, and 0x037 as the source of our own flag.
+  /returntrust and /returnfaith now refuse with 7031 0xac too (client/textcmd.rs).
+- Not built: the zone-in source. Which 0x00A field fills char +0x40db2 bit 1 is not traced. LSB sends 0x037 right
+  after zone-in, so our flag follows within a frame or two.
+
+## Config: the key-reset prompt in comyn (2026-11-03)
+
+- conf6win's Default (reset keyboard assignment) asked in 39542's "menu    yesno" with the question in a frame above
+  it *(inf)*. Retail (checked in Steven's unpacked FFXiMain.dll, sha256 8097dbf8..., 2026-11-03) opens
+  "menu    comyn" through FUN_10210e30 on DAT_10664520: group 0xb 0x8f "Reset keyboard assignment to default?",
+  default No, Escape answers No, at comyn's own layout place; Yes resets both k1assign and k2assign (0x4a..0x89).
+- Ours: the config stack's page is now `comyn` (configui2.rs), the question inside at (+4, +4) wrapped to w - 8
+  (FUN_10211050). Not checked on screen (no game data in the cloud container).
+
+## Scheduler ops 0x6f / 0x70: point-light ramps (2026-11-03)
+
+Checked in Steven's unpacked FFXiMain.dll (sha256 8097dbf8..., 2026-11-03); notes in
+`docs/re/notes/2026-11-03-modlog-gaps-batch3.md` §5.
+- Both are 5 dwords: @4 wait, @6 duration, @8 generator 4cc, @0xc a runtime cache, @0x10 f32 target (753 / 438 uses
+  in ROM..ROM9). Asm 0x10059da7: the 4cc resolves to a type-5 generator that must be static (FUN_100539e0) with a
+  live CMoPointLightProgElem; a sub-task (FUN_10060990, a child of the scheduler task) lerps 0x6f's intensity
+  multiplier (+0x1a4) or 0x70's range multiplier (+0x1a8) from its current value to the target over dur x speed
+  ticks; its destructor writes the exact target, also when the scheduler dies first.
+- The light frame (FUN_10056400) uses intensity = max(0, +0x1a0) x +0x1a4 x fade and range = +0x1a8 x +0x19c.
+- Ours: the template instance's first live point-light element ramps; the start value is the CPU's copy of the
+  multiplier (set at emission, and by earlier ramps; a GPU keyframe on it (update op 0x5d) is not seen). A second
+  ramp on the same word replaces the first (retail runs both).
+  A ramp whose generator has no light out yet (started in the same step: ours emits after the scheduler ops) waits
+  for it, its time running from the op.
+
+## Item lists and storage: the equipped linkshell's row colour (2026-11-03)
+
+Checked in Steven's unpacked FFXiMain.dll (sha256 8097dbf8..., 2026-11-03).
+- FUN_100e9730(n), n = 1 / 2: linkshell n is equipped from slot = char byte +0x9808+n, bag = +0x980f+n, valid
+  while that slot holds an item. Only the s2c 0x0E0 handler FUN_100ea780 writes them (@4 n, @5 slot, @6 bag).
+- Item lists (FUN_101f06e0, MODLOG's FUN_101e8700), first match: dimmed grey; equipped charged gear ready blue;
+  equipped green; **the equipped linkshell / linkshell 2 from this slot of this list's bag green**; usable /
+  crystal yellow; white. Ours: `items::list_rows` (was never green).
+- Storage (FUN_101db220) rule 7 (asm 0x101db46a..0x101db4e6): a row from bags 0 / 5 / 6 / 7 going to anything but
+  a wardrobe is **grey** (it may not move) when it is the equipped linkshell / linkshell 2. Not green: the green
+  rule is only in the item lists. Ours: `items::judge` (with a modern explanation line). The Manual-sort colours
+  (FUN_101dbdb0) have no linkshell rule.
+- Not checked on screen (no game data in the cloud).
+
+## Lua mods: a replaced image's old texture is freed (ours, 2026-11-03)
+
+- `hud.image` and `draw.image` key a texture by mod, path and a hash of the file's bytes (`hud::load_png`), so a
+  changed PNG uploads anew after a reload. A new version of a mod's image now marks the same file's older contents
+  stale (`GameUi::image`), and `GameUi::render` frees a stale texture (`UiRenderer::drop_image`) once the frame's
+  batch no longer draws it, so editing and reloading doesn't pile textures up in GPU memory, while two versions of
+  one file drawn at once (changed on disk between two calls without a reload) both keep their pixels.
+
+## Lua mods: the lobby reloads only lobby mods, and drops the character's settings (ours, 2026-11-03)
+
+- A watched world mod saved on the lobby screens was loaded there without a world (its load ran with no game state),
+  and login then skipped it as already loaded. Before login, `watch_upkeep` now reloads only mods with
+  `lobby = true`, read from the manifest as saved. A world mod saved there waits for the world: it is reloaded (or
+  loaded, if it is watched but not enabled) once logged in, unless login already loaded it from its saved files. A
+  running lobby mod whose manifest drops `lobby = true` unloads and waits the same way (Devin review of #116).
+- After logout the lobby mods kept the last character's character-scoped settings (`settings.get`). They now go back
+  to the account's settings and the defaults, as before login. Both from the Devin review of the upstream merge
+  (PR #112).
+
+## Macro windows: remembered cursors, and the palettes switch on hover (2026-11-03)
+
+**FUN_101262e0 is not a left click.** It is "the mouse is driving the menus": mouse +0x4d == 2 (the pointer is over a
+focused window) and no event lock. All 23 callers are per-frame hover tests paired with `FUN_10118c10`, so MODLOG
+L10129's "left click" reading is wrong.
+
+- mcr1edit's frame (`FUN_101a47e0`, 0x101a4c3d..) and mcr2edit's twin: the pointer inside the **other palette** calls
+  `FUN_101a4540(col)`, which flips the focused palette, sets both columns to that cell and plays SE 0001; the pointer
+  inside **mcrbedit** has the palette send itself message 8, i.e. **Num+**. "macro"'s frame does the same for
+  mcrledit.
+- **Default cursors**: no macro window carries registry flag 0x10000, so `FUN_10118870` restores the cursor the window
+  last had (`FUN_10118830` saves it at every hide or close) and clamps below 1 to 1 — child 1 on the first open of the
+  session. mcrmenu, mcrselec, mcrselop, mcrbedit, mcrledit and "macro" (child 1 = Prev) all follow that.
+- **mcr1edit / mcr2edit override it**: their open and their focus hook vt+0x24 put the cursor on **column + 1**
+  (`FUN_101a44b0`), so the edit palettes always come up on the remembered Ctrl / Alt column, and a hover switch
+  carries the column across.
+
+Ours opened mcrselec, mcrselop, mcrbedit, mcrledit and the editor on a fixed child and reset the palettes' columns
+every time. The macro windows now go through `cursor_recall` / `cursor_keep` like the other windows, and
+`World::macro_palette` keeps E's focused palette and both columns across opens. The hover switch between palettes was
+already there; hovering mcrbedit or mcrledit now acts as Num+.
+
+## Misc. 2: Macro palette position setting (2026-11-03)
+
+- Config 0x9e (Misc. 2, second macro palette option) was saved but never read; the palettes always used the
+  0 behaviour. Retail (FFXiMain.dll, checked 2026-11-03): FUN_1019b6d0 copies the Misc. 2 values into the macro
+  object (0x9d to DAT_106218ed, 0x9e to DAT_106218ee), storing -1 for 0x9e when the UI is under 640 wide and the long
+  palette is off. The palette placers (0x101a38a0, 0x101a3f20, 0x101a4871, 0x101a4f4b) read DAT_106218ee: 0 moves
+  the palette 0x82 right while gaugewin or cnttime is up, 1 always moves it, anything else never.
+- Ours: macroedit::palette_dx follows the same rule for the play and edit palettes.
+
+## Missions: the held-key header stop (2026-11-03)
+
+miss00's OnKey (`FUN_1022e760`, the Up / Down path at 0x1022e99c..0x1022ea19) classifies the row the cursor landed on
+with `FUN_1022df70`: -1 is a header, -2 a blank row. The two cases differ by whether the key is a held repeat
+([esp+0x18]):
+
+- **Held repeat on a header** (0x1022e9f4): `FUN_10222150(1 /* Down */, ...)` takes the move back by one row and the
+  paged-list base's remembered direction **+0x60 = 2** (Up). In the base, +0x60 == 2 at the top edge limits the move
+  instead of wrapping through the count, and +0x60 == 1 does the mirror at the bottom. So a held Up that reaches the
+  "Current:" header sits on the row under it and stays there.
+- **Fresh press on a header, or a blank row**: the move repeats in the same direction (skip over it) and +0x60 = 0, so
+  a fresh Up from the first row still wraps to the last.
+
+SE 0001 plays only when the cursor ended on another row, which ours already did. `List.dir` is the remembered
+direction, and `World::key_repeat` carries the repeat flag into the handler the way `key_shift` carries Shift.
+*(inf: the edge test is modelled as "no wrap"; retail moves by one page there)*
+
+## Modern UI: keys no longer hide the mouse cursor (2026-11-03)
+
+- Ours, a deliberate deviation from retail. Retail hides the cursor on any key function press outside a drag
+  (FUN_10125f70(0)), so walking with the keys makes the pointer vanish until the mouse moves. With the Modern UI
+  on, keyboard presses leave the cursor shown (login and character screens too); the classic UI keeps retail's behaviour. The other hides are
+  unchanged in both modes: a controller press, a look drag (the pointer held) and the UI hidden.
+
+## Moogle motions: the NPC we talked to goes first (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch6.md item 17): S+0x40daa holds the index of the
+  NPC we last talked to. The talk action FUN_1007bf30 writes it after the request goes out, unless we are dead
+  (status 2 / 3). It is cleared at zone-in (the 0x00A handler), at the event end (FUN_100ae3f0) and per frame by
+  FUN_10096640 once that actor is gone.
+- The moogle actor FUN_100a0080 tries that index first, so with several moogles in range the one spoken to plays the
+  `17 n` motion. FUN_100a0010 also requires the actor kind +0xee to be 1 (a PC-look NPC marked talkable), 2 (a
+  model-id NPC) or 7 (0x00E SubKind 6) beside the model check.
+- Ours: World::talked_index, written by client/event.rs's talk, cleared on zone-in, at the event end and when the
+  actor leaves. moogle::moogle_actor prefers it and now applies the kind test (our sub_kind 0 / 1-with-npc_pet / 6).
+- Not built: retail also sets a "watch it" flag when the target's +0x128 bit 5 is clear, and clears the index when
+  the actor becomes both talkable and +0x124 bit 12. Neither changes which moogle plays in practice.
+
+## 0x5b / 0x66: a cached motion file costs one call (2026-11-03)
+
+`FUN_100b5210(kind, yield_after, with_speed)` (op 0x5b -> kind 0, op 0x66 -> kind 1) does the request and the test in
+one pass:
+
+1. Both actors are checked against their server ids and need +0x120 bits 9 and 7; otherwise the op skips.
+2. If the per-kind "requested" flag (body [+0x260] + 0x160 + kind) is 0, the file is requested on actor 1's drawobj
+   and the flag is set to 1 — **and the same call carries on**.
+3. `FUN_100d12d0(drawobj)`, "all of the model's files are in", decides: false yields without advancing, and the next
+   frame re-runs only this test, so no second request goes out.
+4. True starts the scheduler (drawobj vt+0x298), clears the flag, advances and yields once.
+
+So a resident file costs one call, not two; an uncached one costs 1 + the load frames, and the wait is on the model's
+whole file set rather than the one file. Ours kept the op waiting a frame even for a file already in
+`MotionFiles`, because `Busy::MotionLoad` only asked whether the actor had a pending motion. It now asks whether that
+pending motion's files are still loading, which is the same test in the same call. The thread's state byte is the
+requested flag, so a waiting op still does not re-request.
+- Ours: because the VM can run two ticks in one drawn frame (30 fps) and an actor has one pending-motion slot, the
+  ready test (Busy::MotionLoad) also starts the motion at once (actmotion::start_pending), as retail's call does,
+  rather than leaving it for actmotion::update after the VM, where a second 0x5b / 0x66 could replace it.
+
+## Motions: a new one starts at the old one's phase (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch5.md item 9; MODLOG's FUN_10019ed0 is an older
+  build, this build's enqueue is FUN_1001ad00): when a motion is queued into a region that already holds one, its
+  start frame is not 0. With lengths in frames / speed:
+  - k = 1 / oldLength, pos = (old entry's current position) x k x newLength + k x newLength x newSpeed x 0.5 x rate
+    x blend, taken modulo newLength;
+  - start frame = newSpeed x pos.
+  Then the old entry starts its fade-out. So a walk becoming a run (or idle becoming walk) picks up at the same
+  fraction of the cycle, pushed on by half the blend, and the feet stay in step.
+- Ours: client/mod.rs sets Actor::ticks from the previous motion's clock by that formula instead of 0 (our tick is
+  twice retail's frames / speed unit: a frame is ticks x speed x 0.5). A one-shot still starts at 0.
+- Not built: retail does this per region. Ours has one clock for the actor's status motion, so a motion that keys
+  only some regions carries the same phase into all of them.
+
+## The near-camera fade's tail: fishing, and the half-alpha bit (2026-11-03)
+
+`FUN_100cd040` applies four more steps to the cylinder's fade, in this order:
+
+1. **vt+0x260** (`FUN_100a47b0`, drawobj +0x8ac bit 0) would zero it, but its setter and clearer (vt+0x258 / vt+0x25c)
+   have no callers anywhere and the actor init clears bits 0..2, so **this test never fires in this build**. Not
+   built on purpose.
+2. **First person**: the character the player's entity +0x2a2 names is hidden. +0x2a2 is the forced-follow target,
+   written only by s2c 0x037 u16 @0x46, and the player's move step walks us toward it. Ours has no forced follow, so
+   there is nothing to hide; left for whenever that lands.
+3. **Fishing** (`FUN_100956c0(0xff)`: statuses 6, 0x26..0x2b, 0x32..0x35 and 0x38..0x3e), for a character entity
+   other than ours while we have a drawobj (our rod, chair, mount and aura actors have no entity, so they keep their fade): by the horizontal
+   distance d to the player, d < 1.0 hides it and 1.0 <= d < 2.5 multiplies the fade by (d - 1) x 2/3.
+4. **Entity +0x130 bit 18** draws it at **0.5**, over anything the steps above said. The bit comes from s2c 0x00E
+   u32 @0x28 bit 31 and our own 0x037 clears it.
+
+The op 0xa4 no-fade bit (+0x12c bit 26) is applied by the caller after the whole function, tail included: the
+actor update stores FUN_100cd040's result in model +0x664 (0x100c7d92), then sets +0x664 = 1.0 when the entity has
+bit 26 (0x100c7dc0..0x100c7dd5). So an event's no-fade actor is never faded by fishing or by bit 18. The player in
+first person skips FUN_100cd040, tail included (0x100c7d83).
+Then the result is capped at 1. Steps 3 and 4 are `near_fade_tail`, with the bit carried on `Entity::half_fade`.
+The team-outline and party-highlight flags that follow in the same function change no alpha.
+
+## Number windows: no sound on the arrows (2026-11-03)
+
+Checked in Steven's unpacked FFXiMain.dll (sha256 8097dbf8..., 2026-11-03); notes in
+`docs/re/notes/2026-11-03-modlog-gaps-batch3.md` §8.
+- Only two digit-entry windows exist: "menu    itemctrl" (quantity, OnKey FUN_1013a6c0) and "menu    moneyctr"
+  (gil, FUN_10140bc0). Every quantity or amount screen reuses them (delivery, hand-over, trade, recycle bin,
+  bazaar, guild and NPC shops, auction).
+- Neither OnKey calls a sound helper: Up / Down / Left / Right and hitting a limit are silent. The generic key layer
+  FUN_10118260 plays OK 0002 and cancel 0003; its cursor sound 0001 never fires because the number item has no
+  neighbours. The openers play their own 0002 when the window opens.
+- Ours played the cursor sound on every arrow in both windows (delivery, hand-over, trade, shops, auction, storage
+  and the synthesis quantity); now silent. The synthesis repeat count (ours) keeps its sounds.
+
+## Dual wield: the off-hand flag as scheduler value 0x3b (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch5.md item 8): the swing pick FUN_100d6850 calls
+  vt+0x250 on every swing: 1 when the model is dual wielding (+0x8b5) and the chosen scheduler's name starts with
+  'b', else 0. That writes drawobj +0x840 bit 6.
+- Its only reader is FUN_10062900, the scheduler system-value reader, as value 0x3b (0x3a is the sub-animation,
+  0x3c the entity's +0x124 bits 8..11). So a scheduler in the swing's own files can branch on "this swing is the
+  off-hand one", e.g. to put a trail on the other hand. The flag stays until the next swing clears it.
+- Ours: Actor::off_hand is set at each swing in client/combat.rs, and fx/tasks.rs answers system value 0x3b from it
+  through the new Actors::off_hand hook.
+- Which scheduler files test 0x3b was not scanned, so nothing visible is expected to change yet.
+
+## Macro palette: a set change fades the palette out and back in (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch12.md item 78): the "flip" MODLOG called a zoom is
+  a fade. A set change through the play palette's handler 0x101a3960 (Up / Down while it is open) refreshes the cells
+  at once (0x101a3d00(1)) and sets +0x29 = 1. Each frame (0x101a3a92..0x101a3b09) then drives the frame part's fade
+  (the generic part tick 0x10119707..):
+  - +0x44 = 2 for 20 ticks: alpha 0.05 x the ticks left, so 1 to 0;
+  - +0x44 = 1 for the frame that sees the end: hidden;
+  - +0x44 = 3 for 20 ticks: alpha 1 - 0.05 x the ticks left, so 0 to 1.
+  The cells and titles are the part's children and take its alpha *(inf)*.
+- Ours: Up / Down on the open palette start `World::palette_flip`, and the palette's draw (frame, cells, titles,
+  hand) is faded by `palette_flip_alpha` over 40 ticks at 60 a second. The one hidden frame is folded into the turn.
+  `UiBatch::fade_from` fades what was drawn since a mark (alpha, and the colour of the additive glyphs).
+- The fields' Shift-JIS byte limits (15 / 8 / 60) were already built (macroedit.rs `limit`).
+- Not built: the editor palettes mcr1edit / mcr2edit run the same flip on their own +0x48 (0x101a4cc3.., 0x101a53bf..).
+
+## Party window: the pet and fellow rows (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch5-build.md §5 and batch 1 §4) draws two frameless
+  rows beside the party window: our pet and, above it (or in its place), our adventuring fellow. Ours had neither.
+  - FUN_102041d0 (0x10204462..0x10204597): the rows end 8 px left of the party window when they fit beside the log,
+    else they sit over the log's (or log window 2's) right side; first row y = that bottom less 0x17, rows 16 px
+    apart. Skipped while a group-8 window is open (lists, config windows, map, full log, macro editor, ...), an
+    event runs, or a two-step party pick is on its second stage.
+  - FUN_10202960 / FUN_10202a40: the name (fontshp, cut at 102 px with the ellipsis glyph, FUN_101c9d50) in ncol 1
+    (pet) / ncol 4 (fellow); with a model the HP gauge (windowps 38 frame, 97 fill, never eased); the pet's TP with
+    /showtp (not for the luopans 0xb22..0xb31, only from 0x068 when its index is our pet's).
+  - The party-list cursor of `<stpt>` / `<stal>` gets row -1: past the last row (or Up from row 0) it lands on the
+    fellow, then row 0; Enter passes the fellow's id or name. The party menu's picks and the mouse can't reach it.
+    The hand there is the anc2s hand at the row, tinted by range.
+- Ours: client/petrow.rs (origin / draw), target.rs PartyCursor.fellow and fellow_hand, render/screens.rs
+  push_shape_limited.
+
+## The pick's bones follow a model change (2026-11-03)
+
+- The pointer pick's geometry-bone list (FUN_100cff40, once per model) stayed from the actor's old model, so a
+  model with fewer bones (`!costume 814`, the 4-bone flag) panicked on the old bone numbers as soon as the pointer
+  was over it. The list is now keyed by the model it was found for and found again after a change; the pick test
+  also skips a bone the model lacks.
+
+## Name plates: scheduler op 0xb4's lift, and none on luopans (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch12.md item 80): scheduler op 0xb4 (0x1005c81d ->
+  0x10062180) starts a task that sets the scheduler actor's +0x8c0 to the op's f32 @8 for s16 @6 x speed ticks. When
+  it ends (0x10062140), +0x8c0 goes back to 0. The plate projection FUN_100d04c0 adds +0x8c0 to the anchor's y
+  (0x100d04e3). Y is down, so the 8 `cst0` schedulers' -1.5 for 600 ticks raise the plate. The op does not wait.
+- Ours: fx/tasks.rs queues `Effects::plate_lifts`; client/mod.rs keeps `Actor::plate_lift` and counts it down by
+  frame ticks; `plate_point` adds it.
+- Item 79, the plate gates (FUN_100d0510):
+  - The chocobo / mount / rod / chair actors (+0xa4 1..4, 0x54, ...) have no plate. Ours draws plates only for
+    entities, and those actors are not entities, so this already held.
+  - Models 0xb22..0xb31 (the luopans, FUN_10098320, the same test petrow.rs uses for TP) have no plate. They now
+    have none.
+- Not built:
+  - Ending the scheduler's actor link ends the task early (0x10062100). Ours runs the lift to its last tick.
+  - 0x100d0710 reads +0x8c0 too *(inf: the arrow's twin)*; ours lifts only the plate.
+
+## /prcmd add while /anon or /away (2026-11-03)
+
+- Checked in Steven's unpacked FFXiMain.dll (sha256 8097dbf8..., 2026-11-03): the own actor's +0x124 bit 22 is
+  Away and bit 23 Anonymous (LSB nameflags AWAY 0x4000 / ANON 0x1000). Writers: s2c 0x037 u32 @0x28 bits 7 / 5
+  (FUN_1009d0f0, the normal path), 0x00A u32 @0x20 bits 14 / 12 at zone-in (via G+0x40db0 bits 4 / 3), 0x00D mask 4
+  @0x20 bits 14 / 12. MODLOG's "0xc6" is message 7 0xc6, not an s2c packet (no 0x0C6 handler is registered).
+- /prcmd add (asm 0x1007da8b..0x1007dab7): with either bit set, 7 0xc6 "You were unable to make a request to join."
+  and no c2s 0x11C. The name-lookup path (LAB_1007dc00) does not test them. Ours: textcmd::prcmd from
+  `World.self_flags` (0x037 @0x28).
+- Other readers, not done here: the name colour FUN_1008db40 (bit 23 -> the anon colour DAT_104e1ba4) and the
+  name glyph FUN_10097500 (bit 22 -> PC glyph 0x90, the away icon).
+
+## Recording: late frames keep time, frames go out in order (ours, 2026-11-03)
+
+- `client.record` sent at most one frame per drawn frame, so drawing slower than the recording's rate gave a video
+  shorter than the capture (30 fps asked, 15 drawn: half the length). A frame now fills every interval it covers (at
+  most a second's worth after a stall), the same for the "no buffer free, send the last again" case.
+- Readback buffers were sent as they mapped, sorted only among those mapped together, so a later frame mapping first
+  went out before an earlier one. Each copy now has a number and they are sent strictly in that order (a failed map
+  sends the last frame again in its place). Both from the Devin review of the upstream merge (PR #112).
+- A late frame goes to the encoder thread as one item with its count, and that thread writes it that many times, so
+  a burst of repeats can't overflow the 16-item queue and get dropped. Stopping sends the frames already mapped, in
+  order (a copy still mapping counts as the last frame again), instead of dropping them (Devin review of #115).
+
+## Training regime: kept per server and character (2026-11-03)
+
+Ours (a fix to the Extra, not retail). The regime state was kept by character name alone: in the data dir for a plain
+run, beside the `FFXI_CONFIG` copy for the wrapper's runs. A regime begun in one kind of run was missing from the
+other, so after a restart the Training window stayed away until the next kill credit, and then came back with only
+the monster's name. It is now kept in the data dir for every run, a folder per server (its search address,
+"127.0.0.1-54002") and a file per character (`config::regime_path`): it mirrors what that server keeps, so both kinds
+of run agree and a same-named character on another server has its own. With no file there yet, a zone-in reads the
+newest by-name file of an earlier build that parses (a kept `null`, a cancel, counts as read).
+
+## rem4line: which rows lose their mark (2026-11-03)
+
+Checked in Steven's unpacked FFXiMain.dll (sha256 8097dbf8..., 2026-11-03).
+- The mark is log row byte +0x12: 1 a row of the open event page (FUN_101273c0, print modes 0x98 / 0xbe), 2 a held
+  chat line. FUN_10129290(threshold) zeroes +0x12 on every row whose serial (+0xc) is >= threshold, marks 1 and 2
+  alike.
+- rem +0x50 is always 0 (written once at 0x101367d3 from a zero-filled header dword), so its users clear every row
+  of the owner log (window 1 for rem4line, window 2 for rem4li2), held chat lines included: the close
+  (FUN_10136ab0), Escape while DAT_10485a70 == 1 (FUN_10136c30) and a page advance with page flag 0x4000
+  (FUN_10136800).
+- The ordinary page advance (FUN_10126a90) passes queue entry +0x10, copied from a print header field nothing
+  writes (stack garbage, *inf*): its range is undefined. Ours keeps clearing mark 1 from the message's first page.
+- Ours: when the message is over, marks 1 and 2 go from every line (was: mark 1 from the message's first line).
+  One line store backs both log windows here, so a held line shown only in window 2 loses its mark too (retail:
+  only the owner log's rows).
+- The page arrow (FUN_10136b40) never shows on page 1; on later pages only with `7f 31` (queue +0x20 bit 0,
+  flags 0x8001); a page with more than 4 rows left draws none.
+
+## Schedulers: op 0x89 turns the head-look off (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch6.md item 13): op 0x89 (0x1005b14c ->
+  FUN_1005f450) does not hold the actor in place, and the op doesn't wait. It starts a child task for actor 1:
+  - ticks = dur x speed, truncated;
+  - it sets drawobj +0x840 bit 1 and records the actor's x / z;
+  - its update FUN_1005f540 counts the ticks down and ends at 0, or when x or z has moved more than 1.0;
+  - its end clears the bit.
+  While the bit is set, the head-look update FUN_100d5b10 has no target, forced look included, so the head eases
+  back to forward.
+- Ours: fx/tasks.rs queues (actor, ticks) in Effects::look_holds. client/mod.rs gives the actor a look_hold, which
+  counts down by frame ticks and takes its start x / z on the first frame. While it holds, the head-look target is
+  None.
+- Not built: the hold ending early with its scheduler task (retail destroys it with the parent). Ours runs it to
+  its ticks.
+
+## Select screen: Escape in the prompts (2026-11-03)
+
+- Checked in Steven's unpacked FFXiMain.dll (sha256 8097dbf8..., 2026-11-03): the lobby's yes / no is its own
+  window "menu    ptc6yesn" (DAT_10669004, handler FUN_1023d050), not comyn. Escape (0x1023d14c..0x1023d16e)
+  answers No only while +0xa5e1 is set; every opener clears it and only FUN_10164580 sets it, when +0xa5e0 == 1,
+  which only FUN_10243f10 gives (types 0xb / 0xc, the PlayOnline settings-file prompts). So the log-in (0xd),
+  rename (5), delete (4) and creator prompts ignore Escape. hnyesno (FUN_1023f700) gives -1 with SE 0003;
+  ptc9dele (FUN_1023d2e0) has no Escape case.
+- Ours: select.rs answers No on Escape for `Prompt::Settings` (before, never outside the modern layer).
+- "Connecting to the server..." (ours, the status line while connecting) has no retail source: not in the DLL,
+  FFXi.dll, FFXiResource.dll, polboot.exe, 39541 or any ROM DAT. The nearest retail line is group 8 id 3
+  "Connecting to lobby server." (lobby step 1, FUN_100ed7e0 at 0x100edada). Left as is.
+
+## Net: the per-id 1000 ms send gate (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch6.md item 12 and the batch 11 addendum):
+  - FUN_100fc3c0(id, force, …) gates every c2s id. With force 0, a send within 1000 ms of that id's last gated send
+    is refused (NULL). The time is stored before the queue slot is taken (char data +0x41b4[id]); the interval is
+    1000 for all 0x120 ids.
+  - Which ids are always gated, always forced, or vary by caller is listed in batch 6 item 12.
+  - On a refusal, most callers drop the send silently: chat, /check, cancel status, /logout, item use, drop, move.
+  - Some callers retry instead:
+    - event ops 0x43, 0xa7 and 0x47, and the event end (FUN_100ae960), stay on 0x05B / 0x05C;
+    - the zone-in pair 0x00C / 0x011 keeps its pending flag;
+    - persona, mp_stat and FUN_101d3260 ask for 0x061 again.
+- Ours: client/net.rs SendGate gates the packets each command queues, for the ids in GATED (force 0 at every call
+  site). Ids that are forced, or whose force depends on the caller, are left ungated. A refused send of a RETRIED id
+  (0x00C, 0x011, 0x05B, 0x05C, 0x061) is held and goes out once its id's gate opens, oldest first. Any other refused
+  send is dropped with a warning in the log.
+- Differences:
+  - Our event VM doesn't stay on the op while its 0x05B / 0x05C is held, and our event end doesn't wait for the
+    send before the local end.
+  - Every 0x061 is retried, including the callers that drop it in retail. A held repeat only adds one more request.
+
+## Shadow blobs: kage_tex sampled at level 0 only (2026-11-03)
+
+- Normal shadows showed dark patches on the ground around NPCs and other PCs that moved as the camera moved. High
+  and Off did not: only Normal draws projected blobs (mode 0, see "Actor ground shadows").
+- Cause: the blob is laid over every face of the 3 x 3 collision cells (12 x 12 units) with uv = (W.xz - pos.xz) /
+  size_b + 0.5, mostly far outside 0..1, and CLAMP gives those faces kage_tex's edge texel. Level 0's edge is 0
+  (the cone ends at radius ~124 of 128), but our upload gives the texture a full mip chain (retail's has none), and
+  the small levels' edges are not: for a linear cone the edge texel is 0.008 at level 3 (32 x 32), 0.09 at level 5,
+  0.18 at level 6 and 0.25 at levels 7 and 8. Distant and grazing faces pick those levels, so the whole cell block
+  darkened by up to 2 x c x 0.25 (about 18% per blob, multiplying where blobs overlap), changing with view distance
+  and angle.
+- The kage sampler now has lod_max_clamp 0 (POINT at level 0, as retail). The silhouette layers (no mips) and the
+  quad (uv inside 0..1) were not affected.
+
+## Chat: every Shift-JIS byte reaches the font as the server sent it (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch12.md item 76) never converts chat. The bytes go
+  from the packet to the log to the screen, and each two-byte pair indexes the font through 0x1011c940 (our
+  `sjis_index`, which already matched it, unknown rows included: JIS ≥ 0x9320 gives glyph 0xcb, ＝).
+- Ours turns text into a String (`decode_sjis`) and back (`encode_sjis`) before drawing. The quotes 0x8167 / 0x8168
+  already came back as themselves (glyphs 135 / 136), so the old '?' note was out of date. But 398 pairs did not:
+  - NEC row 13 duplicates (0x8790.. came back as 0x81xx);
+  - the NEC-selected IBM rows 0xED / 0xEE (came back as 0xFA..0xFC, which draw ＝);
+  - 0xEEDC.., which share glyph indices with the usgaiji codes (came back as 0xEF1F..).
+  Single bytes Shift-JIS has no character for (0x80, 0xA0, 0xFD..0xFF) became '?'.
+- Now `decode_sjis` keeps any pair whose encoding would differ, as private-use U+F0000 + its bytes, and any such
+  byte as U+F1000 + the byte (clear of the chat icons at U+F0000..U+F0FFF), and only 0xEF pairs are read as usgaiji. So decode then encode gives the server's bytes back for every byte
+  and pair, which is what keeping the bytes end to end does. Test `sjis_bytes_survive`.
+- Left as is: text we type is Unicode and still becomes '?' where Shift-JIS has no character (retail's input line is
+  Shift-JIS already).
+
+## Sound levels: the resets at zone-in, the event end and a slider move (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch6.md item 18): one reset a zone, guarded by
+  DAT_104804c3, which the zone / world init clears. Whichever comes first sets it:
+  - the zone-in, once the player's model is loaded (FUN_1008abe0): the ambient loop to full at once, the world
+    effects and the interface effects over 30 ticks;
+  - an event end (FUN_100ae3f0), only while the flag is still clear, i.e. a zone-in cutscene: the ambient and the
+    world effects over 30 ticks. The interface effects, the stream and the `<call>` mute are left alone.
+  - So after the zone's reset, a normal event's end restores nothing an op 0x69 / 0x6a lowered. It stays until
+    another op, a slider change or the next zone; scripts put their own levels back.
+  - A volume slider's apply (config 9 / 10, FUN_101aa650 -> FUN_10035e80 / FUN_10035ec0) puts every channel's event
+    level back to 1.0 at once, so moving a slider during a cutscene undoes the script's mute.
+- Ours: World::sound_reset is the flag. The zone-in path clears it, the settle step runs the zone reset, and
+  event::finish runs the event-end reset only while it is clear. Our zone-in cutscene waits for the settle step
+  (event::zone_ready), so the zone reset waits while an event is running or waiting: that event's end is the one
+  that restores, as retail's zone-in cutscene does. An event that goes without finishing (no script for it) leaves
+  the flag clear, and the zone reset then runs on the next frame. audio::reset_event_levels is called from
+  apply_settings only when config 9 / 10 themselves changed (App::applied_volumes, the raw slider values, recorded at
+  every apply and when the device opens); other settings and our mutes leave an event's levels alone.
+- Inferred: that retail's zone-in cutscene ends before the player's model comes up (the note's reading of
+  "whichever comes first").
+
+## 0x00E SubKind 5 / 6: the model word's low 12 bits (2026-11-03)
+
+- Retail (docs/re/notes/2026-11-03-modlog-gaps-batch2.md §5): SubKind 5 / 6 store u16 @0x32 | 0x9000 in look slot 9;
+  bits 0..11 are the model id (always the NPC table, FUN_100c51c0(0, id)) and bits 12..15 the look slot
+  (FUN_100d0b50), 9 = the whole model.
+- Ours (`dat::npc::parse_look`) took the whole word as the model id, so a word with any of bits 12..15 set named a
+  wrong file. It now keeps the low 12 bits. SubKind 0 is unchanged. Test `looks`.
+- Not done: SubKind 6's +0xf6 = 2 for raw words 0x7b8..0x7cb / 0x7d3..0x7da (not traced); slot 9 attached at +0x864
+  over a race or a slot 0 base (event op 0xb6 sub 0x0c, kind 7).
+
+## Target window: event op 0xb4's named gauge (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch12.md item 79): with the target window's +0x65
+  set, FUN_101501a0 draws only a gauge (FUN_101cb090 at (L + 0x1c, T + 0x1d), +0x66 percent) and the name +0x14,
+  centred, unsplit, in +0x68.
+  - Event op 0xb4 sub 2 (FUN_100b0a00, case 0x100b0b94) sets +0x65 = 1, the 16-byte string var@2 as the name (byte
+    15 = 0), white 0x80808080, and val@4 as the percent only when it is 0..100. It opens "menu    targetwi" unless it
+    is up. pc += 6.
+  - Sub 3 (0x100b0e45) closes the window. Its close hook 0x10150910 clears +0x65.
+- Ours: the VM hands sub 2's string and value to the host (`event_vm.rs`, test `target_event_mode_b4`).
+  `World::target_event` holds them until sub 3. The HUD draws the target window from it, whatever is targeted:
+  the gauge at the percent, the name centred in white, no plate glyph.
+- Not changed:
+  - Fishing. The note says FUN_10088bd0 puts "Fish" in the same mode (+0x65 = 2), but ours keeps the gauge
+    MODLOG's fishing entry describes (FUN_10202af0, under the party window). Which one is right needs a live check.
+  - The pet line ("name" / "(master)"). Its master search reads actor +0x74, +0x1fa and +0x1d0 bit 0x100, which
+    aren't mapped to our fields yet.
+
+## Event text codes 0x1d and 0x13 (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch5.md item 1), text expander FUN_100c1650:
+  - `1d` (1 byte, asm 0x100c2754..0x100c27c9): the 45° sector message actor 1 faces,
+    k = ftol(wrap2π(yaw + π/8) × 4/π) & 7, appended as message group 0xf word k (0 east, 1 southeast, .. 6 north,
+    7 northeast; yaw 0 = east, increasing toward south). Nothing without an actor.
+  - `13 n` (2 bytes): no text. With the player as message actor 2, n = 0 sets the K.O. offer state DAT_10485ff8 = 2
+    (raise, FUN_10096620) and n = 1 sets 3 (tractor, FUN_10096630), as s2c 0x0F9 does. MODLOG's "Japanese" guess was
+    wrong.
+- Ours had neither. dat/dialog.rs expands both (Ctx.facing / actor2_me, Texts::compass from group 0xf,
+  Expanded.offer); event_vm.rs passes the speaker's yaw (Host::yaw) and emits Effect::Offer, which sets
+  World.ko_offer like 0x0F9.
+
+## Trusts ignore rest statuses in 0x00E (2026-11-03)
+
+- Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch6.md item 7), the 0x00E handler's mask 4 block at
+  0x1009c118..0x1009c16d: after HP% (@0x1e), the server status @0x1f goes to actor +0x16c unless the status is held by
+  event op 0xab 1 / 2 (+0x120 bit 1), or the actor is a trust (u8 @0x28 bit 0) and the status is healing 0x21,
+  sitting 0x2f or a chair 0x3f..0x53 (FUN_10095790). Then the old status stays. 0x00D (PCs) has no such rule.
+- Ours took every status: client/mod.rs now skips those three for a trust's 0x00E (Marks.trust) as for a held status.
+
+## Misc.: Weather effects setting (2026-11-03)
+
+- Config 0x3b (Misc. > Weather, 1 Normal / 0 Off) was saved but never read; the generator clock had a fixed
+  1.0. Retail (FFXiMain.dll, checked 2026-11-03):
+  - LAB_101aa650 case 0x3b (FUN_10002d70): DAT_10456a68 = the value as a float. FUN_10002d80 reads it, or 1.0
+    while DAT_10487ef5 is set: event op 0xab subs 9 / 10 (FUN_10087120 = 1 / 0); the zone load FUN_10093720
+    clears it.
+  - FUN_100496f0 (0x1004a654): a generator with +0xde bit 1 counts its emission clock down by dt x density, so
+    Off stops new weather particles.
+  - FUN_10063c80 (CMoVuDist, 0x10063c89..0x10063cc5): N from 20 up on a generator with +0xde bit 0 draws
+    N x density x 0.5 each draw (was a fixed 0.5 at emission). Ours: Draw::VuDist keeps N and the weather bit, and
+    render/effects.rs vu_dist_count works out the draws each frame; the batched particle count in effects.wgsl
+    uses the same formula.
+  - FUN_1003fbb0 (D3b), FUN_10040ba0 (D3m) and FUN_10043320 (DistModel) draw nothing from a generator with +0xde
+    bit 7 while the density is 0.
+- Ours: fx::Effects::weather_density each frame (World::weather_forced for the event flag), Params.extra.z in
+  render/effects.wgsl.
+
+## Weather: the thunder screen flash, its occlusion test, and a census of every zone's weather (2026-11-03)
+
+- Census (`weather-sweep --out sweep.tsv`): every zone 0..299 with a `weat` folder (265 zones, 1226 weathers),
+  each weather started and run 600 ticks with the effect audit on, plus the ops by stream and the draw kinds of
+  its generators and schedulers. Before this change the only gaps were emission op 0x88 (8 zones) and four
+  resources not found; update ops 0x43 / 0x53 / 0x60 run on the GPU, where the audit does not see them, and
+  0x53 / 0x60 had no case there. Rain, snow, blizzard, thunder, sandstorm, aurora and light had no other gap.
+- Retail build for the addresses below: the unpacked 30261006 FFXiMain (several older addresses in the notes
+  above do not exist in it: update stream FUN_1004a980 here, table 0x1004e03c; generator stream FUN_100496f0).
+- Emission op 0x88 (0x1005156d): element +0x160 = word 1, a 4-character tag ('ki03', 'lt01', 'pl_c'); op 0x9c
+  (0x1005157b) copies the parent's to a child. Nothing in the effects code reads +0x160: a no-op in ours.
+  Weather use: only zone 153's `weat/{fine,suny}/kira/ray1..3`; the other seven zones carry it in zone effects
+  (wheels, doors) that ran during the census.
+- Update op 0x43 (0x1004d67b): IsType 0xe (sound elements) only, +0x1be = round(key x 127), the volume
+  FUN_100364e0 reads. Ours already did this (Sound::vol_key); a no-op on the other classes, as before.
+- Update op 0x53 (0x1004afb4, any class): the occlusion test. M = identity scaled by word 1 (the box's half size)
+  at the element's view-space position (FUN_10044f10); its 8 corners projected (cube table 0x10353718), a 16 x 16
+  grid over the screen rect counted against the scene (FUN_1006c300 / FUN_1006c530 / FUN_1006c8b0). Word 2 = 0:
+  FADE = 0 when no point passes (FUN_1004a870); else FADE x= count / 256 (FUN_1004e630) x word 2. Only zone 26
+  `t_ta/weat/thdr/wez4/frsh`: [0x353, 8.0, 1.0]. Ours: the update pass reads this frame's scene depth (drawn
+  before it), each point tested at the box centre's depth *(inf: the depth tested, and retail's 0x100 margin
+  around the screen is not kept)*; without a scene depth (the offscreen shots) the op does nothing.
+- Update op 0x60 (0x1004abd3, any class): the screen flash. Skipped unless last frame's sort key +0x12c is in
+  0..word 2 and FADE != 0. With v the view-space position, z = max(-v.z, 1) (skipped behind the eye), k = cam
+  +0x2f4 / z, r^2 = (k v.x)^2 + (k v.y)^2: f = 1 within word 3, 1 - (r^2 - w3) / (w4 - w3) up to word 4, else
+  skipped; then the eye distance d: skipped beyond word 2, f x= 1 - (d - w1) / (w2 - w1) beyond word 1; then the
+  player factor FUN_1003c7d0 (flags word 6, f32 word 5; the rule of emission op 0x82). The colour bytes +0xf8..
+  +0xfa x f are added to renderer +0x324..+0x326 (FUN_10014f70 / FUN_10014f90, saturating), which FUN_100132b0
+  draws as the additive full-screen quad (alpha doubled; default alpha byte 0x80, 0x100149d4) that event op 0x72
+  also uses. Users: zone 26 frsh [0x760, 50, 150, 4096, 65536, 0, 1] and zones 29 / 30 / 31
+  `d_ba/weat/thdr/limg/nul1` [0x760, 1000, 1000, 4096, 65536, 0, 1].
+- Both ops take +0x188 as FUN_10044f10 builds it: camera-relative elements (flags bit 2, the Riverne bolts are
+  0x00800005) as view_rot x pos (bit 3 too: pos itself), 0x20000 the parent translation in view space plus pos,
+  else view x the world position; op 0x60's eye distance still takes the raw position as a world point
+  (FUN_10044c40), as retail does. Retail's op 0x60 reads +0x188 from its last refresh, likely a frame old; ours
+  this frame's.
+- Checked on the game data: the flash fires in zones 26 (about every 50 to 60 s) and 29 / 30 / 31 for 25 to 31
+  ticks, peaking at 128 per channel and fading out; a scene depth of 0 suppresses zone 26's through op 0x53.
+- Ours: the GPU update writes each element's flash bytes into its readback record (word 19), summed on the CPU
+  (Effects::flash) and added to op 0x72's colour in Screen::flash, so the flash shows a frame or two late. Element
+  word 42 keeps last frame's sort key, word 43 the instance's own-player bits for the player factor. The bytes
+  are added channel for channel, as op 0x72's colour is.
+- Checked and left as they are: the misses of DAT 143 'star' -> 'sta1', DAT 146 / 147 'sta1' -> 'sta2' (only an
+  image of that name) and DAT 188 'cld2' -> 'clod' happen in retail too (the lookup FUN_10072290 / FUN_100722c0
+  needs the exact type; none of those names exists as Vum, D3m or MMB in the file or DAT 0). Generator update
+  op 0x5d (zones 25, 29..31, raw [0x15d]) takes the default arm 0x1004a55d of FUN_100496f0: a no-op. The sun and
+  moon tilt (sun / moon object +0x1cc, Rx(degrees) in FUN_10187720) and the fixed sky time (+0x1c8) are set only
+  by scheduler ops 0xc3 / 0xc0 (FUN_10057fb0 0x1005809b / 0x10058079), which no zone 0..299 scheduler uses, so
+  zone weather never tilts them; ours leaves both out.
+- Test: render::effects::tests::gpu_thunder_flash (visible, hidden behind scenery, beyond the far distance).
+
+## Home point set effect: op 0x2c's target (2026-11-04)
+
+- Setting a home point plays no effect on us. LSB sends nothing for it: the home point event itself (e.g. Port Bastok
+  event 0x21fc, `call ->0210`, choice "Yes.") runs op 0x2c `actor_sched self, player, 'bind'`. The crystal (model 51,
+  file 1351) has a `bind` scheduler (type 7) and its `bnd0` generator.
+- FUN_100b2f80 calls the actor's model vtable +0x298(4cc@9, actor@5's model), so actor@5 is the scheduler's second
+  actor. Ours dropped it and ran the scheduler with the crystal as both actors, so the effect stayed on the crystal.
+  actmotion::Pending now carries op 0x2c's target (when it is another actor in the zone) and the scheduler's effect
+  side runs with it as actor2 (fx `on_scheduler_quiet_on`). Ops 0x5b / 0x66 are unchanged.
+- Not yet seen live in game.

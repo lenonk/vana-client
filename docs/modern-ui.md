@@ -543,3 +543,6 @@ Milestone 1:
 - The target panel's name in retail's name colour (FUN_1008db40 as the plates: unclaimed monster pale yellow, our
   party's claim red, another's magenta).
 - Not yet: alliance rows live.
+
+- Cursor on movement (ours, not retail): in the Modern UI a key press (walking included) no longer hides the
+  mouse cursor; the classic UI still hides it as retail does.
