@@ -2078,11 +2078,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if !world.typing {
         world.ime_preedit.clear();
     }
-    // Each key's own Shift, for the handlers it reaches; none outside this loop.
-    world.key_shift = false;
+    // Each key's own Shift and repeat flag, for the handlers it reaches; none outside this loop.
+    (world.key_shift, world.key_repeat) = (false, false);
     for ev in input.events.iter().filter(|_| !input_open) {
-        if let egui::Event::Key { modifiers, .. } = ev {
-            world.key_shift = modifiers.shift;
+        if let egui::Event::Key { modifiers, repeat, .. } = ev {
+            (world.key_shift, world.key_repeat) = (modifiers.shift, *repeat);
         }
         match ev {
             // Ctrl+V with the chat line closed opens it with the text (ours).
@@ -2586,6 +2586,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             _ => {}
         }
     }
+    (world.key_shift, world.key_repeat) = (false, false);
     world.key_shift = false;
     // Recomputed by this frame's pointer handlers (retail keeps it until a row is hovered or the list is rebuilt;
     // ours drops it as soon as the pointer is elsewhere, so a pointer that leaves the window cannot strand the keys).
@@ -5822,6 +5823,9 @@ struct World {
     /// Shift was held with the key being dispatched by world_hud's loop (Shift+Tab turns a modern window's tabs back;
     /// the pad's LB sends it); false anywhere else.
     key_shift: bool,
+    /// The key being dispatched is a held repeat, not a fresh press (retail's [esp+0x18] in the OnKey handlers);
+    /// false anywhere else.
+    key_repeat: bool,
     /// Our facing unquantized, with the network direction it rounds to: retail draws the player from the float heading
     /// (FUN_100a6240) and rounds it only for the position packet; drawn from the byte, a stick's slow turn stepped.
     my_face: Option<(u8, Vec3)>,
@@ -8346,6 +8350,7 @@ impl App {
                             swkbd_out: Vec::new(),
                             swkbd_reopen: false,
                             key_shift: false,
+                            key_repeat: false,
                             macro_palette: (1, [0, 0]),
                             list_arrow_hover: false,
                             my_face: None,
