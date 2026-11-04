@@ -943,7 +943,7 @@ fn zone_in(cfg: &config::Config, m: &net::lobby::MapLogin, account: &str, stay: 
 
     let codec = net::map::compress::Codec::from_ffximain(&std::fs::read(crate::dat::ffximain(&cfg.ffxi_dir()))?)?;
     let addr = std::net::SocketAddr::from((m.map.0, m.map.1));
-    let mut map = MapSession::connect(addr, &m.key, codec)?;
+    let mut map = MapSession::connect(addr, &m.key, codec)?.or_key(m.old_key);
     // The zone server learns of us a moment after the lobby replies, so retry like the client does.
     let mut attempt = 1;
     map.send_login(m.char_id, &m.name, account, 0)?;

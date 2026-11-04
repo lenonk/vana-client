@@ -44,6 +44,8 @@ pub struct State {
     last_dy: f32,
     zoom_reset: bool,
     zoomed: bool,
+    /// The focal length as retail keeps it (FUN_100152c0, a float); config 0x49 holds it truncated.
+    focal: Option<f32>,
     /// Face-camera (keyboard type 2, Shift): the eye offset stored when Shift went down.
     face: Option<Vec3>,
     /// First person (DAT_10475578) and its eased look offsets (pitch, yaw).
@@ -315,24 +317,57 @@ pub fn face_at(w: &mut World, yaw: f32, o: Vec3) {
     (w.camst.zone_in, w.camst.path_n, w.camst.path_mode) = (120, 0, false);
     w.camst.last_dy = (eye.y - look.y).abs();
     w.yaw = yaw;
+    // First person: at the head at once, looking the new way (FUN_10021680's other branch), not eased in from behind.
+    if w.camst.first {
+        (w.camst.fp_mouse, w.camst.fp) = (None, (0.0, 0.0));
+        first_person(w, 1.0e3, &Inputs::default());
+    }
 }
 
 /// Mouse drag: turns and raises the eye at once (not a rate), with the manual hold, as retail's drag axes do.
 pub fn drag(w: &mut World, yaw: f32, rise: f32) {
+    // Face-cam (vt+0x340) skips the camera axes the mouse feeds (all.c 22841).
+    if w.camst.face.is_some() {
+        return;
+    }
+    // The mouse is axes 6 / 7, which hold the chase cam too.
+    (w.camst.chase_from, w.camst.chase_hold) = (super::drawn_pos(w), 4);
+    let before = [w.cam.eye, w.camst.prev.eye];
     for c in [&mut w.cam, &mut w.camst.prev] {
         orbit(c, yaw);
         c.eye.y -= rise;
     }
     w.camst.hold = MANUAL_HOLD;
+    collide_direct(w, before);
 }
 
 /// On a lift (FUN_1001ee60, all.c 22907): the eye rides with the player's height change, and a change holds the
 /// automatic correction for 10 ticks.
 pub fn ride(w: &mut World, dy: f32) {
     if dy != 0.0 {
+        let before = [w.cam.eye, w.camst.prev.eye];
         w.cam.eye.y += dy;
         w.camst.prev.eye.y += dy;
         w.camst.hold = MANUAL_HOLD;
+        collide_direct(w, before);
+    }
+}
+
+/// A drag, Q / E or a lift between ticks: retail makes them in the frame whose tick collides the eye (all.c
+/// 22841..22915 before 23490..23561), so both eyes the view is drawn between get (A) (the hold is up) and the tail now,
+/// never one drawn inside a wall or under the floor.
+fn collide_direct(w: &mut World, before: [Vec3; 2]) {
+    // The locked branch collides its own eye every frame.
+    if w.locked {
+        return;
+    }
+    let unlocked = w.unlock_ticks <= 0.0;
+    let Some(g) = w.ground.as_ref().filter(|g| !g.is_empty()) else { return };
+    for (c, start) in [(&mut w.cam, before[0]), (&mut w.camst.prev, before[1])] {
+        if unlocked && let Some(h) = g.cam_ray(c.look, c.eye) {
+            c.eye = h + (h - c.eye).normalize_or_zero() * 0.5;
+        }
+        c.eye = tail(g, c.eye, c.look, start, false, unlocked, 1.0);
     }
 }
 
@@ -357,8 +392,14 @@ pub fn focal(w: &World) -> f32 {
     } else if w.camst.first {
         FIRST_FOCAL
     } else {
-        super::cfgapply::focal(&w.game)
+        live_focal(w)
     }
+}
+
+/// The float focal while config 0x49 still holds it, else the config's (set elsewhere: the Config page).
+fn live_focal(w: &World) -> f32 {
+    let cfg = super::cfgapply::focal(&w.game);
+    w.camst.focal.filter(|f| f.trunc() == cfg).unwrap_or(cfg)
 }
 
 /// One frame of the camera, after the player has moved.
@@ -375,23 +416,33 @@ pub fn step(w: &mut World, dt: f32, inp: &Inputs) {
     battle_switch(w);
     let fade = if w.camst.first { -0.0625 } else { 0.0625 };
     w.camst.self_alpha = (w.camst.self_alpha + fade * ticks).clamp(0.0, 1.0);
-    if w.locked {
-        // The locked branch (target::step_camera) moves w.cam itself, per frame.
-        w.camst.prev = w.cam;
-        w.camst.acc = 0.0;
-        return;
-    }
+    // First person comes before the lock (FUN_100a5e10, all.c 124126: FUN_10021110 and return before FUN_1001ee60).
     if w.camst.first {
         first_person(w, ticks, inp);
         return;
     }
+    if w.locked {
+        // The locked branch (target::step_camera) moves w.cam itself, per frame. A face-cam offset from before the
+        // lock is not taken back after it.
+        w.camst.prev = w.cam;
+        w.camst.acc = 0.0;
+        w.camst.face = None;
+        return;
+    }
     // The frame's start eye (slot +0xd4) is taken before any of its turns; the collision tail's gate measures from it.
     let mut frame_start = Some(w.cam.eye);
-    // Direct turns: mouse drag (applied by drag()), screen edge and the player's Q / E turn.
-    let turn = inp.edge + inp.turn;
+    // Direct turns: mouse drag (applied by drag()), screen edge and the player's Q / E turn; Q / E hold the automatic
+    // corrections (all.c 22895), so (A) never starts path mode while turning; during the unlock hold they are dropped.
+    let qe = if w.unlock_ticks > 0.0 { 0.0 } else { inp.turn };
+    let turn = inp.edge + qe;
     if turn != 0.0 {
+        let before = [w.cam.eye, w.camst.prev.eye];
         orbit(&mut w.cam, turn);
         orbit(&mut w.camst.prev, turn);
+        if qe != 0.0 {
+            w.camst.hold = MANUAL_HOLD;
+        }
+        collide_direct(w, before);
     }
     w.camst.face = match (inp.face_cam, w.camst.face) {
         (true, None) => Some(w.cam.eye - w.cam.look),
@@ -476,7 +527,7 @@ fn tick(w: &mut World, target: Vec3, player: Vec3, facing: Vec3, chase: bool, in
             // Chase cam (0x91): waits after manual input until the player has moved, then drifts 2.5 % a tick
             // toward d behind the player while 8..120 degrees off.
             if chase {
-                if inp.v6.abs() >= 0.01 || inp.turn != 0.0 {
+                if inp.v6.abs() >= 0.01 || inp.v7.abs() >= 0.01 || inp.turn != 0.0 {
                     st.chase_from = player;
                     st.chase_hold = 4;
                 }
@@ -513,17 +564,17 @@ fn tick(w: &mut World, target: Vec3, player: Vec3, facing: Vec3, chase: bool, in
         // (A) 2019 0x1001f0cc: the eye 0.5 in front of what the look -> eye ray hits; with the view blocked after the
         // look has moved on (4 points recorded) and no camera input, path mode instead. An unblocked view records the
         // look's trail.
-        if !st.path_mode && unlocked && let Some(g) = ground {
-            match g.cam_ray(c.look, c.eye) {
-                Some(_) if st.hold == 0 && st.path_n >= 4 => (st.path_mode, st.hold) = (true, 0),
-                Some(h) => c.eye = h + (h - c.eye).normalize_or_zero() * 0.5,
-                // FUN_1001e320: a point 0.1 or more from the newest.
-                None if (c.look - st.path[0]).length() >= 0.1 => {
-                    st.path = [c.look, st.path[0], st.path[1], st.path[2]];
-                    st.path_n = st.path_n.wrapping_add(1);
-                }
-                None => {}
+        // During the unlock hold the ray is skipped and the trail still recorded (all.asm 1001fefc..1001ff3f).
+        let hit = if st.path_mode { None } else if unlocked { ground.map(|g| g.cam_ray(c.look, c.eye)) } else { Some(None) };
+        match hit {
+            Some(Some(_)) if st.hold == 0 && st.path_n >= 4 => (st.path_mode, st.hold) = (true, 0),
+            Some(Some(h)) => c.eye = h + (h - c.eye).normalize_or_zero() * 0.5,
+            // FUN_1001e320: a point 0.1 or more from the newest.
+            Some(None) if (c.look - st.path[0]).length() >= 0.1 => {
+                st.path = [c.look, st.path[0], st.path[1], st.path[2]];
+                st.path_n = st.path_n.wrapping_add(1);
             }
+            _ => {}
         }
     }
     // Home (0x51): eases 1/8 a tick toward 3 behind the player at its look height, until the view is behind.
@@ -538,7 +589,7 @@ fn tick(w: &mut World, target: Vec3, player: Vec3, facing: Vec3, chase: bool, in
         }
     }
     if let Some(g) = ground {
-        c.eye = tail(g, c.eye, c.look, start, st.zone_in > 0, unlocked);
+        c.eye = tail(g, c.eye, c.look, start, st.zone_in > 0, unlocked, 1.0);
     }
     st.zone_in = (st.zone_in - 1).max(0);
     st.last_dy = (c.eye.y - c.look.y).abs();
@@ -569,9 +620,11 @@ fn path_tick(st: &mut State, c: &mut LockCam) {
 /// (B) 0.17 clear of the floor below or else of the ceiling above (each within 10) and (C) the side bar; then (D) on
 /// the free branch outside the unlock hold, the eye 0.2 in front of what the look -> eye ray hits; (E) a move under
 /// 0.0001 snaps back. Nothing refuses a move: the eye always lands where the look can see it.
-pub(super) fn tail(g: &Ground, mut eye: Vec3, look: Vec3, start: Vec3, zone_in: bool, final_ray: bool) -> Vec3 {
-    // 2019 0x1001f958: |eye - start| > 0.01 a frame *(inf: 0.005 a tick)*.
-    if (eye - start).length() > 0.005 || zone_in {
+/// `ticks` the movement it covers: retail runs it a 30 fps frame (2 ticks), the free branch here a tick, the locked one
+/// a frame of any length.
+pub(super) fn tail(g: &Ground, mut eye: Vec3, look: Vec3, start: Vec3, zone_in: bool, final_ray: bool, ticks: f32) -> Vec3 {
+    // 30261006 FUN_1001ee60 (all.c 23493): |eye - start| > 0.01 a frame (_DAT_10329a18) *(inf: 0.005 a tick)*.
+    if (eye - start).length() > 0.005 * ticks || zone_in {
         let floor = g.floor(eye.x, eye.z, eye.y, 0.0).filter(|f| f - eye.y <= 10.0);
         match floor {
             Some(f) if eye.y > f - 0.17 => eye.y = f - 0.17,
@@ -589,7 +642,8 @@ pub(super) fn tail(g: &Ground, mut eye: Vec3, look: Vec3, start: Vec3, zone_in: 
     if final_ray && let Some(h) = g.cam_ray(look, eye) {
         eye = h + (h - eye).normalize_or_zero() * 0.2;
     }
-    if (eye - start).length() < 0.0001 { start } else { eye }
+    // Under 0.0001 a frame (_DAT_1032a1a8, all.c 23563) the eye stays put.
+    if (eye - start).length() < 0.00005 * ticks { start } else { eye }
 }
 
 /// (C) 2019 0x1001fa16: a bar of +-0.17 along the camera's x through the eye; crossing two faces (a pole, a corner, a
@@ -646,20 +700,35 @@ fn spring(c: &mut LockCam, d_vec: Vec3, push: bool, k: f32) -> bool {
 
 /// Section 3: the zoom keys and wheel change the focal length (config 0x49), both keys ease it back to 350.
 fn zoom(w: &mut World, ticks: f32, inp: &Inputs) {
+    let before = live_focal(w);
     let st = &mut w.camst;
-    let mut f = super::cfgapply::focal(&w.game);
-    let before = f;
-    if inp.zoom_in && inp.zoom_out {
-        st.zoom_reset = true;
+    let f = zoom_step(before, &mut st.zoom_reset, inp, ticks);
+    let f = f.clamp(FOCAL_MIN, FOCAL_MAX);
+    st.focal = Some(f);
+    if f != before {
+        // __ftol: the config takes it truncated.
+        if f as u32 != w.game.get_i(0x49) as u32 {
+            w.game.set(0x49, f as u32);
+        }
+        st.zoomed = true;
+    } else if std::mem::take(&mut st.zoomed) {
+        w.game_save = true;
     }
-    if st.zoom_reset {
-        // 25 % a retail frame *(inf: per 2 ticks)*.
-        let s = (FOCAL_DEFAULT - f) * (1.0 - 0.75f32.powf(ticks / 2.0));
-        if (FOCAL_DEFAULT - f).abs() < 1.0 {
+}
+
+/// The focal after `ticks` of the zoom keys, the wheel or the both-keys reset (`reset`: 25 % a retail frame
+/// *(inf: per 2 ticks)*, snapping to 350 once a frame's step is under 1, a gap under 4, all.c 23149..23160).
+fn zoom_step(mut f: f32, reset: &mut bool, inp: &Inputs, ticks: f32) -> f32 {
+    if inp.zoom_in && inp.zoom_out {
+        *reset = true;
+    }
+    if *reset {
+        let gap = FOCAL_DEFAULT - f;
+        if gap.abs() < 4.0 {
             f = FOCAL_DEFAULT;
-            st.zoom_reset = false;
+            *reset = false;
         } else {
-            f += s;
+            f += gap * (1.0 - 0.75f32.powf(ticks / 2.0));
         }
     } else if inp.zoom_in {
         f += ticks * FOCAL_RATE;
@@ -668,13 +737,7 @@ fn zoom(w: &mut World, ticks: f32, inp: &Inputs) {
     } else {
         f += inp.wheel * WHEEL_FOCAL;
     }
-    let f = f.clamp(FOCAL_MIN, FOCAL_MAX);
-    if f != before {
-        w.game.set(0x49, f.round() as u32);
-        st.zoomed = true;
-    } else if std::mem::take(&mut st.zoomed) {
-        w.game_save = true;
-    }
+    f
 }
 
 /// Section 7: the eye behind the head, the view where the stick points (eased), springing back when released.
@@ -712,12 +775,15 @@ fn first_person(w: &mut World, ticks: f32, inp: &Inputs) {
         Some((mp, my)) => (my + st.fp.1, (mp + st.fp.0).clamp(-1.4, 1.4)),
         None => (f.x.atan2(f.z) + st.fp.1, st.fp.0),
     };
-    if st.fp_mouse.is_some() {
+    if st.fp_mouse.is_some() && !w.locked {
         w.yaw = yaw;
     }
+    // Locked, the look is the target with the lock's height (FUN_10020ba0, all.c 23720..23729), no stick look.
+    super::target::refresh_lock_height(w);
+    let lock_look = w.target.filter(|_| w.locked).and_then(|t| w.entities.get(&t)).map(|e| e.pos + Vec3::new(0.0, w.lock_height, 0.0));
     let st = &mut w.camst;
     let fwd = Vec3::new(yaw.sin(), 0.0, yaw.cos());
-    let look = eye + fwd * 5.0 * pitch.cos() + Vec3::new(0.0, 5.0 * pitch.sin() + 0.25, 0.0);
+    let look = lock_look.unwrap_or_else(|| eye + fwd * 5.0 * pitch.cos() + Vec3::new(0.0, 5.0 * pitch.sin() + 0.25, 0.0));
     w.unlock_ticks = 8.0;
     st.chase_hold = 0;
     // The camera eases 0.125 a tick toward the head.
@@ -744,6 +810,30 @@ pub fn view(w: &World) -> Camera {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The both-keys reset reaches 350 and ends at any frame rate (the integer config once rounded it to a standstill,
+    /// leaving the keys dead), and the keys zoom 6 a tick at 300 fps as at 30.
+    #[test]
+    fn zoom_resets_and_runs_at_any_frame_rate() {
+        for fps in [30.0f32, 60.0, 144.0, 300.0] {
+            let ticks = 60.0 / fps;
+            let (mut f, mut reset) = (900.0, false);
+            f = zoom_step(f, &mut reset, &Inputs { zoom_in: true, zoom_out: true, ..Default::default() }, ticks);
+            let mut frames = 0;
+            while reset && frames < 10_000 {
+                f = zoom_step(f, &mut reset, &Inputs::default(), ticks);
+                frames += 1;
+            }
+            assert!(!reset && f == FOCAL_DEFAULT, "{fps} fps: {f} after {frames} frames");
+            // About 0.6 s at any rate (25 % a 30 fps frame from a gap of 550 to under 4: 17 frames).
+            assert!((frames as f32 / fps - 0.6).abs() < 0.15, "{fps} fps: {frames} frames");
+            let start = f;
+            for _ in 0..fps as usize {
+                f = zoom_step(f, &mut reset, &Inputs { zoom_in: true, ..Default::default() }, ticks);
+            }
+            assert!((f - start - 360.0).abs() < 1.0, "{fps} fps: {}", f - start);
+        }
+    }
 
     /// Retail's rotation turns the view the other way from our yaw, and keeps the eye's distance and height.
     #[test]
