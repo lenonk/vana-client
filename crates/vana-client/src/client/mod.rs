@@ -6448,6 +6448,11 @@ struct World {
     auto_sort: u32,
     auto_sort_dirty: bool,
     sort_due: (u32, f32),
+    /// FUN_1021c4c0's inventory record (items::retail_auto_sort): the free slots last seen (+8; None from zone-in
+    /// until the inventory settles), Manual Sort's split hold (+6), and the seconds since the last inventory 0x03A.
+    inv_free: Option<u32>,
+    sort_hold: bool,
+    sort_wait: f32,
     timers_dock: u32,
     timers: timers::Timers,
     regime: regime::Tracker,
@@ -8345,6 +8350,9 @@ impl App {
                             auto_sort: self.cfg.auto_sort,
                             auto_sort_dirty: false,
                             sort_due: (0, 0.0),
+                            inv_free: None,
+                            sort_hold: false,
+                            sort_wait: f32::MAX,
                             timers_dock: self.cfg.timers_dock,
                             timers: timers::Timers::new(self.cfg.timers_out, self.cfg.timers_folded),
                             regime: regime::Tracker::new(self.cfg.regime_out),
@@ -8955,6 +8963,8 @@ impl App {
                     // LSB re-sends every container after c2s 0x00C and empties the temporary items and the recycle
                     // bin on zoning, so slots kept from the last zone would go stale (retail's reset: inferred).
                     world.inv = items::Inventory { sizes: world.inv.sizes, sizes2: world.inv.sizes2, ..Default::default() };
+                    // The resend refills the emptied view: Auto-sort's free-slot count starts again once it settles.
+                    (world.inv_free, world.sort_hold) = (None, false);
                     if let Some(ev) = login_event {
                         // FUN_10093db0: no zone fade-in under a login event; the event's own fade brings the scene in.
                         world.screen.hold_black();
@@ -9524,6 +9534,9 @@ impl App {
                         world.inv_flags |= 0x0020_0800;
                     }
                     world.inv_loaded = loaded;
+                    if state == 1 && loaded & 1 << items::INVENTORY != 0 && world.inv_free.is_none() {
+                        world.inv_free = Some(items::free_slots(world, items::INVENTORY));
+                    }
                 }
                 NetEvent::ItemNum { container, index, count } => {
                     world.inv_flags &= !0x800;
@@ -9537,7 +9550,9 @@ impl App {
                     // A slot newly filled in a container kept sorted sorts it once the burst is over.
                     let fresh = id != 0 && !world.inv.order.get(&container).is_some_and(|o| o.contains(&index));
                     world.inv.set(container, index, id, count);
-                    if fresh && container < 32 && world.auto_sort >> container & 1 != 0 {
+                    // Retail's Auto-sort (config 0x9a) already sorts the inventory on a new slot.
+                    let retail = container == items::INVENTORY && world.game.get(0x9a) != 0;
+                    if fresh && container < 32 && world.auto_sort >> container & 1 != 0 && !retail {
                         world.sort_due = (world.sort_due.0 | 1 << container, items::SORT_DELAY);
                     }
                     if id != 0 {
@@ -10271,6 +10286,7 @@ impl App {
         target::party_cursor_update(world);
         partymenu::update(world);
         status::update(world);
+        items::retail_auto_sort(world, dt);
         items::auto_sort_tick(world, dt);
         items::follow_held(world);
         equipwin::tick(world);

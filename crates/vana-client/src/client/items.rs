@@ -899,6 +899,44 @@ pub(super) fn auto_sort_tick(w: &mut World, dt: f32) {
     }
 }
 
+/// FUN_100eb8d0: the empty slots in 1..size.
+pub(super) fn free_slots(w: &World, c: u8) -> u32 {
+    let size = (w.inv.sizes[c as usize] as usize).saturating_sub(1);
+    let used = w.inv.slots_of(c).iter().filter(|x| x.index != 0 && (x.index as usize) <= size).count();
+    size.saturating_sub(used) as u32
+}
+
+/// LSB drops a 0x03A within 1 s of the last one and logs the player out at the 4th dropped (LIGHTLUGGAGE_BLOCK), so
+/// Auto-sort's sends wait out the second (ours: retail sends at once).
+const SORT_GAP: f32 = 1.0;
+
+/// FUN_1021c4c0 (each frame in the field, FUN_1015fa00): the inventory's free slots (FUN_100eb8d0) against the last
+/// count; with Auto-sort on (config 0x9a != 0: FUN_101978e0 sets the inventory record's +5) a fall (an item took a new
+/// slot) sorts the inventory (FUN_1021c7c0: the view by config 0xca, c2s 0x03A {0}, which merges the stacks) unless
+/// Manual Sort's split held it (+6); any change clears the hold. Other containers' records never get +5.
+pub(super) fn retail_auto_sort(w: &mut World, dt: f32) {
+    w.sort_wait = (w.sort_wait + dt).min(SORT_GAP * 2.0);
+    let Some(last) = w.inv_free else { return };
+    let now = free_slots(w, INVENTORY);
+    if now == last {
+        return;
+    }
+    if w.game.get(0x9a) != 0 {
+        if now < last && !w.sort_hold {
+            if w.sort_wait >= SORT_GAP {
+                log::info!("items: Auto-sort, {last} -> {now} free");
+                auto_sort(w);
+            } else {
+                let wait = SORT_GAP - w.sort_wait;
+                let due = if w.sort_due.0 == 0 { wait } else { w.sort_due.1.max(wait) };
+                w.sort_due = (w.sort_due.0 | 1 << INVENTORY, due);
+            }
+        }
+        w.sort_hold = false;
+    }
+    w.inv_free = Some(now);
+}
+
 /// Auto keeps the container sorted (ours), Manual stops it.
 fn keep_sorted(w: &mut World, c: u8, on: bool) {
     let v = if on { w.auto_sort | 1 << c } else { w.auto_sort & !(1 << c) };
@@ -934,6 +972,9 @@ pub(super) fn auto_sort_c(w: &mut World, c: u8) {
     let gil = w.inv.order.get(&c).is_some_and(|o| o.contains(&0));
     let order: Vec<u8> = gil.then_some(0).into_iter().chain(v.iter().map(|s| s.index)).collect();
     w.inv.order.insert(c, order);
+    if c == INVENTORY {
+        w.sort_wait = 0.0;
+    }
     let _ = w.net.commands.send(NetCommand::Packet { id: 0x03A, body: (c as u32).to_le_bytes().to_vec() });
 }
 
@@ -957,6 +998,10 @@ fn manual_move_c(w: &mut World, c: u8, from: u8, to: &Slot) {
     if to.index == from {
         if count > 1 && stack > 1 {
             mv(w, 1, from, 0x52);
+            // FUN_101f0b30 / FUN_101dbed0 (inventory only): the split's new slot doesn't trigger Auto-sort.
+            if c == INVENTORY {
+                w.sort_hold = true;
+            }
         }
         return;
     }
