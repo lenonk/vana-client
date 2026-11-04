@@ -872,6 +872,12 @@ impl Host for LiveHost<'_> {
                 self.st.input = Some(Input { kind, max, text: Vec::new(), caret: 0 });
                 self.w.typing = false;
             }
+            Effect::HideBuffs => {
+                self.w.buffs_hidden = true;
+                if self.w.log_focus == 2 {
+                    self.w.log_focus = 0;
+                }
+            }
             Effect::Camera { flag, offset } => {
                 self.st.camera_flag = flag;
                 self.w.cam_free = flag;
@@ -2308,6 +2314,8 @@ fn finish(w: &mut World, live: Box<Live>) {
     w.wind.restore();
     // FUN_100acf20: first person as it was before the event.
     w.camst.first = live.st.first_saved;
+    // FUN_100ae960 (0x100ae98b): the status icons back after op 0x46 sub 1 hid them.
+    w.buffs_hidden = false;
     // Op 0x77's weather without its 0x78: the lighting goes back with the event, so the effects do too.
     if live.st.weather.is_some() {
         let wt = w.weather;

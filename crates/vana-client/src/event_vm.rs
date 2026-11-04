@@ -62,6 +62,9 @@ pub enum Effect {
     /// FUN_10082be0 (flag = 0). Cutscenes run with 0 and set 1 before they end. Sub 3 seeds it at `offset` in the
     /// player's frame (x forward, y down) instead of FUN_10021680's (-4, -2, 0).
     Camera { flag: bool, offset: Option<[f32; 3]> },
+    /// 0x46 sub 1 also hides "menu    buff" (FUN_10221c30: not drawn, items disabled, no cursor); only the event end
+    /// (FUN_100ae960) shows it again, not sub 0.
+    HideBuffs,
     /// Op 0x71: open "menu    passinpu" (kind: title and allowed characters; max bytes, at most 16); answer with
     /// [`Runtime::input_done`].
     Input { kind: i32, max: usize },
@@ -1575,6 +1578,9 @@ impl Runtime {
                     Some(0) | Some(1) => {
                         self.camera = sub == Some(0);
                         host.effect(Effect::Camera { flag: self.camera, offset: None });
+                        if sub == Some(1) {
+                            host.effect(Effect::HideBuffs);
+                        }
                     }
                     // FUN_100b6440 sub 3: as sub 0 from (val@2, val@4, val@6) x 0.001, read the first time a run
                     // gets here (4 sites: "check your character's appearance", (4, -1.2, 0): in front).
@@ -3225,6 +3231,20 @@ mod tests {
             })
             .collect();
         assert_eq!(ops[..3], [(0xa8, Some(0), vec![230, 5]), (0xb9, Some(1), vec![230, 3, 5]), (0xa8, Some(2), vec![])]);
+    }
+
+    /// Op 0x46 sub 1 hides the status icons as well as freeing the camera flag; sub 0 doesn't show them again.
+    #[test]
+    fn camera_sub1_hides_buffs() {
+        let code = vec![0x46, 0x01, 0x46, 0x00, 0x21, 0x00];
+        let actor = 0x010e_601b;
+        let blocks = vec![event::Block { actor, events: vec![(1, 0)], consts: vec![], code }];
+        let mut host = Scripted::new(&[]);
+        let start = Start { zone: 230, event: 1, target: actor, ..Default::default() };
+        let mut rt = Runtime::start(blocks, None, start, Memory::default(), &mut host);
+        run_scripted(&mut rt, &mut host, 60).expect("finished");
+        let seen: Vec<String> = host.log.iter().filter(|e| matches!(e, Effect::Camera { .. } | Effect::HideBuffs)).map(|e| format!("{e:?}")).collect();
+        assert_eq!(seen[..3], ["Camera { flag: false, offset: None }", "HideBuffs", "Camera { flag: true, offset: None }"]);
     }
 
     /// The cutscene clock ops reach the host in order with their operands: 0xa9 day val@1, 0x98 (no wait headless),

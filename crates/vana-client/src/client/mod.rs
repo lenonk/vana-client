@@ -1479,7 +1479,7 @@ fn log_cycle(w: &mut World) {
     w.sounds.push(13);
     w.log_focus = (w.log_focus + 1) % 3;
     // The buff list takes the focus only with icons (FUN_10227bf0 gives it up at 0).
-    if w.log_focus == 2 && !w.buffs.iter().any(|&b| b != 0xffff && b != 0) {
+    if w.log_focus == 2 && (w.buffs_hidden || !w.buffs.iter().any(|&b| b != 0xffff && b != 0)) {
         w.log_focus = 0;
     }
     w.buff_cursor = 0;
@@ -6208,6 +6208,8 @@ struct World {
     /// logwindo is the active menu, and the full log (menu fulllog) when open.
     log_focus: u8,
     log_active: bool,
+    /// "menu    buff" hidden by event op 0x46 sub 1 until the event ends (FUN_10221c30 / FUN_10221c70).
+    buffs_hidden: bool,
     /// The windows that take the log's focus open last frame (main menu, item windows, action menu, confirm, config).
     log_takers: u8,
     full_log: Option<logwin::FullLog>,
@@ -8283,6 +8285,7 @@ impl App {
                             open_seen: 0,
                             recent_keys: Default::default(),
                             log_focus: 0,
+                            buffs_hidden: false,
                             log_active: false,
                             log_takers: 0,
                             full_log: None,
@@ -9056,6 +9059,9 @@ impl App {
                     world.party.refresh_self(char_id, index, &name, zone);
                     world.event = None;
                     world.event_pending = None;
+                    // A zone-in drops the event without its tail (FUN_100ae960), so undo op 0x46 sub 1 here too:
+                    // otherwise the status icons stay hidden for the whole next zone.
+                    world.buffs_hidden = false;
                     world.screen = Default::default();
                     world.self_lock = None;
                     world.rebuild_models = false;
