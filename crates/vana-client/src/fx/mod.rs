@@ -1039,6 +1039,8 @@ pub struct Effects {
     pub motion_sets: Vec<(u32, u8, u32)>,
     /// Op 0x89 (FUN_1005f450): actor1's head-look off (drawobj +0x840 bit 1) for these ticks (dur x speed, truncated).
     pub look_holds: Vec<(u32, f32)>,
+    /// Scheduler op 0xb4: (actor, the plate's lift in y, ticks) for client/mod.rs.
+    pub plate_lifts: Vec<(u32, f32, f32)>,
     /// Op 0xab: actor1's entity +0x130 bit 4 (its motion bases reset at each model creation).
     pub base_resets: Vec<(u32, bool)>,
     /// Op 0xac: actor1's death scheduler pick (dead / 1ead / 2ead / 3ead).
@@ -1188,6 +1190,7 @@ impl Effects {
             spawn_event: false,
             motion_sets: Vec::new(),
             look_holds: Vec::new(),
+            plate_lifts: Vec::new(),
             base_resets: Vec::new(),
             death_picks: Vec::new(),
             races: Vec::new(),

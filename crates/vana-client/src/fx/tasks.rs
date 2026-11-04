@@ -1541,6 +1541,14 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // 0x1005c81d -> 0x10062180 (batch 12 item 80): actor1's name plate lifted by f32 @8 (actor +0x8c0) for
+            // dur x speed ticks, then back to 0; no wait.
+            0xb4 => {
+                if let Some(id) = self.doll_of(t.a1).id() {
+                    self.plate_lifts.push((id, f32::from_bits(op.u32_at(8)), (op.dur as f32 * t.speed).trunc()));
+                }
+                Flow::Next
+            }
             // FUN_1005e770 / 740 / 760 / 750: actor1's battle / idle / run / walk names from set u32 @8.
             0x79 | 0x8c | 0xa4 | 0xa5 => {
                 if let Some(id) = self.doll_of(t.a1).id() {

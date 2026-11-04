@@ -1816,12 +1816,14 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
         let culled = (e.door != 0 || world.actors.get(id).is_some_and(|a| a.character.is_some())) && !world.visible.contains(id);
         !faded && !culled && (e.kind == EntityKind::Player || world.actors.get(id).is_some_and(|a| a.shown()) || world.target == Some(*id))
     };
-    // FUN_100d0510: /names off hides every name, /names otherpc other players' only.
+    // FUN_100d0510's gates: the chocobo / mount / rod / chair actors (+0xa4 1..4, 0x54) are not entities here, so
+    // they have no plate; models 0xb22..0xb31 (the luopans, FUN_10098320) have none either. Then /names: off hides
+    // every name, otherpc other players' only.
     let named = |id: &u32| match world.names_hidden {
         None => true,
         Some(others) => others && (*id >> 24 != 0 || *id == world.my_id),
     };
-    for (id, e) in world.entities.iter().filter(|(id, e)| !monstrosity::name(e).is_empty() && !e.name.starts_with('_') && !e.no_plate && visible(id, e) && !hidden.contains(id) && named(id) && invisible_alpha(world, **id).is_none_or(|k| k > 0.0)) {
+    for (id, e) in world.entities.iter().filter(|(id, e)| !monstrosity::name(e).is_empty() && !e.name.starts_with('_') && !e.no_plate && !(0xb22..=0xb31).contains(&e.model) && visible(id, e) && !hidden.contains(id) && named(id) && invisible_alpha(world, **id).is_none_or(|k| k > 0.0)) {
         if let Some((x, y, scale, z)) = plate_point(world, *id).and_then(project) {
             // FUN_100819d0: the target's plate alpha pulses, a * (sin(ticks * 16 deg) * 32 + 96) / 128.
             let pulse = if world.target == Some(*id) {
@@ -1891,9 +1893,11 @@ fn project(p: Vec3, sw: f32, sh: f32, view_proj: glam::Mat4) -> Option<(f32, f32
     Some((((ndc.x + 1.0) / 2.0 * sw).trunc(), ((1.0 - ndc.y) / 2.0 * sh).trunc()))
 }
 
-/// The name plate's anchor (+0x8a7).
+/// The name plate's anchor (+0x8a7), with scheduler op 0xb4's lift added to its y (FUN_100d04c0 at 0x100d04e3; y is
+/// down, so a negative lift raises the plate).
 fn plate_point(world: &World, id: u32) -> Option<Vec3> {
-    anchor_point(world, id, 1)
+    let lift = world.actors.get(&id).and_then(|a| a.plate_lift).map_or(0.0, |(lift, _)| lift);
+    anchor_point(world, id, 1).map(|p| p + Vec3::new(0.0, lift, 0.0))
 }
 
 /// FUN_100d23f0 for the arrow's (0) or the plate's (1) attach point. Point 2 (FUN_1002b5e0): the actor position plus
@@ -4768,6 +4772,8 @@ struct Actor {
     /// Scheduler op 0x89 (drawobj +0x840 bit 1): ticks left with no head-look, and the x / z it started at (taken on
     /// the first frame); it ends early on a move of more than 1 in x or z (FUN_1005f540).
     look_hold: Option<(f32, Option<(f32, f32)>)>,
+    /// Scheduler op 0xb4's plate lift (+0x8c0, added to the plate anchor's y) and the ticks it has left.
+    plate_lift: Option<(f32, f32)>,
     /// The attack scheduler used last (FUN_100d46f0 avoids repeating it).
     last_attack: String,
     /// Drawobj +0x840 bit 6 (FUN_100d6850, set at every swing): the swing now playing is the off-hand one, i.e. a
@@ -4923,6 +4929,7 @@ impl Actor {
             turn_pct: 0,
             look_pct: 0,
             look_hold: None,
+            plate_lift: None,
             last_attack: String::new(),
             off_hand: false,
             extra: Vec::new(),
@@ -10505,6 +10512,15 @@ impl App {
             let moved = at.is_some_and(|(x, z)| now.is_some_and(|p| (p.x - x).abs() > 1.0 || (p.z - z).abs() > 1.0));
             let left = left - dt * 60.0;
             a.look_hold = (!moved && left > 0.0).then_some((left, at));
+        }
+        // 0x100621e0: op 0xb4's task counts its ticks down and puts +0x8c0 back to 0 when it ends (0x10062140).
+        for a in world.actors.values_mut() {
+            a.plate_lift = a.plate_lift.map(|(lift, left)| (lift, left - dt * 60.0)).filter(|&(_, left)| left > 0.0);
+        }
+        for (id, lift, ticks) in std::mem::take(&mut world.effects.plate_lifts) {
+            if let Some(a) = world.actors.get_mut(&id) {
+                a.plate_lift = (ticks > 0.0).then_some((lift, ticks));
+            }
         }
         for (id, ticks) in std::mem::take(&mut world.effects.look_holds) {
             let at = hold_pos(world, id);
