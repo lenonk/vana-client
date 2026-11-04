@@ -40,7 +40,8 @@ pub struct EntityUpdate {
     /// Name-colour marks (mask 0x04), FUN_1008db40's inputs.
     pub marks: Option<Marks>,
     pub plate: Option<PlateExtra>,
-    /// 0x00D mask 0x04, u32 @0x20 bit 15: male (the emote lines' [his/her]).
+    /// 0x00D / 0x00E mask 0x04, u32 @0x20 bit 15: male (+0x124 bit 25; every actor kind, FUN_10099ae0 / FUN_1009b550):
+    /// the [a/b] picks and event values 0x7f0b / 0x7f8b.
     pub male: Option<bool>,
     /// u32 @0x24 bits 29 (named: no article) and 30 (plural verbs), read by the 0x00D/0x00E handlers.
     pub name_flags: Option<(bool, bool)>,
@@ -923,7 +924,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
             .flatten(),
         claim: (kind == EntityKind::Npc && flags & 0x02 != 0).then(|| p.u32(0x2C)),
         mob: (kind == EntityKind::Npc && flags & 7 != 0).then(|| p.u8(0x20) & 1 != 0),
-        male: (kind == EntityKind::Player && flags & 0x04 != 0).then(|| p.u32(0x20) >> 15 & 1 != 0),
+        male: (flags & 0x04 != 0 && p.data.len() >= 0x24).then(|| p.u32(0x20) >> 15 & 1 != 0),
         marks: (flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| {
             let pc = kind == EntityKind::Player;
             Marks {

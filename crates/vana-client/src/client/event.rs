@@ -1785,6 +1785,15 @@ impl Host for LiveHost<'_> {
         self.w.actors.get(&id).and_then(|a| a.character.as_ref()?.pc).map_or(0, |pc| pc.race)
     }
 
+    /// +0x124 bit 25: ours from the race (inf: retail copies 0x00A @0x20 bit 15), others from 0x00D / 0x00E.
+    fn male(&self, actor: u32) -> bool {
+        let id = self.wid(actor);
+        if id == self.w.my_id {
+            return !matches!(self.w.my_race, 2 | 4 | 6 | 7);
+        }
+        self.w.entities.get(&id).is_some_and(|e| !e.female)
+    }
+
     fn server_id(&self, actor: u32) -> u32 {
         self.wid(actor)
     }
@@ -3089,6 +3098,7 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
         return;
     }
     let speaker = if t.name.is_empty() { entity.clone().unwrap_or_default() } else { t.name.clone() };
+    let speaker_female = if t.actor == w.my_id { matches!(w.my_race, 2 | 4 | 6 | 7) } else { w.entities.get(&t.actor).filter(|e| e.index == t.index).is_some_and(|e| e.female) };
     // msg+0xc10: FUN_100ad5e0 / FUN_100ad660 get the speaker entity's name, else sName; 0x027 none.
     let msg_name = if t.packet == 0x027 { String::new() } else { entity.clone().unwrap_or_else(|| t.name.clone()) };
     // The "%s : " prefix (FUN_100abbb0; MesNum bit 15 none). 0x027: String1's, or with String2 / Flags 1 the NPC's
@@ -3109,6 +3119,9 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
         g,
         strings: t.strings.clone(),
         female: matches!(w.my_race, 2 | 4 | 6 | 7),
+        // 0x036 / 0x043 / 0x02A set both message actors to the speaker; one not here picks the first form (inf).
+        // 0x027's actors were not traced: the player's, as before.
+        actors: (t.packet != 0x027).then_some([speaker_female; 2]),
         names: w.names.clone().map(|n| n as Arc<dyn crate::dat::names::NameSource>),
         msg_name,
         slots,

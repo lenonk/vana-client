@@ -563,7 +563,8 @@ struct Entity {
     gate: u8,
     /// Entity +0x1d8: an "menu    ncol" index event op 0xae 1 forces the name colour to, 0x17 none (op 0xae 2).
     name_ncol: u16,
-    /// Name-colour marks (net::Marks) and SubKind 2..4 (doors, lifts, ships); a female PC (0x00D @0x20 bit 15 clear).
+    /// Name-colour marks (net::Marks) and SubKind 2..4 (doors, lifts, ships); female (+0x124 bit 25 clear: 0x00D / 0x00E
+    /// @0x20 bit 15).
     marks: net::Marks,
     female: bool,
     sub_kind: u8,
@@ -9203,7 +9204,8 @@ impl App {
                         gate: 0,
                         name_ncol: 0x17,
                         marks: net::Marks::default(),
-                        female: false,
+                        // FUN_1008a350: +0x124 = 0x880, bit 25 clear (female) until a mask-4 update.
+                        female: true,
                         sub_kind: 0,
                     });
                     if e.mask & 7 != 0 {

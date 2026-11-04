@@ -182,6 +182,11 @@ pub trait Host {
     fn server_id(&self, actor: u32) -> u32 {
         actor
     }
+    /// Values 0x7f0b / 0x7f8b and the `7f 90` / `7f 91` picks: an actor's gender bit (+0x124 bit 25, 1 male; 0 until
+    /// the server sends one, FUN_1008a350).
+    fn male(&self, _actor: u32) -> bool {
+        false
+    }
     /// A game config value by id (op 0xda reads 0x43, the aspect).
     fn game_config(&self, _id: u16) -> u32 {
         0
@@ -365,7 +370,7 @@ pub struct Runtime {
     submap_wait: bool,
     submap: u32,
     /// Race and server id per VM actor (values 0x7f07 / 0x7f0a), from the host each tick.
-    actor_info: std::collections::HashMap<u32, (u8, u32)>,
+    actor_info: std::collections::HashMap<u32, (u8, u32, bool)>,
     /// Op 0x5f subs 5 / 6: XiActorTimerTasks by (actor, motion 4cc), ticks left (FUN_10083780, counted down by
     /// FUN_10083850); sub 7 waits while one lives (FUN_100838c0).
     timers: std::collections::HashMap<(u32, u32), f32>,
@@ -702,7 +707,7 @@ impl Runtime {
             *t >= 0.0
         });
         for a in self.vms.iter().map(|v| v.actor).chain([PLAYER]).collect::<Vec<_>>() {
-            self.actor_info.insert(a, (host.race(a), host.server_id(a)));
+            self.actor_info.insert(a, (host.race(a), host.server_id(a), host.male(a)));
         }
         for v in 0..self.vms.len() {
             if !self.vms[v].paused {
@@ -832,6 +837,9 @@ impl Runtime {
             // FUN_100af4c0: the race byte (+0xef) and the server id (+0x78).
             0x7f07 => self.actor_info.get(&self.vms[v].actor).map_or(0, |i| i.0 as u32),
             0x7f0a => self.actor_info.get(&self.vms[v].actor).map_or(self.vms[v].actor, |i| i.1),
+            // FUN_100af4c0 (0x100af6b6 / 0x100af75f): the event owner's / player's gender bit, 1 male.
+            0x7f0b => self.actor_info.get(&self.vms[v].actor).map_or(0, |i| i.2 as u32),
+            0x7f8b => self.actor_info.get(&PLAYER).map_or(0, |i| i.2 as u32),
             0x7f87 => self.actor_info.get(&PLAYER).map_or(0, |i| i.0 as u32),
             0x7f80..0x7f84 => {
                 let p = self.player_body().map(|b| (b.pos, b.dir)).unwrap_or(([0.0; 3], 0.0));
@@ -1005,6 +1013,8 @@ impl Runtime {
             g: self.mem.g.map(|v| v as i32),
             strings: self.start.strings.clone(),
             female: host.female(),
+            // FUN_100c2e20's actors 1 / 2: the speaker (none: the player).
+            actors: speaker.map(|s| [!host.male(s); 2]),
             names: self.names.clone(),
             slots: self.mem.names,
             ..host.text_ctx()
@@ -2779,6 +2789,10 @@ impl Host for Scripted {
 
     fn race(&self, actor: u32) -> u8 {
         if actor == PLAYER { self.race } else { 0 }
+    }
+
+    fn male(&self, actor: u32) -> bool {
+        actor == PLAYER && matches!(self.race, 1 | 3 | 5 | 8)
     }
 
     fn map_ready(&self) -> bool {

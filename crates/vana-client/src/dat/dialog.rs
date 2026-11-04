@@ -215,6 +215,8 @@ pub struct Ctx {
     pub g: [i32; 32],
     pub strings: Vec<String>,
     pub female: bool,
+    /// Message actors 1 / 2 (+0xbfe / +0xc00, FUN_100c2e20) as female flags for `7f 90` / `7f 91`; None: the player.
+    pub actors: Option<[bool; 2]>,
     /// Message work[5] (msg+0xc50, DAT_10474618), read by the "work" grammar forms.
     pub work: [i32; 5],
     /// Item, key item and other names for 0x01 grammar blocks.
@@ -621,8 +623,14 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
                     prompt = true;
                     2
                 }
+                // FUN_100c1650: the player's (0x85), actor 1's (0x90) or actor 2's (0x91) gender bit; male the first.
                 0x85 | 0x90 | 0x91 => {
-                    let (t, n) = alt(i, ctx.female as usize);
+                    let female = match a as u8 {
+                        0x90 => ctx.actors.map_or(ctx.female, |x| x[0]),
+                        0x91 => ctx.actors.map_or(ctx.female, |x| x[1]),
+                        _ => ctx.female,
+                    };
+                    let (t, n) = alt(i, female as usize);
                     push(&mut lines, &t);
                     n
                 }
@@ -832,6 +840,16 @@ mod tests {
         assert_eq!(readable(s), "Care to learn?\n{choice}Sure!\nNo.{next}");
         let s = b"three \x01\x05\x25\x82\x80\x80\x80, \x7f\x85[sir/madam].";
         assert_eq!(readable(s), "three {item pl num0}, {player m/f}[sir/madam].");
+    }
+
+    /// `7f 85` reads the player's gender; `7f 90` / `7f 91` the message's actors 1 / 2 (male the first form).
+    #[test]
+    fn gender_picks() {
+        let s = b"\x7f\x85[sir/madam] \x7f\x90[he/she] \x7f\x91[his/her]";
+        let line = |female, actors| expand(s, &Ctx { female, actors, ..Default::default() }).lines.concat();
+        assert_eq!(line(true, Some([false, true])), b"madam he her");
+        assert_eq!(line(false, None), b"sir he his");
+        assert_eq!(line(true, None), b"madam she her");
     }
 
     #[test]
