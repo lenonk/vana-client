@@ -1466,6 +1466,12 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             if picked.is_empty() {
                 return Err(());
             }
+            // The invisible test lives in the per-target talk action FUN_1007bf30 (0x1007c028), so it only speaks for a
+            // name that matched: our +0x128 bit 6 prints 7031 0xac and sends nothing.
+            if w.my_plate.invisible {
+                system_line(w, 0xac);
+                return Ok(());
+            }
             for t in picked {
                 act(w, t, 0, 1);
             }
