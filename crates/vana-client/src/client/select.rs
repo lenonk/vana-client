@@ -681,15 +681,17 @@ impl SelectUi {
                     self.focus = Focus::Options(mode as u16 + 1);
                 }
             }
-            // ptc6yesn (FUN_1023d050): Left / Right 0001 every time; Up / Down and Escape do nothing (in the modern layer
-            // Escape is No, as every prompt there).
+            // ptc6yesn (FUN_1023d050): Left / Right 0001 every time; Up / Down do nothing. Escape (0x1023d14c..0x1023d16e)
+            // answers No (it re-dispatches as Enter on No) only while +0xa5e1 is set, which only the PlayOnline
+            // settings-file prompts (types 0xb / 0xc, FUN_10243f10) do; the log-in, delete, reset and rename prompts
+            // ignore it. In the modern layer Escape is No, as every prompt there.
             Focus::Prompt(p, yes) => match key {
                 ArrowLeft | ArrowRight => {
                     out.sounds.push(Se::Cursor);
                     self.focus = Focus::Prompt(p, !yes);
                 }
                 Enter => self.answer(gu, p, yes, list, out),
-                Escape if self.modern => self.answer(gu, p, false, list, out),
+                Escape if self.modern || matches!(p, Prompt::Settings { .. }) => self.answer(gu, p, false, list, out),
                 _ => {}
             },
             Focus::Ok(_, next) => {
