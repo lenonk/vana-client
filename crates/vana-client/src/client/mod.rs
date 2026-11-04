@@ -3187,13 +3187,17 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // FUN_1015fa00's group walk (GameUi::want; the gated windows say so themselves): suspended windows are not drawn,
     // their close plays, and their open when the bits are free again.
     let menu_off = world.action_menu.is_some() && !gu.want("menu    playermo");
-    let target_off = target.is_some() && event::keeps_target(world) && !gu.want("menu    targetwi");
+    let target_off = (world.target_event.is_some() || target.is_some() && event::keeps_target(world)) && !gu.want("menu    targetwi");
     let main_off = world.menu.is_some() && !gu.want(crate::render::screens::menu_window(world.menu_page));
     world.main_off = main_off;
+    world.target_suspended = target_off;
     let mut st = crate::render::screens::HudState {
         party_anim: world.party_gauges.iter().map(|g| (g.1 as f32 / 100.0, g.2 as f32 / 100.0)).collect(),
-        target_anim: tgt.map(|_| world.target_gauge.1 as f32 / 100.0),
-        target_glyph: world.target.and_then(|id| if id == world.my_id { plate::target_glyph(&self_plate(world)) } else { world.entities.get(&id).and_then(|e| plate::target_glyph(&entity_plate(id, e))) }),
+        target_anim: match &world.target_event {
+            Some((_, v)) => Some(*v as f32 / 100.0),
+            None => tgt.map(|_| world.target_gauge.1 as f32 / 100.0),
+        },
+        target_glyph: world.target.filter(|_| world.target_event.is_none()).and_then(|id| if id == world.my_id { plate::target_glyph(&self_plate(world)) } else { world.entities.get(&id).and_then(|e| plate::target_glyph(&entity_plate(id, e))) }),
         party: rows.iter().filter_map(|m| match m {
             None => mine,
             Some(m) => Some((m.hpp as f32 / 100.0, m.mpp as f32 / 100.0)),
@@ -3206,7 +3210,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             let id = if k == 0 { world.my_id } else { m.as_ref().map_or(0, |m| m.id) };
             (id != 0 && id == party_slots.leaders[0]) as u8 | ((id != 0 && id == party_slots.alliance_leader) as u8) << 1
         }).collect(),
-        target: target.filter(|_| event::keeps_target(world) && !target_off).map(|t| (!t.no_gauge).then_some(t.hpp as f32 / 100.0)),
+        // FUN_101501a0 with +0x65 set: only the event's gauge and name, whatever is targeted.
+        target: match &world.target_event {
+            Some((_, v)) => (!target_off).then_some(Some(*v as f32 / 100.0)),
+            None => target.filter(|_| event::keeps_target(world) && !target_off).map(|t| (!t.no_gauge).then_some(t.hpp as f32 / 100.0)),
+        },
         menu_selected: world.menu.filter(|_| !main_off && !world.modern).and_then(|k| items.get(k)).map(|(i, _)| *i),
         menu_page: world.menu_page,
         menu_off: menu_disabled(world),
@@ -3870,8 +3878,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         match t.what {
             "target name" => {
                 // FUN_101501a0: FUN_101c9fa0(W - 13, L + 5, T + 6, name, the name-plate colour, centred), split into
-                // lines only while the target has no gauge.
-                if let Some(e) = target {
+                // lines only while the target has no gauge. In the event mode: the event's name, centred, unsplit, in
+                // +0x68 (0x80808080).
+                if let Some((name, _)) = &world.target_event {
+                    let max = gu.window_rect("menu    targetwi", sw, sh).map_or(100.0, |r| r[2] - 13.0);
+                    gu.wrapped_name(name, max, t.x, t.y, 0x8080_8080, true, false);
+                } else if let Some(e) = target {
                     let rect = gu.window_rect("menu    targetwi", sw, sh);
                     let max = rect.map_or(100.0, |r| r[2] - 13.0);
                     let tid = world.target.unwrap_or(0);
@@ -5836,6 +5848,8 @@ struct World {
     /// HP), and the unstepped time.
     party_gauges: Vec<(u32, u8, u8)>,
     target_gauge: (u32, u8),
+    /// The target window's event mode (+0x65, event op 0xb4 2 / 3): its name and gauge percent.
+    target_event: Option<(String, u8)>,
     gauge_acc: f32,
     gauge_last: Option<Instant>,
     /// The macro files and runner (client/macros.rs), loaded at each zone-in.
@@ -6203,6 +6217,8 @@ struct World {
     region_menu: Option<region::Menu>,
     /// FUN_1015fa00's walk suspends the main menu (mcrmenu over its group): the modern command menu hides too.
     main_off: bool,
+    /// The target window is open but suspended by the window walk this frame (world_hud's `target_off`).
+    target_suspended: bool,
     cnq: Option<region::CnqMap>,
     region_cmd: Option<usize>,
     /// The own search comment (shared with /seacom) and its editor while open.
@@ -8331,6 +8347,7 @@ impl App {
                             confirm_text: String::new(),
                             confirm_click: None,
                             main_off: false,
+                            target_suspended: false,
                             cnq: None,
                             region_cmd: None,
                             logs: None,
@@ -8383,6 +8400,7 @@ impl App {
                             party: Default::default(),
                             party_gauges: Vec::new(),
                             target_gauge: (0, 0),
+                            target_event: None,
                             gauge_acc: 0.0,
                             gauge_last: None,
                             self_flags: 0,
@@ -9209,6 +9227,8 @@ impl App {
                     world.party.refresh_self(char_id, index, &name, zone);
                     world.event = None;
                     world.event_pending = None;
+                    // The event's target-window mode (op 0xb4 sub 2) goes with the event.
+                    world.target_event = None;
                     // A zone-in drops the event without its tail (FUN_100ae960), so undo op 0x46 sub 1 here too:
                     // otherwise the status icons stay hidden for the whole next zone.
                     world.buffs_hidden = false;

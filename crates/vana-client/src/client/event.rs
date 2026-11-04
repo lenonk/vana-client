@@ -1649,6 +1649,18 @@ impl Host for LiveHost<'_> {
                 Some(1) => self.st.auto_advance = false,
                 _ => {}
             },
+            // FUN_100b0a00 2 / 3 (batch 12 item 79): the target window's event mode (+0x65 = 1), only the name in
+            // white and the gauge, which takes val@4 only when it is 0..100; 3 closes the window.
+            Effect::Op { op: 0xb4, sub: Some(2), args, .. } => {
+                let name = match args.first() {
+                    Some(Arg::Name(n)) => n.clone(),
+                    _ => String::new(),
+                };
+                let old = self.w.target_event.as_ref().map_or(0, |t| t.1);
+                let value = Self::arg_int(&args, 1).filter(|v| (0..=100).contains(v)).map_or(old, |v| v as u8);
+                self.w.target_event = Some((name, value));
+            }
+            Effect::Op { op: 0xb4, sub: Some(3), .. } => self.w.target_event = None,
             Effect::Op { op: 0xb4, sub: Some(8), .. } => self.w.cast_bar = None,
             Effect::Op { op: 0xb4, sub: Some(0xb), .. } => self.w.event_timer = None,
             // FUN_100b0a00 0xf..0x12: the toteboard (colour val@2, seconds val@4) and the race card (colour val@2).

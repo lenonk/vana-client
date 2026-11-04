@@ -2018,6 +2018,14 @@ impl Runtime {
                         }
                         self.start.strings[slot] = text;
                     }
+                    // FUN_100b0a00 2 (0x100b0b94): the target window's event mode, the 16-byte string var@2 (byte 15
+                    // = 0) as its name and val@4 as its gauge.
+                    2 => {
+                        let b = self.str_at(v, 2);
+                        let name = crate::dat::font::decode_sjis(&b[..b.iter().position(|&c| c == 0).unwrap_or(15)]);
+                        let n = self.val(v, 4);
+                        host.effect(Effect::Op { op: opc, sub, actor, args: vec![Arg::Name(name), Arg::Int(n)] });
+                    }
                     9 | 0xc => {
                         let n = host.bar_left(s == 0xc);
                         self.set_at(v, 2, 0, n as u32);
@@ -3231,6 +3239,24 @@ mod tests {
             })
             .collect();
         assert_eq!(ops[..3], [(0xa8, Some(0), vec![230, 5]), (0xb9, Some(1), vec![230, 3, 5]), (0xa8, Some(2), vec![])]);
+    }
+
+    /// Op 0xb4 sub 2 hands the host the 16-byte string var@2 and val@4 (the target window's event mode); sub 3 closes.
+    #[test]
+    fn target_event_mode_b4() {
+        let mut code = vec![0xb4, 0x00, 0x10, 0x00];
+        code.extend_from_slice(b"Goblin Fort\0\0\0\0\0");
+        code.extend_from_slice(&[0xb4, 0x02, 0x10, 0x00, 0x00, 0x80, 0xb4, 0x03, 0x21, 0x00]);
+        let actor = 0x010e_601b;
+        let blocks = vec![event::Block { actor, events: vec![(1, 0)], consts: vec![42], code }];
+        let mut host = Scripted::new(&[]);
+        let start = Start { zone: 230, event: 1, target: actor, ..Default::default() };
+        let mut rt = Runtime::start(blocks, None, start, Memory::default(), &mut host);
+        run_scripted(&mut rt, &mut host, 60).expect("finished");
+        let seen: Vec<String> = host.log.iter().filter(|e| matches!(e, Effect::Op { op: 0xb4, .. })).map(|e| format!("{e:?}")).collect();
+        assert_eq!(seen.len(), 2, "{seen:?}");
+        assert!(seen[0].contains("sub: Some(2)") && seen[0].contains("Name(\"Goblin Fort\")") && seen[0].contains("Int(42)"), "{}", seen[0]);
+        assert!(seen[1].contains("sub: Some(3)"), "{}", seen[1]);
     }
 
     /// Op 0x46 sub 1 hides the status icons as well as freeing the camera flag; sub 0 doesn't show them again.

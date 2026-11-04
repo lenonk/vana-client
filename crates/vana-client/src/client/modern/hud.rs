@@ -845,6 +845,11 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
 }
 
 fn target_view(w: &World, gu: Option<&super::super::game_ui::GameUi>) -> Option<TargetView> {
+    // Event op 0xb4 sub 2: the event's name and gauge whatever is targeted, in +0x68 (white), as the retail HUD.
+    if let Some((name, v)) = &w.target_event {
+        let colour = gu.map(|_| super::chat::colour(0x8080_8080u32.to_le_bytes()));
+        return Some(TargetView { name: name.clone(), ring: "indicators/target_neutral", locked: false, hp: Some((*v, *v as f32 / 100.0)), colour, cast: None, distance: None });
+    }
     let id = w.target?;
     let me = (id == w.my_id).then(|| self_entity(w));
     let e = me.as_ref().or_else(|| w.entities.get(&id))?;
