@@ -229,11 +229,17 @@ fn zone_block(w: &mut World) -> Option<(Dialog, u32)> {
 
 // ---- Keeping it ----
 
+/// This character's file on this server.
+fn path(w: &World, name: &str) -> std::path::PathBuf {
+    let (ip, port) = w.search_addr;
+    crate::config::regime_path(&format!("{ip}-{port}"), name)
+}
+
 fn save(w: &World) {
     if w.regime.who.is_empty() {
         return;
     }
-    let path = crate::config::regime_path(&w.regime.who);
+    let path = path(w, &w.regime.who);
     let r = std::fs::create_dir_all(path.parent().unwrap_or(&path)).map_err(anyhow::Error::from).and_then(|_| Ok(std::fs::write(&path, serde_json::to_vec_pretty(&w.regime.state)?)?));
     if let Err(e) = r {
         log::warn!("regime: {}: {e:#}", path.display());
@@ -253,10 +259,21 @@ pub fn on_zone(w: &mut World) {
         return;
     }
     w.regime.who = w.name.clone();
-    let path = crate::config::regime_path(&w.name);
-    w.regime.state = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice::<Option<Regime>>(&b).ok()).flatten();
-    if let Some(r) = &w.regime.state {
-        log::info!("regime: kept for {}: {r:?}", w.name);
+    // The server's file; with none yet, the newest by-name file of an earlier build that reads (a kept `null` is a
+    // cancel, not a failure).
+    let read = |p: &std::path::PathBuf| std::fs::read(p).ok().and_then(|b| serde_json::from_slice::<Option<Regime>>(&b).ok());
+    let own = path(w, &w.name);
+    let kept = match read(&own) {
+        Some(r) => Some((r, own)),
+        None => {
+            let mut old: Vec<_> = crate::config::regime_legacy_paths(&w.name).into_iter().filter_map(|p| Some((std::fs::metadata(&p).and_then(|m| m.modified()).ok()?, p))).collect();
+            old.sort_by(|a, b| b.0.cmp(&a.0));
+            old.into_iter().find_map(|(_, p)| Some((read(&p)?, p)))
+        }
+    };
+    w.regime.state = kept.as_ref().and_then(|(r, _)| r.clone());
+    if let Some((Some(r), p)) = &kept {
+        log::info!("regime: kept for {} ({}): {r:?}", w.name, p.display());
     }
 }
 
