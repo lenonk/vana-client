@@ -535,8 +535,7 @@ pub(super) fn status_gate(w: &mut World, mask: u8) -> bool {
     }
 }
 
-/// FUN_101cc0d0(mask, 1): the check alone, no line. The costume bit (0x40, entity +0x120 bit 5, line 0xb1) is not
-/// tracked.
+/// FUN_101cc0d0(mask, 1): the check alone, no line. Order 0x10, 0x20, 0x01, 0x02, 0x04, 0x40, 0x08, 0x80.
 pub(super) fn gate_line(w: &World, mask: u8) -> Option<usize> {
     let s = w.my_motion.status;
     let line = if mask & 0x10 != 0 && matches!(s, 0x21 | 7) {
@@ -549,6 +548,9 @@ pub(super) fn gate_line(w: &World, mask: u8) -> Option<usize> {
         0x4d
     } else if mask & 0x04 != 0 && s == 0x2c {
         0x4e
+    } else if mask & 0x40 != 0 && w.costume.on {
+        // FUN_101cc040: in costume (player +0x120 bit 5).
+        0xb1
     } else if mask & 0x08 != 0 && w.room_flag {
         0x44
     } else if mask & 0x80 != 0 && w.myroom.is_some_and(|r| r.map == 0x2d4) {

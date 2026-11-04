@@ -3,6 +3,7 @@
 pub mod ground;
 pub mod combat;
 mod actmotion;
+mod costume;
 mod chaticons;
 mod record;
 mod chair;
@@ -6009,6 +6010,8 @@ struct World {
     journal: journal::Store,
     /// Our adventuring fellow's ActIndex (0x037 u16 @0x48, player +0x29c).
     my_fellow: u16,
+    /// Our costume (0x037 @0x44) and whether it is on (+0x120 bit 5).
+    costume: costume::Costume,
     /// The Search row's windows (searchma and its criteria), and scname's name (kept between opens, +0x18).
     searchmenu: Option<searchmenu::SearchMenu>,
     search_name: String,
@@ -8084,6 +8087,7 @@ impl App {
                             ls_msg: Default::default(),
                             ls_msg_seq: 0,
                             my_fellow: 0,
+                            costume: Default::default(),
                             search_name: String::new(),
                             search_cond: Default::default(),
                             search_status0: 0,
@@ -9034,6 +9038,8 @@ impl App {
                         (a.alpha, a.rgb, a.fade, a.event_scale) = (actmotion::OPAQUE, [actmotion::OPAQUE; 3], None, None);
                     }
                     world.my_init_done = false;
+                    // FUN_1008a350 / a new actor table: no costume until 0x037 sends it again.
+                    world.costume = Default::default();
                     world.effects.reset_equip(char_id);
                     (world.zoning_since, world.zone_touch) = (None, None);
                     world.pos = Vec3::from(pos);
@@ -9690,7 +9696,7 @@ impl App {
                 }
                 NetEvent::KeyItems { .. } => {}
                 NetEvent::Music { slot, id } => world.music.set_slot(slot, id),
-                NetEvent::SelfStatus { speed, status, hpp, dead, pet, flags, icons, team, fellow, plate, ride, indi, fish_timer, gate } => {
+                NetEvent::SelfStatus { speed, status, hpp, dead, pet, flags, icons, team, fellow, plate, ride, indi, fish_timer, gate, costume } => {
                     world.my_gate = gate;
                     // LSB sends Death (3) for a character leaving by a zone line (its isDead() counts status Disappear)
                     // with HP left: not a death, the status stays (ours, inferred).
@@ -9706,6 +9712,7 @@ impl App {
                     indi::apply(world, me, indi);
                     world.my_plate = plate;
                     world.my_fellow = fellow;
+                    world.costume.set_id(costume);
                     world.self_flags = flags;
                     world.buffs = icons;
                     world.my_team = team;
@@ -9999,6 +10006,9 @@ impl App {
         if !event::active(world) {
             ko_step(world);
         }
+        // FUN_10095e90 for us, once a frame; bound = +0x120 bit 7, our character among the running event's actors.
+        let bound = world.event.as_ref().is_some_and(|l| l.st.bound.contains(&world.my_id));
+        world.costume.step(world.my_motion.status, bound);
         gmtell::step(world);
         event::update(world, dt);
         event::rebuild_models(world);

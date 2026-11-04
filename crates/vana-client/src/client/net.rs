@@ -480,7 +480,7 @@ pub enum NetEvent {
     /// `team`: the PvP team byte (+0x1ff, u32 @0x34 >> 21; LSB allegiance).
     /// `ride`: ChocoboIndex u32 @0x28 bits 13..15 and the mount id u8 @0x5B.
     /// `speed`: flags1 (u32 @0x2C) Speed bits 0..11 and SpeedBase bits 17..24 (FUN_1009d0f0 -> actor +0x15c / +0x9c).
-    SelfStatus { speed: (u8, u8), status: u8, hpp: u8, dead: (u32, u32), pet: u16, flags: u32, icons: [u16; 32], team: u8, fellow: u16, plate: SelfPlate, ride: (u8, u8), indi: u8, fish_timer: u16, gate: u8 },
+    SelfStatus { speed: (u8, u8), status: u8, hpp: u8, dead: (u32, u32), pet: u16, flags: u32, icons: [u16; 32], team: u8, fellow: u16, plate: SelfPlate, ride: (u8, u8), indi: u8, fish_timer: u16, gate: u8, costume: u16 },
     /// s2c 0x115: the hooked fish.
     Fish(super::fishing::FishParams),
     /// s2c 0x076: party members' status icons (UniqueNo, 32 icons), five rows (ourselves not included).
@@ -1147,7 +1147,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                             if lo == 0xff && hi == 0 { 0xffff } else { hi << 8 | lo }
                         });
                         let speed = ((p.u32(0x2C) & 0xfff).min(255) as u8, (p.u32(0x2C) >> 17) as u8);
-                        tx.send(NetEvent::SelfStatus { speed, status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16, flags: p.u32(0x28), icons, team: (p.u32(0x34) >> 21) as u8, fellow: p.u16(0x48), plate: self_plate(&p), ride: ((p.u32(0x28) >> 13 & 7) as u8, if p.data.len() > 0x5b { p.u8(0x5b) } else { 0 }), indi: if p.data.len() > 0x58 { p.u8(0x58) & 0x7f } else { 0x10 }, fish_timer: if p.data.len() > 0x4b { p.u16(0x4a) } else { 0 }, gate: if p.data.len() > 0x5a { p.u8(0x5a) >> 4 } else { 0 } })?;
+                        tx.send(NetEvent::SelfStatus { speed, status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16, flags: p.u32(0x28), icons, team: (p.u32(0x34) >> 21) as u8, fellow: p.u16(0x48), plate: self_plate(&p), ride: ((p.u32(0x28) >> 13 & 7) as u8, if p.data.len() > 0x5b { p.u8(0x5b) } else { 0 }), indi: if p.data.len() > 0x58 { p.u8(0x58) & 0x7f } else { 0x10 }, fish_timer: if p.data.len() > 0x4b { p.u16(0x4a) } else { 0 }, gate: if p.data.len() > 0x5a { p.u8(0x5a) >> 4 } else { 0 }, costume: if p.data.len() > 0x45 { p.u16(0x44) } else { 0 } })?;
                     }
                     // FUN_10098f90: 5 x {u32 UniqueNo, u16 ActIndex, pad, u64 bits, u8 icons[32]}; icon = (hi << 8 | lo) &
                     // 0x3ff, none when lo 0xff with hi 0.

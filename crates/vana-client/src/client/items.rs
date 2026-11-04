@@ -1238,8 +1238,8 @@ pub fn open_bin(w: &mut World, from_menu: bool) -> bool {
     true
 }
 
-/// FUN_101daf70(c, need_satchel, nomad): Satchel, Sack, Case, the wardrobes. Gate 0x44 (the costume bit and the job
-/// change cooldown are not tracked); a missing Satchel (ItemNum < 30) fails silently. At the moogle in our own Mog
+/// FUN_101daf70(c, need_satchel, nomad): Satchel, Sack, Case, the wardrobes. Gate 0x44 (the job
+/// change cooldown is not tracked); a missing Satchel (ItemNum < 30) fails silently. At the moogle in our own Mog
 /// House of a residential zone (with the moogle's line 0x2e), or by a nomad moogle in a MogZoneFlag zone; else the
 /// Safe / Storage / Locker rows stay grey. Opens anywhere.
 pub fn open_daf70(w: &mut World, c: u8, need_satchel: bool, nomad: bool) -> bool {
