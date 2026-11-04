@@ -1,9 +1,11 @@
 //! Video capture (client.record, ours): the frames as drawn, copied into a ring of readback buffers, mapped without
 //! waiting and piped raw into ffmpeg, which encodes them. A frame due with no buffer free sends the last one again,
-//! so the video keeps time; the game never waits on the GPU or the encoder.
+//! and a frame drawn late fills every interval it covers, so the video keeps time; frames go out in the order they
+//! were drawn whatever order their buffers map in. The game never waits on the GPU or the encoder.
 
 use crate::render::Gpu;
 use std::io::Write;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -18,9 +20,23 @@ const FAILED: u8 = 3;
 struct Slot {
     buf: wgpu::Buffer,
     state: Arc<AtomicU8>,
-    /// Copied this frame: map it after the submit; the frame's number, so frames mapped together go out in order.
+    /// Copied this frame: map it after the submit; the frame's number (the order it goes out in), and how many
+    /// intervals it fills.
     copied: bool,
     seq: u64,
+    times: u32,
+}
+
+/// What a frame number sends: its pixels, or the last frame again (no buffer was free, or the map failed); each
+/// `times` times.
+enum Out {
+    Frame(Arc<Vec<u8>>, u32),
+    Again(u32),
+}
+
+/// At most a second of intervals filled by one late frame (a long stall drops the rest instead of a burst).
+fn due(late: Duration, every: Duration, fps: u32) -> u32 {
+    ((late.as_secs_f64() / every.as_secs_f64()) as u32 + 1).min(fps.max(1))
 }
 
 pub struct Recorder {
@@ -32,8 +48,14 @@ pub struct Recorder {
     every: Duration,
     next: Instant,
     ring: Vec<Slot>,
-    tx: Option<SyncSender<Arc<Vec<u8>>>>,
+    /// Frames for the encoder thread, each with how many intervals it fills (that thread writes it that many times, so
+    /// a late frame is one item in the bounded queue, not a burst).
+    tx: Option<SyncSender<(Arc<Vec<u8>>, u32)>>,
     last: Option<Arc<Vec<u8>>>,
+    fps: u32,
+    /// Frame numbers done but not yet sent (an earlier one is still mapping), and the next number to send.
+    ready: BTreeMap<u64, Out>,
+    next_seq: u64,
     /// Frames sent to the encoder (repeats included), and frames copied.
     pub frames: u64,
     copies: u64,
@@ -56,11 +78,13 @@ impl Recorder {
             .spawn()
             .map_err(|e| anyhow::anyhow!("ffmpeg: {e}"))?;
         let mut stdin = child.stdin.take().ok_or_else(|| anyhow::anyhow!("ffmpeg: no stdin"))?;
-        let (tx, rx) = sync_channel::<Arc<Vec<u8>>>(16);
+        let (tx, rx) = sync_channel::<(Arc<Vec<u8>>, u32)>(16);
         std::thread::Builder::new().name("record".into()).spawn(move || {
-            for f in rx {
-                if stdin.write_all(&f).is_err() {
-                    break;
+            'out: for (f, times) in rx {
+                for _ in 0..times {
+                    if stdin.write_all(&f).is_err() {
+                        break 'out;
+                    }
                 }
             }
             drop(stdin);
@@ -73,19 +97,25 @@ impl Recorder {
                 state: Arc::new(AtomicU8::new(FREE)),
                 copied: false,
                 seq: 0,
+                times: 1,
             })
             .collect();
-        let every = Duration::from_secs_f64(1.0 / fps.clamp(1, 120) as f64);
-        Ok(Self { path, owner, size, row, every, next: Instant::now(), ring, tx: Some(tx), last: None, frames: 0, copies: 0 })
+        let fps = fps.clamp(1, 120);
+        let every = Duration::from_secs_f64(1.0 / fps as f64);
+        Ok(Self { path, owner, size, row, every, next: Instant::now(), ring, tx: Some(tx), last: None, fps, ready: BTreeMap::new(), next_seq: 1, frames: 0, copies: 0 })
     }
 
-    /// Before the submit: a frame due goes into a free buffer, else the last one is sent again.
+    /// Before the submit: a frame due goes into a free buffer, else the last one is sent again; either fills every
+    /// interval since the last frame (rendering slower than the recording's rate).
     pub fn copy(&mut self, encoder: &mut wgpu::CommandEncoder, frame: &wgpu::Texture) {
         let now = Instant::now();
         if now < self.next {
             return;
         }
-        self.next = (self.next + self.every).max(now - self.every);
+        let times = due(now - self.next, self.every, self.fps);
+        self.next = (self.next + self.every * times).max(now - self.every);
+        self.copies += 1;
+        let seq = self.copies;
         match self.ring.iter_mut().find(|s| s.state.load(Ordering::Acquire) == FREE) {
             Some(s) => {
                 encoder.copy_texture_to_buffer(
@@ -95,22 +125,21 @@ impl Recorder {
                 );
                 s.state.store(PENDING, Ordering::Release);
                 s.copied = true;
-                self.copies += 1;
-                s.seq = self.copies;
+                s.seq = seq;
+                s.times = times;
             }
             None => {
-                if let Some(l) = self.last.clone() {
-                    self.send(l);
-                }
+                self.ready.insert(seq, Out::Again(times));
             }
         }
     }
 
-    fn send(&mut self, f: Arc<Vec<u8>>) {
-        if let Some(tx) = &self.tx
-            && tx.try_send(f).is_ok()
+    fn send(&mut self, f: Arc<Vec<u8>>, times: u32) {
+        if times > 0
+            && let Some(tx) = &self.tx
+            && tx.try_send((f, times)).is_ok()
         {
-            self.frames += 1;
+            self.frames += times as u64;
         }
     }
 
@@ -124,8 +153,14 @@ impl Recorder {
             s.buf.slice(..).map_async(wgpu::MapMode::Read, move |r| state.store(if r.is_ok() { MAPPED } else { FAILED }, Ordering::Release));
         }
         let _ = gpu.device.poll(wgpu::PollType::Poll);
+        self.collect();
+        // In drawing order: a later frame waits for an earlier one still mapping.
+        self.drain();
+    }
+
+    /// The buffers whose map finished: their pixels (or, when it failed, the last frame again) wait in `ready`.
+    fn collect(&mut self) {
         let (w, h, row) = (self.size[0] as usize * 4, self.size[1] as usize, self.row as usize);
-        let mut out: Vec<(u64, Arc<Vec<u8>>)> = Vec::new();
         for s in &self.ring {
             match s.state.load(Ordering::Acquire) {
                 MAPPED => {
@@ -134,25 +169,72 @@ impl Recorder {
                         for y in 0..h {
                             px.extend_from_slice(&d[y * row..y * row + w]);
                         }
-                        out.push((s.seq, Arc::new(px)));
+                        self.ready.insert(s.seq, Out::Frame(Arc::new(px), s.times));
+                    } else {
+                        self.ready.insert(s.seq, Out::Again(s.times));
                     }
                     s.buf.unmap();
                     s.state.store(FREE, Ordering::Release);
                 }
-                FAILED => s.state.store(FREE, Ordering::Release),
+                FAILED => {
+                    self.ready.insert(s.seq, Out::Again(s.times));
+                    s.state.store(FREE, Ordering::Release);
+                }
                 _ => {}
             }
         }
-        out.sort_by_key(|f| f.0);
-        for (_, f) in out {
-            self.last = Some(f.clone());
-            self.send(f);
+    }
+
+    /// Sends the frames done from the next number on, stopping at the first one not done yet.
+    fn drain(&mut self) {
+        while let Some(o) = self.ready.remove(&self.next_seq) {
+            self.next_seq += 1;
+            let (f, times) = match o {
+                Out::Frame(f, n) => {
+                    self.last = Some(f.clone());
+                    (f, n)
+                }
+                Out::Again(n) => match self.last.clone() {
+                    Some(l) => (l, n),
+                    None => continue,
+                },
+            };
+            self.send(f, times);
         }
     }
 
     /// Ends the input; ffmpeg finishes the file on its thread.
     pub fn stop(mut self) {
+        // The frames already mapped go out; a copy still mapping keeps its time with the last frame.
+        self.collect();
+        let pending: Vec<(u64, u32)> = self.ring.iter().filter(|s| s.copied || s.state.load(Ordering::Acquire) == PENDING).map(|s| (s.seq, s.times)).collect();
+        for (seq, times) in pending {
+            self.ready.entry(seq).or_insert(Out::Again(times));
+        }
+        if let Some(&last) = self.ready.keys().next_back() {
+            for seq in self.next_seq..=last {
+                self.ready.entry(seq).or_insert(Out::Again(0));
+            }
+        }
+        self.drain();
         self.tx = None;
         log::info!("record: {} frames to {}", self.frames, self.path.display());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::due;
+    use std::time::Duration;
+
+    #[test]
+    fn late_frames_fill_their_intervals() {
+        let every = Duration::from_secs_f64(1.0 / 30.0);
+        // On time: one interval.
+        assert_eq!(due(Duration::ZERO, every, 30), 1);
+        // Rendering at 15 fps into a 30 fps recording: each frame covers two intervals.
+        assert_eq!(due(every, every, 30), 2);
+        // A long stall fills at most a second.
+        assert_eq!(due(Duration::from_secs(5), every, 30), 30);
     }
 }
