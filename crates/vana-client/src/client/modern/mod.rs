@@ -761,6 +761,11 @@ impl Default for Show<'_> {
     }
 }
 
+/// Where `r` stands moved onto `screen` (as egui keeps an area on screen; one larger than the screen keeps its top left).
+fn on_screen(r: Rect, screen: Rect) -> Pos2 {
+    pos2(r.min.x.min(screen.max.x - r.width()).max(screen.min.x), r.min.y.min(screen.max.y - r.height()).max(screen.min.y))
+}
+
 impl<'a> Panels<'a> {
     fn look(&self) -> Look<'a> {
         Look { m: self.m, ctx: self.ctx, gu: self.gu }
@@ -916,12 +921,20 @@ impl<'a> Panels<'a> {
         if o.at.is_none() && o.height.is_none() && !BOTTOM.contains(&id) && h > 0.0 {
             pos.y = pos.y.min(screen.max.y - h).max(screen.min.y);
         }
+        // A panel placed by its exact height is kept on screen here, by that height: egui keeps an area on screen by its
+        // size last frame, and shrinking against the screen's bottom (the chat window at its default place) that
+        // lifted it by the height just lost, a pixel or a few more or less every frame, so its bottom edge shook.
+        let exact = o.at.is_none() && o.height.is_some();
+        if exact {
+            let w = if o.resizable { room.x } else { m.rects.borrow().get(id).map_or(o.size.x, |r| r.width()) };
+            pos = on_screen(Rect::from_min_size(pos, vec2(w, h)), screen);
+        }
         let margin = if o.resizable { ROOM_MARGIN } else { MARGIN };
         let (title, frame, alpha, fold) = (o.title, o.frame, o.alpha, o.fold.clamp(0.0, 1.0));
         // The panel with the keys in the focused frame.
         let frame = if frame == "window_normal" && self.focus == Some(id) { "window_focused" } else { frame };
         // A panel at a fixed point may stand partly off screen (the Timers slid in).
-        let shown = egui::Area::new(Id::unique(("modern panel", id))).order(Order::Middle).current_pos(pos).movable(o.at.is_none()).constrain(o.at.is_none()).show(ctx, |ui| {
+        let shown = egui::Area::new(Id::unique(("modern panel", id))).order(Order::Middle).current_pos(pos).movable(o.at.is_none()).constrain(o.at.is_none() && !exact).show(ctx, |ui| {
             // An area offers its contents only last frame's size: room to the screen's bottom, or a page grown taller
             // (a scroll area in it) stays clipped at its first height.
             // Not for the panels placed by their exact height (the chat window folding, the party window).
@@ -964,7 +977,11 @@ impl<'a> Panels<'a> {
         if COLUMN.contains(&id) {
             ctx.move_to_top(shown.response.layer_id);
         }
-        let r = shown.response.rect;
+        let mut r = shown.response.rect;
+        if exact {
+            // Dragged past the screen's edge, it is saved where it will show.
+            r = Rect::from_min_size(on_screen(Rect::from_min_size(r.min, vec2(r.width(), h)), screen), r.size());
+        }
         let showing = Rect::from_min_max(pos2(r.min.x, r.max.y - r.height() * fold), r.max);
         // Placement trace (debug), only when a panel moves.
         thread_local!(static SEEN: std::cell::RefCell<HashMap<String, Pos2>> = Default::default());
