@@ -1024,8 +1024,8 @@ pub fn spawn(login: MapLogin, account: String, codec: Codec) -> NetHandle {
 }
 
 enum Outcome {
-    /// Moved to another zone server; the key advances by two per zone.
-    Zone(SocketAddr),
+    /// Moved to another zone server, with the key that read this one; it advances by two per zone.
+    Zone(SocketAddr, [u8; 20]),
     Done,
 }
 
@@ -1036,7 +1036,8 @@ fn run(mut login: MapLogin, account: &str, codec: &Codec, tx: &Sender<NetEvent>,
     loop {
         sess += 1;
         match session(addr, &login, account, codec, tx, rx, me, stats, hooks, sess)? {
-            Outcome::Zone(next) => {
+            Outcome::Zone(next, key) => {
+                (login.key, login.old_key) = (key, None);
                 let counter = u32::from_le_bytes(login.key[16..20].try_into().unwrap()).wrapping_add(2);
                 login.key[16..20].copy_from_slice(&counter.to_le_bytes());
                 addr = next;
@@ -1050,7 +1051,7 @@ fn run(mut login: MapLogin, account: &str, codec: &Codec, tx: &Sender<NetEvent>,
 #[allow(clippy::too_many_arguments)]
 fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx: &Sender<NetEvent>, rx: &Receiver<NetCommand>, me: &Mutex<SelfState>, stats: &NetStats, hooks: &AtomicU8, sess: u32) -> Result<Outcome> {
     use std::sync::atomic::Ordering::Relaxed;
-    let mut map = MapSession::connect(addr, &login.key, codec.clone())?;
+    let mut map = MapSession::connect(addr, &login.key, codec.clone())?.or_key(login.old_key);
     let (mut rx_seen, mut tx_seen) = (0u64, 0u64);
     // FFXiMain sends the plain login every 400 ms until the zone-in (s2c 0x00A) is handled, not just any datagram.
     let mut tries = 1u32;
@@ -1131,7 +1132,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                                 port => port,
                             };
                             log::info!("map: zone change (0x00B state {state}) to {ip}:{port}");
-                            return Ok(Outcome::Zone(SocketAddr::new(ip, port)));
+                            return Ok(Outcome::Zone(SocketAddr::new(ip, port), map.key20()));
                         }
                         tx.send(NetEvent::Logout { state: state as u32 })?;
                         return Ok(Outcome::Done);

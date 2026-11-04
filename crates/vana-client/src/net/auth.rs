@@ -1,5 +1,6 @@
 //! xi_connect's auth service (TCP 54231, TLS 1.3, one JSON request and reply per connection).
-//! Speaks the protocol of xiloader 2.2.x, which the server checks for.
+//! Speaks the protocol of xiloader 2.2.x, which the server checks for; a server that names another version is asked
+//! again as that one.
 
 use super::tls;
 use anyhow::{Context, Result, bail};
@@ -81,8 +82,40 @@ fn read_reply(stream: &mut impl Read) -> Result<Value> {
     }
 }
 
-pub fn send(host: &str, port: u16, command: Command, req: &Request) -> Result<Reply> {
+/// The loader version a refusal asks for: the first `major.minor.patch` in it (patch may be `x`, sent as 0) that isn't ours.
+fn asked_version(msg: &str) -> Option<[u8; 3]> {
+    let b = msg.as_bytes();
+    let num = |at: &mut usize| -> Option<u8> {
+        let start = *at;
+        while *at < b.len() && b[*at].is_ascii_digit() {
+            *at += 1;
+        }
+        msg[start..*at].parse().ok()
+    };
+    (0..b.len()).filter(|&i| b[i].is_ascii_digit() && (i == 0 || !b[i - 1].is_ascii_digit() && b[i - 1] != b'.')).find_map(|i| {
+        let mut at = i;
+        let major = num(&mut at)?;
+        (b.get(at) == Some(&b'.')).then_some(())?;
+        at += 1;
+        let minor = num(&mut at)?;
+        (b.get(at) == Some(&b'.')).then_some(())?;
+        at += 1;
+        let patch = if matches!(b.get(at), Some(b'x' | b'X')) { 0 } else { num(&mut at)? };
+        ([major, minor] != LOADER_VERSION[..2]).then_some([major, minor, patch])
+    })
+}
+
+fn exchange(host: &str, port: u16, body: &Value) -> Result<Value> {
     let mut stream = tls::connect(host, port).with_context(|| format!("connecting to {host}:{port}"))?;
+    stream.write_all(body.to_string().as_bytes())?;
+    stream.flush()?;
+    let reply = read_reply(&mut stream)?;
+    stream.conn.send_close_notify();
+    let _ = stream.flush();
+    Ok(reply)
+}
+
+pub fn send(host: &str, port: u16, command: Command, req: &Request) -> Result<Reply> {
     let mut body = json!({
         "command": command as u8,
         "username": req.username,
@@ -95,13 +128,13 @@ pub fn send(host: &str, port: u16, command: Command, req: &Request) -> Result<Re
         body["trust_token"] = json!(req.trust_token);
         body["trust_this_computer"] = json!(req.trust_this_computer);
     }
-    stream.write_all(body.to_string().as_bytes())?;
-    stream.flush()?;
-
-    let reply = read_reply(&mut stream)?;
-    stream.conn.send_close_notify();
-    let _ = stream.flush();
-
+    let mut reply = exchange(host, port, &body)?;
+    // A server built for another loader names the version it checks for; the requests are the same, so ask as that.
+    if let Some(v) = reply["error_message"].as_str().and_then(asked_version) {
+        log::info!("login: {host} asks for loader {}.{}.x; asking again as {}.{}.{}", v[0], v[1], v[0], v[1], v[2]);
+        body["version"] = json!(v);
+        reply = exchange(host, port, &body)?;
+    }
     if let Some(msg) = reply["error_message"].as_str() {
         bail!("{msg}");
     }
@@ -142,6 +175,16 @@ mod reply_tests {
             self.1 -= n;
             Ok(n)
         }
+    }
+
+    /// LSB's refusal and one server's own wording both give the version to ask as; ours alone gives none.
+    #[test]
+    fn asked_version_from_refusals() {
+        let lsb = "Unsupported xiloader version 2.2.0.\nThis server requires version 2.0.x.";
+        let other = "Your xiloader is too old.\nPlease update to version '2.0.x'.\nYour client reported '2.2.0'.";
+        assert_eq!((asked_version(lsb), asked_version(other)), (Some([2, 0, 0]), Some([2, 0, 0])));
+        assert_eq!(asked_version("needs 1.12.3 here"), Some([1, 12, 3]));
+        assert_eq!((asked_version("Your client reported '2.2.0'."), asked_version("version 10.0")), (None, None));
     }
 
     #[test]
