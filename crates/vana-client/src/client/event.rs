@@ -396,6 +396,33 @@ pub struct Pose {
     pub turning: bool,
     /// The direction last seen (+0xe4), for the step motions of a turn.
     dir: f32,
+    /// Not retail: the place, rotation and tilt drawn when the last VM step came, drawn toward the current ones over
+    /// the tick after it (`drawn`).
+    from: (Vec3, f32, [f32; 2]),
+    /// Ticks drawn since the last VM step, counting the frame that ran it.
+    since: f32,
+}
+
+impl Pose {
+    fn new(pos: Vec3, yaw: f32, tilt: [f32; 2]) -> Pose {
+        Pose { pos, yaw, tilt, ratio: 0.0, turning: false, dir: yaw, from: (pos, yaw, tilt), since: 1.0 }
+    }
+
+    /// Not retail (it draws a whole number of ticks a frame): `t` (0..1) of the way from `from` to the stepped pose.
+    /// The bodies move in 60 Hz VM steps; drawn as they are at a faster frame rate they stood still for some frames
+    /// and jumped on the next, against a camera path sampled every frame, and the actors shook. Each step is drawn
+    /// across the tick that follows it, starting from where the body was drawn, so it never goes back; a frame of a
+    /// tick or more (60 fps and below) draws the stepped pose as before.
+    fn drawn(&self, t: f32) -> Pose {
+        let (pos, yaw, tilt) = self.from;
+        let t = t.clamp(0.0, 1.0);
+        Pose {
+            pos: pos.lerp(self.pos, t),
+            yaw: yaw + angle_to(yaw, self.yaw) * t,
+            tilt: [tilt[0] + angle_to(tilt[0], self.tilt[0]) * t, tilt[1] + angle_to(tilt[1], self.tilt[1]) * t],
+            ..*self
+        }
+    }
 }
 
 /// The event input window: kind 1 / 2 digits, 3..5 letters, others printable ASCII; at most `max` bytes.
@@ -1971,7 +1998,7 @@ fn begin(w: &mut World, mut wt: Box<Waiting>, index: &DatIndex) {
     let me = w.my_id;
     for (a, b) in rt.actors() {
         let id = if a == PLAYER { me } else { a };
-        st.poses.insert(id, Pose { pos: Vec3::from(b.pos), yaw: b.dir, tilt: b.tilt, ratio: 0.0, turning: false, dir: b.dir });
+        st.poses.insert(id, Pose::new(Vec3::from(b.pos), b.dir, b.tilt));
     }
     // FUN_100ad000 (load finished): DAT_104760f8 = 1, DAT_10473068 = DAT_10475cb0.
     st.loaded = true;
@@ -2063,6 +2090,9 @@ pub fn update(w: &mut World, dt: f32) {
     if ran > 0 {
         sync(&mut live, w, ran as f32, ran as f32 / 60.0);
     }
+    for p in live.st.poses.values_mut() {
+        p.since += ticks;
+    }
     if !live.rt.done() && live.rt.idle() && live.st.msg.is_none() && live.st.choice.is_none() {
         // Every thread ended without 0x21: the server ends these (0x052); then the client cancels.
         let since = *live.st.idle_since.get_or_insert_with(Instant::now);
@@ -2112,15 +2142,22 @@ fn sync(live: &mut Live, w: &mut World, ticks: f32, dt: f32) {
         let id = if a == PLAYER { me } else { a };
         let p = Vec3::from(b.pos);
         let snap = live.st.snap.remove(&id);
-        let pose = live.st.poses.entry(id).or_insert(Pose { pos: p, yaw: b.dir, tilt: b.tilt, ratio: 0.0, turning: false, dir: b.dir });
+        let pose = live.st.poses.entry(id).or_insert(Pose::new(p, b.dir, b.tilt));
         let step = p - pose.pos;
+        let flat = Vec3::new(step.x, 0.0, step.z).length();
+        // A step is drawn across the next tick from where the body is drawn now; a placement's place and tilt at
+        // once (its rotation still eases below, so it eases from the drawn one).
+        let placed = snap || flat > 2.0 * ticks;
+        let now = pose.drawn(pose.since);
+        pose.from = if placed { (p, now.yaw, b.tilt) } else { (now.pos, now.yaw, now.tilt) };
+        pose.since = 0.0;
         pose.pos = p;
         pose.tilt = b.tilt;
-        let flat = Vec3::new(step.x, 0.0, step.z).length();
         let moving = flat >= 0.01 * ticks.max(1e-3);
         let want = if moving { (-step.z).atan2(step.x) } else { b.dir };
         if snap {
             pose.yaw = b.dir;
+            pose.from.1 = b.dir;
         } else {
             let rate = w.actors.get(&id).map_or(0.125, |a| super::turn_rate(a, true));
             pose.yaw += angle_to(pose.yaw, want) * (1.0 - (1.0 - rate).powf(ticks));
@@ -2128,7 +2165,7 @@ fn sync(live: &mut Live, w: &mut World, ticks: f32, dt: f32) {
         pose.turning = angle_to(pose.yaw, b.dir).abs() > TURN_GAP;
         // A placement (snap, or a jump of over 2 a tick) is not walking *(inf)*: it set the ratio near its cap and the
         // body sprinted in place for a few ticks.
-        let walked = if snap || flat > 2.0 * ticks { 0.0 } else { flat };
+        let walked = if placed { 0.0 } else { flat };
         pose.ratio = crate::motion::move_ratio_ref(pose.ratio, walked, dt, 0.8 * b.anim_speed);
         // FFXI_TRACE_MOVE=1: event bodies' speed and walk / run ratio (test runs).
         if flat > 1e-4 && std::env::var_os("FFXI_TRACE_MOVE").is_some() {
@@ -2361,7 +2398,7 @@ pub fn position_ack(w: &mut World, mode: u8) {
 
 /// Where the running event draws us (the VM bodies are a draw override; our own position stays).
 pub fn own_pose(w: &World) -> Option<Vec3> {
-    w.event.as_ref()?.st.poses.get(&w.my_id).map(|p| p.pos)
+    pose(w, w.my_id).map(|p| p.pos)
 }
 
 pub fn active(w: &World) -> bool {
@@ -2435,9 +2472,9 @@ pub fn bound(w: &World, id: u32) -> bool {
     w.event.as_ref().is_some_and(|l| l.st.bound.contains(&id))
 }
 
-/// A bound actor's drawn transform while the event runs.
+/// A bound actor's drawn transform while the event runs: on its way to its last VM step, over the tick after it.
 pub fn pose(w: &World, id: u32) -> Option<Pose> {
-    w.event.as_ref()?.st.poses.get(&id).copied()
+    w.event.as_ref()?.st.poses.get(&id).map(|p| p.drawn(p.since))
 }
 
 /// A bound actor's event status (+0x174, op 0xac sub 1); 0 when none was set.
@@ -3140,6 +3177,21 @@ mod tests {
         assert_eq!(a9(13).moon_weekday(), Some((1, 91 & 7)));
         assert_eq!(HeldClock { day: Some(35), minute: 1000, moon: true }.moon_weekday(), Some((5, 3)));
         assert_eq!(HeldClock { day: None, minute: 18 * 60, moon: false }.moon_weekday(), None);
+    }
+
+    /// A body's step is drawn across the tick after it: between the two places by the part of a tick drawn since, the
+    /// rotation the short way round; a fresh pose is drawn where it is.
+    #[test]
+    fn pose_drawn_between_steps() {
+        let mut p = Pose::new(Vec3::ZERO, 3.0, [0.0; 2]);
+        assert_eq!(p.drawn(0.7).pos, Vec3::ZERO);
+        p.from = (Vec3::ZERO, 3.0, [0.0; 2]);
+        (p.pos, p.yaw) = (Vec3::new(0.1, 0.0, -0.05), -3.0);
+        let d = p.drawn(0.5);
+        assert!((d.pos - Vec3::new(0.05, 0.0, -0.025)).length() < 1e-6);
+        assert!(angle_to(d.yaw, std::f32::consts::PI).abs() < 1e-4, "{}", d.yaw);
+        assert_eq!(p.drawn(0.0).pos, Vec3::ZERO);
+        assert_eq!(p.drawn(1.0).pos, p.pos);
     }
     /// A Unity leader's line as s2c 0x017 kind 0x21 carried it (Attr 8, no name).
     #[test]
