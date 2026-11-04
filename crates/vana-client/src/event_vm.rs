@@ -137,6 +137,16 @@ pub trait Host {
     fn area_pick(&mut self) -> Option<i32> {
         Some(-1)
     }
+    /// Op 0xb3 1 / 5 (FUN_100a34d0 / FUN_100a34e0): None while the Fishing Ranking request has no result (5: or no
+    /// command); else its result (i8), the entry count (i16), and our entry's contest rank, main job (0 unless the
+    /// ranking's value is 1..4, 6 or 7), dataset_b, share, score and submit time. A headless run fails at once.
+    fn ranking(&self, _full: bool) -> Option<[i32; 8]> {
+        Some([-1, 0, 0, 0, 0, 0, 0, 0])
+    }
+    /// Op 0xb3 9: the ranking window ("menu    ranking") is open.
+    fn ranking_open(&self) -> bool {
+        false
+    }
     /// Start position (x, height, z) and direction of a bound actor.
     fn place(&self, _actor: u32) -> ([f32; 3], f32) {
         ([0.0; 3], 0.0)
@@ -2096,6 +2106,34 @@ impl Runtime {
                 self.mem.names[k as usize] = (self.str_at(v, 3), self.val(v, 5) as u32);
                 self.adv(v, len);
             }
+            // FUN_100bbaf0 (Fishing Ranking): 0 / 3 / 4 / 6 / 7 start request 1 / 10 / 11 / 12 / 13 with val@2, 2 opens
+            // the window, 8 closes it (effects); 1 / 5 wait for the result then set@2.. its values; 9 set@2 = the
+            // window is open. Every sub ends the frame.
+            0xb3 => {
+                match sub {
+                    Some(s @ (1 | 5)) => {
+                        if let Some(r) = host.ranking(s == 5) {
+                            let n = if s == 5 { 8 } else { 6 };
+                            for (k, &x) in r.iter().take(n).enumerate() {
+                                self.set_at(v, 2 + 2 * k, 0, x as u32);
+                            }
+                            self.adv(v, len);
+                        }
+                    }
+                    Some(9) => {
+                        let open = host.ranking_open();
+                        self.set_at(v, 2, 0, open as u32);
+                        self.adv(v, len);
+                    }
+                    Some(0 | 2 | 3 | 4 | 6 | 7 | 8) => {
+                        let a = self.args(v, op, sub);
+                        host.effect(Effect::Op { op: opc, sub, actor, args: a });
+                        self.adv(v, len);
+                    }
+                    _ => self.adv(v, len),
+                }
+                self.yield_(v);
+            }
             // FUN_100b9d90 0x11: wait while arealist picks, then set@2 = the pick (FUN_100af310(2, +0x6e)).
             0xcc if sub == Some(0x11) => match host.area_pick() {
                 Some(z) => {
@@ -2202,7 +2240,7 @@ impl Runtime {
                     }
                     self.adv(v, len);
                     // Retail ends the frame after these (+0x25a = 1 in every sub).
-                    if matches!(opc, 0xb6 | 0xb5 | 0xc1 | 0x7e | 0x71 | 0xa7 | 0xb3) {
+                    if matches!(opc, 0xb6 | 0xb5 | 0xc1 | 0x7e | 0x71 | 0xa7) {
                         self.yield_(v);
                     }
                 }
@@ -2625,6 +2663,9 @@ pub struct Scripted {
     pub inputs: std::collections::VecDeque<Vec<u8>>,
     /// The map is not ready (op 0xd4 sub 0 waits).
     pub map_busy: bool,
+    /// Op 0xb3's request values (None: no result yet) and window.
+    pub ranking: Option<[i32; 8]>,
+    pub ranking_open: bool,
     /// The game clock op 0x83 reads (Earth seconds since the Vana'diel epoch).
     pub time: u32,
     running: Vec<(Busy, u32)>,
@@ -2681,6 +2722,8 @@ impl Scripted {
             race: 0,
             inputs: Default::default(),
             map_busy: false,
+            ranking: Some([-1, 0, 0, 0, 0, 0, 0, 0]),
+            ranking_open: false,
             time: 0,
             running: Vec::new(),
             seed: 1,
@@ -2690,6 +2733,12 @@ impl Scripted {
 }
 
 impl Host for Scripted {
+    fn ranking(&self, _full: bool) -> Option<[i32; 8]> {
+        self.ranking
+    }
+
+    fn ranking_open(&self) -> bool {
+        self.ranking_open
     fn game_time(&self) -> u32 {
         self.time
     }
@@ -3058,6 +3107,35 @@ mod tests {
     }
 
     /// Op 0x71 over hand-made code: an "Enter number:" input read with atoi, then a name stored as words.
+    /// Op 0xb3 (FUN_100bbaf0) over hand-made code: sub 0 starts the request (an effect), sub 1 waits for the result
+    /// then sets six values, sub 9 reads the window; here L1 (the entry count) comes back as the end option.
+    #[test]
+    fn fishing_ranking_b3() {
+        let code = vec![
+            0xb3, 0x00, 0x10, 0x00, // request 1 with L16
+            0xb3, 0x01, 0x00, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04, 0x00, 0x05, 0x00, // L0..L5 = result..share
+            0xb3, 0x09, 0x06, 0x00, // L6 = window open
+            0x03, 0x01, 0x10, 0x01, 0x00, // Z1 (the end option) = L1
+            0x21, 0x00,
+        ];
+        let actor = 0x010e_601b;
+        let blocks = || vec![event::Block { actor, events: vec![(1, 0)], consts: vec![], code: code.clone() }];
+        let start = || Start { zone: 248, event: 1, target: actor, ..Default::default() };
+        let mut host = Scripted::new(&[]);
+        host.ranking = Some([1, 7, 2, 3, 0, 0, 0, 0]);
+        let mut rt = Runtime::start(blocks(), None, start(), Memory::default(), &mut host);
+        run_scripted(&mut rt, &mut host, 60).expect("finished");
+        assert_eq!(end(&host.log), Some(7));
+        assert!(host.log.iter().any(|e| matches!(e, Effect::Op { op: 0xb3, sub: Some(0), args, .. } if args[..] == [Arg::Int(0)])), "{:?}", host.log);
+
+        // No result yet: sub 1 stays.
+        let mut host = Scripted::new(&[]);
+        host.ranking = None;
+        let mut rt = Runtime::start(blocks(), None, start(), Memory::default(), &mut host);
+        assert!(run_scripted(&mut rt, &mut host, 60).is_none());
+        assert_eq!(end(&host.log), None);
+    }
+
     /// Ops 0xa8 / 0xb9 (FUN_100b9780 / FUN_100b9820): fixed lengths 6 / 8, but byte 1 selects the form, so the
     /// host gets the sub and its operands; sub 2 and up do nothing in retail.
     #[test]

@@ -84,6 +84,7 @@ mod moogle;
 mod post;
 mod synth;
 mod treasure;
+mod ranking;
 mod servmes;
 mod chatctrl;
 mod linklist;
@@ -325,7 +326,7 @@ fn macro_gate(w: &World) -> bool {
 /// The open windows but the action menu (playermo), which stays up while engaged: macros run while it is the only one
 /// (FUN_101a33e0 lets the focus be playermo, mp_pmode or a palette).
 fn window_over_actions(w: &World) -> bool {
-    w.swkbd.is_some() || w.lua.focused() || w.voice.focused() || w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some() || w.blklist.is_some() || w.auction.is_some() || w.remodel.is_some() || w.moncustom.is_some() || gmtell::open(w) || w.friendui.is_some() || polmail::focused(w)
+    w.swkbd.is_some() || w.lua.focused() || w.voice.focused() || w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || ranking::is_open(w) || w.region_menu.is_some() || w.cnq.is_some() || w.blklist.is_some() || w.auction.is_some() || w.remodel.is_some() || w.moncustom.is_some() || gmtell::open(w) || w.friendui.is_some() || polmail::focused(w)
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -2141,6 +2142,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // The event's area picker (op 0xcc 0x10) and the concierge's list take the keys before the event.
                 _ if world.arealist.is_some() && arealist::picking(world) => arealist::key(world, gu, *key),
                 _ if world.concierge_ui.is_some() => concierge::key(world, gu, *key),
+                // The Fishing Ranking's list (op 0xb3 2) while the event loops on op 0xb3 9.
+                _ if ranking::is_open(world) => ranking::key(world, *key),
                 // The event's tabula preview (op 0x71 0x20) takes the keys; its Enter goes on to the event's message.
                 _ if world.maze.screen.is_some() && event::active(world) && world.confirm.is_none() => _ = maze::key(world, *key),
                 // The chat line opens during an event too: FUN_101ab630 (Space) and FUN_101aa930 ('/') test the field
@@ -3664,6 +3667,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.extend(linkshell::draw(gu, world, sw, sh));
     }
     blockers.extend(concierge::draw(gu, world, sw, sh));
+    blockers.extend(ranking::draw(gu, world, sw, sh));
     blockers.extend(linklist::draw(gu, world, sw, sh));
     blockers.extend(blklist::draw(gu, world, sw, sh));
     blockers.extend(friendlist::draw(gu, world, sw, sh));
@@ -6382,6 +6386,8 @@ struct World {
     /// name for its header.
     servmes: Option<servmes::Transfer>,
     servmes_armed: bool,
+    /// The Fishing Ranking's request, transfer and window (op 0xb3).
+    ranking: ranking::State,
     world_name: String,
     /// The zone's ambient loop chosen this frame (Effects::ambient).
     ambient: Option<u32>,
@@ -8293,6 +8299,7 @@ impl App {
                             ambient: None,
                             servmes: None,
                             servmes_armed: true,
+                            ranking: Default::default(),
                             world_name,
                             res_rdy: ResRdy::default(),
                             spell_recast: HashMap::new(),
@@ -8842,6 +8849,7 @@ impl App {
                     world.keyitems = None;
                     world.searchmenu = None;
                     world.arealist = None;
+                    ranking::close(world);
                     world.seacom_edit = None;
                     world.linkshell = None;
                     // FUN_10093720: the zone load clears the concierge's slots and the GM prompts (FUN_100a3cd0).
@@ -9545,6 +9553,8 @@ impl App {
                 NetEvent::MagicScheduler { ids, indices, file, kind } => combat::on_magic_scheduler(world, ids, indices, file, kind),
                 NetEvent::Status(s) => log::info!("net: {s}"),
                 NetEvent::SystemMessage { id, para, para2 } => combat::on_system_message(world, id, [para as i32, para2 as i32]),
+                // One transfer at a time (DAT_10487f08): the ranking's while it runs.
+                NetEvent::Fragments(p) if ranking::busy(world) => ranking::on_fragment(world, &p),
                 NetEvent::Fragments(p) => servmes::on_fragment(world, &p),
                 NetEvent::ShopOpen { count } => shop::on_open(world, count),
                 NetEvent::ShopList { last, entries } => shop::on_list(world, last, &entries),
@@ -13063,6 +13073,7 @@ impl App {
             synth::update(w);
             resttick::update(w);
             servmes::frame(w);
+            ranking::frame(w);
             // A server's certificate pin that could not be saved: told once a run.
             if let Some(n) = crate::net::tls::take_notice() {
                 w.chat.push_colour(n, lua::ERROR);

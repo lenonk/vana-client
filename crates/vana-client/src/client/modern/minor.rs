@@ -2,9 +2,9 @@
 //! names and blkmain's Delete) and the chat mode window (chatctrl.rs, its seven rows with the tell name, the shells
 //! and the Unity, the cursor row's range under them), the comment editor (seacom.rs) and the Linkshell Concierge
 //! (concierge.rs), Mog House Remodel (remodel.rs), the Adventuring Primer's lists (primer.rs) and layout mode's
-//! windows (layout.rs), pupequip (equipwin.rs) and the fishing gauge (fishing.rs).
+//! windows (layout.rs), pupequip (equipwin.rs), the fishing gauge (fishing.rs) and the Fishing Ranking (ranking.rs).
 
-use super::super::{World, blklist, chatctrl, concierge, equipwin, fishing, layout, primer, remodel, seacom};
+use super::super::{World, blklist, chatctrl, concierge, equipwin, fishing, layout, primer, ranking, remodel, seacom};
 use super::craft::{button, caption};
 use super::{MenuWin, Panels, Title, social};
 use crate::audio::Ui as Se;
@@ -22,6 +22,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     chat_mode(p, w);
     comment(p, w);
     concierge_list(p, w);
+    fishing_ranking(p, w);
     remodel_list(p, w);
     primer_lists(p, w);
     layout_windows(p, w);
@@ -365,6 +366,75 @@ fn concierge_list(p: &mut Panels, w: &mut World) {
     }
     if click.is_some() {
         concierge::key(w, gu, egui::Key::Enter);
+    }
+}
+
+/// The Fishing Ranking (ranking.rs): every row with the type's text cells (the rank, name, score and the date or
+/// "[a-b-c]"; the job cell and the fishing rank's icon as text), the cursor's kept in view; a click moves the cursor.
+/// Escape closes it as in retail.
+fn fishing_ranking(p: &mut Panels, w: &mut World) {
+    const LIST_W: f32 = 460.0;
+    let Some((kind, cursor, rows)) = ranking::look(w) else { return };
+    let (_, cells) = ranking::layout(kind);
+    let lines: Vec<(u8, String, String, String)> = rows
+        .iter()
+        .map(|r| {
+            let score = cells.iter().flatten().find(|c| matches!(c, ranking::Cell::Score(_))).and_then(|&c| ranking::text(w, c, r)).unwrap_or_default();
+            let extra = cells
+                .iter()
+                .flatten()
+                .filter_map(|&c| match c {
+                    ranking::Cell::Job => {
+                        let j = |k: u8| super::super::items::JOBS.get(k as usize).copied().unwrap_or("");
+                        Some(format!("{}{}/{}{}  R{}", j(r.job.0), r.level.0, j(r.job.1), r.level.1, r.fish_rank))
+                    }
+                    ranking::Cell::Icon => Some(format!("R{}", r.fish_rank)),
+                    ranking::Cell::Triple | ranking::Cell::VanaDate | ranking::Cell::EarthDate { .. } => ranking::text(w, c, r),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("  ");
+            (r.rank, r.name.clone(), score, extra)
+        })
+        .collect();
+    let m = p.m;
+    let focused = w.confirm.is_none();
+    let mut click = None;
+    p.panel("window", Some(Title { icon: None, text: "Fishing Ranking", note: None }), LIST_W + 44.0, |ui| {
+        let seen = egui::Id::unique("ranking cursor seen");
+        let follow = ui.ctx().data(|d| d.get_temp::<usize>(seen)) != Some(cursor);
+        ui.ctx().data_mut(|d| d.insert_temp(seen, cursor));
+        egui::ScrollArea::vertical().id_salt("ranking rows").max_height(TALL).auto_shrink([false, true]).show(ui, |ui| {
+            for (k, (rank, name, score, extra)) in lines.iter().enumerate() {
+                let (rect, resp) = ui.allocate_exact_size(vec2(LIST_W - 14.0, ROW), if focused { Sense::click() } else { Sense::hover() });
+                let face = match () {
+                    _ if k == cursor && focused => "controls/list_row_selected",
+                    _ if k == cursor || focused && resp.hovered() => "controls/list_row_hover",
+                    _ => "controls/list_row_normal",
+                };
+                super::rows::face(ui.painter(), m, rect, face, Color32::WHITE);
+                let y = rect.center().y;
+                let small = FontId::proportional(m.theme.small);
+                let mono = FontId::monospace(m.theme.small);
+                let rc = if *rank > 10 { m.theme.color("muted") } else { m.theme.color("gold") };
+                ui.painter().text(pos2(rect.min.x + 36.0, y), Align2::RIGHT_CENTER, rank.to_string(), mono.clone(), rc);
+                let clip = egui::Rect::from_min_max(rect.min, pos2(rect.min.x + 190.0, rect.max.y));
+                ui.painter().with_clip_rect(clip).text(pos2(rect.min.x + 48.0, y), Align2::LEFT_CENTER, name, small.clone(), m.theme.color("text"));
+                ui.painter().text(pos2(rect.min.x + 196.0, y), Align2::LEFT_CENTER, extra, small.clone(), m.theme.color("muted"));
+                ui.painter().text(pos2(rect.max.x - 14.0, y), Align2::RIGHT_CENTER, score, mono, m.theme.color("text"));
+                if k == cursor && follow {
+                    ui.scroll_to_rect(rect, None);
+                }
+                if focused && resp.clicked() {
+                    click = Some(k);
+                }
+                ui.add_space(2.0);
+            }
+        });
+    });
+    if let Some(k) = click.filter(|&k| k != cursor) {
+        ranking::set_cursor(w, k);
+        w.sounds.push(Se::Cursor as u32);
     }
 }
 

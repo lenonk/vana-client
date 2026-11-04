@@ -433,6 +433,7 @@ fn focus_panel(w: &World) -> Option<&'static str> {
         _ if w.ko_offer == 2 && w.dead() => "raise",
         _ if w.ko_open && w.ko_offer != 2 => "ko",
         _ if w.concierge_ui.is_some() => "window",
+        _ if super::ranking::is_open(w) => "window",
         _ if w.maze.screen.is_some() => "window",
         _ if event::choice(w).is_some() => "choice",
         _ if w.gmtell.open.is_some() => "gm prompt",

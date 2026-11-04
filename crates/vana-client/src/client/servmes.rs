@@ -54,9 +54,9 @@ fn ask(w: &World, cmd: u8, t: &Transfer, offset: i32) {
     let _ = w.net.commands.send(NetCommand::Packet { id: 0x04B, body: b });
 }
 
-/// FUN_100a3040 (/servmes): starts a transfer unless one is running.
+/// FUN_100a3040 (/servmes): starts a transfer unless one is running (the Fishing Ranking's too).
 pub(super) fn start(w: &mut World) {
-    if w.servmes.is_some() {
+    if w.servmes.is_some() || super::ranking::busy(w) {
         return;
     }
     let mut t = Transfer::new();

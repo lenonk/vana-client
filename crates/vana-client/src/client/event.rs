@@ -1361,6 +1361,20 @@ impl Host for LiveHost<'_> {
             }
             Effect::Op { op: 0x71, sub: Some(0x21), .. } => super::maze::close(self.w),
             // FUN_100b7e10 0x40: the concierge's list (link5 mode 1, link6 title val@2).
+            // FUN_100bbaf0: 0 / 3 / 4 / 6 / 7 start the Fishing Ranking's request 1 / 10 / 11 / 12 / 13 with the value;
+            // 2 opens its window, 8 closes it.
+            Effect::Op { op: 0xb3, sub: Some(s @ (0 | 3 | 4 | 6 | 7)), args, .. } => {
+                let cmd = match s {
+                    0 => 1,
+                    3 => 10,
+                    4 => 11,
+                    6 => 12,
+                    _ => 13,
+                };
+                super::ranking::start(self.w, cmd, Self::arg_int(&args, 0).unwrap_or(0) as u8);
+            }
+            Effect::Op { op: 0xb3, sub: Some(2), .. } => super::ranking::open(self.w),
+            Effect::Op { op: 0xb3, sub: Some(8), .. } => super::ranking::close(self.w),
             Effect::Op { op: 0x71, sub: Some(0x40), args, .. } => {
                 let title = Self::arg_int(&args, 0).unwrap_or(0) as u8;
                 super::concierge::open(self.w, title);
@@ -1624,6 +1638,14 @@ impl Host for LiveHost<'_> {
 
     fn area_pick(&mut self) -> Option<i32> {
         (!super::arealist::picking(self.w)).then_some(self.w.area_pick)
+    }
+
+    fn ranking(&self, full: bool) -> Option<[i32; 8]> {
+        super::ranking::values(self.w, full)
+    }
+
+    fn ranking_open(&self) -> bool {
+        super::ranking::is_open(self.w)
     }
 
     fn game_config(&self, id: u16) -> u32 {
