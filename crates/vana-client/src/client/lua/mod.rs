@@ -267,6 +267,8 @@ pub struct Host {
     gu: Option<*const super::game_ui::GameUi>,
     /// The lobby mods are loaded; the screen they last saw (for `lobby_screen`); what the lobby shows.
     lobby_started: bool,
+    /// Watched world mods saved before login: reloaded (or loaded) once there is a world.
+    watch_deferred: Vec<String>,
     lobby_screen: Option<&'static str>,
     lobby: lobby::Shared,
     /// A recording asked for (taken by the app), and the file being recorded, as the app sets it.
@@ -705,10 +707,35 @@ impl Host {
         Ok(id)
     }
 
-    /// Saved files of watched mods: each reloaded (or loaded, when it failed before).
+    /// Saved files of watched mods: each reloaded (or loaded, when it failed before). Before login (`w` None) only
+    /// the lobby mods, by the manifest as saved: a world mod loaded there would run its load without a world, and
+    /// `start` would then skip it as already loaded. A world mod saved then waits for the world (one that was a lobby
+    /// mod and no longer is unloads now); a mod `start` loads from its saved files anyway is not loaded twice.
     fn watch_upkeep(&mut self, w: Option<&World>, out: &mut Vec<(String, [u8; 4])>) {
-        let ids: Vec<String> = self.watch.as_ref().map(|wa| wa.rx.try_iter().collect()).unwrap_or_default();
+        let mut ids: Vec<String> = self.watch.as_ref().map(|wa| wa.rx.try_iter().collect()).unwrap_or_default();
+        if w.is_some() && !self.watch_deferred.is_empty() {
+            let loaded = |h: &Self, id: &str| h.vms.iter().any(|v| v.manifest.id.eq_ignore_ascii_case(id));
+            let deferred: Vec<String> = std::mem::take(&mut self.watch_deferred).into_iter().filter(|id| !loaded(self, id)).collect();
+            ids.splice(0..0, deferred);
+        }
         for id in ids {
+            if w.is_none() {
+                let at = self.vms.iter().position(|v| v.manifest.id.eq_ignore_ascii_case(&id));
+                let lobby = match manifest::read(&mods_dir().join(&id)) {
+                    Ok(m) => m.lobby,
+                    Err(_) => at.is_some_and(|k| self.vms[k].manifest.lobby),
+                };
+                if !lobby {
+                    if let Some(k) = at {
+                        self.unload(None, k);
+                        out.push((format!("Unloaded {id}: no longer a lobby mod, it loads with the world."), super::WHITE));
+                    }
+                    if !self.watch_deferred.iter().any(|d| d.eq_ignore_ascii_case(&id)) {
+                        self.watch_deferred.push(id);
+                    }
+                    continue;
+                }
+            }
             let r = match self.vms.iter().position(|v| v.manifest.id.eq_ignore_ascii_case(&id)) {
                 Some(k) => self.reload(w, k),
                 None => self.load_named(w, &id).map(|()| id.clone()).map_err(|e| format!("{id}: {e}")),
@@ -741,6 +768,8 @@ impl Host {
             {
                 let _ = t.set("character", c);
             }
+            // The character's settings go with it: the lobby sees the account's and the defaults, as before login.
+            vm.st.borrow_mut().settings = load_settings(&vm.manifest, &data_dir().join(&vm.manifest.id), None);
         }
         self.started = false;
         self.prev = None;
