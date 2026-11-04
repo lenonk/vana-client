@@ -3049,6 +3049,37 @@ mod tests {
         assert_eq!(ops[..3], [(0xa8, Some(0), vec![230, 5]), (0xb9, Some(1), vec![230, 3, 5]), (0xa8, Some(2), vec![])]);
     }
 
+    /// The cutscene clock ops reach the host in order with their operands: 0xa9 day val@1, 0x98 (no wait headless),
+    /// 0xc9, 0x77 hour / weather, 0x78.
+    #[test]
+    fn cutscene_clock_ops() {
+        let code = vec![
+            0xa9, 0x00, 0x80, // day #0 x 7
+            0x98, //
+            0xc9, //
+            0x77, 0x01, 0x80, 0x02, 0x80, // hour #1, weather #2
+            0x78, //
+            0x21, 0x00,
+        ];
+        let actor = 0x010e_601b;
+        let blocks = vec![event::Block { actor, events: vec![(1, 0)], consts: vec![5, 18, 0xff], code }];
+        let mut host = Scripted::new(&[]);
+        let start = Start { zone: 230, event: 1, target: actor, ..Default::default() };
+        let mut rt = Runtime::start(blocks, None, start, Memory::default(), &mut host);
+        run_scripted(&mut rt, &mut host, 60).expect("finished");
+        let ops: Vec<(u8, Vec<i32>)> = host
+            .log
+            .iter()
+            .filter_map(|e| match e {
+                Effect::Op { op: op @ (0xa9 | 0x98 | 0xc9 | 0x77 | 0x78), args, .. } => {
+                    Some((*op, args.iter().map(|a| if let Arg::Int(i) = a { *i } else { -1 }).collect()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ops[..5], [(0xa9, vec![5]), (0x98, vec![]), (0xc9, vec![]), (0x77, vec![18, 0xff]), (0x78, vec![])]);
+    }
+
     #[test]
     fn input_window() {
         assert_eq!((Runtime::atoi(b" -42x"), Runtime::atoi(b"+7"), Runtime::atoi(b"")), (-42, 7, 0));

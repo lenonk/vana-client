@@ -472,8 +472,10 @@ pub struct State {
     flags_df04: u32,
     idle_since: Option<Instant>,
     rng: u32,
-    /// Op 0x77: hour and weather while the event runs (None = 0xff: that one stays); 0x78 drops it.
-    pub time: Option<(Option<u32>, Option<u16>)>,
+    /// Ops 0x77 / 0xa9: the Vana'diel clock held still (FUN_1018c4f0) until 0x78 / 0xc9 (FUN_1018c4d0).
+    pub clock: Option<HeldClock>,
+    /// Op 0x77's weather until 0x78 (DAT_104886db).
+    pub weather: Option<u16>,
     /// FUN_10132030 on the event message windows: +0x48 on, +0x4a x, +0x4c y (ops 0x67 / 0x68), and the text
     /// codes' x / y (DAT_10476f98 / 9a).
     place_on: bool,
@@ -533,7 +535,8 @@ impl State {
             flags_df04: 0,
             idle_since: None,
             rng: 1,
-            time: None,
+            clock: None,
+            weather: None,
             place_on: false,
             place: (0, 0),
             code_xy: (0, 0),
@@ -1173,23 +1176,36 @@ impl Host for LiveHost<'_> {
                     self.w.music_fades.push((v, t));
                 }
             }
-            // FUN_100b6880: the weather applies even with hour 0xff (the clock then stays); FUN_100b6920 restores.
+            // FUN_100b8710: hour val@1 holds the clock's day at that hour, minute 0 (FUN_1018bf50 / bf00); weather val@3
+            // applies even with hour 0xff (the clock then runs on).
             Effect::Op { op: 0x77, args, .. } => {
                 if let (Some(h), Some(wt)) = (Self::arg_int(&args, 0), Self::arg_int(&args, 1)) {
-                    self.st.time = Some(((h != 0xff).then_some(h as u32), (wt != 0xff).then_some(wt as u16)));
-                    // FUN_10092900: the weather's effects switch at once too.
+                    if h != 0xff {
+                        let held = self.st.clock;
+                        self.st.clock = Some(HeldClock { day: held.and_then(|c| c.day), minute: h as u32 * 60, moon: held.is_some_and(|c| c.moon) });
+                    }
+                    // FUN_100940b0: the weather's effects switch at once too.
                     if wt != 0xff {
+                        self.st.weather = Some(wt as u16);
                         self.w.effects.set_weather(crate::dat::weather::weather_tag(wt as u16), 0.0);
                     }
                 }
             }
-            // FUN_10092940: back to the server's weather, effects too.
-            Effect::Op { op: 0x78, .. } => {
-                if self.st.time.is_some_and(|t| t.1.is_some()) {
+            // FUN_100bab50: day val@1 x 7 at 00:30 (FUN_1018be70 / bfa0 / bf00), and the weekday and moon phase read it
+            // (DAT_1065cb20) instead of the server's.
+            Effect::Op { op: 0xa9, args, .. } => {
+                if let Some(v) = Self::arg_int(&args, 0) {
+                    self.st.clock = Some(HeldClock { day: Some(v as u32 * 7), minute: 30, moon: true });
+                }
+            }
+            // FUN_100b87e0: the clock runs again; FUN_100b87b0 (0x78) also goes back to the server's weather (FUN_100940f0),
+            // effects too.
+            Effect::Op { op: op @ (0x78 | 0xc9), .. } => {
+                self.st.clock = None;
+                if op == 0x78 && self.st.weather.take().is_some() {
                     let wt = self.w.weather;
                     self.w.effects.set_weather(crate::dat::weather::weather_tag(wt), 0.0);
                 }
-                self.st.time = None;
             }
             // FUN_100b6950 / 6a00 / 69b0 / 6980 / 6a30: the event's door state (+0x174) for the bound actor.
             Effect::Op { op: op @ (0x4c | 0x4d | 0x4f | 0x8e | 0x8f), actor, args, .. } => {
@@ -1538,7 +1554,8 @@ impl Host for LiveHost<'_> {
             // 0x9a: until the music change has loaded.
             Busy::Op { op: 0x9a, .. } => self.w.music_changing,
             // FUN_10178780: a sub-area load is running.
-            Busy::Op { op: 0x75, .. } => self.w.sub.loading.is_some() || self.w.sub.asked.is_some(),
+            // FUN_100b8630 (0x98): ends the frame while one runs (DAT_10631f24 +0x44).
+            Busy::Op { op: 0x75 | 0x98, .. } => self.w.sub.loading.is_some() || self.w.sub.asked.is_some(),
             // Op 0xb6 sub 0x10: until the player's model is up.
             Busy::Op { op: 0xb6, sub: Some(0x10), .. } => self.w.actors.get(&self.w.my_id).is_none_or(|a| a.character.is_none()),
             Busy::Op { op: 0x99, actor, .. } | Busy::Op { op: 0x59, sub: Some(6), actor } => {
@@ -2038,7 +2055,7 @@ fn finish(w: &mut World, live: Box<Live>) {
     // FUN_100acf20: first person as it was before the event.
     w.camst.first = live.st.first_saved;
     // Op 0x77's weather without its 0x78: the lighting goes back with the event, so the effects do too.
-    if live.st.time.is_some_and(|t| t.1.is_some()) {
+    if live.st.weather.is_some() {
         let wt = w.weather;
         w.effects.set_weather(crate::dat::weather::weather_tag(wt), 0.0);
     }
@@ -2214,14 +2231,39 @@ pub fn holds(w: &mut World, id: u32) -> bool {
     false
 }
 
-/// Op 0x77's hour while the event holds one (the clock stands at its minute 0).
+/// Ops 0x77 / 0xa9: the clock the event holds still.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HeldClock {
+    /// Days since the Vana'diel epoch (0xa9); None: 0x77 alone, the running clock's day.
+    pub day: Option<u32>,
+    /// Minute of the day.
+    pub minute: u32,
+    /// 0xa9 (DAT_1065cb20): the weekday and moon phase come from this clock (FUN_1018bd90 / bde0).
+    pub moon: bool,
+}
+
+impl HeldClock {
+    /// FUN_1018bde0 / bd90 on the held clock: ((day + 12 h) / 7) % 12 and day & 7.
+    pub fn moon_weekday(&self) -> Option<(u32, u32)> {
+        let day = self.day.filter(|_| self.moon)?;
+        let d = (day as u64 * 1440 + self.minute as u64 + 720) / 1440;
+        Some(((d / 7 % 12) as u32, day & 7))
+    }
+}
+
+/// The clock the event holds still (ops 0x77 / 0xa9), if any.
+pub fn clock(w: &World) -> Option<HeldClock> {
+    w.event.as_ref().and_then(|l| l.st.clock)
+}
+
+/// The hour of the held clock.
 pub fn hour(w: &World) -> Option<u32> {
-    w.event.as_ref().and_then(|l| l.st.time).and_then(|t| t.0)
+    clock(w).map(|c| c.minute / 60)
 }
 
 /// The weather in force: op 0x77's while the event holds one, else the server's.
 pub fn weather(w: &World) -> u16 {
-    w.event.as_ref().and_then(|l| l.st.time).and_then(|t| t.1).unwrap_or(w.weather)
+    w.event.as_ref().and_then(|l| l.st.weather).unwrap_or(w.weather)
 }
 
 /// Bound actors whose name op 0x92 turned off while the event runs (FUN_10096000).
@@ -2931,6 +2973,15 @@ pub fn source_line(w: &mut World, source: u16, id: u16, num: [u32; 5], mode: u8,
 mod tests {
     use super::*;
 
+    /// Op 0xa9 day val x 7 at 00:30: moon phase val % 12, weekday (val x 7) & 7; 0x77 alone leaves both to the server.
+    #[test]
+    fn held_clock_moon() {
+        let a9 = |v: u32| HeldClock { day: Some(v * 7), minute: 30, moon: true };
+        assert_eq!(a9(5).moon_weekday(), Some((5, 3)));
+        assert_eq!(a9(13).moon_weekday(), Some((1, 91 & 7)));
+        assert_eq!(HeldClock { day: Some(35), minute: 1000, moon: true }.moon_weekday(), Some((5, 3)));
+        assert_eq!(HeldClock { day: None, minute: 18 * 60, moon: false }.moon_weekday(), None);
+    }
     /// A Unity leader's line as s2c 0x017 kind 0x21 carried it (Attr 8, no name).
     #[test]
     fn coded_unity_line() {
