@@ -448,11 +448,13 @@ impl ZoneRenderer {
         max_layers(size)
     }
 
-    /// "system  kage_tex" (file 0x1b8c), the blob's image; POINT / CLAMP.
+    /// "system  kage_tex" (file 0x1b8c), the blob's image; POINT / CLAMP, level 0 only. Retail's has no mips; ours
+    /// gets a chain at upload, and its small levels have non-zero edges, which CLAMP smeared over every face of the
+    /// 3 x 3 cells as dark patches that moved with the camera (Normal only: High draws no blobs).
     pub fn set_shadow_texture(&mut self, gpu: &Gpu, t: &crate::dat::zone::Texture, format: wgpu::TextureFormat) {
         let s = self.shadows.get_or_insert_with(|| Shadows::new(gpu, &self.globals_layout, &self.sil_layout, format));
         let view = super::upload_texture_seq(gpu, t, false).0;
-        let point = gpu.device.create_sampler(&wgpu::SamplerDescriptor::default());
+        let point = gpu.device.create_sampler(&wgpu::SamplerDescriptor { lod_max_clamp: 0.0, ..Default::default() });
         s.kage = Some(gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("kage_tex"),
             layout: &s.tex_layout,
