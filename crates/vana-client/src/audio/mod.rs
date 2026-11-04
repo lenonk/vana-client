@@ -337,6 +337,13 @@ impl Audio {
         }
     }
 
+    /// FUN_10035e80 / FUN_10035ec0 (a volume slider's apply): every channel's event level back to 1.0 at once, so a
+    /// slider move during a cutscene undoes the script's mute (batch 6 item 18).
+    pub fn reset_event_levels(&mut self) {
+        self.fades = [None; 4];
+        (self.event_se, self.event_stream, self.event_ui, self.event_zone) = (1.0, 1.0, 1.0, 1.0);
+    }
+
     fn channel(&mut self, i: usize) -> &mut f32 {
         match i {
             0 => &mut self.event_se,

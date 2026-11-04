@@ -6402,6 +6402,8 @@ struct World {
     bid: auction::BidState,
     /// Event volume changes for the mixer: (mask, level, ticks).
     audio_cmds: Vec<(i32, f32, f32)>,
+    /// DAT_104804c3: the per-zone sound-level reset has run, so the event end doesn't restore levels (batch 6 item 18).
+    sound_reset: bool,
     /// Chat call sounds to play (FUN_100380f0, at the op 0x69 mask 0x10 level).
     call_sounds: Vec<u32>,
     names: Option<Arc<crate::dat::names::Names>>,
@@ -6865,6 +6867,9 @@ impl Drive {
 
 pub struct App {
     cfg: Config,
+    /// The config 10 / 9 slider values last applied (mutes left out): a change resets the event sound levels (batch 6
+    /// item 18).
+    applied_volumes: Option<(f32, f32)>,
     drive: Drive,
     /// The chat line's history between logins (FSTEXTINPUT lives for the whole run).
     line_hist: linehist::LineHistory,
@@ -7142,6 +7147,7 @@ impl App {
         });
         Self {
             cfg,
+            applied_volumes: None,
             drive,
             line_hist: linehist::LineHistory::default(),
             gfx: None,
@@ -7272,7 +7278,14 @@ impl App {
         crate::render::MAP_COMPRESSED.store(self.cfg.tool("0019") == 0, std::sync::atomic::Ordering::Relaxed);
         crate::render::SHINE_WRAP.store(self.cfg.tool("0040") == 0, std::sync::atomic::Ordering::Relaxed);
         let (m, e) = self.volume_factors();
+        let sliders = self.volume_sliders();
         if let Some(a) = self.audio.as_mut() {
+            // FUN_101aa650: applying config 9 / 10 also puts every event level back to 1.0. Only a slider that moved
+            // counts: other settings and our mutes leave an event's levels alone.
+            if self.applied_volumes.is_some_and(|v| v != sliders) {
+                a.reset_event_levels();
+            }
+            self.applied_volumes = Some(sliders);
             a.set_volumes(m, e);
             a.max_se = self.cfg.tool("0029").clamp(1, 20);
         }
@@ -7542,6 +7555,17 @@ impl App {
 
     /// Retail's levels under ours: in game ids 10 / 9 (FUN_10036480 / FUN_10035060), in the lobby 0xa8 for both
     /// (FUN_10196390).
+    /// Config 10 / 9 as set (music, effects), mutes left out: what FUN_101aa650 applies.
+    fn volume_sliders(&self) -> (f32, f32) {
+        match &self.phase {
+            Phase::World(w) => (w.game.get(10) as f32, w.game.get(9) as f32),
+            _ => {
+                let v = self.cfg.game.global.get(0xa8) as f32;
+                (v, v)
+            }
+        }
+    }
+
     fn volume_factors(&self) -> (f32, f32) {
         match &self.phase {
             Phase::World(w) => world_volumes(w),
@@ -7626,6 +7650,7 @@ impl App {
             let device = std::env::var("FFXI_AUDIO_DEVICE").unwrap_or_else(|_| self.cfg.audio_device.clone());
             let (m, e) = self.volume_factors();
             self.audio = crate::audio::Audio::open(self.cfg.ffxi_dir(), Some(&device), m, e);
+            self.applied_volumes = Some(self.volume_sliders());
             if let Some(a) = self.audio.as_mut() {
                 a.max_se = self.cfg.tool("0029").clamp(1, 20);
             }
@@ -8405,6 +8430,7 @@ impl App {
                             ah_slots: Default::default(),
                             bid: Default::default(),
                             audio_cmds: Vec::new(),
+                            sound_reset: false,
                             call_sounds: Vec::new(),
                             names: None,
                             actions: None,
@@ -9192,8 +9218,9 @@ impl App {
                     log::info!("zone-in: zone {zone} at {:?} dir {dir}", pos);
                     // FUN_1018b500 -> FUN_1001e4f0: the view shake stops at a zone load.
                     world.camst.shake = camera::Shake::default();
-                    // FUN_1008abe0: the event volume channels back to 1.0 at zone-in.
-                    world.audio_cmds.push((0xf, 1.0, 0.0));
+                    // FUN_10093720: the zone load clears the once-a-zone sound reset; it runs when the player's model
+                    // is up (below), or at an event end before that.
+                    world.sound_reset = false;
                     let f = forward_from_dir(dir);
                     camera::face(world, f.x.atan2(f.z));
                     world.my_id = char_id;
@@ -10667,6 +10694,15 @@ impl App {
             // player, now that the zone collision is in (ours; retail places it once, FUN_10021680).
             let yaw = world.yaw;
             camera::face(world, yaw);
+        }
+        // FUN_1008abe0 (once a zone, DAT_104804c3), at the point the player's model is ready: the ambient to full at
+        // once, the world and interface effects over 30 ticks. The stream is left alone. A zone-in cutscene already
+        // running or waiting started before this point in retail (its model is not up yet), so its end (event::finish)
+        // takes the reset instead; if it goes without finishing (no script), the reset runs here once it is gone.
+        if !world.unsettled && world.event.is_none() && world.event_pending.is_none() && !std::mem::replace(&mut world.sound_reset, true) {
+            world.audio_cmds.push((4, 1.0, 0.0));
+            world.audio_cmds.push((1, 1.0, 30.0));
+            world.audio_cmds.push((2, 1.0, 30.0));
         }
         let forward = Vec3::new(world.yaw.sin(), 0.0, world.yaw.cos());
         let right = forward.cross(Vec3::NEG_Y);

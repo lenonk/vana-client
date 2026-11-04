@@ -2387,9 +2387,13 @@ fn finish(w: &mut World, live: Box<Live>) {
         w.actors.remove(id);
     }
     w.event_mem = live.rt.mem.clone();
-    // Masks 1 (effects) and 4 (music) back to 1.0 over 30 ticks (taken with DAT_1046dacb == 0).
-    w.audio_cmds.push((1, 1.0, 30.0));
-    w.audio_cmds.push((4, 1.0, 30.0));
+    // FUN_100ae3f0 (0x100ae8a2), only when the zone's own reset hasn't run yet (a zone-in cutscene): the ambient and
+    // the world effects fade back to full over 30 ticks. After the zone reset an event's end restores nothing, so a
+    // script has to put back what it lowered (batch 6 item 18).
+    if !std::mem::replace(&mut w.sound_reset, true) {
+        w.audio_cmds.push((4, 1.0, 30.0));
+        w.audio_cmds.push((1, 1.0, 30.0));
+    }
     // FUN_100ae3f0: the lock goes unless op 0x30 carried it.
     if !w.lock_carry {
         w.control_lock = None;
