@@ -3038,11 +3038,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if world.page_from.is_some() && world.rem_open_at.is_none() {
         world.rem_open_at = Some(world.chat.len());
     }
-    // The message is over (FUN_10126970): its rows are plain log rows.
-    if event::message_ref(world).is_none()
-        && let Some(from) = world.page_from.take()
-    {
-        world.chat.unmark(1, from);
+    // The message is over (FUN_10126970): rem4line's close FUN_10136ab0 runs FUN_10129290(rem +0x50) on its log, and
+    // +0x50 is always 0 (written once from a zero-filled header dword, 0x101367d3): every row of the log loses its
+    // mark, the held chat lines (mark 2) included.
+    if event::message_ref(world).is_none() && world.page_from.take().is_some() {
+        world.chat.unmark(1, 0);
+        world.chat.unmark(2, 0);
         world.rem_open_at = None;
     }
     minimap::prepare(gu, world, sw);
