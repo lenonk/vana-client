@@ -20,7 +20,7 @@ pub fn model_file(model: u16) -> u32 {
 /// Look as LSB stores it and 0x00E sends it from offset 0x30.
 #[derive(Clone, Copy, Debug)]
 pub enum NpcLook {
-    /// SubKind 0 (also 5/6 put a model id here).
+    /// SubKind 0 (also 5/6 put a model id here, in the word's low 12 bits).
     Model(u16),
     /// SubKind 1 (u8 face, u8 race, slot ids) and 7 (chocobo: race 32..36 in the first byte).
     Equipped(Look),
@@ -34,7 +34,10 @@ pub fn parse_look(b: &[u8]) -> Result<NpcLook> {
     let w = |i: usize| u16::from_le_bytes([b[i * 2], b[i * 2 + 1]]);
     let id = |i: usize| w(i) & 0xFFF;
     Ok(match w(0) & 7 {
-        0 | 5 | 6 => NpcLook::Model(w(1)),
+        0 => NpcLook::Model(w(1)),
+        // s2c 0x00E (0x1009cd38 / 0x1009cda2): the word @0x32 | 0x9000; bits 0..11 the NPC-table model id, bits
+        // 12..15 the look slot (9 = the whole model, FUN_100d0b50).
+        5 | 6 => NpcLook::Model(w(1) & 0xfff),
         1 => NpcLook::Equipped(Look { race: b[3], face: b[2] as u16, head: id(2), body: id(3), hands: id(4), legs: id(5), feet: id(6), main: id(7), sub: id(8), range: id(9) }),
         7 => NpcLook::Equipped(Look { race: b[2], face: 0, head: id(2), body: id(3), hands: id(4), legs: id(5), feet: id(6), main: 0, sub: 0, range: 0 }),
         k => bail!("look kind {k} (door/elevator/ship) has no model"),
@@ -308,6 +311,9 @@ mod tests {
     fn looks() {
         let hex = |s: &str| (0..20).map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).unwrap()).collect::<Vec<u8>>();
         assert!(matches!(parse_look(&hex("00008e0000000000000000000000000000000000")).unwrap(), NpcLook::Model(142)));
+        // SubKind 5 / 6: only the low 12 bits name the model.
+        assert!(matches!(parse_look(&hex("05008e9000000000000000000000000000000000")).unwrap(), NpcLook::Model(142)));
+        assert!(matches!(parse_look(&hex("06008e1000000000000000000000000000000000")).unwrap(), NpcLook::Model(142)));
         let NpcLook::Equipped(l) = parse_look(&hex("010002030c100c200c300c400c50006000700000")).unwrap() else { panic!() };
         assert_eq!((l.race, l.face, l.head, l.feet, l.main), (3, 2, 12, 12, 0));
         let NpcLook::Equipped(c) = parse_look(&hex("0700200000000000000000000000000000000000")).unwrap() else { panic!() };
