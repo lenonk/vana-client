@@ -137,6 +137,12 @@ impl Gpu {
         if std::env::var_os("FFXI_NO_CULL").is_some() {
             wanted.remove(wgpu::Features::INDIRECT_FIRST_INSTANCE);
         }
+        // Not BC on GL: wgpu's GL backend drops a compressed copy from a buffer whose rows are padded (it passes the
+        // padded size to glCompressedTexSubImage2D), so the GPU-made mips of BC textures (render/mipgen.rs) would
+        // stay black. GL takes the RGBA path instead.
+        if info.backend == wgpu::Backend::Gl {
+            wanted.remove(wgpu::Features::TEXTURE_COMPRESSION_BC);
+        }
         let required_features = adapter.features() & wanted;
         log::info!("device features {required_features:?}");
         // The effects update pass binds 9 storage buffers (the default limit is 8; desktop GPUs allow far more).
