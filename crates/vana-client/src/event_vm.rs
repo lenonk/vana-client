@@ -3022,6 +3022,33 @@ mod tests {
     }
 
     /// Op 0x71 over hand-made code: an "Enter number:" input read with atoi, then a name stored as words.
+    /// Ops 0xa8 / 0xb9 (FUN_100b9780 / FUN_100b9820): fixed lengths 6 / 8, but byte 1 selects the form, so the
+    /// host gets the sub and its operands; sub 2 and up do nothing in retail.
+    #[test]
+    fn marker_clear_subs() {
+        let code = vec![
+            0xa8, 0x00, 0x00, 0x80, 0x01, 0x80, // sub 0: zone #0, slot #1
+            0xb9, 0x01, 0x00, 0x80, 0x02, 0x80, 0x01, 0x80, // sub 1: zone #0, key #2, slot #1
+            0xa8, 0x02, 0x00, 0x80, 0x01, 0x80, // sub 2: nothing
+            0x21, 0x00,
+        ];
+        let actor = 0x010e_601b;
+        let blocks = vec![event::Block { actor, events: vec![(1, 0)], consts: vec![230, 5, 3], code }];
+        let mut host = Scripted::new(&[]);
+        let start = Start { zone: 230, event: 1, target: actor, ..Default::default() };
+        let mut rt = Runtime::start(blocks, None, start, Memory::default(), &mut host);
+        run_scripted(&mut rt, &mut host, 60).expect("finished");
+        let ops: Vec<(u8, Option<u8>, Vec<i32>)> = host
+            .log
+            .iter()
+            .filter_map(|e| match e {
+                Effect::Op { op: op @ (0xa8 | 0xb9), sub, args, .. } => Some((*op, *sub, args.iter().map(|a| if let Arg::Int(i) = a { *i } else { -1 }).collect())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ops[..3], [(0xa8, Some(0), vec![230, 5]), (0xb9, Some(1), vec![230, 3, 5]), (0xa8, Some(2), vec![])]);
+    }
+
     #[test]
     fn input_window() {
         assert_eq!((Runtime::atoi(b" -42x"), Runtime::atoi(b"+7"), Runtime::atoi(b"")), (-42, 7, 0));
