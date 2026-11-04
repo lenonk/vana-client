@@ -3217,11 +3217,16 @@ pub fn coded_chat(text: &str) -> Option<CodedChat<'_>> {
 }
 
 /// FUN_100964a0(source, id): sources 2..7 and 10 are language slot files, 1 and 8 the zone's dialogue (the event's,
-/// when one is loaded from elsewhere: not done); 7 takes ids up to 0x10ff. Source 9 (FUN_100bd760) is not done.
+/// when one is loaded from elsewhere: not done); 7 takes ids up to 0x10ff. Source 9 (FUN_10096440 -> FUN_100c1620):
+/// the trust lines, language slot 0x22 (en file 55693) through the expander's +0x858 cache, the table grammar 0x88
+/// reads; an id past its count gives nothing.
 fn source_text(w: &mut World, source: u16, id: u16) -> Option<Vec<u8>> {
     let id = if source == 7 && id as i16 > 0x10ff { 0 } else { id };
     if (id as i16) < 0 {
         return None;
+    }
+    if source == 9 {
+        return w.battle.as_ref()?.grammar_line(0x88, id as u32);
     }
     if matches!(source, 1 | 8) {
         let zone = w.zone?;
