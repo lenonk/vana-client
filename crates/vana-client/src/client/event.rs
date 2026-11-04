@@ -1670,6 +1670,10 @@ impl Host for LiveHost<'_> {
         self.st.rng = self.st.rng.wrapping_mul(1_103_515_245).wrapping_add(12345);
         (self.st.rng >> 16) & 0x7fff
     }
+
+    fn game_time(&self) -> u32 {
+        super::vana_now(self.w) as u32
+    }
 }
 
 impl LiveHost<'_> {

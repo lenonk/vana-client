@@ -182,6 +182,10 @@ pub trait Host {
     fn rand(&mut self) -> u32 {
         0
     }
+    /// FUN_101039e0: the game clock, Earth seconds since the Vana'diel epoch (s2c 0x00A's time plus the time since).
+    fn game_time(&self) -> u32 {
+        0
+    }
     /// The client language (DAT_10456a28 + 8): 0 Japanese, 1 English, 2 / 3 the European ones.
     fn language(&self) -> u32 {
         1
@@ -1833,6 +1837,12 @@ impl Runtime {
             }
             // FUN_100babe0: Vana'diel time val@1 (earth seconds; hour 0x90, day 0xd80) as year + 886, month + 1,
             // day + 1, weekday, hour, minute and moon step.
+            // FUN_100b90e0: var@1 = the game clock (FUN_101039e0).
+            0x83 => {
+                let t = host.game_time();
+                self.set_at(v, 1, 0, t);
+                self.adv(v, 3);
+            }
             0xaa => {
                 let t = self.val(v, 1) as u32;
                 let parts = [t / 0x12fc00 + 0x376, t % 0x12fc00 / 0x19500 + 1, t % 0x19500 / 0xd80 + 1, t % 0x6c00 / 0xd80, t % 0xd80 / 0x90, t % 0x90 * 60 / 0x90, t / 0x5e80 % 12];
@@ -2615,6 +2625,8 @@ pub struct Scripted {
     pub inputs: std::collections::VecDeque<Vec<u8>>,
     /// The map is not ready (op 0xd4 sub 0 waits).
     pub map_busy: bool,
+    /// The game clock op 0x83 reads (Earth seconds since the Vana'diel epoch).
+    pub time: u32,
     running: Vec<(Busy, u32)>,
     seed: u32,
     frame: u32,
@@ -2669,6 +2681,7 @@ impl Scripted {
             race: 0,
             inputs: Default::default(),
             map_busy: false,
+            time: 0,
             running: Vec::new(),
             seed: 1,
             frame: 0,
@@ -2677,6 +2690,10 @@ impl Scripted {
 }
 
 impl Host for Scripted {
+    fn game_time(&self) -> u32 {
+        self.time
+    }
+
     fn race(&self, actor: u32) -> u8 {
         if actor == PLAYER { self.race } else { 0 }
     }
@@ -3019,6 +3036,25 @@ mod tests {
         run_scripted(&mut rt, &mut host, 600).expect("finished");
         assert_eq!(messages(&host.log), vec![0, 1]);
         assert_eq!(end(&host.log), Some(0x4000_0000));
+    }
+
+    /// Op 0x83 (FUN_100b90e0): var@1 = the game clock (FUN_101039e0), here read back through the event's end option.
+    #[test]
+    fn game_clock_83() {
+        let code = vec![
+            0x83, 0x10, 0x00, // L16 = clock
+            0x0b, 0x10, 0x00, // L16 += 1
+            0x03, 0x01, 0x10, 0x10, 0x00, // Z1 (the end option) = L16
+            0x21, 0x00,
+        ];
+        let actor = 0x010e_601b;
+        let blocks = vec![event::Block { actor, events: vec![(1, 0)], consts: vec![], code }];
+        let mut host = Scripted::new(&[]);
+        host.time = 1_234_567_890;
+        let start = Start { zone: 230, event: 1, target: actor, ..Default::default() };
+        let mut rt = Runtime::start(blocks, None, start, Memory::default(), &mut host);
+        run_scripted(&mut rt, &mut host, 60).expect("finished");
+        assert_eq!(end(&host.log), Some(1_234_567_891));
     }
 
     /// Op 0x71 over hand-made code: an "Enter number:" input read with atoi, then a name stored as words.
