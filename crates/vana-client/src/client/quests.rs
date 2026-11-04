@@ -191,6 +191,10 @@ fn show(l: &mut List) {
 }
 
 pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
+    // A disabled list (the pointer was on a page arrow, last frame's hover) takes no bar or wheel message either.
+    if w.list_arrow_hover {
+        return false;
+    }
     let Some(l) = w.quests.as_mut().and_then(|q| q.list.as_mut()).filter(|l| l.state == 0) else { return false };
     let mut row = l.cursor.saturating_sub(l.top);
     let moved = super::scrollbar::paged(m, &mut l.top, &mut row, l.rows.len(), VISIBLE);
@@ -211,6 +215,10 @@ pub fn key(w: &mut World, key: egui::Key, page: bool) {
         return;
     }
     if let Some(mut l) = q.list {
+        // The list ignores every message while an arrow hover disables it (list +0x5c bit 1).
+        if w.list_arrow_hover {
+            return;
+        }
         list_key(w, &mut l, key, page);
         if let Some(qq) = w.quests.as_mut()
             && qq.list.is_some()
@@ -292,7 +300,7 @@ fn list_key(w: &mut World, l: &mut List, key: egui::Key, page: bool) {
 }
 
 /// Mouse: rows, the cursor row's click as Enter, the arrows (quest01 children 9 / 10) as Left / Right.
-pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool) {
+pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, page: bool) {
     let Some(q) = w.quests.clone() else { return };
     let hit = |name: &str| -> Option<u16> {
         let (x, y) = gu.window_xy(name, sw, sh)?;
@@ -312,9 +320,18 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
     }
     if let Some(l) = &q.list {
         let Some(c) = hit(LIST) else { return };
+        // FUN_10221cd0: over the page arrows the list is disabled (no hand, no list keys); a click on them is Left /
+        // Right through the 0xa8 test, so with Ctrl / Alt held it pages the disabled list, i.e. does nothing.
+        if matches!(c, 9 | 10) && l.state == 0 {
+            // The click's Left / Right switches the area before the hover disables the list.
+            if clicked && !page {
+                key(w, if c == 9 { egui::Key::ArrowLeft } else { egui::Key::ArrowRight }, false);
+            }
+            w.list_arrow_hover = true;
+            return;
+        }
         gu.hover.set(true);
         match c {
-            9 | 10 if clicked && l.state == 0 => key(w, if c == 9 { egui::Key::ArrowLeft } else { egui::Key::ArrowRight }, false),
             1..=8 if l.state == 0 => {
                 let row = l.top + c as usize - 1;
                 if row >= l.rows.len() {

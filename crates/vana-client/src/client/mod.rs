@@ -667,6 +667,9 @@ struct UiInput {
     middle_clicked: bool,
     /// Wheel notches for the focused list, up positive (FUN_10125360).
     wheel: i32,
+    /// Ctrl or Alt held: the page modifier 0xa8 that a click on a list's arrows is tested against
+    /// (FUN_10123a70(0x3e, 0xa8, 4, -1)).
+    page: bool,
     events: Vec<egui::Event>,
 }
 
@@ -2580,6 +2583,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
     }
     world.key_shift = false;
+    // Recomputed by this frame's pointer handlers (retail keeps it until a row is hovered or the list is rebuilt;
+    // ours drops it as soon as the pointer is elsewhere, so a pointer that leaves the window cannot strand the keys).
+    world.list_arrow_hover = false;
 
     // Mouse on the main menu: hover moves the cursor, a click picks; the arrows swap pages. Not while the group walk
     // suspends it (a window over it, e.g. MacroPalette's).
@@ -2790,7 +2796,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         chatctrl::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
     }
     if let Some(p) = input.pointer.filter(|_| world.primer.is_some() && world.confirm.is_none()) {
-        primer::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
+        primer::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked, input.page);
     }
     if let Some(p) = input.pointer.filter(|_| helpdesk::focused(world)) {
         helpdesk::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
@@ -2864,10 +2870,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         keyitems::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
     if let Some(p) = input.pointer.filter(|_| !world.modern && world.quests.is_some() && world.confirm.is_none()) {
-        quests::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+        quests::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.page);
     }
     if let Some(p) = input.pointer.filter(|_| !world.modern && world.missions.is_some() && world.confirm.is_none()) {
-        missions::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+        missions::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.page);
     }
     // Taken before the sub-windows run: a right click closing one must not reach statcom2 the same frame.
     let status_pointer = input.pointer.filter(|_| !world.modern && world.status.is_some() && world.currencies.is_none() && world.unity.is_none() && world.merits_ui.is_none() && world.jp_ui.is_none() && world.ae_ui.is_none() && world.confirm.is_none());
@@ -5790,6 +5796,9 @@ struct World {
     swkbd: Option<swkbd::Keyboard>,
     swkbd_out: Vec<egui::Event>,
     swkbd_reopen: bool,
+    /// The pointer is over a paged list's page arrows (children 9 / 10), which disables the list itself
+    /// (FUN_10221cd0: window +0x62 = 0, list +0x5c bit 1): no hand, and the list ignores keys.
+    list_arrow_hover: bool,
     /// Shift was held with the key being dispatched by world_hud's loop (Shift+Tab turns a modern window's tabs back;
     /// the pad's LB sends it); false anywhere else.
     key_shift: bool,
@@ -8279,6 +8288,7 @@ impl App {
                             swkbd_out: Vec::new(),
                             swkbd_reopen: false,
                             key_shift: false,
+                            list_arrow_hover: false,
                             my_face: None,
                             ui_hidden: false,
                             shot_request: None,
@@ -11629,6 +11639,7 @@ impl App {
             released: i.pointer.primary_released() && !swallow && mine,
             right_clicked: i.pointer.secondary_clicked() && mine,
             middle_clicked: i.pointer.button_clicked(egui::PointerButton::Middle) && mine,
+            page: i.modifiers.ctrl || i.modifiers.alt,
             events: i.events.clone(),
         });
         if input.moved
@@ -11728,7 +11739,7 @@ impl App {
                     fields[account_field].options = accounts.clone();
                     let remembered = self.cfg.remember_password;
                     // While an error shows, the fields take no input (the OK window has it).
-                    let none = UiInput { pointer: None, moved: false, clicked: false, pressed: false, down: false, released: false, right_clicked: false, middle_clicked: false, wheel: 0, events: Vec::new() };
+                    let none = UiInput { pointer: None, moved: false, clicked: false, pressed: false, down: false, released: false, right_clicked: false, middle_clicked: false, wheel: 0, page: false, events: Vec::new() };
                     let shown = if self.login_error.is_some() || self.twofa.is_some() { &none } else { &input };
                     let mut sounds = Vec::new();
                     let modern_ui = self.cfg.modern_ui;
