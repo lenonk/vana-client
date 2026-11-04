@@ -5796,6 +5796,9 @@ struct World {
     swkbd: Option<swkbd::Keyboard>,
     swkbd_out: Vec<egui::Event>,
     swkbd_reopen: bool,
+    /// E (DAT_106627a8), which outlives the macro palettes: the focused palette (1 Ctrl, 2 Alt) and both columns.
+    /// mcr1edit / mcr2edit open and regain the focus on column + 1 (FUN_101a44b0).
+    macro_palette: (u8, [u16; 2]),
     /// The pointer is over a paged list's page arrows (children 9 / 10), which disables the list itself
     /// (FUN_10221cd0: window +0x62 = 0, list +0x5c bit 1): no hand, and the list ignores keys.
     list_arrow_hover: bool,
@@ -6754,6 +6757,10 @@ impl World {
         }
         if let Some(s) = &self.pupset {
             kept.extend(pupset::kept(s));
+        }
+        kept.extend(macroedit::kept(self));
+        if let Some(p) = macroedit::palette(self) {
+            self.macro_palette = p;
         }
         kept.extend(maze::kept(self));
         self.cursor_mem.extend(kept);
@@ -8322,6 +8329,7 @@ impl App {
                             swkbd_out: Vec::new(),
                             swkbd_reopen: false,
                             key_shift: false,
+                            macro_palette: (1, [0, 0]),
                             list_arrow_hover: false,
                             my_face: None,
                             ui_hidden: false,
