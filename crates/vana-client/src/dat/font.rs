@@ -457,6 +457,9 @@ impl Font {
 /// 0x20 pass through as control characters; undecodable pairs become U+FFFD.
 /// Private-use base for two-byte codes standard Shift-JIS has no character for (decode_sjis / encode_sjis).
 const PAIR_BASE: u32 = 0xF0000;
+/// Private-use base for single bytes Shift-JIS has no character for. Pairs always have a lead of 0x81 or more, so
+/// PAIR_BASE + 0x1000.. is free, and it stays clear of the chat icons at U+F0000..U+F0FFF (chaticons::BASE).
+const BYTE_BASE: u32 = PAIR_BASE + 0x1000;
 
 /// The game's own glyphs as Unicode for faces that lack them (the modern interface's): its apostrophe (0x8552) and
 /// curly quotes (0x87B2 / 0x87B3); the other private-use characters (gaiji, pairs Shift-JIS lacks, the in-line colour
@@ -516,13 +519,17 @@ pub fn decode_sjis(sjis: &[u8]) -> String {
         if is_lead(b) && i + 1 < sjis.len() {
             let pair = &sjis[i..i + 2];
             let g = sjis_index(pair[0], pair[1]);
-            if (GAIJI_FIRST..GAIJI_END).contains(&g) {
+            // Only 0xEF1F.. are gaiji; 0xEEDC.. land on the same glyph indices and keep their bytes below.
+            if pair[0] == 0xEF && (GAIJI_FIRST..GAIJI_END).contains(&g) {
                 out.push(char::from_u32(0xE000 + (g - GAIJI_FIRST) as u32).unwrap());
             } else {
                 // Pairs standard Shift-JIS lacks are the game's own glyphs (e.g. 0x87B2 / 0x87B3, its curly double
                 // quotes): kept as private-use U+F0000 + pair so encode_sjis gives the bytes back for the font.
+                // Retail never converts chat (FUN_1011c940 indexes the pair as it is), so a pair that encoding_rs
+                // would encode back as other bytes (NEC row 13 duplicates, the NEC-selected IBM rows 0xED / 0xEE) is
+                // kept as its bytes too.
                 let (s, bad) = encoding_rs::SHIFT_JIS.decode_without_bom_handling(pair);
-                if bad {
+                if bad || encoding_rs::SHIFT_JIS.encode(&s).0.as_ref() != pair {
                     out.push(char::from_u32(PAIR_BASE + ((pair[0] as u32) << 8 | pair[1] as u32)).unwrap());
                 } else {
                     out.push_str(&s);
@@ -533,8 +540,14 @@ pub fn decode_sjis(sjis: &[u8]) -> String {
             if b < 0x80 {
                 out.push(b as char);
             } else {
+                // A byte Shift-JIS has no character for (0x80, 0xA0, 0xFD..0xFF, a lead byte with no pair) keeps
+                // its byte as BYTE_BASE + byte, so encode_sjis gives it back.
                 let (s, bad) = encoding_rs::SHIFT_JIS.decode_without_bom_handling(&sjis[i..i + 1]);
-                out.push_str(if bad { "\u{FFFD}" } else { &s });
+                if bad {
+                    out.push(char::from_u32(BYTE_BASE + b as u32).unwrap());
+                } else {
+                    out.push_str(&s);
+                }
             }
             i += 1;
         }
@@ -562,6 +575,8 @@ pub fn encode_sjis(text: &str) -> Vec<u8> {
             out.extend_from_slice(&[0x1e + ((cp - CODE_BASE) >> 8) as u8, cp as u8]);
         } else if (0xE000..0xE000 + (GAIJI_END - GAIJI_FIRST) as u32).contains(&cp) {
             out.extend_from_slice(&[0xEF, 0x1F + (cp - 0xE000) as u8]);
+        } else if (BYTE_BASE..BYTE_BASE + 0x100).contains(&cp) {
+            out.push(cp as u8);
         } else if (PAIR_BASE..PAIR_BASE + 0x10000).contains(&cp) {
             out.extend_from_slice(&[(cp >> 8) as u8, cp as u8]);
         } else if cp < 0x80 {
@@ -585,6 +600,33 @@ mod tests {
         let s = decode_sjis(raw);
         assert_eq!(s.chars().filter(|c| *c as u32 >= PHRASE_BASE).count(), 4);
         assert_eq!(encode_sjis(&s), raw.to_vec());
+    }
+
+    /// Item 76 (batch 12): chat stays the server's bytes. Every pair and every single byte survives decode / encode,
+    /// so the font indexes what retail would (the quotes 0x8167 / 0x8168 are glyphs 135 / 136).
+    #[test]
+    fn sjis_bytes_survive() {
+        for a in 0x20u8..=0xFF {
+            let one = [a];
+            if !is_lead(a) {
+                assert_eq!(encode_sjis(&decode_sjis(&one)), one, "{a:02X}");
+                // Kept bytes stay out of the chat icon block (U+F0000..U+F0FFF) and are dropped by plain_char.
+                for c in decode_sjis(&one).chars() {
+                    assert!(!(0xF0000..0xF1000).contains(&(c as u32)), "{a:02X}");
+                    assert!(c as u32 <= 0xFFFF || plain_char(c).is_none(), "{a:02X}");
+                }
+                continue;
+            }
+            for b in 0x40u8..=0xFC {
+                let p = [a, b];
+                assert_eq!(encode_sjis(&decode_sjis(&p)), p, "{a:02X}{b:02X}");
+            }
+        }
+        assert_eq!(encode_sjis(&decode_sjis(b"\x81\x67hi\x81\x68")), b"\x81\x67hi\x81\x68");
+        assert_eq!((sjis_index(0x81, 0x67), sjis_index(0x81, 0x68)), (135, 136));
+        // The inverse pairs 0x1011cb50 was checked against, and the fallback glyph.
+        assert_eq!((sjis_index(0x85, 0x40), sjis_index(0x87, 0x40), sjis_index(0xE0, 0x40)), (704, 936, 5399));
+        assert_eq!(sjis_index(0xFA, 0x40), 0xCB);
     }
 
     #[test]
