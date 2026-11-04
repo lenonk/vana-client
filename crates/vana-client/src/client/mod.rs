@@ -5972,6 +5972,9 @@ struct World {
     my_sync: u8,
     /// FUN_101347b0's repeat guard: the last check's id and time (DAT_105781c4).
     last_check: Option<(u32, Instant)>,
+    /// S+0x40daa: the index of the NPC we last talked to, tried first as the moogle actor (batch 6 item 17). Cleared
+    /// at zone-in, at the event end, and when that actor goes away.
+    talked_index: u16,
     /// /blockhelp (DAT_10578175): Right on Disengage refuses Call for help.
     block_help: bool,
     /// Party members' status icons by UniqueNo (s2c 0x076).
@@ -8104,6 +8107,7 @@ impl App {
                             my_plate: net::SelfPlate::default(),
                             my_sync: 0,
                             last_check: None,
+                            talked_index: 0,
                             block_help: false,
                             party_buffs: HashMap::new(),
                             held_menu: None,
@@ -9021,6 +9025,8 @@ impl App {
                     world.log.clear_spool();
                     world.log2.clear_spool();
                     world.mog_zone = mog_zone;
+                    // The s2c 0x00A handler clears S+0x40daa (batch 6 item 17).
+                    world.talked_index = 0;
                     world.mon_login = monstrosity;
                     monstrosity::zone_reset(world);
                     // FUN_100f9eb0: each map connection zeroes the session object, the party roster with it
@@ -10477,6 +10483,10 @@ impl App {
         ride::dig_update(world);
         actmotion::update(world, dt * world.opts.anim_rate);
         // FUN_10096640: the lock goes with its target; inferred, after 10 s (a talk the server never answers).
+        // FUN_10096640 (0x10096bd7): the talked-to index is dropped once that actor is gone.
+        if world.talked_index != 0 && !world.entities.values().any(|e| e.index == world.talked_index) {
+            world.talked_index = 0;
+        }
         if !event::active(world) && world.control_lock.is_some_and(|(t, id)| t.elapsed().as_secs_f32() > 10.0 || !world.entities.contains_key(&id)) {
             world.control_lock = None;
         }

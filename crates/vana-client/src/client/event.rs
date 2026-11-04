@@ -2369,6 +2369,8 @@ fn finish(w: &mut World, live: Box<Live>) {
             a.alpha = super::actmotion::OPAQUE;
         }
     }
+    // FUN_100ae3f0 (0x100ae93c): the talked-to index is forgotten.
+    w.talked_index = 0;
     // FUN_100ae3f0 on the bound entities: the mouth (+0x128 bit 17), footsteps (bit 0) and the blinks (model +0x8b4)
     // back on, the area free again (+0x13c bit 19, +0x20c), the near fade back (+0x12c bit 26).
     for id in &live.st.bound {
@@ -3052,6 +3054,11 @@ pub fn talk(w: &mut World, target: u32) -> bool {
     }
     let index = e.index;
     let _ = w.net.commands.send(NetCommand::Act { target, index, action: 0 });
+    // FUN_1007bf30 (0x1007c189): the sent target's index into S+0x40daa, so a `17 n` motion goes to the NPC we spoke
+    // to. Not while dead.
+    if !matches!(w.my_motion.status, 2 | 3) {
+        w.talked_index = index;
+    }
     w.control_lock = Some((Instant::now(), target));
     log::info!("talk to {target:#x} ({index})");
     true

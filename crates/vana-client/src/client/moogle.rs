@@ -119,14 +119,28 @@ pub fn job_cooling(w: &World) -> bool {
     w.job_cooldown.is_some_and(|t| Instant::now() <= t)
 }
 
-/// The moogle actor (FUN_100a0080 / FUN_100a0010): the zone NPC of the lowest index with model 0x52, 0x3d5, 0x58a or
-/// 0x939. Not done: the index S+0x40daa tried first, the actor kind test (+0xee 1 / 2 / 7).
+/// FUN_100a0010: a zone NPC with one of the moogle models, whose actor kind (+0xee) is 1 (a PC-look NPC marked
+/// talkable), 2 (a model-id NPC) or 7 (0x00E SubKind 6).
+fn is_moogle(id: u32, e: &super::Entity) -> bool {
+    let kind_ok = match e.sub_kind {
+        0 => true,
+        1 => e.marks.npc_pet,
+        6 => true,
+        _ => false,
+    };
+    id >> 24 == 1 && kind_ok && matches!(e.model, 0x52 | 0x3d5 | 0x58a | 0x939)
+}
+
+/// The moogle actor (FUN_100a0080 / FUN_100a0010): the NPC we last talked to (S+0x40daa) when it passes the test,
+/// else the one of the lowest index that does.
 pub(super) fn moogle_actor(w: &World) -> Option<u32> {
-    w.entities
-        .iter()
-        .filter(|(id, e)| *id >> 24 == 1 && matches!(e.model, 0x52 | 0x3d5 | 0x58a | 0x939))
-        .min_by_key(|(_, e)| e.index)
-        .map(|(&id, _)| id)
+    let one = |(id, e): (&u32, &super::Entity)| is_moogle(*id, e).then_some(*id);
+    if w.talked_index != 0
+        && let Some(id) = w.entities.iter().filter(|(_, e)| e.index == w.talked_index).find_map(one)
+    {
+        return Some(id);
+    }
+    w.entities.iter().filter(|(id, e)| is_moogle(**id, e)).min_by_key(|(_, e)| e.index).map(|(&id, _)| id)
 }
 
 /// Event text's `17 n` codes: the moogle actor plays each motion (vtable +0x298), as the text is built.
