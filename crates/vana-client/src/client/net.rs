@@ -19,6 +19,8 @@ pub enum EntityKind {
 
 #[derive(Clone, Debug)]
 pub struct EntityUpdate {
+    /// 0x00D u16 @0x30 (0x10099cd6): the costume, an NPC model id (0 none; FUN_1008cce0).
+    pub costume: Option<u16>,
     pub id: u32,
     pub index: u16,
     pub kind: EntityKind,
@@ -1049,6 +1051,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
         mask: flags,
         status: p.u8(0x20) & 7,
         look_kind: p.u8(0x30) & 7,
+        costume: (kind == EntityKind::Player && flags & 0x20 == 0 && p.data.len() >= 0x32).then(|| p.u16(0x30)),
         door: (kind == EntityKind::Npc && p.u8(0x30) & 7 == 2 && p.data.len() >= 0x38).then(|| p.u32(0x34)).filter(|d| *d != 0),
         lift: (kind == EntityKind::Npc && p.u8(0x30) & 7 == 3 && p.data.len() >= 0x3e).then(|| (p.u32(0x34), p.u32(0x38), p.u32(0x38).wrapping_add(p.u16(0x3c) as u32))).filter(|l| l.0 != 0),
         ship: (kind == EntityKind::Npc && p.u8(0x30) & 7 == 4 && p.data.len() >= 0x3c).then(|| (p.u32(0x34), p.u32(0x38))),

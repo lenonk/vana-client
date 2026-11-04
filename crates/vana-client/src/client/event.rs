@@ -682,7 +682,12 @@ impl LiveHost<'_> {
             }
             return;
         }
-        let cur = self.w.actors.get(&id).and_then(|a| a.source);
+        // In costume the drawn model is the costume's; edits go to the look underneath.
+        let cur = match super::costume::worn(self.w, id) {
+            Some(_) => self.w.costume_base.get(&id).copied(),
+            None => None,
+        }
+        .or_else(|| self.w.actors.get(&id).and_then(|a| a.source));
         // A model NPC (0x00E SubKind 0): +0xfc is its model and +0xef its race code, so subs 0 / 1 change those; the
         // other subs build a race-and-gear look as for a PC.
         let model_npc = match cur {

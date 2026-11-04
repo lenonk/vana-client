@@ -5802,6 +5802,9 @@ struct World {
     event_voices: bool,
     /// Looks set by event op 0xb6 (and the riding animals, ride.rs), for the model loader.
     event_looks: Vec<(u32, Source)>,
+    /// Other characters' costumes (0x00D @0x30), and the look each actor in costume would have without it.
+    costumes: HashMap<u32, costume::Costume>,
+    costume_base: HashMap<u32, Source>,
     /// Changed looks waiting while their actor is held (FUN_10095dd0 waits for FUN_10095850).
     held_looks: Vec<(u32, Source)>,
     /// Event op 0xab 0x11 (DAT_1035af3c != -1): once no event runs, every model but ours is built again.
@@ -8273,6 +8276,8 @@ impl App {
                             doors: Default::default(),
                             event_voices: false,
                             event_looks: Vec::new(),
+                            costumes: HashMap::new(),
+                            costume_base: HashMap::new(),
                             held_looks: Vec::new(),
                             rebuild_models: false,
                             my_ride: Default::default(),
@@ -9140,6 +9145,7 @@ impl App {
                     world.my_init_done = false;
                     // FUN_1008a350 / a new actor table: no costume until 0x037 sends it again.
                     world.costume = Default::default();
+                    (world.costumes, world.costume_base) = (HashMap::new(), HashMap::new());
                     world.effects.reset_equip(char_id);
                     (world.zoning_since, world.zone_touch) = (None, None);
                     world.pos = Vec3::from(pos);
@@ -9226,6 +9232,9 @@ impl App {
                     }
                     if let Some(npc) = e.npc {
                         looks.push((e.id, Source::Npc(npc)));
+                    }
+                    if let Some(c) = e.costume.filter(|_| e.id != world.my_id) {
+                        world.costumes.entry(e.id).or_default().set_id(c);
                     }
                     let fresh = !world.entities.contains_key(&e.id);
                     let raw_y = e.kind == EntityKind::Player && event::raw_pc_y(world, e.id);
@@ -9993,6 +10002,15 @@ impl App {
             if matches!(source, Source::Pc(l) if l.race == 0) {
                 continue;
             }
+            // FUN_100d2f60 case 2: in costume the model is the costume's whatever the look; the look waits for it to
+            // come off.
+            let source = match costume::worn(world, id) {
+                Some(c) if !costume::is_model(&source, c) => {
+                    world.costume_base.insert(id, source);
+                    continue;
+                }
+                _ => source,
+            };
             let key = format!("{source:?}");
             let spawn_fx = world.entities.get(&id).is_some_and(|e| e.spawn_fx);
             let shadow = world.entities.get(&id).map_or((false, false), |e| (e.shadowless || e.ev_shadowless, e.noblob));
@@ -10116,9 +10134,8 @@ impl App {
         if !event::active(world) {
             ko_step(world);
         }
-        // FUN_10095e90 for us, once a frame; bound = +0x120 bit 7, our character among the running event's actors.
-        let bound = world.event.as_ref().is_some_and(|l| l.st.bound.contains(&world.my_id));
-        world.costume.step(world.my_motion.status, bound);
+        // FUN_10095e90 for every actor, once a frame; bound = +0x120 bit 7, among the running event's actors.
+        costume::step_all(world);
         gmtell::step(world);
         event::update(world, dt);
         event::rebuild_models(world);
