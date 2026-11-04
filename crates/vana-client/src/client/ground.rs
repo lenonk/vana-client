@@ -395,8 +395,8 @@ impl Ground {
     pub fn key_borders(&self, a: u8, b: u8) -> (Vec<(Vec3, usize)>, Vec<(u8, usize)>) {
         let floor = |i: usize| self.normals.get(i).is_some_and(|n| n.y.abs() > 0.6);
         let mut keys: std::collections::BTreeMap<u8, usize> = Default::default();
-        for (i, k) in self.map_keys.iter().enumerate().filter(|(i, _)| floor(*i)) {
-            *keys.entry(*k).or_default() += i.min(1).max(1);
+        for (_, k) in self.map_keys.iter().enumerate().filter(|(i, _)| floor(*i)) {
+            *keys.entry(*k).or_default() += 1;
         }
         let cell = |p: Vec3| (p.x.floor() as i32, p.z.floor() as i32);
         let mut grid: HashMap<(i32, i32), Vec<Vec3>> = HashMap::new();

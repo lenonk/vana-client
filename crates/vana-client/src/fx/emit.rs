@@ -790,6 +790,7 @@ pub fn generator_stream(reg: &mut Registry, inst: &mut Instance, f: &Frame) -> b
             *slot = v.to_bits();
         }
     };
+    #[allow(clippy::approx_constant, reason = "truncated pi, kept as written")]
     let half_turns = |v: f32| wrap((v % 2.0) * 3.1415);
     for op in &ops {
         match op.code {

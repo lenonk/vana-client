@@ -2374,6 +2374,7 @@ impl Effects {
     /// Generator ops 0x0e / 0x0f / 0x10 (FUN_100496f0): the attachment rebuilt (FUN_10053e60), then turned about X / Y
     /// / Z at its origin by keyframe 4cc u32 @8 at t over the element plus generator life (op 1's i16 @0x22),
     /// half-turns wrapped to +-pi.
+    #[allow(clippy::approx_constant, reason = "truncated pi values, kept as written")]
     pub(super) fn spin(&mut self, i: usize, op: &crate::dat::generator::Op, f: &Frame, actors: &dyn Actors) {
         let Some((Some(m), a, b, d)) = self.attach_matrix(i, Some(f), actors) else { return };
         let Some(x) = self.insts[i].as_ref() else { return };

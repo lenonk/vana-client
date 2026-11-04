@@ -1769,6 +1769,7 @@ impl ZoneRenderer {
 
     /// Scheduler op 0x0d (rotate) / 0x0c (translate) on door part `slot`: from its value now to `to` over `ticks`
     /// (FUN_100439c0 / FUN_10043bb0; angles wrapped to [-3.1415, 3.1415] as FUN_100acdb0 stores them).
+    #[allow(clippy::approx_constant, reason = "FUN_100acdb0's truncated pi values, kept as written")]
     pub fn move_part(&mut self, gpu: &Gpu, slot: u32, rotate: bool, to: [f32; 3], ticks: f32) {
         let Some(p) = self.parts.get_mut(slot as usize) else { return };
         let now = self.now;

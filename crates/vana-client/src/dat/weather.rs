@@ -268,7 +268,9 @@ pub fn clipping_factor(v: u32) -> f32 {
 }
 
 /// FUN_10187720's stored 2 pi and pi (0x10329d2c, 0x10329d30): the switch falls at 05:59:59.4 and 18:00:00.6.
+#[allow(clippy::approx_constant, reason = "the DLL's stored values: they set when the switch falls")]
 const TWO_PI: f32 = 6.283;
+#[allow(clippy::approx_constant, reason = "the DLL's stored values: they set when the switch falls")]
 const PI: f32 = 3.1415;
 
 /// FUN_10187720: the sun and moon light directions (the way the light travels, +y down) at `minute`.

@@ -862,6 +862,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant, reason = "a region's rotation as the zone DAT stores it")]
     fn zone_line_segments() {
         // Ru'Lude Gardens' Mog House lift: the box under the floor, our place at the button, the event's pose below.
         let r = Region { name: "zmrmzmrn".into(), pos: [48.989, 17.19, -79.994], rot: [0.0, 3.1416, 0.0], scale: [12.0, 10.0, 10.0], class: 0, param: 0, flags: 0, floors: [0, 0] };

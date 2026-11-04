@@ -250,6 +250,7 @@ const WALL_2F: [[f32; 3]; 92] = [
 
 /// FUN_101cdd90 / FUN_101cdf50: a piece's position (the centre of its turned footprint, 0.6-unit cells, its level in
 /// 0.1 units up) or its wall slot's (none past the table), and its yaw (rot x pi / 2).
+#[allow(clippy::approx_constant, reason = "1.570796 kept as written so placements don't move")]
 pub fn place(f: &Furn, map: u16, floor: u8, col: i8, level: i8, row: i8, rot: u8) -> Option<(Vec3, f32)> {
     let yaw = rot as f32 * 1.570_796;
     if f.wall() {
@@ -433,6 +434,7 @@ mod tests {
     /// MODLOG "Mog House furniture": a Simple Bed (4 x 6) at column 0 row 0 turned 0 / 1, a pot on a level-5 surface,
     /// a 1 x 1 piece on 2F, wall slot 3 (and San d'Oria's), 2F slot 40.
     #[test]
+    #[allow(clippy::approx_constant, reason = "place()'s 1.570796")]
     fn places() {
         let bed = Furn { flags: 0, model: 2, size: [4, 6], height: 70 };
         let near = |(p, y): (Vec3, f32), q: [f32; 3], yaw: f32| (p - Vec3::from(q)).length() < 1e-4 && (y - yaw).abs() < 1e-4;

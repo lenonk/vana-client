@@ -64,6 +64,7 @@ pub struct MouseCursor {
 
 impl MouseCursor {
     /// FUN_10125360's arrow for a camera drag from `from` to `at`: angle atan2(dy, dx) - pi/2 and +0xa6 by 45 deg bins.
+    #[allow(clippy::approx_constant, reason = "FUN_10125360's truncated pi values, kept as written")]
     pub fn camera_drag(&mut self, from: (f32, f32), at: (f32, f32)) {
         let (dx, dy) = (at.0 - from.0, at.1 - from.1);
         let mut a = dy.atan2(dx) - 1.57075;
