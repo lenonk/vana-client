@@ -150,12 +150,14 @@ pub struct Screen {
     fx_shots: Vec<(Arc<SchedFile>, u32, String, String, f32, [crate::fx::sched::Who; 2])>,
     /// Crossfades (op 0x10) of an event's effect tasks, their lengths, started at the next advance.
     fx_crosses: Vec<f32>,
+    /// The scene is held black after a zone-in with a login event (hold_black) and no 0x0f has raised it yet.
+    login_black: bool,
 }
 
 
 impl Default for Screen {
     fn default() -> Self {
-        Screen { scheds: Vec::new(), files: HashMap::new(), shot: None, tick: 0.0, fade: ([1.0; 3], [1.0; 3], 0.0, 0.0), level: ([1.0; 3], [1.0; 3], 0.0, 0.0), cross: None, flash: ([0.0; 4], [0.0; 4], 0.0, 0.0), blur: ([0.5, 0.5, 0.5, 0.0, 1.0], [0.5, 0.5, 0.5, 0.0, 1.0], 0.0, 0.0), blur_starts: 0, fx_shots: Vec::new(), fx_crosses: Vec::new() }
+        Screen { scheds: Vec::new(), files: HashMap::new(), shot: None, tick: 0.0, fade: ([1.0; 3], [1.0; 3], 0.0, 0.0), level: ([1.0; 3], [1.0; 3], 0.0, 0.0), cross: None, flash: ([0.0; 4], [0.0; 4], 0.0, 0.0), blur: ([0.5, 0.5, 0.5, 0.0, 1.0], [0.5, 0.5, 0.5, 0.0, 1.0], 0.0, 0.0), blur_starts: 0, fx_shots: Vec::new(), fx_crosses: Vec::new(), login_black: false }
     }
 }
 
@@ -183,6 +185,24 @@ impl Screen {
         ((l[0] + l[1] + l[2]) / 3.0).clamp(0.0, 1.0)
     }
 
+    /// A zone-in that carries a login event: the scene stays black until the event fades it in. Retail starts the
+    /// zone's own fade-in (file 30904 `fdi0`, op 0x0f to 0x80 over 30 ticks) only when the 0x00A has no EventNum
+    /// (FUN_10093db0 sets the fade state to 1 only then), so the colour multiply stays at the black the zone change
+    /// left it at; the event's `fdi1` (0x0f to 0x80 over 60 ticks, from the colour now) brings the picture in. Ours
+    /// draws the zone fade separately (World::fade) and starts each zone at 1.0, so the hold is set here.
+    pub fn hold_black(&mut self) {
+        self.fade = ([0.0; 3], [0.0; 3], self.tick, 0.0);
+        self.login_black = true;
+    }
+
+    /// The login event ended (or never ran) without a 0x0f of its own: fade in as `fdi0` would (ours; retail has no
+    /// such fallback, its opening scripts all fade in).
+    pub fn release_black(&mut self) {
+        if std::mem::take(&mut self.login_black) {
+            self.fade = (self.lerp(self.fade), [1.0; 3], self.tick, 29.0);
+        }
+    }
+
     /// An effect scheduler's screen op (fx/tasks.rs): 0x0f the multiply, 0x72 the flash over dur x speed - 1 ticks,
     /// 0x0e the feedback blur over dur x speed. Each starts from the last one's target (its task is killed first).
     pub fn fx_op(&mut self, code: u8, c: [u8; 4], zoom: f32, ticks: f32) {
@@ -190,7 +210,10 @@ impl Screen {
         let now = self.tick;
         match code {
             // Case 0xf: from the colour drawn now (+0x320), an interrupted fade too.
-            0x0f => self.fade = (self.lerp(self.fade), [c[0], c[1], c[2]].map(|v| v as f32 * 2.0 / 255.0), now, (ticks - 1.0).max(0.0)),
+            0x0f => {
+                self.fade = (self.lerp(self.fade), [c[0], c[1], c[2]].map(|v| v as f32 * 2.0 / 255.0), now, (ticks - 1.0).max(0.0));
+                self.login_black = false;
+            }
             // Case 0x51 (all.c 66225): the 0x0f task on the level.
             0x51 => self.level = (self.lerp(self.level), [c[0], c[1], c[2]].map(|v| v as f32 * 2.0 / 255.0), now, (ticks - 1.0).max(0.0)),
             0x72 => self.flash = (self.flash.1, c.map(f), now, (ticks - 1.0).max(0.0)),
@@ -322,6 +345,7 @@ impl Screen {
         }
         if let Some((to, at, ticks)) = fade {
             self.fade = (self.lerp(self.fade), to, at, ticks);
+            self.login_black = false;
         }
         if let Some((to, at, ticks)) = level {
             self.level = (self.lerp(self.level), to, at, ticks);
@@ -1822,6 +1846,7 @@ pub fn update(w: &mut World, dt: f32) {
                     // Nothing would ever end it: answer at once so the server lets go.
                     let s = &wt.start;
                     log::warn!("event {:#x}: no script in zone {fz}; ending it", s.event);
+                    w.screen.release_black();
                     let _ = w.net.commands.send(NetCommand::EventEnd { target: s.target, index: s.index, option: 0, zone: s.zone, event: s.event, mode: 0 });
                     w.control_lock = None;
                     return;
@@ -2012,6 +2037,7 @@ fn keep_pose(w: &mut World, p: Pose) {
 /// FUN_100ac9c0 / FUN_100bb750 / FUN_1008d710: the bound actors go back to their own transforms and status
 /// bits, event motions and looks end, deferred despawns happen.
 fn finish(w: &mut World, live: Box<Live>) {
+    w.screen.release_black();
     // FUN_100acf20: first person as it was before the event.
     w.camst.first = live.st.first_saved;
     // Op 0x77's weather without its 0x78: the lighting goes back with the event, so the effects do too.
@@ -2907,6 +2933,32 @@ pub fn source_line(w: &mut World, source: u16, id: u16, num: [u32; 5], mode: u8,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A login event holds the scene black; `fdi1` (0x0f to 0x80 over 60 ticks) fades it in from there, and an event
+    /// that ends without a fade of its own gets one.
+    #[test]
+    fn login_event_holds_black_until_its_fade() {
+        let mut sc = Screen::default();
+        sc.hold_black();
+        sc.tick = 30.0;
+        assert_eq!(sc.multiply(), [0.0; 3]);
+        sc.fx_op(0x0f, [0x80, 0x80, 0x80, 0], 1.0, 60.0);
+        sc.tick = 30.0 + 59.0 / 2.0;
+        assert!((sc.multiply()[0] - 0.5).abs() < 0.01, "{:?}", sc.multiply());
+        sc.tick = 100.0;
+        assert!((sc.multiply()[0] - 1.0).abs() < 0.01);
+        // The fade was the event's: the end leaves the colour alone.
+        sc.fx_op(0x0f, [0, 0, 0, 0x80], 1.0, 1.0);
+        sc.release_black();
+        sc.tick = 200.0;
+        assert_eq!(sc.multiply(), [0.0; 3]);
+
+        let mut sc = Screen::default();
+        sc.hold_black();
+        sc.release_black();
+        sc.tick = 29.0;
+        assert_eq!(sc.multiply(), [1.0; 3]);
+    }
 
     /// A Unity leader's line as s2c 0x017 kind 0x21 carried it (Attr 8, no name).
     #[test]

@@ -8923,6 +8923,8 @@ impl App {
                     // bin on zoning, so slots kept from the last zone would go stale (retail's reset: inferred).
                     world.inv = items::Inventory { sizes: world.inv.sizes, sizes2: world.inv.sizes2, ..Default::default() };
                     if let Some(ev) = login_event {
+                        // FUN_10093db0: no zone fade-in under a login event; the event's own fade brings the scene in.
+                        world.screen.hold_black();
                         event::queue(world, ev);
                     }
                     let _ = world.net.commands.send(NetCommand::StatusRequest(0));
