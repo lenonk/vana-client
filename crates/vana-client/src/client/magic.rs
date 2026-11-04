@@ -1022,9 +1022,18 @@ fn rebuild(w: &mut World, kind: Kind) {
     }
 }
 
+/// FUN_1021e670: the status icon list (DAT_10485a30, 32 u16) holds this status id (0xffff is an empty slot).
+pub fn has_status(icons: &[u16; 32], id: u16) -> bool {
+    id != 0xffff && icons.contains(&id)
+}
+
 /// FUN_1022b3d0 -> FUN_1012c1d0(0, record +0xc * 20): the bar runs for the cast byte times 20 ticks (Cure's 8: 2.67 s,
-/// where LSB casts it in 2 s; retail's bar can end late). Not done: none under Chainspell (status 48).
+/// where LSB casts it in 2 s; retail's bar can end late). Under Chainspell (status 48) the bar never opens
+/// (FUN_1021e670(0x30) == 0 gates the open; the "sp??" close still runs).
 pub fn open_cast_bar(w: &mut World, spell: u16) {
+    if has_status(&w.buffs, 48) {
+        return;
+    }
     let Some(r) = w.actions.as_ref().and_then(|a| a.spell(spell)) else { return };
     let total = r.cast as f32 * 20.0;
     if total > 0.0 {
@@ -1312,6 +1321,17 @@ mod tests {
         // All known ids by key: 9 7 5 3 1; the others (9, 7) zeroed, then refilled in their old order.
         assert_eq!(&o.list[..5], &[9, 7, 5, 3, 1]);
         assert_eq!(o.count, 5);
+    }
+
+    /// FUN_1021e670: the scan finds a status anywhere in the list, and 0xffff holes are not a status.
+    #[test]
+    fn status_scan() {
+        let mut icons = [0xffffu16; 32];
+        assert!(!has_status(&icons, 48));
+        assert!(!has_status(&icons, 0xffff));
+        icons[31] = 48;
+        assert!(has_status(&icons, 48));
+        assert!(!has_status(&icons, 47));
     }
 
     #[test]
