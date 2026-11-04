@@ -87,6 +87,11 @@ pub struct UiBatch {
 }
 
 impl UiBatch {
+    /// Whether a quad in the batch draws with texture `name`.
+    pub fn uses(&self, name: &str) -> bool {
+        self.runs.iter().any(|r| r.texture.as_deref() == Some(name))
+    }
+
     /// The game font's text is drawn in the TrueType face (the modern skin, or a mod's switch).
     pub fn ttf_text(&self) -> bool {
         self.modern.is_some() || self.ttf
@@ -827,6 +832,11 @@ impl UiRenderer {
     pub fn replace_image(&mut self, gpu: &Gpu, name: &str, width: u32, height: u32, rgba: &[u8]) {
         let bg = Self::bind(gpu, &self.texture_layout, &self.sampler, width, height, rgba);
         self.textures.insert(name.to_string(), bg);
+    }
+
+    /// Frees the image under `name`.
+    pub fn drop_image(&mut self, name: &str) {
+        self.textures.remove(name);
     }
 
     /// Uploads one RGBA8 image under `name` unless one is already there.
