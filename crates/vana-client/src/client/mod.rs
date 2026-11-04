@@ -14406,6 +14406,8 @@ impl App {
                     _ => 32,
                 };
                 r.set_sway(dt * 60.0, steps, crate::dat::zone::SWAY_TAGS.iter().position(|t| *t == crate::dat::weather::weather_tag(w.weather)));
+                // FUN_1001d240's helper target for faded actors (drawn opaque, then blended as one quad).
+                r.prepare_faded(&gfx.gpu, &scene_tex);
                 perf::timed(|| "zone render".into(), || r.render(&gfx.gpu, &mut encoder, &scene_raw, &scene_depth, &camera, aspect, &actors));
                 mark!("scene");
                 // The actors' ground shadows over the scene (client/shadows.rs, render/shadow.rs).

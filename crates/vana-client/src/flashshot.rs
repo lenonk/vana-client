@@ -1,6 +1,6 @@
 //! flash-shot: a Hume in a zone at an hour, GPU-skinned as the client draws actors, with the target flash at
 //! k = 0, 0.5 and 1 (client/flash.rs), then the refraction pass (ops 0x48 / 0x49) at a few levels and model colour
-//! alphas, each to a PNG.
+//! alphas, and a faded actor (alpha 0x40, the offscreen composite), each to a PNG.
 
 use crate::{config, dat, render};
 use anyhow::Result;
@@ -39,7 +39,7 @@ pub fn run(zone: u32, hour: f32, pos: [f32; 3], out_dir: &std::path::Path) -> Re
     let idle: Vec<_> = ch.find_animations("idl").into_iter().map(|a| (a, 0.0)).collect();
     let model = Mat4::from_translation(p) * Mat4::from_rotation_y(-std::f32::consts::FRAC_PI_4);
     // (flash k, refraction level and model colour alpha byte, name).
-    let runs: [(f32, Option<(f32, u32)>, &str); 7] = [
+    let runs: [(f32, Option<(f32, u32)>, &str); 8] = [
         (0.0, None, "flash_k0.png"),
         (0.5, None, "flash_k05.png"),
         (1.0, None, "flash_k1.png"),
@@ -47,7 +47,10 @@ pub fn run(zone: u32, hour: f32, pos: [f32; 3], out_dir: &std::path::Path) -> Re
         (0.0, Some((0.1, 0x40)), "refract_40.png"),
         (0.0, Some((0.5, 0x3c)), "refract_3c.png"),
         (0.0, Some((0.22, 0x0b)), "refract_0b.png"),
+        // Level 0: no refraction, only the fade (drawn offscreen, blended as one quad: no self-overlap).
+        (0.0, Some((0.0, 0x40)), "faded_40.png"),
     ];
+    r.prepare_faded(&gpu, &target);
     for (k, refract, name) in runs {
         actor.flash = [k, k];
         // FUN_100cbde0's draw alpha from the model colour alpha, and FUN_100d6d30's TFACTOR alpha.
@@ -55,7 +58,7 @@ pub fn run(zone: u32, hour: f32, pos: [f32; 3], out_dir: &std::path::Path) -> Re
             let f = a as f32 / 128.0;
             if f >= 0.8 { 1.0 } else { f * 1.25 }
         });
-        actor.refract = refract.map(|(level, a)| render::Refract { level, r: render::Refract::tf_alpha(a) }).filter(|r| r.r > 0.0);
+        actor.refract = refract.filter(|(level, _)| *level > 0.0).map(|(level, a)| render::Refract { level, r: render::Refract::tf_alpha(a) }).filter(|r| r.r > 0.0);
         r.begin_poses();
         r.pose_actor_gpu(&mut actor, &ch, &[], &idle, &[], 1.0, model, None, None, &[]);
         let mut enc = gpu.device.create_command_encoder(&Default::default());

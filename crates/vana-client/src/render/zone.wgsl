@@ -417,6 +417,10 @@ fn fs_opaque(in: VertexOut) -> @location(0) vec4<f32> {
 // Characters carry no baked lighting: shade by the normal. Placeholder until the D3D8 light setup is known.
 @fragment
 fn fs_actor(in: VertexOut) -> @location(0) vec4<f32> {
+    return actor_colour(in);
+}
+
+fn actor_colour(in: VertexOut) -> vec4<f32> {
     let texel = textureSample(tex, samp, in.uv);
     if (texel.a < 0.3) {
         discard;
@@ -429,6 +433,34 @@ fn fs_actor(in: VertexOut) -> @location(0) vec4<f32> {
     let diffuse = max(dot(normalize(in.normal), normalize(-u.light.xyz)), 0.0);
     let lit = texel.rgb * (u.light.w + (1.0 - u.light.w) * diffuse) * in.tint;
     return vec4<f32>(shade(in, vec4<f32>(lit, 1.0)).rgb, alpha);
+}
+
+// A faded actor's offscreen pass (FUN_1002b6e0 with FUN_1001d240 on): drawn opaque, alpha test only (ALPHAREF 0x45,
+// TFACTOR alpha fixed 0x80), into a target cleared to 0; render_faded then blends it as one quad.
+@fragment
+fn fs_actor_solid(in: VertexOut) -> @location(0) vec4<f32> {
+    let c = actor_colour(in);
+    return vec4<f32>(c.rgb, 1.0);
+}
+
+struct FadedOut {
+    @builtin(position) clip: vec4<f32>,
+};
+
+@vertex
+fn vs_faded(@builtin(vertex_index) i: u32) -> FadedOut {
+    let p = vec2<f32>(f32((i << 1u) & 2u), f32(i & 2u)) * 2.0 - 1.0;
+    var out: FadedOut;
+    out.clip = vec4<f32>(p, 0.0, 1.0);
+    return out;
+}
+
+// FUN_1001d3b0: the offscreen target over the viewport, point sampled, colour MODULATE2X(TEX, 0x80 grey) = the
+// texel, alpha MODULATE2X(fade alpha, TEX alpha); SRCALPHA / INVSRCALPHA, z off. refr.a.z = the fade alpha (1 = 0x80).
+@fragment
+fn fs_faded(in: FadedOut) -> @location(0) vec4<f32> {
+    let c = textureLoad(tex, vec2<i32>(in.clip.xy), 0);
+    return vec4<f32>(c.rgb, clamp(c.a * refr.a.z, 0.0, 1.0));
 }
 
 // Placements named '_': D3DRS_ALPHAFUNC GREATER, ALPHAREF 0x60 on alpha = tex.a x vertex.a x 4 (MODULATE4X; ours with
