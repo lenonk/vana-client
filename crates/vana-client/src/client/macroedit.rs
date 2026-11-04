@@ -103,10 +103,19 @@ pub(super) fn cell_title(gu: &mut GameUi, title: &str, r: [f32; 4], pad: f32) {
     }
 }
 
-/// The play and edit palettes sit 0x82 further right while gaugewin or cnttime is up (FUN_101a3840: DAT_105781ec /
-/// DAT_10578184, not the cast bar).
-pub(super) fn palette_dx(w: &World) -> f32 {
-    if w.gauge.is_some() || w.objective.counting() { 130.0 } else { 0.0 }
+/// Where the play and edit palettes sit (FUN_101a3840 and the other palette placers, mode DAT_106218ee): Misc. 2
+/// config 0x9e 0 moves them 0x82 further right while gaugewin or cnttime is up (DAT_105781ec / DAT_10578184, not the
+/// cast bar), 1 keeps them there. FUN_1019b6d0 stores -1 (never moved) when the UI is under 640 wide and the long
+/// palette is off.
+pub(super) fn palette_dx(w: &World, sw: f32) -> f32 {
+    let up = w.gauge.is_some() || w.objective.counting();
+    if palette_moved(w.game.get(0x9d), w.game.get_i(0x9e), sw, up) { 130.0 } else { 0.0 }
+}
+
+fn palette_moved(cfg9d: u32, cfg9e: i32, sw: f32, up: bool) -> bool {
+    let long = cfg9d == 0 && sw >= 1024.0;
+    let mode = if sw < 640.0 && !long { -1 } else { cfg9e };
+    mode == 1 || (mode == 0 && up)
 }
 
 /// Social child 6 (FUN_1014e7b0 case 6): mcrmenu over the social page (which the walk suspends), SE 0002.
@@ -954,7 +963,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     }
     // The palettes, the focused one drawn last, Alt 42 lower; mcrbedit beside them.
     let long = w.game.get(0x9d) == 0 && sw >= 1024.0;
-    let dx = palette_dx(w);
+    let dx = palette_dx(w, sw);
     let order = if e.focus == 1 { [2u8, 1] } else { [1, 2] };
     for p in order {
         let name = format!("menu    mcr{p}{}", if long { "edlo" } else { "edit" });
@@ -1124,5 +1133,15 @@ mod tests {
     fn glyphs() {
         assert_eq!([b'1', b'9', b'0', b'a', b'z', b'A', b'Z'].map(alpha_index), [Some(0), Some(8), Some(9), Some(10), Some(35), Some(36), Some(61)]);
         assert_eq!(alpha_index(b' '), None);
+    }
+
+    #[test]
+    fn misc2_palette_position() {
+        // 0: moved only while the gauge or the countdown is up; 1: always moved.
+        assert!(!palette_moved(1, 0, 800.0, false));
+        assert!(palette_moved(1, 0, 800.0, true));
+        assert!(palette_moved(1, 1, 800.0, false));
+        // Under 640 wide without the long palette: never moved.
+        assert!(!palette_moved(1, 1, 600.0, true));
     }
 }

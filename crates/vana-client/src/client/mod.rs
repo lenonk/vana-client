@@ -3769,8 +3769,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         let p = world.palette.0 as usize;
         let long = world.game.get(0x9d) == 0 && sw >= 1024.0;
         let name = format!("menu    mcr{p}{}", if long { "long" } else { "pall" });
-        // 0x82 to the right while gaugewin or cnttime is up (FUN_101a3840, mode DAT_106218ee 0).
-        let dx = macroedit::palette_dx(world);
+        // 0x82 to the right by Misc. 2 config 0x9e (FUN_101a3840, mode DAT_106218ee).
+        let dx = macroedit::palette_dx(world, sw);
         if let Some(win) = gu.lobby_window_off(&name, sw, sh, (dx, 0.0), Some(world.palette.3[p - 1] as u16 + 1), true, &[]) {
             let pad = if win.frame[2] >= 800.0 { 4.0 } else { 2.0 };
             for (k, (_, r)) in win.children.iter().take(10).enumerate() {
