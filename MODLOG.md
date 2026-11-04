@@ -20832,7 +20832,8 @@ From the 30261006_0 decompile; ours in client/swkbd.rs (classic) and modern/keyb
   spread, stock 4 / 10 from FUN_10187050; saved once by FUN_100ba040). FUN_10188a50 toggles gusts at random
   (rand % 60 frames, x1.2 while blowing) with strength (rand % spread + base) x 0.0025, decaying 0.01 a frame
   when calm, and FUN_10023700 pulls the cloth vertices of character meshes toward +0x124 by it. Our client draws
-  cloth vertices skinned and has no cloth simulation, so 0x97 stays unhandled until one exists.
+  cloth vertices skinned and has no cloth simulation, so 0x97 stays unhandled until one exists. [Built: "Cloth: wind
+  gusts and the cloth simulation" (2026-11-03).]
 - Op names and descriptions for 0x77 / 0x78 / 0x97 / 0x98 / 0xa9 / 0xc9 in dat/event_ops.rs now name the real
   handlers (the old FUN names were off); 0xc9 is `clock_run`.
 

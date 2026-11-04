@@ -51,6 +51,16 @@ pub struct Skeleton {
     /// Bounding boxes (FUN_100cfb40) at the end of the point table: 0 standing, 1 engaged / sitting / riding, 2
     /// dead; six floats each (y b0..b1, x +-b2 / b3, z b4..b5).
     pub boxes: Vec<[f32; 6]>,
+    /// Cloth collision spheres (FUN_10035290: the end of the point table + 0x6c, 64 slots of 0x12 bytes): bone,
+    /// radius and the centre in the bone's frame. Cloth meshes pick theirs by index.
+    pub spheres: Vec<ClothSphere>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClothSphere {
+    pub bone: i16,
+    pub radius: f32,
+    pub offset: Vec3,
 }
 
 /// u16 ?, u16 bone count, then 30-byte bones: parent u8, term u8, quat xyzw, translation xyz.
@@ -91,7 +101,11 @@ pub fn parse_skeleton(name: String, d: &[u8]) -> Result<Skeleton> {
     let look_limits = [0, 1].map(|i| [0, 1, 2].map(|k| if lim + 12 * i + 4 * k + 4 <= d.len() { f32_at(d, lim + 12 * i + 4 * k) } else { 0.0 }));
     let at_box = at + 4 + count * 26;
     let boxes = (0..3).take_while(|i| at_box + 0x18 * i + 0x18 <= d.len()).map(|i| std::array::from_fn(|k| f32_at(d, at_box + 0x18 * i + 4 * k))).collect();
-    Ok(Skeleton { name, bones, points, point_rots, look_limits, boxes })
+    // FUN_10035290 (FUN_10035270(0) + 0x24): 64 slots of {s16 bone, f32 radius, f32 offset xyz}, unused ones 0xCD
+    // fill.
+    let sph = at_box + 0x6c;
+    let spheres = (0..64).map(|i| sph + i * 0x12).take_while(|o| o + 0x12 <= d.len()).map(|o| ClothSphere { bone: u16_at(d, o) as i16, radius: f32_at(d, o + 2), offset: vec3_at(d, o + 6) }).collect();
+    Ok(Skeleton { name, bones, points, point_rots, look_limits, boxes, spheres })
 }
 
 /// One bone's share of a vertex. `pos`/`normal` are pre-scaled by `weight` in the file.
@@ -127,6 +141,138 @@ pub struct MeshPart {
     pub groups: Vec<Group>,
     /// Cloth vertices (position only): retail's FUN_100216a0 path.
     pub cloth: bool,
+    /// The cloth simulation's data (mesh class 1, not mirrored).
+    pub sim: Option<std::sync::Arc<ClothSpec>>,
+}
+
+/// One cloth constraint: particle indices (bit 0x8000 = that end stays put) and the rest length.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClothEdge {
+    pub a: u16,
+    pub b: u16,
+    pub rest: f32,
+}
+
+/// A cloth mesh's simulation header (chunk @0x2a..0x52, FUN_10022470 fixes up the offsets). Particles are the
+/// vertices in file order: the one-bone block (`counts[0]`) then the two-bone block; the first `pins[k]` of each
+/// block follow the skin, the rest are free.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClothSpec {
+    pub counts: [usize; 2],
+    pub pins: [usize; 2],
+    /// Group 1 (stiffness `k[0]`) then group 2 (`k[1]`); `group1` edges are in the first.
+    pub edges: Vec<ClothEdge>,
+    pub group1: usize,
+    pub k: [f32; 2],
+    pub damping: f32,
+    pub gravity: f32,
+    pub inertia: f32,
+    /// Indices into the skeleton's sphere table.
+    pub spheres: Vec<u16>,
+    /// Every triangle of the poly stream, colour-only ones too, as FUN_10024900 walks it for the normals.
+    pub tris: Vec<[u16; 3]>,
+}
+
+impl ClothSpec {
+    pub fn particles(&self) -> usize {
+        self.counts[0] + self.counts[1]
+    }
+
+    /// A particle the skin places (the first pins of its block).
+    pub fn pinned(&self, i: usize) -> bool {
+        if i < self.counts[0] { i < self.pins[0] } else { i - self.counts[0] < self.pins[1] }
+    }
+}
+
+/// The cloth header: pins u16 @0x2a / @0x2c, edges @0x2e (u32 words; u16 words @0x32 in all, group 1 @0x34, group 2
+/// @0x36, 4 words an edge: u16 a, u16 b, f32 rest), k1 / k2 @0x38 / @0x3c, damping @0x40, gravity @0x44, inertia
+/// @0x48, sphere indices @0x4c (u32 words; u16 count @0x50).
+fn parse_cloth(name: &str, d: &[u8], counts: [usize; 2], poly: &[u8]) -> Result<ClothSpec> {
+    if d.len() < 0x52 {
+        bail!("cloth {name}: header too short");
+    }
+    let n = counts[0] + counts[1];
+    let pins = [u16_at(d, 0x2a) as usize, u16_at(d, 0x2c) as usize];
+    let edges_at = u32_at(d, 0x2e) as usize * 2;
+    let (g1, g2) = (u16_at(d, 0x34) as usize >> 2, u16_at(d, 0x36) as usize >> 2);
+    if edges_at + (g1 + g2) * 8 > d.len() {
+        bail!("cloth {name}: edges out of range");
+    }
+    let edges: Vec<ClothEdge> = (0..g1 + g2).map(|i| edges_at + i * 8).map(|o| ClothEdge { a: u16_at(d, o), b: u16_at(d, o + 2), rest: f32_at(d, o + 4) }).collect();
+    if edges.iter().any(|e| (e.a & 0x7fff) as usize >= n || (e.b & 0x7fff) as usize >= n) {
+        bail!("cloth {name}: an edge refers past {n} particles");
+    }
+    let sph_at = u32_at(d, 0x4c) as usize * 2;
+    let sph_n = u16_at(d, 0x50) as usize;
+    if sph_at + sph_n * 2 > d.len() {
+        bail!("cloth {name}: sphere list out of range");
+    }
+    let params = [f32_at(d, 0x38), f32_at(d, 0x3c), f32_at(d, 0x40), f32_at(d, 0x44), f32_at(d, 0x48)];
+    if params.iter().chain(edges.iter().map(|e| &e.rest)).any(|f| !f.is_finite()) {
+        bail!("cloth {name}: a parameter or rest length is not finite");
+    }
+    let tris = cloth_tris(poly);
+    if tris.iter().flatten().any(|&v| v as usize >= n) {
+        bail!("cloth {name}: a triangle refers past {n} particles");
+    }
+    Ok(ClothSpec {
+        counts,
+        pins: [pins[0].min(counts[0]), pins[1].min(counts[1])],
+        edges,
+        group1: g1,
+        k: [params[0], params[1]],
+        damping: params[2],
+        gravity: params[3],
+        inertia: params[4],
+        spheres: (0..sph_n).map(|i| u16_at(d, sph_at + i * 2)).collect(),
+        tris,
+    })
+}
+
+/// FUN_10024900's walk of the poly stream: "C\0" lists (5 words a triangle), "T\0" lists (15), "SC" strips (first
+/// triangle 5 words, then 1 a vertex) and "ST" strips (15, then 5); strips swap the first two corners every other
+/// triangle. Material and texture records are skipped; 0xFFFF or a short record ends it.
+fn cloth_tris(p: &[u8]) -> Vec<[u16; 3]> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    let idx = |o: usize| u16_at(p, o);
+    let strip = |out: &mut Vec<[u16; 3]>, v: Vec<u16>| {
+        for i in 0..v.len().saturating_sub(2) {
+            let (a, b, c) = (v[i], v[i + 1], v[i + 2]);
+            out.push(if i % 2 == 0 { [a, b, c] } else { [b, a, c] });
+        }
+    };
+    while at + 4 <= p.len() {
+        let (tag, n) = (u16_at(p, at), u16_at(p, at + 2) as usize);
+        let len = match tag {
+            0xFFFF => break,
+            t if t & 0x80F0 == 0x8010 => 46,
+            t if t & 0x80F0 == 0x8000 => 18,
+            0x0043 => 4 + n * 10,
+            0x0054 => 4 + n * 30,
+            0x4353 => 4 + 10 + n.saturating_sub(1) * 2,
+            0x5453 => 4 + 30 + n.saturating_sub(1) * 10,
+            _ => break,
+        };
+        if at + len > p.len() {
+            break;
+        }
+        match tag {
+            0x0043 | 0x0054 => {
+                let size = if tag == 0x0043 { 10 } else { 30 };
+                out.extend((0..n).map(|k| at + 4 + k * size).map(|o| [idx(o), idx(o + 2), idx(o + 4)]));
+            }
+            0x4353 | 0x5453 => {
+                let (first, step) = if tag == 0x4353 { (10, 2) } else { (30, 10) };
+                let mut v = vec![idx(at + 4), idx(at + 6), idx(at + 8)];
+                v.extend((0..n.saturating_sub(1)).map(|k| idx(at + 4 + first + k * step)));
+                strip(&mut out, v);
+            }
+            _ => {}
+        }
+        at += len;
+    }
+    out
 }
 
 /// Header (offsets and counts in u16 units): flags @2 (0x80 = bone indices go through the table,
@@ -217,7 +363,20 @@ pub fn parse_mesh(name: &str, d: &[u8]) -> Result<Vec<MeshPart>> {
                 t.swap(1, 2);
             }
         }
-        parts.push(MeshPart { name: name.to_string(), mirrored, vertices, groups, cloth });
+        // FUN_10023010: a mirrored cloth mesh draws nothing in retail (no retail cloth chunk is mirrored); ours keeps
+        // drawing it skinned, without the simulation.
+        let sim = if cloth && !mirror && flags & 0x7f == 1 {
+            match parse_cloth(name, d, [one, two], &d[poly..poly + poly_len]) {
+                Ok(s) => Some(std::sync::Arc::new(s)),
+                Err(e) => {
+                    log::warn!("{e:#}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        parts.push(MeshPart { name: name.to_string(), mirrored, vertices, groups, cloth, sim });
     }
     Ok(parts)
 }

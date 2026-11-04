@@ -10,6 +10,7 @@ mod config;
 mod eventdump;
 mod gamecfg;
 mod flashshot;
+mod clothshot;
 mod fx;
 mod event_vm;
 mod itemshot;
@@ -427,6 +428,24 @@ enum Cmd {
         /// The actor's feet (world x, y, z).
         #[arg(long, allow_hyphen_values = true, default_value = "82.339,-62.0,269.878")]
         pos: String,
+        #[arg(long)]
+        out_dir: PathBuf,
+    },
+    /// A model file with cloth (DAT file id, e.g. 2114 the flag, 1367): the cloth headers printed, then simulated in
+    /// the wind and walking (cloth_*.png in --out-dir).
+    ClothShot {
+        #[arg(long)]
+        file: u32,
+        #[arg(long, default_value_t = 101)]
+        zone: u32,
+        #[arg(long, default_value_t = 12.0)]
+        hour: f32,
+        /// The actor's feet (world x, y, z).
+        #[arg(long, allow_hyphen_values = true, default_value = "82.339,-62.0,269.878")]
+        pos: String,
+        /// 30 Hz steps per run.
+        #[arg(long, default_value_t = 90)]
+        steps: u32,
         #[arg(long)]
         out_dir: PathBuf,
     },
@@ -1717,6 +1736,11 @@ fn main() -> Result<()> {
             let v: Vec<f32> = pos.split(',').filter_map(|s| s.trim().parse().ok()).collect();
             anyhow::ensure!(v.len() == 3, "--pos wants x,y,z");
             flashshot::run(zone, hour, [v[0], v[1], v[2]], &out_dir)
+        }
+        Cmd::ClothShot { file, zone, hour, pos, steps, out_dir } => {
+            let v: Vec<f32> = pos.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+            anyhow::ensure!(v.len() == 3, "--pos wants x,y,z");
+            clothshot::run(file, zone, hour, [v[0], v[1], v[2]], steps, &out_dir)
         }
         Cmd::CombatShot { out, mob, layout, width, height } => combatshot::combat_shot(&out, &mob, layout, width, height),
         Cmd::InventoryShot { out, scroll, cursor, frame, width, height } => invshot::inventory_shot(&out, scroll, cursor, frame, width, height),

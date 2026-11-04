@@ -6,6 +6,7 @@ mod actmotion;
 mod chaticons;
 mod record;
 mod chair;
+pub mod cloth;
 mod battlemod;
 pub mod opening;
 mod flyover;
@@ -4792,6 +4793,8 @@ struct Actor {
     death_pick: u8,
     /// The riding files on `extra`.
     ride_on: Vec<u32>,
+    /// Its model's cloth (client/cloth.rs), keyed by the model it was built for.
+    cloth: Option<(usize, cloth::Cloth)>,
 }
 
 impl Actor {
@@ -4848,6 +4851,7 @@ impl Actor {
             motion_names: None,
             rate_scale: 1.0,
             ride_on: Vec::new(),
+            cloth: None,
             axes: None,
             appear: 0.0,
             mouth_name: "mou4",
@@ -5735,6 +5739,8 @@ struct World {
     music_state: i32,
     /// Event op 0x5c 0xb1: start the current track again if it has stopped.
     music_restart: bool,
+    /// The environment's wind (DAT_1065cb04 +0x124..): gusts for the cloth; event op 0x97 retunes them.
+    wind: cloth::Wind,
     renderer: Option<ZoneRenderer>,
     /// Effect generators of the zone (fx/).
     effects: crate::fx::Effects,
@@ -8166,6 +8172,7 @@ impl App {
                             music_changing: false,
                             music_state: -1,
                             music_restart: false,
+                            wind: Default::default(),
                             typing: false,
                             space_open: false,
                             open_seen: 0,
@@ -13776,6 +13783,9 @@ impl App {
                 // The event's actors log their motion changes as ours do (cutscene reports).
                 let event_ids: HashSet<u32> = w.event.as_ref().map(|l| l.st.bound.clone()).unwrap_or_default();
                 let mut seen: HashMap<u32, shadows::Seen> = HashMap::new();
+                // FUN_10188a50: the gusts, every frame in retail (30 fps); ours on the cloth's 30 Hz clock.
+                w.wind.advance(dt);
+                let wind = (w.wind.tick, w.wind.dir, w.wind.strength);
                 for (id, a) in w.actors.iter_mut() {
                     let Some(ch) = a.character.clone() else { continue };
                     let Some(&Place { pos, forward, tilt, status, ratio, size }) = places.get(id) else { continue };
@@ -14149,6 +14159,47 @@ impl App {
                     g.lights = w.ground.as_ref().map_or([0; 4], |gr| gr.lights(pos));
                     lamps::offer(&w.lamps.list, pos, &mut g.lights);
                     g.area = actor_area(w.entities.get(id), w.ground.as_ref().and_then(|gr| gr.area(pos))).unwrap_or(0);
+                    // The cloth (client/cloth.rs): a step on each tick of the 30 Hz clock, on screen simulated
+                    // (FUN_10023290), off screen carried along (FUN_100231f0) *(retail skips other actors' steps by
+                    // the frame-skip option, config 64; ours never does)*.
+                    let model_key = Arc::as_ptr(&ch) as usize;
+                    if a.cloth.as_ref().is_none_or(|(k, _)| *k != model_key) {
+                        a.cloth = cloth::Cloth::new(&ch.parts).map(|c| (model_key, c));
+                    }
+                    g.cloth.clear();
+                    if let Some((_, c)) = &mut a.cloth {
+                        let at = model.w_axis.truncate();
+                        if c.tick != wind.0 {
+                            // FUN_100c63d0: a move under 0.01 counts as none.
+                            let d = at - c.at;
+                            let moved = if d.length() < 0.01 { Vec3::ZERO } else { d };
+                            if drawn && visible.contains(id) {
+                                let bones = if a.bones.is_empty() { pose_now() } else { a.bones.clone() };
+                                // Actor +0x17c (FUN_100a4ed0): no wind on a covered floor (MZB object flags bit 2).
+                                let covered = w.ground.as_ref().is_some_and(|g| g.surface(pos).1);
+                                let f = cloth::Frame { skeleton: &ch.skeleton, bones: &bones, model, moved, wind: (!covered).then_some((wind.1, wind.2)) };
+                                c.step(&ch.parts, &f);
+                            } else {
+                                c.carry(moved);
+                            }
+                            (c.tick, c.at) = (wind.0, at);
+                        }
+                        // Ours: between steps the particles ride along with the actor; then into model space. Before the
+                        // first step they hold no positions and the cloth draws skinned.
+                        let inv = model.inverse();
+                        let ride = at - c.at;
+                        let mut n = 0;
+                        for sh in c.sheets.iter().filter(|_| c.placed()) {
+                            if n + sh.p.len() > crate::render::MAX_CLOTH {
+                                continue;
+                            }
+                            n += sh.p.len();
+                            for q in &sh.p {
+                                g.cloth.push(inv.transform_point3(q.cur + ride).extend(1.0).to_array());
+                                g.cloth.push(inv.transform_vector3(q.normal).normalize_or_zero().extend(1.0).to_array());
+                            }
+                        }
+                    }
                     if drawn {
                         let files: Vec<_> = extra.iter().map(|(_, f)| f.clone()).collect();
                         r.pose_actor_gpu(g, &ch, &files, &anims, if a.prev.is_some() { &from } else { &[] }, t, model, look, overlay, &held);

@@ -1319,6 +1319,13 @@ impl Host for LiveHost<'_> {
                     }
                 }
             }
+            // FUN_100ba0c0: the gusts' base val@1 and spread val@3 (DAT_1065cb04 +0x138 / +0x13c), the first 0x97 of
+            // the event saving the old ones (FUN_100ba040) for its end.
+            Effect::Op { op: 0x97, args, .. } => {
+                if let (Some(base), Some(spread)) = (Self::arg_int(&args, 0), Self::arg_int(&args, 1)) {
+                    self.w.wind.set(base, spread);
+                }
+            }
             // FUN_100bab50: day val@1 x 7 at 00:30 (FUN_1018be70 / bfa0 / bf00), and the weekday and moon phase read it
             // (DAT_1065cb20) instead of the server's.
             Effect::Op { op: 0xa9, args, .. } => {
@@ -2012,6 +2019,9 @@ fn begin(w: &mut World, mut wt: Box<Waiting>, index: &DatIndex) {
     }
     log::info!("event {:#x}: {} actors bound, {} start hidden", st.start.event, st.bound.len(), st.hidden.len());
     let mem = w.event_mem.clone();
+    // FUN_100aed00 clears op 0x97's saved flag (DAT_10488978) without restoring: gusts an unfinished event left
+    // become the originals. Before the start, whose init threads may run a 0x97 already.
+    w.wind.forget();
     let mut rt = {
         let mut host = LiveHost { w: &mut *w, st: &mut st, index };
         Runtime::start(blocks, dialog, start, mem, &mut host)
@@ -2255,6 +2265,8 @@ fn keep_pose(w: &mut World, p: Pose) {
 /// bits, event motions and looks end, deferred despawns happen.
 fn finish(w: &mut World, live: Box<Live>) {
     w.screen.release_black();
+    // FUN_100ae3f0 -> FUN_100ba080: op 0x97's gusts back as they were.
+    w.wind.restore();
     // FUN_100acf20: first person as it was before the event.
     w.camst.first = live.st.first_saved;
     // Op 0x77's weather without its 0x78: the lighting goes back with the event, so the effects do too.

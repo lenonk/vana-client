@@ -654,6 +654,9 @@ pub struct ActorGpu {
     pub lights: [u8; 4],
     /// The area 4cc it stands in (vtable +0x188, the floor's +0xb0): its environment lights it (0 = the zone's).
     pub area: u32,
+    /// Cloth particles this frame (client/cloth.rs), two vec4s each in model space: position (w 1 = set) and normal
+    /// (w 1 = set), in the order SkinMesh numbers them. Missing ones draw skinned.
+    pub cloth: Vec<[f32; 4]>,
     /// The last mip job of its textures; drawn once the GPU has it.
     mips: u64,
 }
@@ -671,7 +674,15 @@ struct SkinVertex {
     uv: [f32; 2],
     /// The material's light factor and cloth flag (0 / 1).
     mat: [f32; 2],
+    /// A cloth particle's position vec4 in the pose region (0 none; the normal follows); bit 31: a free particle,
+    /// placed by the simulation rather than the skin.
+    cloth: u32,
 }
+
+/// Cloth particles a pose region holds after the bones (two vec4s each).
+pub const MAX_CLOTH: usize = 1024;
+/// SkinVertex.cloth's free-particle bit.
+const CLOTH_FREE: u32 = 1 << 31;
 
 /// A draw group that is no `wepN` mesh.
 const NO_WEP: u8 = 0xff;
@@ -711,6 +722,8 @@ pub struct SkinMesh {
     /// Texture, vertices, and N of a `wepN` part (NO_WEP otherwise).
     groups: Vec<(String, std::ops::Range<u32>, u8)>,
     bones: usize,
+    /// Cloth particles numbered (SkinVertex.cloth).
+    cloth: usize,
 }
 
 impl SkinMesh {
@@ -719,7 +732,15 @@ impl SkinMesh {
         let slot_of = |b: usize| if b < bones { b as u32 } else { bones as u32 };
         let mut verts: Vec<SkinVertex> = Vec::new();
         let mut groups = Vec::new();
+        // Cloth particles in part order, after the bones and the identity slot.
+        let mut particles = 0usize;
         for part in &ch.parts {
+            let sim = part.sim.as_ref().filter(|s| particles + s.particles() <= MAX_CLOTH);
+            let base = particles;
+            particles += sim.map_or(0, |s| s.particles());
+            let cloth_of = |v: u16| {
+                sim.map_or(0, |s| (POSE_HEAD + POSE_PER_BONE * (bones + 1) + 2 * (base + v as usize)) as u32 | if s.pinned(v as usize) { 0 } else { CLOTH_FREE })
+            };
             let n = part.name.trim_end_matches(['\0', ' ']);
             let wep = n.strip_prefix("wep").and_then(|d| d.parse::<u8>().ok()).filter(|d| *d < 16).unwrap_or(NO_WEP);
             for g in &part.groups {
@@ -739,6 +760,7 @@ impl SkinMesh {
                             w: [i0.weight, w1],
                             uv: c.uv,
                             mat: [g.light, part.cloth as u32 as f32],
+                            cloth: cloth_of(c.vertex),
                         });
                     }
                 }
@@ -748,7 +770,7 @@ impl SkinMesh {
         if verts.is_empty() {
             verts.push(SkinVertex::zeroed());
         }
-        SkinMesh { verts, groups, bones }
+        SkinMesh { verts, groups, bones, cloth: particles }
     }
 }
 
@@ -795,6 +817,8 @@ struct Skinned {
     /// The shine pass's group 3 over these vertices (read as storage for the wrap), made at the first shine.
     shine: std::sync::Arc<std::sync::OnceLock<wgpu::BindGroup>>,
     bones: usize,
+    /// Cloth particles after the bones.
+    cloth: usize,
     /// Dynamic offset of this frame's pose region, and the pose frame it was written in.
     offset: u32,
     frame: u64,
@@ -803,10 +827,10 @@ struct Skinned {
 /// Bones a pose region holds; influences on later bones read the identity slot after them.
 const MAX_BONES: usize = 255;
 /// Pose region in vec4s: model matrix columns, (alpha, flash ambient, flash fog, 0), then (quat, translation, scale)
-/// per bone.
+/// per bone, the identity slot, then two per cloth particle (position, normal).
 const POSE_HEAD: usize = 6;
 pub const POSE_PER_BONE: usize = 3;
-const POSE_BINDING: u64 = ((POSE_HEAD + POSE_PER_BONE * (MAX_BONES + 1)) * 16) as u64;
+const POSE_BINDING: u64 = ((POSE_HEAD + POSE_PER_BONE * (MAX_BONES + 1) + 2 * MAX_CLOTH) * 16) as u64;
 
 /// Strip to list, dropping the degenerate triangles that join strips.
 fn strip_to_list(strip: &[u16]) -> Vec<u16> {
@@ -971,7 +995,7 @@ impl ZonePipes {
         let skin_buffers = [Some(wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<SkinVertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x3, 4 => Uint32x2, 5 => Float32x2, 6 => Float32x2, 7 => Float32x2],
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x3, 4 => Uint32x2, 5 => Float32x2, 6 => Float32x2, 7 => Float32x2, 8 => Uint32],
         })];
         let skin_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("skinned actors"),
@@ -2327,7 +2351,7 @@ impl ZoneRenderer {
         let mesh = ch.skin.clone().unwrap_or_else(|| std::sync::Arc::new(SkinMesh::build(ch)));
         a.draws = mesh.groups.iter().map(|(tex, r, wep)| (a.slot.get(tex.as_str()).copied().unwrap_or(0), r.clone(), *wep)).collect();
         let vertices = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("skinned actor"), contents: bytemuck::cast_slice(&mesh.verts), usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE });
-        a.skin = Some(Skinned { vertices, shine: Default::default(), bones: mesh.bones, offset: 0, frame: u64::MAX });
+        a.skin = Some(Skinned { vertices, shine: Default::default(), bones: mesh.bones, cloth: mesh.cloth, offset: 0, frame: u64::MAX });
         a
     }
 
@@ -2357,12 +2381,13 @@ impl ZoneRenderer {
                 hidden_weps: ch.init_hidden_mask(),
                 shine: None,
                 refract: None,
-                skin: Some(Skinned { vertices, shine: Default::default(), bones: mesh.bones, offset: 0, frame: u64::MAX }),
+                skin: Some(Skinned { vertices, shine: Default::default(), bones: mesh.bones, cloth: mesh.cloth, offset: 0, frame: u64::MAX }),
                 alpha: 1.0,
                 tint: [1.0; 3],
                 flash: [0.0, 1.0],
                 lights: [0; 4],
                 area: 0,
+                cloth: Vec::new(),
                 mips: 0,
             };
             self.builds.push((key, Build { ch: ch.clone(), mesh, actor, registered: false, vert_at: 0, tex: 0, cur: None }));
@@ -2430,6 +2455,9 @@ impl ZoneRenderer {
         self.poses.push([0.0, 0.0, 0.0, 1.0]);
         self.poses.push([0.0; 4]);
         self.poses.push([1.0, 1.0, 1.0, 0.0]);
+        // Unset particles (w 0) draw skinned.
+        let n = skin.cloth * 2;
+        self.poses.extend(actor.cloth.iter().copied().chain(std::iter::repeat([0.0; 4])).take(n));
     }
 
     /// Asks for an attach point (bone, offset) of an actor posed this frame, relative to its root in world axes,
@@ -2481,7 +2509,7 @@ impl ZoneRenderer {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        ActorGpu { textures, slot, vertices: None, draws: Vec::new(), instance, hidden_weps: 0, shine: None, refract: None, skin: None, alpha: 1.0, tint: [1.0; 3], flash: [0.0, 1.0], lights: [0; 4], area: 0, mips }
+        ActorGpu { textures, slot, vertices: None, draws: Vec::new(), instance, hidden_weps: 0, shine: None, refract: None, skin: None, alpha: 1.0, tint: [1.0; 3], flash: [0.0, 1.0], lights: [0; 4], area: 0, cloth: Vec::new(), mips }
     }
 
     /// A shine image goes up once (effect file, IMG node).

@@ -239,6 +239,7 @@ struct SkinIn {
     @location(5) w: vec2<f32>,
     @location(6) uv: vec2<f32>,
     @location(7) mat: vec2<f32>,
+    @location(8) cloth: u32,
 };
 
 fn qrot(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
@@ -256,8 +257,20 @@ fn vs_skinned(v: SkinIn) -> VertexOut {
 fn skin(v: SkinIn) -> VertexOut {
     let a = 6u + 3u * v.bones.x;
     let b = 6u + 3u * v.bones.y;
-    let p = qrot(pose[a], pose[a + 2u].xyz * v.p0) + pose[a + 1u].xyz * v.w.x + qrot(pose[b], pose[b + 2u].xyz * v.p1) + pose[b + 1u].xyz * v.w.y;
-    let n = qrot(pose[a], v.n0) + qrot(pose[b], v.n1);
+    var p = qrot(pose[a], pose[a + 2u].xyz * v.p0) + pose[a + 1u].xyz * v.w.x + qrot(pose[b], pose[b + 2u].xyz * v.p1) + pose[b + 1u].xyz * v.w.y;
+    var n = qrot(pose[a], v.n0) + qrot(pose[b], v.n1);
+    // A cloth particle (client/cloth.rs): the simulation's normal, and its position when free (w 1 = set).
+    let c = v.cloth & 0x7fffffffu;
+    if (c != 0u) {
+        let cp = pose[c];
+        let cn = pose[c + 1u];
+        if ((v.cloth & 0x80000000u) != 0u && cp.w == 1.0) {
+            p = cp.xyz;
+        }
+        if (cn.w == 1.0) {
+            n = cn.xyz;
+        }
+    }
     let len = length(n);
     let nn = select(vec3<f32>(0.0), n / len, len > 1e-12);
     let model = mat4x4<f32>(pose[0], pose[1], pose[2], pose[3]);
@@ -302,11 +315,11 @@ struct ShineU {
 };
 @group(3) @binding(0) var<uniform> shine: ShineU;
 
-// The skinned vertices as words (SkinVertex, 20 a vertex: n0 at 3, n1 at 9, bones at 12), for the wrap.
+// The skinned vertices as words (SkinVertex, 21 a vertex: n0 at 3, n1 at 9, bones at 12), for the wrap.
 @group(3) @binding(1) var<storage, read> shine_verts: array<u32>;
 
 fn shine_coords(i: u32) -> vec2<f32> {
-    let o = 20u * i;
+    let o = 21u * i;
     let w = &shine_verts;
     let n0 = vec3<f32>(bitcast<f32>((*w)[o + 3u]), bitcast<f32>((*w)[o + 4u]), bitcast<f32>((*w)[o + 5u]));
     let n1 = vec3<f32>(bitcast<f32>((*w)[o + 9u]), bitcast<f32>((*w)[o + 10u]), bitcast<f32>((*w)[o + 11u]));

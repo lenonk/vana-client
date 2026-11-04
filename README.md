@@ -41,6 +41,7 @@ Playable on a local LSB server. Working today:
 - NPC dialogue, event scripts and cutscenes
 - Effects: spells, abilities, weapon skills and skillchains, damage numbers, footsteps, level up and the other
   milestone effects
+- Cloth that blows in the wind and swings as models move (flags and some NPCs; cutscenes can change the wind)
 - The retail key set: numpad movement, autorun, first person, F-key targeting, macros and palettes
 - Gamepads (see [Gamepad](#gamepad))
 - The HUD, chat log and chat line (chat modes, auto-translate, text commands), targeting, combat, and the magic,
@@ -62,7 +63,6 @@ Playable on a local LSB server. Working today:
 
 Not done yet:
 
-- Cloth sway: event op 0x97 sets the wind gusts, but there is no cloth simulation yet
 - macOS builds
 
 ## Requirements
