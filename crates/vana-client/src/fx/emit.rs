@@ -770,6 +770,7 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
         borrowed: borrow.is_some(),
         parts: None,
         light: (e.0[w::KIND] == dk::LIGHT && e.0[w::L_SLOT] != NONE).then_some(e.0[w::L_SLOT]),
+        light_scale: (e.0[w::KIND] == dk::LIGHT).then(|| [e.f(w::L_ISCALE), e.f(w::L_RSCALE)]),
     };
     Some(Spawn { elem: e, cpu, children, parts, sound })
 }
