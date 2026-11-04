@@ -1394,7 +1394,7 @@ impl GameUi {
         self.data.lobby.lib(lib).map_or(0, |l| l.sprites.len())
     }
 
-    /// Uploads an RGBA image under `name` once (item icons). A mod's image (lua::hud::image_key, "<file>#<hash of its
+    /// Uploads an RGBA image under `name` once (item icons). A mod's image (lua::hud::load_png, "<file>#<hash of its
     /// bytes>") marks the same file's older contents stale, so editing and reloading a mod doesn't pile textures up;
     /// render frees a stale one only when its batch doesn't draw it (two versions shown at once both stay).
     pub fn image(&mut self, name: &str, w: u32, h: u32, rgba: Vec<u8>) {

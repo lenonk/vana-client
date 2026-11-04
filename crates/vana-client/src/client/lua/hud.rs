@@ -219,15 +219,6 @@ pub(super) fn decode_png(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), String> {
     Ok((w, h, rgba))
 }
 
-/// The texture key of a mod's image: its file and a hash of the file's bytes, so a changed file (the mod reloaded)
-/// uploads anew instead of drawing the texture cached for the old one.
-pub(super) fn image_key(mod_id: &str, path: &str, bytes: &[u8]) -> String {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    bytes.hash(&mut h);
-    format!("lua image {mod_id}/{path}#{:016x}", h.finish())
-}
-
 pub(super) fn install(lua: &Lua, g: &Table, vm: &super::vm::Vm) -> mlua::Result<()> {
     let t = lua.create_table()?;
     let (src, mod_id) = (vm.src.clone(), vm.manifest.id.clone());
