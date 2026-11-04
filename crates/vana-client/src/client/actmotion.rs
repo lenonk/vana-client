@@ -478,8 +478,13 @@ pub(super) fn play_op(w: &mut World, id: u32, m: Option<sched::Motion>) {
 
 /// The status motion an actor would play now (FUN_100c6b70), for ending looping holds.
 pub(super) fn status_motion(w: &World, id: u32, ch: &Character) -> String {
-    let (status, ratio) = if let Some(p) = super::event::pose(w, id) {
-        (0, p.ratio)
+    status_motion_posed(w, id, ch, super::event::pose(w, id).map(|p| p.ratio))
+}
+
+/// [`status_motion`] with the event pose's ratio given: the event VM runs with the event taken out of `w`.
+fn status_motion_posed(w: &World, id: u32, ch: &Character, posed: Option<f32>) -> String {
+    let (status, ratio) = if let Some(r) = posed {
+        (0, r)
     } else if id == w.my_id {
         (w.my_motion.status, if w.moving { 1.0 } else { 0.0 })
     } else {
@@ -494,6 +499,33 @@ fn status(w: &World, id: u32) -> u8 {
         return 0;
     }
     if id == w.my_id { w.my_motion.status } else { w.entities.get(&id).map_or(0, |e| e.motion.status) }
+}
+
+/// An event motion whose files are all in: they join the actor's files and the motion starts. The event VM calls it
+/// too (start_pending) when op 0x5b / 0x66 finds its files resident, so a second motion on the next VM tick of the
+/// same frame cannot replace a first one still waiting in the single pending slot.
+fn start_ready(w: &mut World, id: u32, index: &Arc<DatIndex>, ch: &Character, base: &str) -> bool {
+    let Some(a) = w.actors.get_mut(&id) else { return false };
+    let Some(p) = a.pending.clone() else { return false };
+    let Some(files) = w.motion_files.all(index, &p.files) else { return false };
+    a.pending = None;
+    add(&mut a.extra, p.kind, files);
+    if p.name.is_empty() {
+        // Files only: the effect system's scheduler plays from them.
+    } else if start(a, ch, &p.name, base) {
+        log::info!("actor {id:#x}: event motion {} (files {:?})", p.name, p.files);
+        fx_too(&mut w.effects, id, &p.name);
+    } else {
+        log::info!("actor {id:#x}: event motion {} not in its files {:?}", p.name, p.files);
+    }
+    true
+}
+
+/// start_ready for the event VM: false while the files are still loading.
+pub(super) fn start_pending(w: &mut World, id: u32, index: &Arc<DatIndex>, posed: Option<f32>) -> bool {
+    let Some(ch) = w.actors.get(&id).and_then(|a| a.character.clone()) else { return false };
+    let base = status_motion_posed(w, id, &ch, posed);
+    start_ready(w, id, index, &ch, &base)
 }
 
 /// Per frame: loads requested files, swaps battle files on engage / disengage (with the "in N" /
@@ -572,20 +604,8 @@ pub(super) fn update(w: &mut World, dt: f32) {
             a.skill_want.clear();
             add(&mut a.extra, Kind::Skill, files);
         }
-        if let Some(p) = a.pending.clone()
-            && let Some(files) = w.motion_files.all(&index, &p.files)
-        {
-            a.pending = None;
-            add(&mut a.extra, p.kind, files);
-            if p.name.is_empty() {
-                // Files only: the effect system's scheduler plays from them.
-            } else if start(a, &ch, &p.name, &base) {
-                log::info!("actor {id:#x}: event motion {} (files {:?})", p.name, p.files);
-                fx_too(&mut w.effects, id, &p.name);
-            } else {
-                log::info!("actor {id:#x}: event motion {} not in its files {:?}", p.name, p.files);
-            }
-        }
+        start_ready(w, id, &index, &ch, &base);
+        let a = w.actors.get_mut(&id).unwrap();
         if !want.is_empty() && want != a.battle.on {
             // FUN_100d12d0: "in N" starts once the files are in, for its motions and its holds alike.
             let fx_ready = w.effects.libs_ready(&want);

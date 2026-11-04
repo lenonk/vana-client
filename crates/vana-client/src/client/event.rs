@@ -1724,9 +1724,20 @@ impl Host for LiveHost<'_> {
                 }
                 turning
             }
+            // FUN_100b5210: the load request and FUN_100d12d0's "are the model's files in?" test are the same call, so
+            // a file already resident costs one call (request, ready, start, advance, yield), not two.
             Busy::MotionLoad { actor, .. } => {
                 let id = self.wid(*actor);
-                self.w.actors.get(&id).is_some_and(|a| a.pending.is_some())
+                let Some(files) = self.w.actors.get(&id).and_then(|a| a.pending.as_ref()).map(|p| p.files.clone()) else { return false };
+                let Some(index) = self.w.index.clone() else { return true };
+                if self.w.motion_files.all(&index, &files).is_none() {
+                    return true;
+                }
+                // Ready: start it now, before the VM's next tick this frame can queue another motion over it.
+                // The VM holds the event out of `w` here, so the bound actor's pose comes from our state.
+                let posed = self.st.poses.get(&id).map(|p| p.drawn(p.since).ratio);
+                super::actmotion::start_pending(self.w, id, &index, posed);
+                false
             }
             // FUN_10083650: the scheduler task of that name still exists (or its files still load).
             Busy::Playing { actor, name } => {
