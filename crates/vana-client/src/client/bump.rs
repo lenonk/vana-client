@@ -66,7 +66,9 @@ fn eligible(w: &World, id: u32, e: &Entity) -> bool {
         && w.visible.contains(&id)
         && !matches!(e.motion.status, 2 | 3)
         && !(e.sub_kind == 0 && (50..=59).contains(&e.model))
-        && w.actors.get(&id).is_some_and(|a| a.alpha >= super::actmotion::OPAQUE)
+        // FUN_100a8898: the bump test needs the load fade (+0x59c) at 1.0, so an actor is solid only once it has
+        // faded in (about 32 ticks after its files load), not while it fades.
+        && w.actors.get(&id).is_some_and(|a| a.alpha >= super::actmotion::OPAQUE && a.appear >= 1.0)
         && (id >> 24 != 0 || (w.opts.player_bump && e.active > 0.0))
 }
 

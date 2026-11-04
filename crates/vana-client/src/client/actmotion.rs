@@ -502,6 +502,7 @@ pub(super) fn update(w: &mut World, dt: f32) {
     w.motion_files.poll();
     let Some(index) = w.index.clone() else { return };
     let ticks = dt * 60.0;
+    let rate = w.opts.anim_rate.max(0.25);
     let ids: Vec<u32> = w.actors.keys().copied().collect();
     let mut status_starts: Vec<(u32, u8)> = Vec::new();
     for id in ids {
@@ -541,9 +542,10 @@ pub(super) fn update(w: &mut World, dt: f32) {
         let held = super::ride::fade_held(w, id);
         let mouth_off = w.entities.get(&id).is_some_and(|e| e.mouth_off);
         let a = w.actors.get_mut(&id).unwrap();
-        // FUN_100c63d0: the load fade, 32 ticks once the model is in (a rider's once its animal is).
+        // FUN_100c63d0: the load fade, 32 ticks once the model is in (a rider's once its animal is). Real frame ticks,
+        // not the mods' animation rate (0.25..4), since the bump waits on it (bump::eligible).
         if !held {
-            a.appear = (a.appear + ticks / 32.0).min(1.0);
+            a.appear = (a.appear + ticks / rate / 32.0).min(1.0);
         }
         if ride != a.ride_on {
             if ride.is_empty() {
