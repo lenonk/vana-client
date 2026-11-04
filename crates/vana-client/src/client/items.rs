@@ -132,7 +132,10 @@ impl Inventory {
     pub fn slots_of(&self, container: u8) -> Vec<Slot> {
         self.slots
             .range((container, 0)..=(container, 255))
-            .map(|(&(c, i), &(id, count))| Slot { index: i, id, count, equipped: self.equip.contains(&Some((c, i))), equipped_ex: false })
+            .map(|(&(c, i), &(id, count))| {
+                let equipped = self.equip.contains(&Some((c, i)));
+                Slot { index: i, id, count, equipped, equipped_ex: equipped && self.ext.get(&(c, i)).is_some_and(charged_ready) }
+            })
             .collect()
     }
 
@@ -757,6 +760,12 @@ pub(in crate::client) fn native_list(w: &World) -> Option<(u8, Vec<Slot>, usize,
     }
 }
 
+/// FUN_100febe0 (MODLOG's FUN_100fbc70; the item id is not read): the extdata is the charged-item layout (byte 0 == 1,
+/// use times at +4 / +8) and byte 3 bit 0x40 is set (ready to use; Windower's "usable").
+pub(super) fn charged_ready(e: &[u8; 24]) -> bool {
+    e[0] == 1 && e[3] & 0x40 != 0
+}
+
 /// The item's target prompt is up (SubThen::Item).
 pub(super) fn item_prompt(w: &World) -> bool {
     matches!(w.prompt.as_ref().map(|p| &p.then), Some(super::target::SubThen::Item { .. }))
@@ -774,7 +783,7 @@ pub(super) fn list_rows(w: &World, info: &ItemCache, shown: &[(u8, Slot)], direc
     if direct {
         for (r, s) in rows.iter_mut().zip(&slots).skip(temp_rows(shown)) {
             let gear = info.item(s.id).is_some_and(|it| matches!(it.item_type, 4 | 5));
-            let ready = w.inv.ext.get(&(INVENTORY, s.index)).is_some_and(|e| e[0] == 1 && u16::from_le_bytes([e[2], e[3]]) & 0x4000 != 0);
+            let ready = w.inv.ext.get(&(INVENTORY, s.index)).is_some_and(charged_ready);
             r.tint = match (gear, ready) {
                 (false, _) => crate::inventory::TINT_FLAGGED,
                 (true, true) => 0x8040_7090,
@@ -1885,4 +1894,20 @@ pub(super) fn persona(w: &World) -> Persona {
         base: st.base,
         bonus: st.adj,
     })
+}
+
+#[cfg(test)]
+mod charged_tests {
+    /// Blue names: a charged item's extdata (kind 1) with byte 3 bit 0x40; anything else stays green.
+    #[test]
+    fn charged_ready_reads_kind_and_bit() {
+        let mut e = [0u8; 24];
+        assert!(!super::charged_ready(&e));
+        e[0] = 1;
+        assert!(!super::charged_ready(&e));
+        e[3] = 0x40;
+        assert!(super::charged_ready(&e));
+        e[0] = 2;
+        assert!(!super::charged_ready(&e));
+    }
 }

@@ -9,7 +9,7 @@ pub const TINT_WHITE: u32 = 0x8080_8080;
 pub const TINT_DIM: u32 = 0x8040_4040;
 /// Equipped (or the equipped linkshell / linkshell 2).
 pub const TINT_EQUIPPED: u32 = 0x8050_9050;
-/// Equipped weapon/armour that also passes FUN_100fbc70 (item id + extdata; meaning unknown).
+/// Equipped weapon/armour that also passes FUN_100fbc70 (FUN_100febe0 in 30261006_0): a charged item ready to use.
 pub const TINT_EQUIPPED_EX: u32 = 0x8040_7090;
 /// Non-equipment with item flag 0x400, or item type 8 (crystal), 0x16 or 0x17.
 pub const TINT_FLAGGED: u32 = 0x8090_9040;
@@ -38,7 +38,7 @@ pub struct Slot {
     pub id: u16,
     pub count: u32,
     pub equipped: bool,
-    /// Passes FUN_100fbc70 as well (blue instead of green).
+    /// Passes FUN_100fbc70 as well (blue instead of green): extdata byte 0 == 1 and byte 3 bit 0x40.
     pub equipped_ex: bool,
 }
 
