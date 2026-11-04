@@ -502,6 +502,9 @@ struct Entity {
     /// +0x124 bits 13..14 (0x00E MonStat): 2 takes the dft / df1 idles, ark walk and hsr run (FUN_1008a1a0); and the
     /// ticks to the next idle pick (+0x1ba, FUN_1008da00).
     mon_stat: u8,
+    /// Event ops 0x95 / 0x96 (FUN_10087d80 / FUN_10087db0): +0x12c bit 19 with bits 20..21 take MonStat's place
+    /// (FUN_10087dc0) until cleared.
+    ev_mon_stat: Option<u8>,
     idle_swap: f32,
     /// The height the server last gave, the server's height along the slide (unsnapped), and whether a drawn height
     /// far from it was logged.
@@ -520,6 +523,9 @@ struct Entity {
     ev_reserved: bool,
     /// +0x12c bit 17 (event op 0x94, FUN_100b7e20): no occlusion test (FUN_100c9da0); never cleared.
     no_occlusion: bool,
+    /// +0x12c bit 26 (event op 0xa4): the eye near it does not fade it (FUN_100c63d0 sets model +0x664 to 1); cleared
+    /// when an event unbinds it (FUN_100ae3f0).
+    no_near_fade: bool,
     /// A door's id (0x00E SubKind 2, u32 @0x34); 0 for anything else.
     door: u32,
     /// A lift's (shaft id, move start, move end) (0x00E SubKind 3, client/lifts.rs).
@@ -565,6 +571,11 @@ struct Entity {
 impl Entity {
     fn targetable(&self) -> bool {
         self.flags & 6 == 0
+    }
+
+    /// FUN_10087dc0: an event's MonStat (ops 0x95 / 0x96) over the 0x00E one.
+    fn mon_stat(&self) -> u8 {
+        self.ev_mon_stat.unwrap_or(self.mon_stat)
     }
 }
 
@@ -1619,6 +1630,7 @@ fn self_entity(w: &World) -> Entity {
         mon_key: w.my_mon_key,
         sub: [0, 8, 0],
         mon_stat: 0,
+        ev_mon_stat: None,
         idle_swap: 0.0,
         server_y: 0.0,
         raw_y: 0.0,
@@ -1629,6 +1641,7 @@ fn self_entity(w: &World) -> Entity {
         reset_bases: false,
         ev_reserved: false,
         no_occlusion: false,
+        no_near_fade: false,
         door: 0,
         lift: None,
         ship: None,
@@ -4521,6 +4534,7 @@ fn place_mogdoor(w: &mut World) {
             mon_key: (0, [0; 2]),
             sub: [0, 8, 0],
             mon_stat: 0,
+            ev_mon_stat: None,
             idle_swap: 0.0,
             server_y: 0.0,
             raw_y: 0.0,
@@ -4531,6 +4545,7 @@ fn place_mogdoor(w: &mut World) {
             reset_bases: false,
             ev_reserved: false,
             no_occlusion: false,
+            no_near_fade: false,
             door: 0,
             lift: None,
             ship: None,
@@ -9104,6 +9119,7 @@ impl App {
                         mon_key: (0, [0; 2]),
                         sub: [0, 8, 0],
                         mon_stat: 0,
+                        ev_mon_stat: None,
                         idle_swap: 0.0,
                         server_y: 0.0,
                         raw_y: 0.0,
@@ -9114,6 +9130,7 @@ impl App {
                         reset_bases: false,
                         ev_reserved: false,
                         no_occlusion: false,
+                        no_near_fade: false,
                         door: 0,
                         lift: None,
                         ship: None,
@@ -10134,7 +10151,7 @@ impl App {
                 if std::mem::take(&mut a.fresh) && e.reset_bases {
                     e.motion_bases.clear();
                 }
-                (&e.motion_bases, e.mon_stat)
+                (&e.motion_bases, e.mon_stat())
             } else {
                 continue;
             };
@@ -14011,7 +14028,7 @@ impl App {
                     // FUN_100cd040 (MODLOG "The near-camera character fade"): the eye near posed point 12 fades
                     // the actor (not the player in first person, who fades on its own). A CPU pose only when the
                     // rest pose is close.
-                    let cam_fade = if *id == w.my_id && w.camst.first {
+                    let cam_fade = if *id == w.my_id && w.camst.first || w.entities.get(id).is_some_and(|e| e.no_near_fade) {
                         1.0
                     } else {
                         let (b12, off12) = ch.skeleton.points.get(12).copied().unwrap_or((0, Vec3::ZERO));

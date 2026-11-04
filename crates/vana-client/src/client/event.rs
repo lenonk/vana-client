@@ -446,6 +446,8 @@ pub struct State {
     /// Op 0x92 (+0x12c bit 16): a bound actor's name is not drawn while the event runs (FUN_10096000); unbinding
     /// clears it.
     pub no_name: HashSet<u32>,
+    /// Op 0x86 (+0x12c bit 3): a bound actor's turns play no step motion; unbinding clears it.
+    no_turn_steps: HashSet<u32>,
     /// First person at the event's start (DAT_10351bb8 = DAT_10475578, FUN_100ad2c0): op 0x46 sub 1 leaves it, sub 0
     /// and the end put it back (FUN_100acf70).
     first_saved: bool,
@@ -520,6 +522,7 @@ impl State {
             idle: HashMap::new(),
             bound: HashSet::new(),
             no_name: HashSet::new(),
+            no_turn_steps: HashSet::new(),
             first_saved: false,
             poses: HashMap::new(),
             event_status: HashMap::new(),
@@ -919,6 +922,44 @@ impl Host for LiveHost<'_> {
                 if let Some(Arg::Actor(a)) = args.get(1) {
                     let id = self.wid(*a);
                     self.hide(id, &args, 0);
+                }
+            }
+            // FUN_100b9100 (op 0x84): the event actor's +0x12c bit 0; FUN_10095da0 then makes its model again (FUN_10092900,
+            // FUN_1008f740) and clears it.
+            Effect::Op { op: 0x84, actor, .. } => {
+                let id = self.wid(actor);
+                if self.w.entities.contains_key(&id) {
+                    remake_model(self.w, id);
+                }
+            }
+            // FUN_100b9c20 (op 0x95) / FUN_100b9c70 (op 0x96): the event actor's MonStat override (+0x12c bit 19, bits
+            // 20..21 = val@1 & 3) set / cleared, and its model made again (FUN_10092900).
+            Effect::Op { op: op @ (0x95 | 0x96), actor, args, .. } => {
+                let id = self.wid(actor);
+                if let Some(e) = self.w.entities.get_mut(&id) {
+                    e.ev_mon_stat = if op == 0x95 { Some((Self::arg_int(&args, 0).unwrap_or(0) & 3) as u8) } else { None };
+                    remake_model(self.w, id);
+                }
+            }
+            // FUN_100ba8d0 (op 0xa4): the event actor's +0x12c bit 26 = u8@1: the eye near it does not fade it.
+            Effect::Op { op: 0xa4, actor, args, .. } => {
+                let id = self.wid(actor);
+                if let (Some(v), Some(e)) = (Self::arg_int(&args, 0), self.w.entities.get_mut(&id)) {
+                    e.no_near_fade = v & 1 != 0;
+                }
+            }
+            // FUN_100b8f30 (op 0x86): actor@2's +0x12c bit 3 = u8@1 when it has a model: while bound, an event turn
+            // plays no '@tl0' / '@tr0' step (FUN_1008cd90).
+            Effect::Op { op: 0x86, args, .. } => {
+                if let (Some(on), Some(Arg::Actor(a))) = (Self::arg_int(&args, 0), args.get(1)) {
+                    let id = self.wid(*a);
+                    if self.w.actors.get(&id).is_some_and(|a| a.character.is_some()) {
+                        if on & 1 != 0 {
+                            self.st.no_turn_steps.insert(id);
+                        } else {
+                            self.st.no_turn_steps.remove(&id);
+                        }
+                    }
                 }
             }
             // FUN_100b7e20: actor@2's +0x12c bit 17 = u8@1: no occlusion test for its model (FUN_100c9da0).
@@ -2025,7 +2066,7 @@ fn sync(live: &mut Live, w: &mut World, ticks: f32, dt: f32) {
         if b.dir != pose.dir {
             let q = |r: f32| ((r / TAU * 4096.0).round() as i32).rem_euclid(4096);
             let (l, r) = (q(pose.dir - b.dir), q(b.dir - pose.dir));
-            if !moving && !snap {
+            if !moving && !snap && !live.st.no_turn_steps.contains(&id) {
                 if (0x201..0x800).contains(&l) {
                     steps.push((id, "@tl0", pose.ratio));
                 } else if r > 0x200 {
@@ -2113,10 +2154,11 @@ fn finish(w: &mut World, live: Box<Live>) {
         }
     }
     // FUN_100ae3f0 on the bound entities: the mouth (+0x128 bit 17), footsteps (bit 0) and the blinks (model +0x8b4)
-    // back on, the area free again (+0x13c bit 19, +0x20c).
+    // back on, the area free again (+0x13c bit 19, +0x20c), the near fade back (+0x12c bit 26).
     for id in &live.st.bound {
         if let Some(e) = w.entities.get_mut(id) {
             (e.mouth_off, e.steps_off, e.area_frozen, e.area_override) = (false, false, None, 0);
+            e.no_near_fade = false;
         }
         if let Some(a) = w.actors.get_mut(id) {
             a.blink_off = false;
@@ -2163,15 +2205,21 @@ pub fn rebuild_models(w: &mut World) {
     let ids: Vec<u32> = w.actors.keys().copied().filter(|&id| id != w.my_id && w.entities.contains_key(&id)).collect();
     log::info!("event: rebuilding {} models (op 0xab 0x11)", ids.len());
     for id in ids {
-        let src = w.actors.get(&id).and_then(|a| a.source);
-        for gone in [id, super::ride::ANIMAL | id, super::chair::CHAIR | id] {
-            if w.actors.remove(&gone).is_some() {
-                w.effects.forget_actor(gone);
-            }
+        remake_model(w, id);
+    }
+}
+
+/// FUN_10092900 then FUN_1008f740: the entity's model goes (its riding animal and chair with it) and loads again,
+/// its load fade from 0.
+fn remake_model(w: &mut World, id: u32) {
+    let src = w.actors.get(&id).and_then(|a| a.source);
+    for gone in [id, super::ride::ANIMAL | id, super::chair::CHAIR | id] {
+        if w.actors.remove(&gone).is_some() {
+            w.effects.forget_actor(gone);
         }
-        if let Some(src) = src {
-            w.event_looks.push((id, src));
-        }
+    }
+    if let Some(src) = src {
+        w.event_looks.push((id, src));
     }
 }
 

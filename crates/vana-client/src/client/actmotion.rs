@@ -52,7 +52,7 @@ pub struct Mouth {
 /// FUN_1008da00: an NPC with MonStat 2 takes its dft or df1 idle at random every 600..1199 ticks (+0x1ba), statuses
 /// 3..5 aside *(+0x120 bits 7 / 13 and +0x170 not modelled; for any other NPC both idles are the same)*.
 pub(super) fn idle_swap(id: u32, e: &mut super::Entity, a: Option<&mut Actor>, ticks: f32) {
-    if e.mon_stat != 2 || id >> 24 == 0 || matches!(e.motion.status, 3..=5) {
+    if e.mon_stat() != 2 || id >> 24 == 0 || matches!(e.motion.status, 3..=5) {
         return;
     }
     e.idle_swap -= ticks;
