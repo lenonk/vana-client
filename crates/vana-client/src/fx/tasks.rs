@@ -330,7 +330,12 @@ impl Effects {
 
     /// A status scheduler on the actor with its motions left to the client (FUN_1008c6c0's `dead`).
     pub fn on_scheduler_quiet(&mut self, actor: u32, name: u32) {
-        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(actor), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: true, own: false, seq: None, event: false });
+        self.on_scheduler_quiet_on(actor, actor, name);
+    }
+
+    /// on_scheduler_quiet with a second actor (the scheduler's target, actor2).
+    pub fn on_scheduler_quiet_on(&mut self, actor: u32, target: u32, name: u32) {
+        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(target), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: true, own: false, seq: None, event: false });
     }
 
     /// FUN_10083650: a scheduler `name` waiting or running on the actor (as actor1).

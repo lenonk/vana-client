@@ -37,6 +37,9 @@ pub struct Pending {
     pub files: Vec<u32>,
     pub name: String,
     pub kind: Kind,
+    /// Op 0x2c's actor@5: the scheduler's second actor (vtable +0x298's target), e.g. the home point crystal's
+    /// 'bind' on the player. None: the actor itself.
+    pub target: Option<u32>,
 }
 
 /// Mouth motion of a speaker (FUN_10086710 / FUN_100867a0): the model's face motion (+0x164, default 'mou4',
@@ -154,7 +157,7 @@ pub fn emote(a: &mut Actor, n: u32, param: u16, status: u8, weapon_class: u8) ->
     };
     let (files, name) = crate::dat::motionfile::emote_files(&pc, m);
     log::info!("emote {n}: motion {m}, files {files:?}, {name}");
-    a.pending = Some(Pending { files, name: name.clone(), kind: Kind::Emote });
+    a.pending = Some(Pending { files, name: name.clone(), kind: Kind::Emote, target: None });
     a.emote = Some(name);
     Ok(())
 }
@@ -401,8 +404,13 @@ impl Play {
 /// The rest of a scheduler whose motions this module plays (FUN_10083650 runs the whole thing): its sounds (the
 /// weapon draw / sheathe `sinr` / `sotr`, gesture sounds), generators and holds run in fx with the motions off.
 pub(super) fn fx_too(fx: &mut crate::fx::Effects, id: u32, name: &str) {
+    fx_too_on(fx, id, id, name);
+}
+
+/// fx_too with the scheduler's second actor (caster `id`, target `target`).
+pub(super) fn fx_too_on(fx: &mut crate::fx::Effects, id: u32, target: u32, name: &str) {
     if let Ok(n) = <[u8; 4]>::try_from(name.as_bytes()) {
-        fx.on_scheduler_quiet(id, u32::from_le_bytes(n));
+        fx.on_scheduler_quiet_on(id, target, u32::from_le_bytes(n));
     }
 }
 
@@ -514,7 +522,7 @@ fn start_ready(w: &mut World, id: u32, index: &Arc<DatIndex>, ch: &Character, ba
         // Files only: the effect system's scheduler plays from them.
     } else if start(a, ch, &p.name, base) {
         log::info!("actor {id:#x}: event motion {} (files {:?})", p.name, p.files);
-        fx_too(&mut w.effects, id, &p.name);
+        fx_too_on(&mut w.effects, id, p.target.unwrap_or(id), &p.name);
     } else {
         log::info!("actor {id:#x}: event motion {} not in its files {:?}", p.name, p.files);
     }

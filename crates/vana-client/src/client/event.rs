@@ -913,13 +913,16 @@ impl Host for LiveHost<'_> {
                     self.st.faded.insert(id);
                 }
             }
-            Effect::Motion { op, actor, file, name, .. } => {
+            Effect::Motion { op, actor, target, file, name } => {
                 let id = self.wid(actor);
                 // FUN_100b5210: 4cc 0 or 'xxxx' only loads the file.
                 let name = if name == "xxxx" || name.trim_matches('\0').is_empty() { String::new() } else { name };
+                // FUN_100b2f80 (op 0x2c): vtable +0x298(4cc, actor@5's model), so the scheduler's second actor is the
+                // target: the home point crystal (model 51) runs its 'bind' on the player when a home point is set.
+                let target = (op == 0x2c).then(|| self.wid(target)).filter(|t| *t != id && self.w.actors.contains_key(t));
                 if let Some(a) = self.w.actors.get_mut(&id) {
                     let files = motion_files(op, file, id, a);
-                    a.pending = Some(super::actmotion::Pending { files, name, kind: super::actmotion::Kind::Event });
+                    a.pending = Some(super::actmotion::Pending { files, name, kind: super::actmotion::Kind::Event, target });
                 }
             }
             // FUN_100b4d10: both actors in the zone with a model, then actor@1's model vtable +0x29c(4cc@9, actor@5's
