@@ -19,6 +19,10 @@ struct Params {
     area: vec4<f32>,
     // FUN_100467e0's light: the background light's travel direction (world), w = the light count (0 or 1)
     light: vec4<f32>,
+    // The scene projection (update op 0x53)
+    proj: mat4x4<f32>,
+    // focal length on the 384-line reference (cam +0x2f4), scene depth bound (1) or not (0)
+    screen: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -32,6 +36,59 @@ struct Params {
 @group(0) @binding(8) var<storage, read> paths: array<vec4<f32>>;
 // The zone's point-light table (render/mod.rs LIGHTS x two vec4s).
 @group(0) @binding(9) var<storage, read_write> lights: array<vec4<f32>>;
+// This frame's scene depth (drawn before the update pass), for op 0x53.
+@group(0) @binding(10) var scene_depth: texture_depth_2d;
+
+// FUN_10044f10: the element's view-space position (+0x188) as the transform places it: camera-relative (flags bit 2)
+// elements are view_rot x pos (bit 3 too: pos itself), flag 0x20000 the parent's translation in view space plus pos
+// (y negated for a billboard), the rest view x the world position.
+fn view_pos(b: u32, parent: u32) -> vec3<f32> {
+    let flags = el[b + E_FLAGS];
+    let pos = ev3(b, E_POS);
+    if ((flags & 0x20000u) != 0u) {
+        var t = vec3<f32>(0.0);
+        if (parent != NONE && slots[parent * SLOT_WORDS + S_HAS_MATRIX] != 0u) { t = slot_mat(parent)[3].xyz; }
+        let bboard = (flags & 1u) != 0u && (flags & 0x1c0u) == 0u;
+        return (p.view * vec4<f32>(t, 1.0)).xyz + vec3<f32>(pos.x, select(pos.y, -pos.y, bboard), pos.z);
+    }
+    if ((flags & 4u) != 0u) {
+        if ((flags & 8u) != 0u) { return pos; }
+        return (p.view_rot * vec4<f32>(pos, 0.0)).xyz;
+    }
+    return (p.view * vec4<f32>(world_of(b, parent), 1.0)).xyz;
+}
+
+// Update op 0x53 (FUN_1004a980 0x1004afb4): the +-half cube around the element's view-space position (FUN_10044f10),
+// projected; a 16 x 16 grid over its screen rect clipped to the screen, each point tested at the cube centre's depth
+// against the scene (FUN_1006c300 / FUN_1006c530 / FUN_1006c8b0); the passing count *(inf: points tested at the
+// centre's depth, the screen clip without retail's 0x100 margin)*.
+fn occlusion_hits(c: vec3<f32>, half: f32) -> u32 {
+    let cc = p.proj * vec4<f32>(c, 1.0);
+    if (cc.w <= 0.0) { return 0u; }
+    let z = cc.z / cc.w;
+    var lo = vec2<f32>(1e30);
+    var hi = vec2<f32>(-1e30);
+    for (var k = 0u; k < 8u; k = k + 1u) {
+        let o = vec3<f32>(select(-half, half, (k & 1u) != 0u), select(-half, half, (k & 2u) != 0u), select(-half, half, (k & 4u) != 0u));
+        let q = p.proj * vec4<f32>(c + o, 1.0);
+        if (q.w <= 0.0) { continue; }
+        let n = q.xy / q.w;
+        lo = min(lo, n);
+        hi = max(hi, n);
+    }
+    let dims = vec2<f32>(textureDimensions(scene_depth));
+    let p0 = clamp(vec2<f32>((lo.x + 1.0) * 0.5, (1.0 - hi.y) * 0.5) * dims, vec2<f32>(0.0), dims);
+    let p1 = clamp(vec2<f32>((hi.x + 1.0) * 0.5, (1.0 - lo.y) * 0.5) * dims, vec2<f32>(0.0), dims);
+    if (p1.x - p0.x < 1.0 || p1.y - p0.y < 1.0) { return 0u; }
+    var hits = 0u;
+    for (var y = 0u; y < 16u; y = y + 1u) {
+        for (var x = 0u; x < 16u; x = x + 1u) {
+            let s = p0 + (vec2<f32>(f32(x), f32(y)) + 0.5) / 16.0 * (p1 - p0);
+            if (z <= textureLoad(scene_depth, vec2<i32>(min(s, dims - 1.0)), 0)) { hits = hits + 1u; }
+        }
+    }
+    return hits;
+}
 
 // FUN_10062c80 (fx/spline.rs eval): path `at` (first vec4 + 1) at u.
 fn path_at(at: u32, u: f32) -> vec3<f32> {
@@ -242,6 +299,7 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
     if ((el[b + E_STATE] & ST_ALIVE) == 0u) {
         outs[ob + 23u] = 0.0;
         back[bb + 1u] = 0u;
+        back[bb + 19u] = 0u;
         return;
     }
     let dt = p.time.x;
@@ -252,6 +310,7 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
         if (ef(b, E_LIFE) < 1.0) {
             el[b + E_CTRL] = 0u;
             outs[ob + 23u] = 0.0;
+            back[bb + 19u] = 0u;
             return;
         }
     }
@@ -260,6 +319,8 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
     let parent = el[b + E_PARENT];
     let old_pos = ev3(b, E_POS);
     var kill = 0u;
+    // Op 0x60's additions to the screen flash (B, G, R bytes, saturating as FUN_10014f90 does).
+    var flash = vec3<u32>(0u);
     var ip = el[b + E_STREAM];
     var guard = 0u;
     loop {
@@ -427,6 +488,63 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
                 set_ev3(b, E_POS, ev3(b, E_POS) + d);
             }
             // FUN_100499d0 case 0x1004a0a2: d == 0 hides; below near kept, to far faded, else 0 (expire on bit 0).
+            // 0x1004afb4 (any class): the occlusion test; word 2 = 0: FADE = 0 when no point passes (FUN_1004a870), else
+            // FADE x= the passing fraction (count / 256, FUN_1004e630) x word 2. Without a scene depth it is skipped.
+            case 0x53u: {
+                if (p.screen.y > 0.0) {
+                    let c = view_pos(b, parent);
+                    let hits = occlusion_hits(c, opf(r));
+                    let fr = opf(r + 1u);
+                    if (fr == 0.0) {
+                        if (hits == 0u) { set_ef(b, E_FADE, 0.0); }
+                    } else {
+                        set_ef(b, E_FADE, ef(b, E_FADE) * f32(hits) / 256.0 * fr);
+                    }
+                }
+            }
+            // 0x1004abd3 (any class): the screen flash. Skipped unless last frame's sort key +0x12c is in 0..far and FADE
+            // is not 0; f = 1 within r_in (squared, on the 384-line reference) of the screen centre, falling to 0 at
+            // r_out, x the eye-distance falloff from near to far, x the player factor (FUN_1003c7d0, as op 0x82); the
+            // colour bytes x f are added to the frame's flash (FUN_10014f70), drawn additively over the scene.
+            case 0x60u: {
+                let near = opf(r);
+                let far = opf(r + 1u);
+                let kp = ef(b, E_KEY_PREV);
+                // The eye distance takes the raw position as a world point even for camera-relative elements
+                // (FUN_10044c40), as retail does.
+                let wp = world_of(b, parent);
+                let v = view_pos(b, parent);
+                var z = -v.z;
+                if (far >= kp && kp >= 0.0 && ef(b, E_FADE) != 0.0 && z >= 0.0) {
+                    z = max(z, 1.0);
+                    let k = p.screen.x / z;
+                    let sx = k * v.x;
+                    let sy = k * -v.y;
+                    let r2 = sx * sx + sy * sy;
+                    let rin = opf(r + 2u);
+                    let rout = opf(r + 3u);
+                    var f = -1.0;
+                    if (r2 <= rin) { f = 1.0; } else if (r2 <= rout) { f = 1.0 - (r2 - rin) / (rout - rin); }
+                    let d = distance(wp, p.eye.xyz);
+                    if (d > far) { f = -1.0; } else if (f >= 0.0 && d > near) { f = f * (1.0 - (d - near) / (far - near)); }
+                    if (f > 0.0) {
+                        let fl = ops[r + 5u];
+                        let me = el[b + E_ME];
+                        let isme = ((fl & 2u) == 0u && (me & 1u) != 0u) || ((fl & 4u) == 0u && (me & 2u) != 0u);
+                        let pf = opf(r + 4u);
+                        var pl = 1.0;
+                        if ((fl & 1u) == 0u) {
+                            if (!isme) { pl = select(0.5, pf, pf != 0.0); }
+                        } else if (isme && pf != 0.0) {
+                            pl = pf;
+                        }
+                        f = f * pl;
+                        // Whole-vector maths: FXC cannot index a local vector inside the op loop.
+                        let add = vec3<u32>(max(vec3<f32>(f32(cb(b, 0u)), f32(cb(b, 1u)), f32(cb(b, 2u))) * f, vec3<f32>(0.0)));
+                        flash = min(flash + add, vec3<u32>(255u));
+                    }
+                }
+            }
             case 0x2eu: {
                 let d = distance(p.eye.xyz, world_of(b, parent));
                 let near = opf(r);
@@ -778,6 +896,8 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
     back[bb + 16u] = bitcast<u32>(vel.x);
     back[bb + 17u] = bitcast<u32>(vel.y);
     back[bb + 18u] = bitcast<u32>(vel.z);
+    back[bb + 19u] = flash.x | (flash.y << 8u) | (flash.z << 16u);
+    set_ef(b, E_KEY_PREV, key);
 }
 
 // ---- Drawing ----

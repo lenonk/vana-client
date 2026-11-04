@@ -263,10 +263,16 @@ impl Screen {
         std::array::from_fn(|i| from[i] + (to[i] - from[i]) * t)
     }
 
-    /// FUN_100132b0's first block: the flash quad when its RGB is not 0, alpha doubled (SRCALPHA / ONE).
-    pub fn flash(&self) -> Option<[f32; 4]> {
+    /// FUN_100132b0's first block: the flash quad when its RGB is not 0, alpha doubled (SRCALPHA / ONE). `add`: the
+    /// effect elements' flash this frame (update op 0x60, FUN_10014f70), added to op 0x72's colour bytes, saturating.
+    pub fn flash(&self, add: [u8; 3]) -> Option<[f32; 4]> {
         let c = self.lerp(self.flash);
-        (c[..3].iter().any(|v| *v * 255.0 >= 0.5)).then(|| [c[0], c[1], c[2], (2.0 * c[3]).min(1.0)])
+        // Without an op 0x72 colour the alpha byte is the default 0x80 (0x100149d4), doubled to 255
+        // *(inf: what +0x327 holds after an op 0x72 has ended)*.
+        let own = c[..3].iter().any(|v| *v * 255.0 >= 0.5);
+        let a = if own { (2.0 * c[3]).min(1.0) } else { 1.0 };
+        let rgb: [f32; 3] = std::array::from_fn(|k| (c[k] + add[k] as f32 / 255.0).min(1.0));
+        (rgb.iter().any(|v| *v * 255.0 >= 0.5)).then(|| [rgb[0], rgb[1], rgb[2], a])
     }
 
     /// FUN_100132b0's second block: last frame drawn over the scene while the alpha is not 0.
@@ -3426,12 +3432,14 @@ mod tests {
         // 0x72 white 0x80 over 11 ticks: half way at 5, the alpha doubled.
         sc.fx_op(0x72, [0xff, 0xff, 0xff, 0x80], 0.0, 11.0);
         sc.tick = 5.0;
-        let f = sc.flash().unwrap();
+        let f = sc.flash([0; 3]).unwrap();
         assert!((f[0] - 0.5).abs() < 1e-3 && (f[3] - 0.502).abs() < 1e-2, "{f:?}");
         // The "off" op starts from the last target.
         sc.fx_op(0x72, [0, 0, 0, 0], 0.0, 1.0);
         sc.tick = 6.0;
-        assert!(sc.flash().is_none());
+        assert!(sc.flash([0; 3]).is_none());
+        // Op 0x60's element flash alone: drawn at the default alpha 0x80, doubled.
+        assert_eq!(sc.flash([0x40, 0, 0xff]), Some([0x40 as f32 / 255.0, 0.0, 1.0, 1.0]));
         // 0x0e on, then off: each start counts.
         sc.fx_op(0x0e, [0x80, 0x80, 0x80, 0x1e], 0.99, 0.0);
         let b = sc.blur().unwrap();

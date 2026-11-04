@@ -49,6 +49,10 @@ pub mod w {
     pub const MORPH_PREV: usize = 49;
     /// CMoDist +0x194: the view-space shift (emission op 0x32, update op 0x24).
     pub const DIST_OFF: usize = 41;
+    /// +0x12c, the sort key as FUN_100440d0 left it last frame (update op 0x60 reads it before this frame's).
+    pub const KEY_PREV: usize = 42;
+    /// Whether the instance's actor1 / actor2 is our own player (bits 0 / 1), for update op 0x60's player factor.
+    pub const ME: usize = 43;
     /// CMoPointLightProgElem (kind 0x47): +0x19c range base, +0x1a0 intensity base, +0x1a4 intensity scale,
     /// +0x1a8 range scale, and its light table slot (NONE: no MZB list names its key). Shares the morph words.
     pub const L_RANGE: usize = 44;
@@ -135,7 +139,7 @@ pub const NONE: u32 = u32::MAX;
 pub const OUT_WORDS: usize = 44;
 /// Per element back to the CPU (a frame late): sort key +0x12c, status bits, world position, rotation, scale,
 /// colour.
-pub const BACK_WORDS: usize = 19;
+pub const BACK_WORDS: usize = 20;
 pub mod back {
     pub const KEY: usize = 0;
     pub const STATUS: usize = 1;
@@ -148,6 +152,8 @@ pub mod back {
     pub const LPOS: usize = 13;
     /// The slot vector at the update stream's op 0x02 (its drift), for emission op 0x46.
     pub const VEL: usize = 16;
+    /// Update op 0x60's screen flash this frame: the bytes it adds (B, G, R as in +0xf8; FUN_10014f70).
+    pub const FLASH: usize = 19;
     /// STATUS: op 0x2e / 0x48 asked to expire (life = 1); drawn this frame.
     pub const KILL: u32 = 1;
     pub const DRAWN: u32 = 2;
@@ -270,6 +276,8 @@ pub fn wgsl_consts() -> String {
         ("E_MORPH_PREV", w::MORPH_PREV),
         ("E_GROUND", w::GROUND),
         ("E_DIST_OFF", w::DIST_OFF),
+        ("E_KEY_PREV", w::KEY_PREV),
+        ("E_ME", w::ME),
         ("E_L_RANGE", w::L_RANGE),
         ("E_L_INT", w::L_INT),
         ("E_L_ISCALE", w::L_ISCALE),

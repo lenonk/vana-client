@@ -28,6 +28,10 @@ struct Params {
     area: [f32; 4],
     /// FUN_100467e0: the background light's travel direction, the light count
     light: [f32; 4],
+    /// The scene projection, for update op 0x53's occlusion test against the scene depth.
+    proj: [[f32; 4]; 4],
+    /// The focal length on the 384-line reference (cam +0x2f4, update op 0x60), whether a scene depth is bound, 0, 0
+    screen: [f32; 4],
 }
 
 #[repr(C)]
@@ -224,6 +228,10 @@ struct Staging {
 pub struct EffectsGpu {
     update: wgpu::ComputePipeline,
     update_layout: wgpu::BindGroupLayout,
+    /// The scene depth and projection the update pass tests op 0x53 against (set_depth), and the 1 x 1 stand-in bound
+    /// without one.
+    depth: Option<(wgpu::TextureView, Mat4)>,
+    no_depth: wgpu::TextureView,
     /// Ours (the Lamp Lights setting, client/lamps.rs): each lamp's slot of the light table copied from its template
     /// light after the update, at the lamp's own position. The lamps (count, then position + slot | template << 16),
     /// the pass's layout and its bind group (gone when the table changes).
@@ -370,7 +378,19 @@ impl EffectsGpu {
         let cs = wgpu::ShaderStages::COMPUTE;
         let update_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("effects update"),
-            entries: &[uniform(0, cs), storage(1, false, cs), storage(2, true, cs), storage(3, true, cs), storage(4, true, cs), storage(5, true, cs), storage(6, false, cs), storage(7, false, cs), storage(8, true, cs), storage(9, false, cs)],
+            entries: &[
+                uniform(0, cs),
+                storage(1, false, cs),
+                storage(2, true, cs),
+                storage(3, true, cs),
+                storage(4, true, cs),
+                storage(5, true, cs),
+                storage(6, false, cs),
+                storage(7, false, cs),
+                storage(8, true, cs),
+                storage(9, false, cs),
+                wgpu::BindGroupLayoutEntry { binding: 10, visibility: cs, ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }, count: None },
+            ],
         });
         let update = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("effects update"),
@@ -607,9 +627,23 @@ impl EffectsGpu {
         let white_view = super::upload_texture(gpu, &crate::dat::zone::Texture::new(String::new(), 0, 1, 1, vec![255; 4]), false);
         let white = Self::tex_group(device, &tex_layout, &sampler, &white_view);
         let table = |label: &str| (buf(label, 1024, U::STORAGE | U::COPY_DST), 1024usize);
+        let no_depth = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("effects no depth"),
+                size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: super::DEPTH_FORMAT,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            })
+            .create_view(&Default::default());
         Self {
             update,
             update_layout,
+            depth: None,
+            no_depth,
             draw_layout,
             tex_layout,
             mesh_pipes,
@@ -832,6 +866,12 @@ impl EffectsGpu {
         self.lamp_count = n as u32;
     }
 
+    /// The scene's depth (drawn this frame, before the update pass) and projection, for update op 0x53's occlusion
+    /// test; without one the op leaves the element as it is.
+    pub fn set_depth(&mut self, depth: Option<(&wgpu::TextureView, Mat4)>) {
+        self.depth = depth.map(|(v, p)| (v.clone(), p));
+    }
+
     pub fn update(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, fx: &mut Effects, f: &Frame) {
         let q = &gpu.queue;
         let reg = &mut fx.reg;
@@ -910,7 +950,9 @@ impl EffectsGpu {
                 Write::LightOff(_) => {}
             }
         }
-        if rebind {
+        // The scene depth changes with the window: bound afresh each frame it is set.
+        if rebind || self.depth.is_some() {
+            let depth = self.depth.as_ref().map_or(&self.no_depth, |d| &d.0);
             self.update_group = Some(gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("effects update"),
                 layout: &self.update_layout,
@@ -925,6 +967,7 @@ impl EffectsGpu {
                     wgpu::BindGroupEntry { binding: 7, resource: self.back.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 8, resource: self.paths.0.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 9, resource: self.lights.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 10, resource: wgpu::BindingResource::TextureView(depth) },
                 ],
             }));
         }
@@ -946,6 +989,8 @@ impl EffectsGpu {
             extra: [f.moon_phase as f32, f.weekday as f32, fx.weather_density, 0.0],
             area: [f.area_light.x, f.area_light.y, f.area_light.z, 0.0],
             light: self.light.map_or([0.0; 4], |(d, _, _)| [d.x, d.y, d.z, 1.0]),
+            proj: m(self.depth.as_ref().map_or(Mat4::IDENTITY, |d| d.1)),
+            screen: [f.focal, if self.depth.is_some() { 1.0 } else { 0.0 }, 0.0, 0.0],
         };
         q.put(&self.params, 0, bytemuck::bytes_of(&p));
         if self.count == 0 {
@@ -1457,6 +1502,99 @@ mod tests {
             gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
             let v = bytemuck::cast_slice(&rb.slice(..).get_mapped_range().unwrap()).to_vec();
             v
+        }
+    }
+
+    impl EffectsGpu {
+        fn read_back(&self, gpu: &Gpu, n: usize) -> Vec<u32> {
+            let size = (n * BACK_WORDS * 4) as u64;
+            let rb = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size, usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+            let mut enc = gpu.device.create_command_encoder(&Default::default());
+            enc.copy_buffer_to_buffer(&self.back, 0, &rb, 0, size);
+            gpu.queue.submit([enc.finish()]);
+            rb.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+            gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
+            let v = bytemuck::cast_slice(&rb.slice(..).get_mapped_range().unwrap()).to_vec();
+            v
+        }
+    }
+
+    /// Update ops 0x53 and 0x60 as Tavnazian Safehold's thunder flash (t_ta/weat/thdr/wez4/frsh) carries them: an element 10 in
+    /// front of the eye on the screen centre adds its colour to the flash when the scene depth leaves it visible, and
+    /// nothing when the scene hides it (op 0x53 zeroes FADE, so op 0x60 skips).
+    #[test]
+    fn gpu_thunder_flash() {
+        if Gpu::headless().is_err() {
+            return;
+        }
+        let eye = glam::Vec3::new(0.0, 0.0, -10.0);
+        let view = glam::camera::rh::view::look_at_mat4(eye, glam::Vec3::ZERO, glam::Vec3::NEG_Y);
+        let mut view_rot = view;
+        view_rot.w_axis = glam::Vec4::W;
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view, view_rot, eye, draw_distance: 2000.0, area_light: glam::Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        let flash = |clear: f32, far_key: f32| flash_at(f, (glam::Vec3::ZERO, 0), clear, (50.0, far_key));
+        // Visible: B, G, R bytes of the colour at full strength.
+        assert_eq!(flash(1.0, 150.0), 0x00c0_8040);
+        // Behind scenery: nothing.
+        assert_eq!(flash(0.0, 150.0), 0);
+        // Beyond the far distance (10 > 5): nothing.
+        assert_eq!(flash(1.0, 5.0), 0);
+        // Camera-relative (flags bit 2, the Riverne bolts): the offset turned by the view rotation, wherever the eye is;
+        // the eye distance still takes the offset as a world point (about 100.5 here, inside near 200).
+        let eye = glam::Vec3::new(100.0, 0.0, 0.0);
+        let view = glam::camera::rh::view::look_at_mat4(eye, eye + glam::Vec3::Z, glam::Vec3::NEG_Y);
+        let mut view_rot = view;
+        view_rot.w_axis = glam::Vec4::W;
+        let g = Frame { view, view_rot, eye, ..f };
+        assert_eq!(flash_at(g, (glam::Vec3::new(0.0, 0.0, 10.0), 4), 1.0, (200.0, 300.0)), 0x00c0_8040);
+        assert_eq!(flash_at(g, (glam::Vec3::new(0.0, 0.0, -10.0), 4), 1.0, (200.0, 300.0)), 0, "behind the eye");
+    }
+
+    /// One element with Tavnazian Safehold's frsh ops (op 0x53, then op 0x60 with near / far) at `pos` with `flags`,
+    /// over a scene depth cleared to `clear`: its readback flash word after one update.
+    fn flash_at(f: Frame, (pos, flags): (glam::Vec3, u32), clear: f32, (near, far): (f32, f32)) -> u32 {
+        let gpu = Gpu::headless().expect("a GPU");
+        let f32w = |v: f32| v.to_bits();
+        let proj = glam::camera::rh::proj::directx::perspective(1.0, 1.0, 0.1, 1000.0);
+        {
+            let mut fx = Effects::new();
+            fx.reg.ops = vec![0x353, f32w(8.0), f32w(1.0), 0x760, f32w(near), f32w(far), f32w(4096.0), f32w(65536.0), f32w(0.0), 1, 0];
+            fx.reg.ops_dirty = true;
+            let mut el = Elem::default();
+            el.0[w::STATE] = crate::fx::elem::st::ALIVE;
+            el.0[w::COLOR] = 0xffc0_8040;
+            el.0[w::STREAM] = 0;
+            el.0[w::SERIAL] = 1;
+            el.0[w::FLAGS] = flags;
+            el.set_v3(w::POS, pos);
+            fx.writes.push(Write::Full(0, Box::new(el)));
+            fx.elems.push(None);
+            let depth = gpu.device.create_texture(&wgpu::TextureDescriptor {
+                label: None,
+                size: wgpu::Extent3d { width: 64, height: 64, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: crate::render::DEPTH_FORMAT,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let dv = depth.create_view(&Default::default());
+            let mut eg = EffectsGpu::new(&gpu, wgpu::TextureFormat::Rgba8UnormSrgb);
+            let mut enc = gpu.device.create_command_encoder(&Default::default());
+            enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &dv, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(clear), store: wgpu::StoreOp::Store }), stencil_ops: None }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            eg.set_depth(Some((&dv, proj)));
+            eg.update(&gpu, &mut enc, &mut fx, &f);
+            gpu.queue.submit([enc.finish()]);
+            gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
+            eg.read_back(&gpu, 1)[crate::fx::elem::back::FLASH]
         }
     }
 

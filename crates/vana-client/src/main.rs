@@ -868,6 +868,17 @@ enum Cmd {
         #[arg(long)]
         model: Option<u16>,
     },
+    /// Weather audit: every zone's `weat` folders (zones 0..`--zones`), their generators' ops by stream and draw kind
+    /// (static), then each weather tag started and run `--ticks` with the effect audit on (skipped ops, schedulers and
+    /// resources not found, attach modes unplaced). Writes one row per zone and weather and a ranked summary.
+    WeatherSweep {
+        #[arg(long)]
+        out: PathBuf,
+        #[arg(long, default_value_t = 300)]
+        zones: u32,
+        #[arg(long, default_value_t = 600)]
+        ticks: u32,
+    },
     /// Render a zone offscreen to a PNG. Coordinates are game units (Y points down).
     ZoneShot {
         /// The scene number (0x00A's scene): the zone id below 256; from 256 the zone-in's own (Western Adoulin
@@ -1308,6 +1319,7 @@ fn main() -> Result<()> {
         Cmd::FxShot { zone, out, eye, caster, victim, category, anim, frames, every, hour, dust, file, walk, despawn } => fx_shot(zone, &out, &eye, &caster, &victim, (category, anim, dust, file), &walk, frames, every, hour, despawn),
         Cmd::FxSweep { out, kinds, ticks, mob_models, only } => fx_sweep(&out, &kinds, ticks, mob_models.as_deref(), &only),
         Cmd::FxSoak { out, cycles, ticks, settle, model } => fx_soak(&out, cycles, ticks, settle, model),
+        Cmd::WeatherSweep { out, zones, ticks } => weather_sweep(&out, zones, ticks),
         Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects, moon, start, sched, sub, voyage } => {
             use glam::Vec3;
             let cfg = config::Config::load();
@@ -2303,6 +2315,173 @@ impl fx::Actors for SoakActors {
     fn sub_anim(&self, _: u32) -> u8 {
         self.sub.get()
     }
+}
+
+fn weather_sweep(out: &std::path::Path, zones: u32, ticks: u32) -> Result<()> {
+    use dat::generator::{fourcc, kind, stream};
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::fmt::Write as _;
+    let cfg = config::Config::load();
+    let index = std::sync::Arc::new(dat::DatIndex::open(&cfg.ffxi_dir())?);
+    let keys = std::sync::Arc::new(dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?)?);
+    let mut rows = String::from("zone\ttag\tgens\tkinds\tgen_ops\temit_ops\telem_ops\tend_ops\tsched_ops\tskipped\tmissing\tno_attach\tleft\n");
+    // Per op / kind: the zones that use it in a weather folder.
+    let mut uses: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
+    let mut gaps: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
+    let actors = SweepActors { mob_files: (Vec::new(), vec![1300]), fx_files: Default::default() };
+    let mut runs = 0;
+    for zone in 0..zones {
+        let id = dat::zone::file_id(zone);
+        if index.path(id).is_none() {
+            continue;
+        }
+        let Ok(bytes) = index.read(id) else { continue };
+        let Ok(lib) = fx::lib::Library::load(id, bytes.clone()) else { continue };
+        let tree = &lib.tree;
+        let weat: Vec<usize> = (0..tree.nodes.len()).filter(|&i| tree.nodes[i].kind == kind::FOLDER && tree.nodes[i].name == fourcc("weat")).collect();
+        if weat.is_empty() {
+            continue;
+        }
+        let under = |mut i: usize, f: usize| loop {
+            match tree.nodes[i].parent {
+                Some(p) if p == f => return true,
+                Some(p) => i = p,
+                None => return false,
+            }
+        };
+        // Tag folders: direct children of any `weat`.
+        let mut tags: BTreeMap<[u8; 4], Vec<usize>> = BTreeMap::new();
+        for &w in &weat {
+            for &c in &tree.nodes[w].children {
+                if tree.nodes[c].kind == kind::FOLDER {
+                    tags.entry(tree.nodes[c].name).or_default().push(c);
+                }
+            }
+        }
+        let top_weat = weat.iter().copied().find(|&w| tree.nodes[w].parent.is_none_or(|p| tree.nodes[p].parent.is_none()));
+        for (tag, folders) in &tags {
+            let tag_s = String::from_utf8_lossy(tag).trim_end_matches('\0').to_string();
+            let mut ops: [BTreeMap<u8, u32>; 4] = Default::default();
+            let mut kinds: BTreeMap<u8, u32> = BTreeMap::new();
+            let mut sched: BTreeMap<u8, u32> = BTreeMap::new();
+            let mut ngen = 0;
+            for g in lib.gens.iter().filter(|g| folders.iter().any(|&f| under(g.node, f))) {
+                ngen += 1;
+                for (s, st) in g.streams.iter().enumerate() {
+                    for op in st {
+                        *ops[s].entry(op.code).or_default() += 1;
+                    }
+                }
+                if let Some(t) = g.template() {
+                    *kinds.entry(t.byte(0x21)).or_default() += 1;
+                }
+            }
+            for n in (0..tree.nodes.len()).filter(|&n| tree.nodes[n].kind == kind::SCHEDULER && folders.iter().any(|&f| under(n, f))) {
+                for op in fx::sched::parse(lib.data(n)) {
+                    *sched.entry(op.code).or_default() += 1;
+                }
+            }
+            for (s, name) in [(stream::GENERATOR, "gen"), (stream::EMISSION, "emit"), (stream::ELEMENT, "elem"), (stream::END, "end")] {
+                for k in ops[s].keys() {
+                    uses.entry(format!("{name} op {k:#04x}")).or_default().insert(zone);
+                }
+            }
+            for k in kinds.keys() {
+                uses.entry(format!("draw kind {k:#04x}")).or_default().insert(zone);
+            }
+            for k in sched.keys() {
+                uses.entry(format!("sched op {k:#04x}")).or_default().insert(zone);
+            }
+            // The run: only tags under the zone's own top `weat` start through set_weather.
+            let (mut skipped, mut missing, mut no_attach, mut left) = (String::new(), String::new(), String::new(), 0);
+            if top_weat.is_some_and(|w| folders.iter().any(|&f| tree.nodes[f].parent == Some(w))) {
+                let mut fx = fx::Effects::new();
+                fx.set_keys(keys.clone());
+                fx.set_index(index.clone());
+                fx.set_global(fx::lib::Library::load(0, index.read(0)?)?);
+                fx.load_zone(fx::lib::Library::load(id, bytes.clone())?);
+                fx.reg.audit = Some(fx::Audit::default());
+                fx.set_weather(&tag_s, 0.0);
+                let frame = fx::Frame {
+                    dt: 1.0,
+                    seconds: 1.0 / 60.0,
+                    dayfrac: 0.5,
+                    view: glam::Mat4::IDENTITY,
+                    view_rot: glam::Mat4::IDENTITY,
+                    eye: glam::Vec3::new(0.0, -2.0, -6.0),
+                    draw_distance: 2000.0,
+                    area_light: glam::Vec3::ONE,
+                    focal: 350.0,
+                    moon_phase: 0,
+                    weekday: 0,
+                };
+                let started = std::time::Instant::now();
+                let mut n = 0;
+                while n < ticks {
+                    if fx.loading_count() > 0 && started.elapsed().as_secs() < 5 {
+                        fx.poll_loads();
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                        continue;
+                    }
+                    fx.tick(&frame, &actors);
+                    n += 1;
+                }
+                left = fx.live_instances().len();
+                let au = fx.reg.audit.take().unwrap_or_default();
+                let four = |n: u32| String::from_utf8_lossy(&n.to_le_bytes()).trim_end_matches('\0').to_string();
+                let mut sk: Vec<String> = au.stream.iter().map(|((s, k), v)| format!("{s}/{k:#04x}x{v}")).collect();
+                sk.extend(au.sched.iter().map(|(k, v)| format!("task/{k:#04x}x{v}")));
+                skipped = sk.join(" ");
+                missing = au
+                    .missing
+                    .keys()
+                    .map(|(f, n, k)| format!("{f}:{}:{k:#x}", four(*n)))
+                    .chain(au.no_sched.keys().map(|n| format!("sched:{}", four(*n))))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                no_attach = au.no_attach.iter().map(|(k, v)| format!("{k:#x}x{v}")).collect::<Vec<_>>().join(" ");
+                for (s, k) in au.stream.keys() {
+                    gaps.entry(format!("stream {s} op {k:#04x} skipped")).or_default().insert(zone);
+                }
+                for k in au.sched.keys() {
+                    gaps.entry(format!("task op {k:#04x} skipped")).or_default().insert(zone);
+                }
+                for k in au.no_attach.keys() {
+                    gaps.entry(format!("attach mode {k:#x} unplaced")).or_default().insert(zone);
+                }
+                if !au.missing.is_empty() || !au.no_sched.is_empty() {
+                    gaps.entry("resource or scheduler not found".into()).or_default().insert(zone);
+                }
+                runs += 1;
+            }
+            let list = |m: &BTreeMap<u8, u32>| m.iter().map(|(k, v)| format!("{k:#04x}x{v}")).collect::<Vec<_>>().join(" ");
+            let _ = writeln!(
+                rows,
+                "{zone}\t{tag_s}\t{ngen}\t{}\t{}\t{}\t{}\t{}\t{}\t{skipped}\t{missing}\t{no_attach}\t{left}",
+                list(&kinds),
+                list(&ops[0]),
+                list(&ops[1]),
+                list(&ops[2]),
+                list(&ops[3]),
+                list(&sched)
+            );
+        }
+        eprintln!("zone {zone}: {} weathers", tags.len());
+    }
+    std::fs::write(out, rows)?;
+    let mut summary = format!("{runs} weather runs\n\n== gaps (zones) ==\n");
+    let mut ranked: Vec<_> = gaps.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    for (gap, z) in &ranked {
+        let _ = writeln!(summary, "{:4}  {gap}  e.g. {:?}", z.len(), z.iter().take(10).collect::<Vec<_>>());
+    }
+    let _ = writeln!(summary, "\n== used in weather folders (zones) ==");
+    for (u, z) in &uses {
+        let _ = writeln!(summary, "{:4}  {u}  e.g. {:?}", z.len(), z.iter().take(10).collect::<Vec<_>>());
+    }
+    std::fs::write(out.with_extension("summary.txt"), &summary)?;
+    print!("{summary}");
+    Ok(())
 }
 
 fn fx_soak(out: &std::path::Path, cycles: u32, ticks: u32, settle: u32, only: Option<u16>) -> Result<()> {

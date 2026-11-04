@@ -1022,6 +1022,9 @@ pub struct Effects {
     pub lift_moves: Vec<LiftMove>,
     /// W+0x1bc: the camera is under a covered object (FUN_101845c0).
     covered: bool,
+    /// Update op 0x60's screen flash from the last readback: the bytes the elements add to renderer +0x324..+0x326
+    /// (FUN_10014f70; B, G, R as in the element colour), a frame or two late.
+    pub flash: [u8; 3],
     /// Sound elements and scheduler sounds; this frame's commands for the audio; voices the audio reports alive.
     sounds: Vec<sound::Sound>,
     /// Config 0x92 (the Effects filter) and whether the player's status is 1 or 3 (FUN_100ac4b0's bit-0 gate).
@@ -1162,6 +1165,7 @@ impl Effects {
             lift_moves: Vec::new(),
             sub_lib: None,
             covered: false,
+            flash: [0; 3],
             sounds: Vec::new(),
             filter: (0, false),
             in_event: false,
@@ -1721,10 +1725,15 @@ impl Effects {
     /// Readback records from the GPU (a frame or two late): sort keys, expire requests, positions.
     pub fn take_back(&mut self, words: &[u32]) {
         use elem::{BACK_WORDS, back};
+        self.flash = [0; 3];
         for (i, r) in words.chunks_exact(BACK_WORDS).enumerate() {
             let Some(Some(c)) = self.elems.get_mut(i) else { continue };
             if r[back::SERIAL] != c.serial {
                 continue;
+            }
+            // FUN_10014f90: each element's flash adds, saturating at 255.
+            for (k, v) in r[back::FLASH].to_le_bytes()[..3].iter().enumerate() {
+                self.flash[k] = self.flash[k].saturating_add(*v);
             }
             let f = |k: usize| f32::from_bits(r[k]);
             let has_drift = self.insts.get(c.inst).and_then(|x| x.as_ref()).is_some_and(|x| self.reg.update_op_slot(x.src, 2).is_some());

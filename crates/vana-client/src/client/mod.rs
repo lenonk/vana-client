@@ -14398,6 +14398,7 @@ impl App {
                     }
                     eg.set_lights(&r.lights);
                     eg.set_light(r.lighting.as_ref().map(|l| (l.dir, l.diffuse, l.ambient)));
+                    eg.set_depth(Some((&scene_depth, camera.proj(aspect))));
                     perf::timed(|| "effects upload".into(), || eg.update(&gfx.gpu, &mut encoder, &mut w.effects, &f));
                     mark!("fx update");
                     let (fog_color, fog) = r.lighting.as_ref().map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
@@ -14423,7 +14424,7 @@ impl App {
                 // Event crossfade, the effect flash and feedback blur, and the fades over the scene, under the 2D layer;
                 // the zoning fade as a multiply too.
                 let (cross, m) = (w.screen.cross_alpha(), w.screen.multiply().map(|c| c * (1.0 - w.fade)));
-                let (flash, blur) = (w.screen.flash(), w.screen.blur());
+                let (flash, blur) = (w.screen.flash(w.effects.flash), w.screen.blur());
                 if cross.is_some() || flash.is_some() || blur.is_some() || m.iter().any(|c| (c - 1.0).abs() > 0.005) {
                     let fx = self.screen_fx_world.get_or_insert_with(|| crate::render::screenfx::ScreenFx::new(&gfx.gpu, scene_fmt));
                     fx.draw_all(&gfx.gpu, &mut encoder, &scene_raw, Some(&scene_tex), bg, cross, flash, blur, m);

@@ -98,6 +98,7 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
     let stream = inst.streams[1].clone();
     let op1 = stream.first().filter(|o| o.code == 0x01)?;
     let mut e = Elem::default();
+    e.0[w::ME] = me[0] as u32 | (me[1] as u32) << 1;
     let mut children = Vec::new();
     let res_kind = op1.byte(0x21);
     // FUN_1004e8d0 c:57183: a D3m with 0x1000000 and neither 0x200000 nor 0x100000 is a CMoD3mSpecularElem, whose prep
@@ -725,6 +726,9 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
             0x06 | 0x08 | 0x4e | 0x4f if batched => {}
             // 0x1004fed3: the parent generator's op 0x4e list stands for this stream's (parent_vtx).
             0x94 => {}
+            // 0x1005156d: element +0x160 = word 1 (a 4-character tag such as 'ki03' or 'lt01'), copied to children by op
+            // 0x9c (0x1005157b); nothing in the effects code reads +0x160, so neither has a visible effect.
+            0x88 | 0x9c => {}
             0x7b => {}
             _ => reg.unhandled(1, op.code),
         }
