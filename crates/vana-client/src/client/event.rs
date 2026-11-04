@@ -1252,6 +1252,16 @@ impl Host for LiveHost<'_> {
                     }
                 }
             }
+            // FUN_10092940: back to the server's weather, effects too.
+            // FUN_100940f0 runs whatever held it: op 0xae sub 0's weather goes too (FUN_101874f0 makes a new weather
+            // object only for a new number).
+            Effect::Op { op: 0x78, .. } => {
+                let wt = self.w.weather;
+                let off = self.w.weather_chain.last().is_some_and(|c| c.0 != wt);
+                if off {
+                    self.w.weather_chain = vec![(wt, Instant::now(), 0.0)];
+                }
+                if off || self.st.time.is_some_and(|t| t.1.is_some()) {
             // FUN_100bab50: day val@1 x 7 at 00:30 (FUN_1018be70 / bfa0 / bf00), and the weekday and moon phase read it
             // (DAT_1065cb20) instead of the server's.
             Effect::Op { op: 0xa9, args, .. } => {
@@ -1266,6 +1276,21 @@ impl Host for LiveHost<'_> {
                 if op == 0x78 && self.st.weather.take().is_some() {
                     let wt = self.w.weather;
                     self.w.effects.set_weather(crate::dat::weather::weather_tag(wt), 0.0);
+                }
+            }
+            // FUN_100bb620 sub 0 -> FUN_10094040: weather val@2 blended in over val@4 x 60 clock units (1500 a second,
+            // so val@4 / 25 s) by FUN_101874f0, as s2c 0x057 does; the server's number (DAT_10485fe0) stays, and the
+            // event's end keeps the change.
+            Effect::Op { op: 0xae, sub: Some(0), args, .. } => {
+                if let (Some(wt), Some(t)) = (Self::arg_int(&args, 0), Self::arg_int(&args, 1)) {
+                    let (wt, secs) = (wt as u16, t.max(0) as f32 / 25.0);
+                    if self.w.weather_chain.last().is_none_or(|c| c.0 != wt) {
+                        if secs <= 0.0 {
+                            self.w.weather_chain.clear();
+                        }
+                        self.w.weather_chain.push((wt, Instant::now(), secs));
+                    }
+                    self.w.effects.set_weather(crate::dat::weather::weather_tag(wt), secs);
                 }
             }
             // FUN_100b6950 / 6a00 / 69b0 / 6980 / 6a30: the event's door state (+0x174) for the bound actor.
