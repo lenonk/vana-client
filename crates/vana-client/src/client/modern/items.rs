@@ -78,13 +78,13 @@ fn list(p: &mut Panels, w: &mut World) {
     let Some(info) = w.item_info.clone() else { return };
     let m = p.m;
     let gu = p.gu;
-    let shown = gitems::listed(w, direct);
+    let shown = gitems::listed_at(w, direct);
     let rows = gitems::list_rows(w, &info, &shown, direct);
-    let note = format!("{} / {}", shown.len(), w.inv.sizes[gitems::INVENTORY as usize].saturating_sub(1));
+    let note = format!("{} / {}", shown.len() - gitems::temp_rows(&shown), w.inv.sizes[gitems::INVENTORY as usize].saturating_sub(1));
     let icons: Vec<Option<egui::TextureId>> = rows.iter().skip(scroll).take(VISIBLE_ROWS).map(|r| m.item_icon(p.ctx, &info, r.id)).collect();
-    let bazaar: Vec<Option<u32>> = shown.iter().skip(scroll).take(VISIBLE_ROWS).map(|s| bazaar_price(w, gitems::INVENTORY, s.index)).collect();
+    let bazaar: Vec<Option<u32>> = shown.iter().skip(scroll).take(VISIBLE_ROWS).map(|(c, s)| bazaar_price(w, *c, s.index)).collect();
     let use_bazaar = match sub {
-        Some(Sub::Use { index, .. }) => bazaar_price(w, gitems::INVENTORY, index).is_some(),
+        Some(Sub::Use { c, index, .. }) => bazaar_price(w, c, index).is_some(),
         _ => false,
     };
     let held = manual.flatten();
@@ -125,12 +125,12 @@ fn list(p: &mut Panels, w: &mut World) {
         if rows.is_empty() {
             ui.label(egui::RichText::new("No items.").size(m.theme.ui).color(m.theme.color("muted")));
         }
-        for (k, (row, slot)) in rows.iter().zip(&shown).skip(scroll).take(VISIBLE_ROWS).enumerate() {
+        for (k, (row, (c, slot))) in rows.iter().zip(&shown).skip(scroll).take(VISIBLE_ROWS).enumerate() {
             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
             let sprite = match () {
                 _ if k == cursor && sort.is_none() => "controls/list_row_selected",
                 // Hovering lights a row only while the list has the focus (iuse and itmsort2 take it).
-                _ if held == Some(slot.index) || (resp.hovered() && sub.is_none() && sort.is_none()) => "controls/list_row_hover",
+                _ if (*c == gitems::INVENTORY && held == Some(slot.index)) || (resp.hovered() && sub.is_none() && sort.is_none()) => "controls/list_row_hover",
                 _ => "controls/list_row_normal",
             };
             let painter = ui.painter();
@@ -156,8 +156,8 @@ fn list(p: &mut Panels, w: &mut World) {
         let track = Rect::from_min_max(pos2(ui.max_rect().max.x + 6.0, top.y), pos2(ui.max_rect().max.x + 14.0, ui.cursor().min.y));
         super::kit::bar(ui.painter(), m, track, rows.len(), VISIBLE_ROWS, scroll);
         match sub {
-            Some(Sub::Use { child, index, id }) => {
-                let on = gitems::iuse_states(w, index, id);
+            Some(Sub::Use { child, c, index, id }) => {
+                let on = gitems::iuse_states(w, c, index, id);
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;

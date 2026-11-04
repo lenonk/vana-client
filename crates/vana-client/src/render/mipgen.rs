@@ -439,6 +439,50 @@ mod tests {
         (0..rows).flat_map(|y| data[(y * pitch) as usize..][..row as usize].to_vec()).collect()
     }
 
+    /// Level `level` of `tex` as RGBA bytes (`w` x `h`), read by a shader with `textureLoad` and sRGB-encoded, so a
+    /// BC texture reads back decoded on every backend (wgpu's GL backend cannot copy compressed textures out).
+    fn sample(gpu: &Gpu, tex: &wgpu::Texture, level: u32, w: u32, h: u32) -> Vec<u8> {
+        const SRC: &str = r#"
+@group(0) @binding(0) var t: texture_2d<f32>;
+@group(0) @binding(1) var<storage, read_write> o: array<u32>;
+fn enc(l: f32) -> u32 {
+    var c = l * 12.92;
+    if (l > 0.0031308) { c = 1.055 * pow(max(l, 0.0), 1.0 / 2.4) - 0.055; }
+    return u32(clamp(c, 0.0, 1.0) * 255.0 + 0.5);
+}
+@compute @workgroup_size(1)
+fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+    let w = textureDimensions(t).x;
+    let c = textureLoad(t, vec2<i32>(g.xy), 0);
+    o[g.y * w + g.x] = enc(c.r) | (enc(c.g) << 8u) | (enc(c.b) << 16u) | (u32(round(c.a * 255.0)) << 24u);
+}
+"#;
+        let d = &gpu.device;
+        let module = d.create_shader_module(wgpu::ShaderModuleDescriptor { label: None, source: wgpu::ShaderSource::Wgsl(SRC.into()) });
+        let pipe = d.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: None, layout: None, module: &module, entry_point: Some("main"), compilation_options: Default::default(), cache: None });
+        let size = (w * h * 4) as u64;
+        let out = d.create_buffer(&wgpu::BufferDescriptor { label: None, size, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
+        let back = d.create_buffer(&wgpu::BufferDescriptor { label: None, size, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
+        let view = tex.create_view(&wgpu::TextureViewDescriptor { base_mip_level: level, mip_level_count: Some(1), ..Default::default() });
+        let group = d.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &pipe.get_bind_group_layout(0),
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) }, wgpu::BindGroupEntry { binding: 1, resource: out.as_entire_binding() }],
+        });
+        let mut enc = d.create_command_encoder(&Default::default());
+        {
+            let mut pass = enc.begin_compute_pass(&Default::default());
+            pass.set_pipeline(&pipe);
+            pass.set_bind_group(0, &group, &[]);
+            pass.dispatch_workgroups(w, h, 1);
+        }
+        enc.copy_buffer_to_buffer(&out, 0, &back, 0, size);
+        gpu.queue.submit([enc.finish()]);
+        back.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+        d.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
+        back.slice(..).get_mapped_range().unwrap().to_vec()
+    }
+
     fn texture(gpu: &Gpu, t: &Texture, format: wgpu::TextureFormat, kind: Kind) -> wgpu::Texture {
         let (w, h) = (t.width, t.height);
         let tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
@@ -511,5 +555,45 @@ mod tests {
             let mean = a.iter().zip(&b).map(|(x, y)| (*x as f32 - *y as f32).abs()).sum::<f32>() / a.len() as f32;
             assert!(worst(&a, &b) <= 12 && mean <= 1.5, "BC1 level {k}: worst {} mean {mean}", worst(&a, &b));
         }
+    }
+
+    /// When the device samples BC, a BC level copied in from a buffer with padded rows (as `record` copies them)
+    /// lands intact. wgpu's GL backend drops such a copy (its compressed upload takes the padded size), which is
+    /// why `Gpu::new` leaves BC off there.
+    #[test]
+    fn padded_bc_copy_lands() {
+        let Ok(gpu) = Gpu::headless() else { return };
+        if !gpu.device.features().contains(wgpu::Features::TEXTURE_COMPRESSION_BC) {
+            return;
+        }
+        // 64 texels: a 128-byte block row, padded to 256 in the buffer.
+        let (w, h, pitch) = (64u32, 8u32, 256u32);
+        let tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bc1RgbaUnorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        // Every block solid white (both endpoints 0xffff).
+        let mut data = vec![0u8; (pitch * h / 4) as usize];
+        for r in 0..h / 4 {
+            for b in 0..w / 4 {
+                data[(r * pitch + b * 8) as usize..][..4].fill(255);
+            }
+        }
+        use wgpu::util::DeviceExt;
+        let buf = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: &data, usage: wgpu::BufferUsages::COPY_SRC });
+        let mut enc = gpu.device.create_command_encoder(&Default::default());
+        enc.copy_buffer_to_texture(
+            wgpu::TexelCopyBufferInfo { buffer: &buf, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(pitch), rows_per_image: Some(h / 4) } },
+            tex.as_image_copy(),
+            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        );
+        gpu.queue.submit([enc.finish()]);
+        assert!(sample(&gpu, &tex, 0, w, h).iter().all(|&v| v == 255));
     }
 }

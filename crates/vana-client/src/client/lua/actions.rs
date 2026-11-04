@@ -206,7 +206,7 @@ pub(super) fn apply(w: &mut World, gu: Option<&GameUi>, a: Action) {
         Action::Sort(bag) => items::auto_sort_c(w, bag),
         Action::Drop(index) => {
             if let Some(id) = w.inv.item(0, index) {
-                items::drop_now(w, index, id);
+                items::drop_now(w, 0, index, id);
             }
         }
         Action::Lot(slot) | Action::Pass(slot) if slot as usize >= treasure::SLOTS || w.treasure[slot as usize].state != 2 => {}

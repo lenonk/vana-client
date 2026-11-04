@@ -21012,3 +21012,52 @@ From the 30261006_0 decompile; ours in client/swkbd.rs (classic) and modern/keyb
 - Rebuilt from the feature branches merged in the same order: every test from each PR is back as its own function,
   0x78 both restores the server weather held by op 0x77 and resets op 0xae's blend, and each op row keeps its newest
   description. No behaviour beyond what the PRs added.
+## Temporary items in the Items lists (2026-11-02)
+
+- Main Menu > Items and the action menu's Items now list the temporary items (container 3, Abyssea / Salvage and the
+  like), which they left out. FFXiMain.dll's list rebuild (FUN_101f1100, 0x101f12a8..0x101f16c8): once container 3 is
+  loaded and the list's source returns a colour from its +0x20 (FUN_101f1bf0 for the main list, FUN_101f1c40 for the
+  direct list: both 0x80806040), every temporary item comes first (+0x54 rows, its view's order), then the inventory.
+  The temporary rows take that colour and show no quantity; the direct list takes them all, unfiltered. The storage
+  view's sources return 0 there, so its inventory side stays without them.
+- The list's "items/size" count leaves the temporary rows out (the row total +0x52 less +0x54).
+- Use and Drop work on a temporary row: the target prompt carries container 3 to c2s 0x037, and Drop sends c2s 0x028
+  with container 3 (LSB takes LOC_TEMPITEMS for both). iuse, the drop question and the item info follow the row's
+  container.
+- Ours: Manual Sort only moves inventory slots, so a temporary row there plays the error sound.
+
+## No BC textures on the GL backend (2026-11-02)
+
+- wgpu 30's GL backend drops a compressed copy from a buffer whose `bytes_per_row` is padded past the tight
+  block row: it passes the padded size to `glCompressedTexSubImage2D`, the call fails and the level keeps its
+  zeroed contents (black). Verified on Mesa llvmpipe (GLES): a 64-texel BC1 copy with 256-byte rows samples
+  black, a 128-texel one (tight row = 256) samples right; the same copies are right on lavapipe (Vulkan).
+  The GL backend also cannot copy compressed textures out to a buffer (wgpu-hal logs "Not implemented yet").
+- The GPU mip chain (render/mipgen.rs) copies every BC level with 256-byte rows, so on GL the lower levels of BC1 /
+  BC2 textures were black (issue #64: `gpu_mips_match_cpu_chain` level 1 worst 182, mean 86). `Gpu::new` now
+  leaves `TEXTURE_COMPRESSION_BC` off on GL, so GL takes the RGBA path. Vulkan, DX12 and Metal are unchanged.
+- Test `padded_bc_copy_lands` checks the padded BC copy wherever the device has BC; it fails on GL without
+  the change.
+
+## Login events start on a black screen (2026-11-02)
+
+- Bug: after creating a character, the opening cutscene briefly showed the player out of bounds of the starting city
+  before its first shot. The world faded in as soon as the zone was up, while the event still waited for its actors
+  (about 3.6 s live) and then for its own first 30 ticks: the San d'Oria opening 0x1f7 starts with
+  `actor_flag17 1`, `camera_mode sub 1, 1`, sound / weather ops and `wait #30`, and only then starts its camera
+  `s043` and its fade-in `fdi1`.
+- Retail (FFXiMain.dll, the 30261006_0 build; function names as elsewhere in this log): FUN_10093db0 (sends c2s 0x00C
+  after the zone load) sets the zone fade state DAT_104807f3 = 1 only when the 0x00A's EventNum (+0x40d90) is 0.
+  State 1 is what runs the zone's fade-in (FUN_1008abe0: file 30904 `fdi0`). With a login event there is no zone
+  fade-in, so the scene's colour multiply stays black until the event fades it in itself.
+- File 30904 (sched_file #200): `fdi0` is op 0x0f to 0x80 over 30 ticks, `fdi1` op 0x0f to 0x80 over 60, `fdo0` /
+  `fdo1` to 0 over 30 / 60. Each starts from the colour drawn now, so a fade-in only shows on a black screen. Ours
+  started every zone at 1.0 (the zone fade is our separate World::fade), so `fdi1` did nothing and the world was
+  visible from the zone load on.
+- Fix: a zone-in that carries a login event sets the scene multiply to black (Screen::hold_black); the event's first
+  0x0f (scheduler or effect task) fades it in from there. Ours, not retail: if the event ends, is cancelled or has
+  no script without any 0x0f of its own, the scene fades in over 30 ticks as `fdi0` would.
+- Other retail details seen on the way, not changed here: FUN_10094190 (the world start) with a login event skips
+  FUN_100955d0 and, with EventMode & 0x80 (LSB's OPENING_MODE), sets DAT_10485ff4 = 1, which makes the event end
+  (FUN_100ae3f0) put the camera behind the player as Mode & 1 does.
+- Unit test client::event::tests::login_event_holds_black_until_its_fade. Not checked live yet (needs a new character).
