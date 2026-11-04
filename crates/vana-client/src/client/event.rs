@@ -1239,6 +1239,9 @@ impl Host for LiveHost<'_> {
                     self.w.music_fades.push((v, t));
                 }
             }
+            // FUN_100b6e30 0xb1: the current track (DAT_10463940, set by every start) again when the stream has stopped
+            // (FUN_100378b0).
+            Effect::Op { op: 0x5c, sub: Some(0xb1), .. } => self.w.music_restart = true,
             Effect::Op { op: 0x5d, args, .. } => {
                 if let (Some(v), Some(t)) = (Self::arg_int(&args, 0), Self::arg_int(&args, 1)) {
                     self.w.music_fades.push((v, t));
@@ -1724,6 +1727,10 @@ impl Host for LiveHost<'_> {
 
     fn concierge_pick(&mut self) -> Option<[u32; 3]> {
         self.w.concierge_ui.is_none().then_some(self.w.concierge_pick)
+    }
+
+    fn music_state(&self) -> i32 {
+        self.w.music_state
     }
 
     fn mog_house(&self, slot: Option<u8>) -> u32 {

@@ -135,6 +135,11 @@ pub trait Host {
     fn mog_house(&self, _slot: Option<u8>) -> u32 {
         0
     }
+    /// Op 0x5c 0xb0 (FUN_10246710(0, -1)): 1 while the music stream plays, 0 when it does not, -1 without a stream
+    /// player (no audio).
+    fn music_state(&self) -> i32 {
+        -1
+    }
     fn race_value(&self, _sub: u8, _a: i32, _b: i32) -> u32 {
         0
     }
@@ -2100,6 +2105,12 @@ impl Runtime {
                 self.set_at(v, if two { 8 } else { 6 }, 0, value);
                 self.adv(v, len);
             }
+            // FUN_100b6e30 0xb0: set@2 = the music stream's state; 4 bytes, no frame end.
+            0x5c if sub == Some(0xb0) => {
+                let m = host.music_state();
+                self.set_at(v, 2, 0, m as u32);
+                self.adv(v, len);
+            }
             // FUN_100bbf80: sub 1 set@2 = the Mog House mask, sub 2 set@4 = slot val@2's id (as a byte); other subs
             // only advance 2. No frame end.
             0xc2 => {
@@ -3331,6 +3342,39 @@ mod tests {
             })
             .collect();
         assert_eq!(found[..2], [(0x5f, Some(0x010e_6030)), (0xc1, Some(0x010e_6030))]);
+    }
+
+    /// Op 0x5c 0xb0 / 0xb1 (FUN_100b6e30), as the ambient music loops of zones 210 / 232 / 236 / 239 use them: 0xb0
+    /// stores the host's music state in four bytes, 0xb1 reaches the host in two.
+    #[test]
+    fn music_state_restart() {
+        struct Music(Scripted);
+        impl Host for Music {
+            fn effect(&mut self, e: Effect) {
+                self.0.effect(e)
+            }
+            fn music_state(&self) -> i32 {
+                0
+            }
+        }
+        let code = vec![
+            0x5c, 0xb0, 0x01, 0x11, // M1 = the state
+            0x5c, 0xb1, // restart
+            0x21, 0x00,
+        ];
+        let actor = 0x010e_601b;
+        let blocks = vec![event::Block { actor, events: vec![(1, 0)], consts: vec![], code }];
+        let mut host = Music(Scripted::new(&[]));
+        let start = Start { zone: 232, event: 1, target: actor, ..Default::default() };
+        let mut mem = Memory::default();
+        mem.m[1] = 7;
+        let mut rt = Runtime::start(blocks, None, start, mem, &mut host);
+        for _ in 0..10 {
+            rt.tick(&mut host, 1.0);
+        }
+        assert_eq!(rt.mem.m[1], 0);
+        assert!(host.0.log.iter().any(|e| matches!(e, Effect::Op { op: 0x5c, sub: Some(0xb1), .. })));
+        assert!(!host.0.log.iter().any(|e| matches!(e, Effect::Op { op: 0x5c, sub: Some(0xb0), .. })));
     }
 
     /// Op 0xcc 0x20 (FUN_100b9d90): four bytes, key item val@2 to the host (0 closes the window), no wait.

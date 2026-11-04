@@ -5731,6 +5731,10 @@ struct World {
     music_fades: Vec<(i32, i32)>,
     /// The audio still changing music (event op 0x9a waits), as of the last frame.
     music_changing: bool,
+    /// Event op 0x5c 0xb0's music stream state as of the last frame: 1 playing, 0 stopped, -1 no audio.
+    music_state: i32,
+    /// Event op 0x5c 0xb1: start the current track again if it has stopped.
+    music_restart: bool,
     renderer: Option<ZoneRenderer>,
     /// Effect generators of the zone (fx/).
     effects: crate::fx::Effects,
@@ -7523,7 +7527,11 @@ impl App {
             for (v, t) in w.music_fades.drain(..) {
                 a.music_fade(v, t);
             }
+            if std::mem::take(&mut w.music_restart) {
+                a.restart_music();
+            }
             w.music_changing = a.music_changing();
+            w.music_state = a.music_playing() as i32;
             a.max_se = if w.event_voices { 20 } else { self.cfg.tool("0029").clamp(1, 20) };
             // Interface sounds (targeting, menus, prompts).
             for id in w.sounds.drain(..) {
@@ -8151,6 +8159,8 @@ impl App {
                             seats: HashMap::new(),
                             music_fades: Vec::new(),
                             music_changing: false,
+                            music_state: -1,
+                            music_restart: false,
                             typing: false,
                             space_open: false,
                             open_seen: 0,

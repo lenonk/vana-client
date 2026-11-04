@@ -114,6 +114,9 @@ pub struct Audio {
     pub max_se: u32,
     /// Voices asked for and not yet taken by the mixer: they count as playing.
     pending: std::cell::RefCell<std::collections::HashSet<u32>>,
+    /// The last op 0x5c 0xb1 restart sent: another waits until the mixer has the track or 2 s pass (the loader reads
+    /// the whole file per request, and the scripts ask every frame).
+    restarted: Option<std::time::Instant>,
 }
 
 impl Audio {
@@ -128,7 +131,7 @@ impl Audio {
                 let (tx, req) = channel();
                 let ls = status.clone();
                 std::thread::Builder::new().name("audio-load".into()).spawn(move || loader(ffxi_dir, req, mixer_tx, ls)).ok()?;
-                Some(Self { tx, status, _out: out, wanted: 0, playing: 0, task: None, music, effects, tick_acc: 0.0, event_se: 1.0, event_stream: 1.0, event_ui: 1.0, event_zone: 1.0, ambient_se: None, ambient_level: 0, fades: [None; 4], streams: Default::default(), raw_levels: Default::default(), applied: (1.0, 1.0, 1.0), cur_vol: 0x7f, max_se: 12, pending: Default::default() })
+                Some(Self { tx, status, _out: out, wanted: 0, playing: 0, task: None, music, effects, tick_acc: 0.0, event_se: 1.0, event_stream: 1.0, event_ui: 1.0, event_zone: 1.0, ambient_se: None, ambient_level: 0, fades: [None; 4], streams: Default::default(), raw_levels: Default::default(), applied: (1.0, 1.0, 1.0), cur_vol: 0x7f, max_se: 12, pending: Default::default(), restarted: None })
             }
             Err(e) => {
                 log::warn!("audio disabled: {e:#}");
@@ -344,6 +347,22 @@ impl Audio {
         self.send(Cmd::BgmVolume { level, ticks: ticks.max(0) });
     }
 
+    /// The mixer has a music track (FUN_10246710(0, -1): the stream's +0x94 is set).
+    pub fn music_playing(&self) -> bool {
+        self.status.bgm.load(std::sync::atomic::Ordering::Relaxed) != 0
+    }
+
+    /// Event op 0x5c 0xb1 (FUN_100378b0(DAT_10463940)): the track last started plays again when the mixer has none.
+    /// Ours skips it while a change is under way, which starts its own track, and while its last restart is still
+    /// loading.
+    pub fn restart_music(&mut self) {
+        if self.music_playing() || self.playing == 0 || self.task.is_some() || self.restarted.is_some_and(|t| t.elapsed().as_secs_f32() < 2.0) {
+            return;
+        }
+        self.restarted = Some(std::time::Instant::now());
+        self.start(self.playing, self.cur_vol);
+    }
+
     /// A music change is still under way (event op 0x9a waits for it).
     pub fn music_changing(&self) -> bool {
         self.task.is_some()
@@ -379,6 +398,9 @@ impl Audio {
 
     /// Advances the music task by real time at the client's 60 Hz tick.
     pub fn update(&mut self, dt: f32) {
+        if self.restarted.is_some() && self.music_playing() {
+            self.restarted = None;
+        }
         self.step_fades(dt * 60.0);
         // Running effect voices follow the effects factor and the event channels.
         let factors = (self.effects, self.event_se, self.event_stream);
