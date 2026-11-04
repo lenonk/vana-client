@@ -104,7 +104,11 @@ pub(super) fn steps(w: &mut World, places: &HashMap<u32, Place>, points: Vec<(u6
             continue;
         }
         let c = if kind < 10 { b'0' + kind as u8 } else { b'a' + (kind - 10) as u8 };
-        let name = [b'0', b'0' + surface, c, b'1' + ch.cib[2].max(0) as u8];
+        // Scene +0x1cf (FUN_1018b500, batch 12 item 72): in areas 704..706 surface 3 borrows surface 2's sound (the
+        // name only; the dust and prints keep 3). Retail also wants the session flag word's bit 0x100 clear, which we
+        // don't have *(inf: taken as clear)*.
+        let sound = step_sound(w.area.shown.unwrap_or(w.pos_zone), surface);
+        let name = [b'0', b'0' + sound, c, b'1' + ch.cib[2].max(0) as u8];
         let rain = matches!(crate::dat::weather::weather_tag(w.weather), "rain" | "squl" | "bolt") && !covered;
         // actor+0x824 < 0.5: walking, level 101.6 -> 101; else 127.
         let level = if pl.ratio < 0.5 { 101 } else { 127 };
@@ -120,10 +124,29 @@ pub(super) fn steps(w: &mut World, places: &HashMap<u32, Place>, points: Vec<(u6
     }
 }
 
+/// The surface digit of a step's sound name: surface 3 sounds as 2 in areas 704..706 (scene +0x1cf, FUN_1018b500).
+fn step_sound(area: u16, surface: u8) -> u8 {
+    if (704..=706).contains(&area) && surface == 3 { 2 } else { surface }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::fx::sound::SoundCmd;
     use glam::Vec3;
+
+    /// Batch 12 item 72: only areas 704..706 swap, and only surface 3.
+    #[test]
+    fn alt_area_step_sound() {
+        for area in [703, 707, 232] {
+            assert_eq!(super::step_sound(area, 3), 3, "{area}");
+        }
+        for area in 704..=706 {
+            assert_eq!(super::step_sound(area, 3), 2, "{area}");
+            for surface in [0, 1, 2, 4, 9] {
+                assert_eq!(super::step_sound(area, surface), surface, "{area} {surface}");
+            }
+        }
+    }
 
     /// MODLOG "Footsteps": Hume M feet 8136 is kind 1 shoe 1, the orc 1300 (0, 9, 0); in zone 232
     /// running on surface 1 plays fses/0112 = se 101001 at 95 from 8 units out and 1.8 up, walking at 76.
