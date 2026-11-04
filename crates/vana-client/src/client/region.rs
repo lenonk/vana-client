@@ -888,6 +888,14 @@ pub fn poll_image(gu: &mut GameUi, m: &mut CnqMap) {
 /// The map (cnqframe's base draw FUN_101eebd0: the image, then at fade level 0 each marker by FUN_101ee7b0), the
 /// cursor (anc_regi at the point - 8), the info windows of the mode.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
+    draw_map(gu, w);
+    if let Some(m) = w.cnq.as_ref() {
+        draw_windows(gu, w, m, sw, sh);
+    }
+}
+
+/// cnqframe alone (the image, the markers, the cursor): what cinema mode keeps, its info windows having no 0x40.
+pub fn draw_map(gu: &mut GameUi, w: &World) {
     let Some(m) = w.cnq.as_ref() else { return };
     let level = m.view.fade.0;
     let z = m.view.zoom;
@@ -907,7 +915,6 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
             gu.sprite("anc     anc_regi", frame % n, m.view.point.0 - 8.0, m.view.point.1 - 8.0, WHITE);
         }
     }
-    draw_windows(gu, w, m, sw, sh);
 }
 
 /// "menu    region" (hidden while its map is up).

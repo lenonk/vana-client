@@ -2070,7 +2070,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
         match ev {
             // Ctrl+V with the chat line closed opens it with the text (ours).
-            egui::Event::Paste(t) if !world.typing && !opened => {
+            egui::Event::Paste(t) if !world.typing && !opened && !event::cinema(world) => {
                 world.typing = true;
                 let t: String = t.chars().filter(|c| !c.is_control()).collect();
                 fep::insert(world, &t);
@@ -2103,7 +2103,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 world.copied = fep::selected_text(world);
                 fep::delete_selection(world);
             }
-            egui::Event::Cut => chat_prefix(world, "/linkshell2 "),
+            egui::Event::Cut if !event::cinema(world) => chat_prefix(world, "/linkshell2 "),
             egui::Event::Key { key, pressed: true, modifiers, .. } => match key {
                 // Ctrl+Alt+Shift+V as a test script sends it (the window's own is taken before egui).
                 egui::Key::V if modifiers.ctrl && modifiers.alt && modifiers.shift => voicechat::toggle(world),
@@ -2146,11 +2146,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Home | egui::Key::End if world.typing => fep::caret_key(world, *key, modifiers.shift),
                 egui::Key::A if world.typing && modifiers.ctrl => fep::select_all(world),
                 // Ctrl / Alt shortcuts (DAT_103619f0 flag 0x10, FUN_101a5e80). Mode 2 (chat) works while typing.
-                k if (modifiers.ctrl || modifiers.alt) && !opened && let Some(p) = chat_shortcut(*k) => {
+                // Not in cinema mode: the chat line can't open (FUN_101b0060 at 0x101b0065).
+                k if (modifiers.ctrl || modifiers.alt) && !opened && !event::cinema(world) && let Some(p) = chat_shortcut(*k) => {
                     chat_prefix(world, p);
                     keys.clear();
                 }
-                egui::Key::R if modifiers.ctrl || modifiers.alt => {
+                egui::Key::R if (modifiers.ctrl || modifiers.alt) && (world.typing || !event::cinema(world)) => {
                     reply(world);
                     keys.clear();
                 }
@@ -2552,7 +2553,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                         target::confirm_target(world);
                     }
                 }
-                egui::Key::Space => {
+                egui::Key::Space if !event::cinema(world) => {
                     world.typing = true;
                     world.space_open = true;
                     opened = true;
@@ -2560,7 +2561,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 }
                 // FUN_101aa930 -> FUN_101ac1a0: VK 0xBF opens the input; the '/' character that follows is typed.
                 // egui reports numpad / as Slash too; that key is 0x45 / 0x88, not chat.
-                egui::Key::Slash if !modifiers.ctrl && !modifiers.alt && !numpad_slash => {
+                egui::Key::Slash if !modifiers.ctrl && !modifiers.alt && !numpad_slash && !event::cinema(world) => {
                     world.typing = true;
                     keys.clear();
                 }
@@ -2911,7 +2912,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // Mouse in an event: a click on a choice row picks it, anywhere else advances a prompt.
     if input.clicked && world.event.is_some() {
         // The modern layer's choice panel takes its own clicks.
-        let row = event::choice(world).filter(|_| !world.modern).and_then(|_| {
+        let row = event::choice(world).filter(|_| !world.modern && !event::cinema(world)).and_then(|_| {
             let r = gu.window_rect("menu    query", sw, sh)?;
             let p = input.pointer?;
             gu.children("menu    query").iter().position(|c| inside(&[r[0] + c[0], r[1] + c[1], c[2].max(132.0), c[3].max(16.0)], p))
@@ -4130,6 +4131,24 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(timers::pointer(world, gu, input.pointer, input.clicked, &blockers));
     blockers.extend(regime::pointer(world, gu, input.pointer, input.clicked, &blockers));
     blockers.extend(skillchain::pointer(world, gu, input.pointer, input.clicked, &blockers));
+    // Cinema mode (FUN_101177d0 at 0x101177ee): no window draws but the event text box, mapframe and cnqframe; the
+    // name plates are a 3D pass and stay. The windows' state still updates underneath (the log's included, which
+    // retail freezes).
+    if event::cinema(world) {
+        gu.clear();
+        if !world.lua.hides("plates") {
+            name_plates(gu, world, sw, sh, view_proj);
+        }
+        if let Some(m) = world.map.as_mut() {
+            m.draw(gu, sw, sh);
+        }
+        // cnqframe has flag 0x40 too; its info windows don't.
+        region::draw_map(gu, world);
+        // An event choice (op 0xd4, "menu    query", flags 0x11012) is neither drawn nor answered here: the event
+        // waits until the script clears cinema mode (batch 8). Retail scripts run op 0x68 first.
+        self::event_window(gu, world, sw, sh, logwin::text_width(sw, world.log.cfg.pct));
+        return Vec::new();
+    }
 
     blockers
 }
@@ -12636,9 +12655,11 @@ impl App {
                     window_closes(world, &input.events);
                     self.hud_blockers = world_hud(gu, world, &input, screen_size, &mut self.keys, view_proj, self.numpad_slash);
                 }
-                // With the UI hidden (key function 0x56) retail draws no window at all, so the modern layer goes too.
+                // With the UI hidden (key function 0x56) retail draws no window at all, so the modern layer goes too; in
+                // cinema mode only the event text box (drawn by world_hud).
                 if world.modern
                     && !world.ui_hidden
+                    && !event::cinema(world)
                     && let Some(gu) = self.game_ui.as_ref()
                 {
                     // The retail windows drawn this frame, in egui points.

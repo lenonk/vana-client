@@ -302,6 +302,8 @@ pub struct EventStart {
     pub para2: u16,
     pub params: [u32; 8],
     pub strings: Vec<String>,
+    /// The 0x00A login event (its Mode bit 0x80 starts it in cinema mode, 0x100952e7).
+    pub login: bool,
 }
 
 /// A zone dialogue line sent by the server: 0x036 (talk) or 0x02A (with num[4]).
@@ -732,6 +734,7 @@ pub fn event_start(p: &SubPacket) -> EventStart {
             zone2: p.u16(0x30),
             para2: p.u16(0x32),
             strings: Vec::new(),
+            login: false,
         },
         0x033 => {
             let mode = p.u16(0xe);
@@ -746,6 +749,7 @@ pub fn event_start(p: &SubPacket) -> EventStart {
                 // Data[8] counts only with Mode & 8 (1009ea60).
                 params: if mode & 8 != 0 { std::array::from_fn(|i| p.u32(0x50 + 4 * i)) } else { [0; 8] },
                 strings: (0..4).map(|i| p.str(0x10 + 16 * i, 16)).collect(),
+                login: false,
             }
         }
         _ => EventStart { target: p.u32(4), index: p.u16(8), zone: p.u16(0xa), event: p.u16(0xc), mode: p.u16(0xe), zone2: p.u16(0x10), para2: p.u16(0x12), ..Default::default() },
@@ -1113,7 +1117,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         // EventNum @0x62, EventPara @0x64, EventMode @0x66, EventNo @0x40: the client starts
                         // the login event itself, on the player (FUN_10094ea0).
                         let (event_num, event_para) = (p.u16(0x62), p.u16(0x64));
-                        let event = (event_num != 0).then(|| EventStart { target: p.u32(4), index: p.u16(8), zone: event_num, event: event_para, mode: p.u16(0x66), zone2: p.u16(0x40), ..Default::default() });
+                        let event = (event_num != 0).then(|| EventStart { target: p.u32(4), index: p.u16(8), zone: event_num, event: event_para, mode: p.u16(0x66), zone2: p.u16(0x40), login: true, ..Default::default() });
                         tx.send(NetEvent::ZoneIn { zone: p.u32(48) as u16, pos, dir: p.u8(11), char_id: p.u32(4), index: p.u16(8), name: text(&p, 132, 16), look: look_at(&p, 68), motion: motion_state(&p), game_time: p.u32(0x3C), weather: p.u16(0x68), music: std::array::from_fn(|i| p.u16(0x56 + 2 * i)), event, area: area_line(&p), sub_map: if p.u16(0x60) != scene && myroom.is_none() { p.u16(0x60) } else { 0 }, scene, myroom, room_flag: matches!(p.u32(0x80), 1 | 4 | 5), dead_counter: p.u32(0xA4), play_time: p.u32(0xA0), mog_zone: p.u8(0xaf) & 1 != 0, send_count: p.u16(0xac), ship: ship_data(&p), monstrosity: p.u16(0x7E) != 0 })?;
                     }
                     // FUN_100fb730: 4 cancels a logout (nothing sent); otherwise 0x00D goes out with the old key, and 2
