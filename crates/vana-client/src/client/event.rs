@@ -2601,6 +2601,15 @@ pub fn shot_name(w: &World) -> Option<String> {
     Some(w.screen.shot.as_ref()?.tag.clone())
 }
 
+/// FUN_1008e4d0's unload mark (+0x120 bit 23) on an actor that neither is bound to the running event nor takes part,
+/// as FUN_10095900 acts on it: /hidetrust's, then the event's filter of non-participants by (DAT_104808fc | Mode) & 0x02
+/// for player characters and & 0x10 for the rest, which an event-reserved actor (+0x138 bit 31, op 0xac sub 2) skips.
+/// Doors, elevators and ships (+0xee 3..5, FUN_10096200) are never unloaded.
+fn unloads(pc: bool, flags: u32, structure: bool, reserved: bool, trust: bool) -> bool {
+    let filtered = !reserved && flags & if pc { 0x02 } else { 0x10 } != 0;
+    !structure && (trust || filtered)
+}
+
 /// FUN_1008cdc0, per actor: a bound actor while the event runs is hidden only by the script (+0x120 bit
 /// 0x20000); otherwise by the server bits (+0x120 bits 14 / 15) or, unless it takes part, by (DAT_1046df04 |
 /// Mode) & 0x02 for player characters and & 0x10 for NPCs and monsters (+0x120 bit 0x800000).
@@ -2612,14 +2621,13 @@ pub fn hidden(w: &World) -> HashSet<u32> {
         _ => (0, None, None),
     };
     let takes_part = |id: &u32| part.is_some_and(|p| p.contains(id));
-    let filtered = |id: u32| if id >> 24 == 0 { flags & 0x02 != 0 } else { flags & 0x10 != 0 };
     for (id, e) in &w.entities {
         // FUN_1008e4d0: /hidetrust (config 0x99 bit 5) takes the model of every trust outside our own party (its plate
         // and targeting go with it; the radar dot stays).
         let trust = w.game.get(0x99) & 0x20 != 0 && e.marks.trust && !w.party.party().any(|m| m.index == e.index);
         let hide = match script {
             Some(h) if takes_part(id) => h.contains(id),
-            _ => e.flags & 2 != 0 || (!takes_part(id) && (filtered(*id) || trust)),
+            _ => e.flags & 2 != 0 || (!takes_part(id) && unloads(*id >> 24 == 0, flags, matches!(e.sub_kind, 2..=4), e.ev_reserved, trust)),
         };
         // FUN_100cd040: a listed-only NPC the s2c 0x077 list lacks is not drawn (+0xb2 bit 7), events included; nor
         // one outside our fenced content's gate (+0xb2 bit 5).
@@ -2630,7 +2638,7 @@ pub fn hidden(w: &World) -> HashSet<u32> {
     let me = w.my_id;
     let hide_me = match script {
         Some(h) if takes_part(&me) => h.contains(&me),
-        _ => !takes_part(&me) && filtered(me),
+        _ => !takes_part(&me) && unloads(true, flags, false, false, false),
     };
     // FUN_101d4d90: laying out the Mog House or gardening in it the player is not drawn (+0xb2 bit 4).
     if hide_me || w.layout.is_some() || super::garden::hides_player(w) {
@@ -3228,6 +3236,17 @@ pub fn source_line(w: &mut World, source: u16, id: u16, num: [u32; 5], mode: u8,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// FUN_1008e4d0 / FUN_10095900: the event filter takes non-participants (PCs by 0x02, others by 0x10) except doors,
+    /// elevators, ships and event-reserved actors; /hidetrust spares structures only.
+    #[test]
+    fn unload_exemptions() {
+        assert!(unloads(true, 0x02, false, false, false) && !unloads(true, 0x10, false, false, false));
+        assert!(unloads(false, 0x10, false, false, false) && !unloads(false, 0x02, false, false, false));
+        assert!(!unloads(false, 0x10, true, false, false), "a door keeps its model");
+        assert!(!unloads(false, 0x10, false, true, false), "op 0xac sub 2 holds it");
+        assert!(unloads(false, 0, false, true, true) && !unloads(false, 0, true, false, true));
+    }
 
     /// Op 0xa9 day val x 7 at 00:30: moon phase val % 12, weekday (val x 7) & 7; 0x77 alone leaves both to the server.
     #[test]
