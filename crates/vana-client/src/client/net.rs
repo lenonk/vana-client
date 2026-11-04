@@ -975,6 +975,18 @@ fn chat_bytes(text: &str) -> Vec<u8> {
     out
 }
 
+/// c2s 0x0B6 (FUN_100e3570): @4 = 3, the name at @6, the text at @0x15. Retail sizes it 4 × ceil((len + 0x15) / 4),
+/// leaving out the NUL after the text when it would need another word (batch 5 item 2); the padding is the NUL
+/// otherwise.
+fn tell_packet(name: &str, text: &str) -> Vec<u8> {
+    let mut body = vec![0u8; 17];
+    body[0] = 3;
+    let n = name.len().min(15);
+    body[2..2 + n].copy_from_slice(&name.as_bytes()[..n]);
+    body.extend_from_slice(&chat_bytes(text));
+    build(0x0B6, &body)
+}
+
 /// The Kinds whose line never carries the sender's name (client/mod.rs chat_line): the system announcements 6 / 7 and
 /// the "NS" text-only kinds. A control byte in their unused name cannot reach the formatted line.
 fn chat_nameless(kind: u8) -> bool {
@@ -1652,14 +1664,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     body.push(0);
                     queue.push(build(0x0B5, &body));
                 }
-                NetCommand::Tell { name, text } => {
-                    let mut body = vec![0u8; 17];
-                    body[0] = 3;
-                    body[2..2 + name.len().min(15)].copy_from_slice(&name.as_bytes()[..name.len().min(15)]);
-                    body.extend_from_slice(&chat_bytes(&text));
-                    body.push(0);
-                    queue.push(build(0x0B6, &body));
-                }
+                NetCommand::Tell { name, text } => queue.push(tell_packet(&name, &text)),
                 NetCommand::Heal(mode) => queue.push(build(0x0E8, &mode.to_le_bytes())),
                 NetCommand::Logout { mode, kind } => {
                     let mut b = mode.to_le_bytes().to_vec();
@@ -1767,6 +1772,23 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 0x0B6 is 4 × ceil((len + 0x15) / 4) bytes as retail's: 150 bytes of text give 172, and a NUL ends the text
+    /// when the packet has room for it.
+    #[test]
+    fn tell_size() {
+        let size = |p: &[u8]| (p[1] >> 1) as usize * 4;
+        for len in [0usize, 1, 2, 3, 4, 120, 150, 200] {
+            let p = tell_packet("Name", &"a".repeat(len));
+            let len = len.min(150);
+            assert_eq!((p.len(), size(&p)), ((len + 0x15).div_ceil(4) * 4, p.len()), "len {len}");
+            assert_eq!(&p[6..10], b"Name");
+            assert_eq!(p[4], 3);
+            if p.len() > 0x15 + len {
+                assert_eq!(p[0x15 + len], 0);
+            }
+        }
+    }
 
     /// A control byte in the sender's name drops the text with it (retail cuts the formatted line), but not for the
     /// kinds whose line never holds the name: 6 / 7, the NS kinds, and 0x19 with no name at all.
