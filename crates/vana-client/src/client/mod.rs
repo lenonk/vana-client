@@ -7085,6 +7085,11 @@ enum LoadState {
     Failed,
 }
 
+/// The statuses 0x00E mask 4 never gives a trust (0x1009c118): healing, sitting and the chairs.
+fn rest_status(status: u8) -> bool {
+    matches!(status, 0x21 | 0x2f | 0x3f..=0x53)
+}
+
 /// Our yaw (face (sin Y, 0, cos Y)) for an entity yaw (facing (cos y, 0, -sin y)).
 fn player_yaw(entity_yaw: f32) -> f32 {
     entity_yaw.cos().atan2(-entity_yaw.sin())
@@ -9358,11 +9363,21 @@ impl App {
                     }
                     // Falling dead plays the death motion once (the "dead" scheduler), then the corpse loop.
                     // Fields outside this update's mask bits are zero, not news.
+                    // 0x00E mask 4 (0x1009c118..0x1009c16d): a trust (@0x28 bit 0) never takes the server's healing
+                    // (0x21), sitting (0x2f) or chair (0x3f..0x53) statuses; its old status stays. 0x00D has no such rule.
+                    let trust_rest = e.kind != net::EntityKind::Player
+                        && e.marks.as_ref().is_some_and(|m| m.trust)
+                        && rest_status(e.motion.status);
                     let mut motion = if fresh { e.motion } else { entry.motion };
+                    // A trust we meet for the first time has no old status to keep, so it stands: retail's actor comes
+                    // up at status 0 and the skipped write leaves it there.
+                    if fresh && trust_rest {
+                        motion.status = 0;
+                    }
                     if e.pos.is_some() {
                         (motion.speed, motion.speed_base) = (e.motion.speed, e.motion.speed_base);
                     }
-                    if e.hpp.is_some() && !entry.status_held {
+                    if e.hpp.is_some() && !entry.status_held && !trust_rest {
                         // A held actor (mid-swing) applies the change when its hold ends (combat::tick).
                         if !fresh && held {
                             world.held_status.insert(e.id, e.motion.status);
@@ -15465,6 +15480,13 @@ mod tests {
         let tilted = flat * glam::Mat4::from_rotation_x(0.3);
         let moved = tilted.transform_point3(p + point_drop(tilted, -0.65)) - tilted.transform_point3(p);
         assert!((moved - Vec3::new(0.0, -0.65, 0.0)).length() < 1e-5);
+    }
+
+    /// 0x00E mask 4's rest statuses: /heal, /sit and every chair, and nothing either side of them.
+    #[test]
+    fn trust_rest_statuses() {
+        assert!([0x21, 0x2f, 0x3f, 0x4a, 0x53].iter().all(|&s| rest_status(s)));
+        assert!(![0x00, 0x20, 0x22, 0x2e, 0x30, 0x3e, 0x54, 0xff].iter().any(|&s| rest_status(s)));
     }
 
     /// Op 0x7a on us: an entity yaw of pi faces west (-1, 0, 0); our face (sin Y, 0, cos Y) matches it.
