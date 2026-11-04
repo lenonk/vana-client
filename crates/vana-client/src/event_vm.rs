@@ -3333,6 +3333,21 @@ mod tests {
         assert_eq!(found[..2], [(0x5f, Some(0x010e_6030)), (0xc1, Some(0x010e_6030))]);
     }
 
+    /// Op 0xcc 0x20 (FUN_100b9d90): four bytes, key item val@2 to the host (0 closes the window), no wait.
+    #[test]
+    fn event_key_item_window() {
+        let code = vec![0xcc, 0x20, 0x00, 0x80, 0xcc, 0x20, 0x00, 0x00, 0x21, 0x00];
+        let actor = 0x010e_601b;
+        let blocks = vec![event::Block { actor, events: vec![(1, 0)], consts: vec![2842], code }];
+        let mut host = Scripted::new(&[]);
+        let start = Start { zone: 257, event: 1, target: actor, ..Default::default() };
+        let mut rt = Runtime::start(blocks, None, start, Memory::default(), &mut host);
+        run_scripted(&mut rt, &mut host, 60).expect("finished");
+        let ids: Vec<Vec<Arg>> =
+            host.log.iter().filter_map(|e| if let Effect::Op { op: 0xcc, sub: Some(0x20), args, .. } = e { Some(args.clone()) } else { None }).collect();
+        assert_eq!(ids[..2], [vec![Arg::Int(2842)], vec![Arg::Int(0)]]);
+    }
+
     #[test]
     fn input_window() {
         assert_eq!((Runtime::atoi(b" -42x"), Runtime::atoi(b"+7"), Runtime::atoi(b"")), (-42, 7, 0));

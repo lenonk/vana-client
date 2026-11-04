@@ -66,6 +66,8 @@ pub struct KeyItems {
     pub items: Vec<(u16, String)>,
     /// evitem01 is up (the cursor: true on Yes).
     pub ask: Option<bool>,
+    /// +0x89: an event script opened it on one key item (op 0xcc 0x20); the keys do not close it.
+    pub event: bool,
 }
 
 /// The ten categories (FUN_1022a360): each '-' header closes the entries before it, titled by its own name.
@@ -88,7 +90,19 @@ pub(super) fn all(w: &World) -> Vec<(String, Vec<(u16, String)>)> {
 /// /keyitem (FUN_1007d220): evitem, waiting until a 0x055 has come.
 pub fn open(w: &mut World) {
     let state = if w.ki_seen.received { 1 } else { 0 };
-    w.keyitems = Some(KeyItems { state, cat: 0, top: 0, cursor: 0, items: Vec::new(), ask: None });
+    w.keyitems = Some(KeyItems { state, cat: 0, top: 0, cursor: 0, items: Vec::new(), ask: None, event: false });
+}
+
+/// Op 0xcc 0x20 (FUN_100b9d90 -> FUN_1022a640 / FUN_1022a660 / FUN_1022a7b0): evitem in event mode (+0x89 = 1) on
+/// key item `id` (+0x8e), straight to the description (+0x90 = 3); 0 closes it (FUN_1022a6d0), as the event's end does
+/// (FUN_100ae3f0 at 0x100ae926, whoever opened it).
+pub fn event_show(w: &mut World, id: u16) {
+    if id == 0 {
+        w.keyitems = None;
+        return;
+    }
+    let name = w.names.as_ref().and_then(|n| n.key_item_list().into_iter().find(|(k, _)| *k == id as u32)).map(|(_, n)| n).unwrap_or_default();
+    w.keyitems = Some(KeyItems { state: 3, cat: 0, top: 0, cursor: 0, items: vec![(id, name)], ask: None, event: true });
 }
 
 pub fn update(w: &mut World) {
@@ -176,6 +190,10 @@ pub(super) fn mark_seen(w: &mut World, id: u16) {
 /// FUN_1022aaa0 (and FUN_10222710 for evitem01).
 pub fn key(w: &mut World, gu: &GameUi, key: egui::Key, page_mod: bool) {
     let Some(mut k) = w.keyitems.clone() else { return };
+    // FUN_1022aaa0 state 3: Enter / Escape do nothing while +0x89 is set.
+    if k.event {
+        return;
+    }
     if let Some(yes) = k.ask {
         match key {
             egui::Key::ArrowUp | egui::Key::ArrowDown => {
@@ -324,11 +342,13 @@ pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
     moved
 }
 
-/// Title "Key Items" (frame string 1); help slot 2 the category name while its items show (FUN_1013a320(name, 2)).
+/// Title "Key Items" (frame string 1); help slot 2 the category name while its items show (FUN_1013a320(name, 2)), not
+/// set when an event opened it *(inf: FUN_1022a660 never picks a category)*.
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     let Some(k) = &w.keyitems else { return };
     (bars.help[1], bars.title[1]) = (String::new(), gu.focus_text(WINDOW, 0)[1].clone().unwrap_or_default());
     if k.state >= 2
+        && !k.event
         && let Some(c) = all(w).get(k.cat)
     {
         bars.help[2] = c.0.clone();

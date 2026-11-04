@@ -1469,6 +1469,10 @@ impl Host for LiveHost<'_> {
                 let title = Self::arg_int(&args, 0).unwrap_or(0) as u8;
                 super::concierge::open(self.w, title);
             }
+            // FUN_100b9d90 0x20: the Key Items window on key item val@2 in event mode (0 closes it).
+            Effect::Op { op: 0xcc, sub: Some(0x20), args, .. } => {
+                super::keyitems::event_show(self.w, Self::arg_int(&args, 0).unwrap_or(0) as u16);
+            }
             // FUN_100b9d90 0x10: arealist in mode 1 (2 with val@4) from tier val@2.
             Effect::Op { op: 0xcc, sub: Some(0x10), args, .. } => {
                 let int = |i| Self::arg_int(&args, i).unwrap_or(0);
@@ -2192,8 +2196,9 @@ fn finish(w: &mut World, live: Box<Live>) {
         }
         keep_pose(w, p);
     }
-    // Menu broadcast 0x1000 (event end): what 0x93 / 0xcc opened closes.
+    // Menu broadcast 0x1000 (event end): what 0x93 / 0xcc opened closes; FUN_100ae3f0 closes evitem (0x100ae926).
     w.info_win = None;
+    w.keyitems = None;
     for a in w.actors.values_mut() {
         if a.extra.iter().any(|(k, _)| *k == super::actmotion::Kind::Event) || a.pending.is_some() {
             super::actmotion::drop_kind(&mut a.extra, super::actmotion::Kind::Event);
