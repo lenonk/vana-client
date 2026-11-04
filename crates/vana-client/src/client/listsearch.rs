@@ -486,7 +486,7 @@ pub fn pick(w: &mut World, h: &Hit) {
         return;
     }
     if let (Some(slot), Some(direct)) = (h.slot, item_list(w)) {
-        let Some(k) = items::listed(w, direct).iter().position(|s| s.index == slot) else { return };
+        let Some(k) = items::listed(w, direct).iter().position(|s| s.index == slot && s.id == h.id) else { return };
         if let Some(items::Win::Items { scroll, cursor, .. }) = w.win.as_mut() {
             let vis = crate::inventory::VISIBLE_ROWS;
             *scroll = if k < *scroll { k } else if k >= *scroll + vis { k + 1 - vis } else { *scroll };

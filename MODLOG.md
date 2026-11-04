@@ -20761,3 +20761,17 @@ From the 30261006_0 decompile; ours in client/swkbd.rs (classic) and modern/keyb
   (standing: 0.44 s); before, only when autorun was switched off. A mount took 0.53 s running and 0.82 s standing
   (the next 400 ms datagram and the server's update); the first mount of a session waits for the chocobo's model
   (retail's state 0xe hides only a mount's rider, cVar7, so a chocobo's rider shows without the bird meanwhile).
+
+## Temporary items in the Items lists (2026-11-02)
+
+- Main Menu > Items and the action menu's Items now list the temporary items (container 3, Abyssea / Salvage and the
+  like), which they left out. FFXiMain.dll's list rebuild (FUN_101f1100, 0x101f12a8..0x101f16c8): once container 3 is
+  loaded and the list's source returns a colour from its +0x20 (FUN_101f1bf0 for the main list, FUN_101f1c40 for the
+  direct list: both 0x80806040), every temporary item comes first (+0x54 rows, its view's order), then the inventory.
+  The temporary rows take that colour and show no quantity; the direct list takes them all, unfiltered. The storage
+  view's sources return 0 there, so its inventory side stays without them.
+- The list's "items/size" count leaves the temporary rows out (the row total +0x52 less +0x54).
+- Use and Drop work on a temporary row: the target prompt carries container 3 to c2s 0x037, and Drop sends c2s 0x028
+  with container 3 (LSB takes LOC_TEMPITEMS for both). iuse, the drop question and the item info follow the row's
+  container.
+- Ours: Manual Sort only moves inventory slots, so a temporary row there plays the error sound.

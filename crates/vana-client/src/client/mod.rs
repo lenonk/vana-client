@@ -3975,12 +3975,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             send_menu_answer(world, 0x13, !yes as u32);
         }
         // FUN_101f3040 / FUN_101f3080: the Linkshell asks twice more; then FUN_101f2ff0 throws the stack away.
-        (Some(true), Some((Confirm::Drop { index, id, stage }, _))) => {
+        (Some(true), Some((Confirm::Drop { c, index, id, stage }, _))) => {
             if id == 0x201 && stage < 2 {
-                world.confirm = Some((Confirm::Drop { index, id, stage: stage + 1 }, false));
+                world.confirm = Some((Confirm::Drop { c, index, id, stage: stage + 1 }, false));
             } else {
                 world.confirm = None;
-                items::drop_now(world, index, id);
+                items::drop_now(world, c, index, id);
             }
         }
         (Some(true), Some((Confirm::Sync { id, off, .. }, _))) => {
@@ -6500,7 +6500,7 @@ enum Confirm {
     /// map0 Wide Scan while tracking: group 0xe 0x45 "Stop tracking current target\nand proceed with wide area scan?".
     StopTracking,
     /// Drop of an Ex / Rare / augmented item (group 0xa 0x30), the Linkshell's two more (group 9 0x157 / 0x158).
-    Drop { index: u8, id: u16, stage: u8 },
+    Drop { c: u8, index: u8, id: u16, stage: u8 },
     /// The action menu's Dismount (FUN_10210e30): group 0xe 0x4d "Dismount?"; Yes runs /dismount.
     Dismount,
     /// post2's Dispose (2) / Return (3): group 9 0x34 / 0x35, default No.
