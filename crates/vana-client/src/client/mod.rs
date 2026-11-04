@@ -1585,6 +1585,17 @@ fn bar_full_log(w: &mut World, m: scrollbar::Msg, (total, lines, _): (usize, usi
     fl.key(key, true, lines, total)
 }
 
+/// The macro palette's flip (batch 12 item 78, +0x29 at 0x101a3a92 on the frame part's fade, 0x10119707): `ticks`
+/// after a set change the palette's alpha, None once it is over. The part fades out over 20 ticks (+0x44 = 2: 0.05 x
+/// the ticks left), is hidden for the frame that sees the end (+0x44 = 1), then fades in over 20 (+0x44 = 3: 1 - 0.05
+/// x the ticks left). Ours runs the ticks at 60 a second; the hidden frame is folded into the turn.
+fn palette_flip_alpha(ticks: f32) -> Option<f32> {
+    match ticks {
+        t if t < 20.0 => Some(1.0 - t / 20.0),
+        t if t < 40.0 => Some((t - 20.0) / 20.0),
+        _ => None,
+    }
+}
 /// FUN_10130280 (Ctrl+C): talk to an NPC target, check anything else (a trust *(inferred)*: talk releases it on LSB).
 fn check_target(world: &mut World) {
     match world.target.filter(|&t| target::talks_to(world, t)) {
@@ -2247,6 +2258,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                             if let Some(m) = world.macros.as_mut() {
                                 let (book, set) = (m.book, m.set);
                                 m.switch(book, if *key == egui::Key::ArrowDown { (set + 1) % 10 } else { (set + 9) % 10 });
+                                // The new set's cells show at once (0x101a3d00(1)); the palette then flips (+0x29 = 1).
+                                world.palette_flip = Some(Instant::now());
                             }
                         }
                         egui::Key::Enter => {
@@ -3802,12 +3815,18 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         let name = format!("menu    mcr{p}{}", if long { "long" } else { "pall" });
         // 0x82 to the right by Misc. 2 config 0x9e (FUN_101a3840, mode DAT_106218ee).
         let dx = macroedit::palette_dx(world, sw);
+        let mark = gu.mark();
         if let Some(win) = gu.lobby_window_off(&name, sw, sh, (dx, 0.0), Some(world.palette.3[p - 1] as u16 + 1), true, &[]) {
             let pad = if win.frame[2] >= 800.0 { 4.0 } else { 2.0 };
             for (k, (_, r)) in win.children.iter().take(10).enumerate() {
                 macroedit::cell_title(gu, &m.recs[k + 10 * (p - 1)].title(), *r, pad);
             }
             blockers.push(win.frame);
+        }
+        match world.palette_flip.map(|t| palette_flip_alpha(t.elapsed().as_secs_f32() * 60.0)) {
+            Some(Some(a)) => gu.fade_from(mark, a),
+            Some(None) => world.palette_flip = None,
+            None => {}
         }
     }
     // The yes / no prompt (FUN_10210e30): "menu    comyn" stacked on the log (registry flag 0x1000: frame top = log top
@@ -5828,6 +5847,8 @@ struct World {
     /// second a held trigger started waiting at.
     pad_palette: bool,
     pad_hold: u64,
+    /// The palette's flip on a set change (+0x29, 0x101a3a92): when it started; see [`palette_flip_alpha`].
+    palette_flip: Option<Instant>,
     /// The software keyboard (client/swkbd.rs), what it typed for the next frame's input, and whether it comes back
     /// after the zone.
     swkbd: Option<swkbd::Keyboard>,
@@ -8370,6 +8391,7 @@ impl App {
                             palette: (0, 0, 0, [0, 0]),
                             pad_palette: false,
                             pad_hold: 0,
+                            palette_flip: None,
                             swkbd: None,
                             swkbd_out: Vec::new(),
                             swkbd_reopen: false,
@@ -15597,6 +15619,16 @@ pub fn run(cfg: Config, drive: Drive) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    /// Batch 12 item 78: a set change fades the palette 1 -> 0 over 20 ticks and 0 -> 1 over the next 20.
+    #[test]
+    fn palette_flip_fades_out_and_in() {
+        assert_eq!(palette_flip_alpha(0.0), Some(1.0));
+        assert_eq!(palette_flip_alpha(10.0), Some(0.5));
+        assert_eq!(palette_flip_alpha(20.0), Some(0.0));
+        assert_eq!(palette_flip_alpha(30.0), Some(0.5));
+        assert_eq!(palette_flip_alpha(40.0), None);
+    }
+
     use super::*;
 
     /// Hide PC armour: slots 1..5 to the defaults, face, weapons and a model look kept.

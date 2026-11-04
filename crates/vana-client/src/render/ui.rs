@@ -413,6 +413,31 @@ impl UiBatch {
         self.runs.push(Run { texture: texture.map(str::to_string), blend, first, count: 6, clip: self.clip });
     }
 
+    /// Vertices pushed so far: a mark for [`UiBatch::fade_from`].
+    pub fn mark(&self) -> usize {
+        self.vertices.len()
+    }
+
+    /// Fades every quad pushed since `mark` by `a` (a part's alpha its children take, as the macro palette's flip):
+    /// the alpha for the blends that weight by it, the colour for the additive glyphs that do not.
+    pub fn fade_from(&mut self, mark: usize, a: f32) {
+        let a = a.clamp(0.0, 1.0);
+        for r in &self.runs {
+            let (first, end) = (r.first as usize, (r.first + r.count) as usize);
+            if end <= mark {
+                continue;
+            }
+            for v in &mut self.vertices[first.max(mark)..end] {
+                v.color[3] *= a;
+                if r.blend == Blend::Glyph {
+                    for c in &mut v.color[..3] {
+                        *c *= a;
+                    }
+                }
+            }
+        }
+    }
+
     /// Quads pushed from now on are hidden where the scene is nearer than `depth` (NDC z); None = no test.
     pub fn set_depth(&mut self, depth: Option<f32>) {
         self.depth = depth;

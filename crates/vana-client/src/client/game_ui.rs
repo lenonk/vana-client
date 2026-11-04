@@ -1953,6 +1953,16 @@ impl GameUi {
         self.frame_alpha(x, y, w, h, 1.0);
     }
 
+    /// A mark of what is drawn so far, for [`GameUi::fade_from`].
+    pub fn mark(&self) -> usize {
+        self.batch.mark()
+    }
+
+    /// Fades everything drawn since `mark` by `a` (a window part's alpha its children take).
+    pub fn fade_from(&mut self, mark: usize, a: f32) {
+        self.batch.fade_from(mark, a);
+    }
+
     /// The frame at window alpha a, alpha blended while a < 1 (FUN_101144b0).
     pub fn frame_alpha(&mut self, x: f32, y: f32, w: f32, h: f32, a: f32) {
         let blend = if a < 1.0 { 0x44 } else { 0 };
