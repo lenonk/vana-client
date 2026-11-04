@@ -1534,6 +1534,13 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // 0x1005b14c -> FUN_1005f450: actor1's head-look off for dur x speed ticks (or until it moves); no wait.
+            0x89 => {
+                if let Some(id) = self.doll_of(t.a1).id() {
+                    self.look_holds.push((id, (op.dur as f32 * t.speed).trunc()));
+                }
+                Flow::Next
+            }
             // FUN_1005e770 / 740 / 760 / 750: actor1's battle / idle / run / walk names from set u32 @8.
             0x79 | 0x8c | 0xa4 | 0xa5 => {
                 if let Some(id) = self.doll_of(t.a1).id() {

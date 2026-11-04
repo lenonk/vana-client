@@ -1032,6 +1032,8 @@ pub struct Effects {
     spawn_event: bool,
     /// Ops 0x79 / 0x8c / 0xa4 / 0xa5: actor1's battle / idle / run / walk motion set (motion::MotionNames::apply).
     pub motion_sets: Vec<(u32, u8, u32)>,
+    /// Op 0x89 (FUN_1005f450): actor1's head-look off (drawobj +0x840 bit 1) for these ticks (dur x speed, truncated).
+    pub look_holds: Vec<(u32, f32)>,
     /// Op 0xab: actor1's entity +0x130 bit 4 (its motion bases reset at each model creation).
     pub base_resets: Vec<(u32, bool)>,
     /// Op 0xac: actor1's death scheduler pick (dead / 1ead / 2ead / 3ead).
@@ -1180,6 +1182,7 @@ impl Effects {
             event_path_stops: Vec::new(),
             spawn_event: false,
             motion_sets: Vec::new(),
+            look_holds: Vec::new(),
             base_resets: Vec::new(),
             death_picks: Vec::new(),
             races: Vec::new(),

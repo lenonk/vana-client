@@ -4765,6 +4765,9 @@ struct Actor {
     /// Event op 0x59: turn (+0xdc) and head-look (+0xe0) speed percents, used while an event runs; 0 = default.
     turn_pct: i32,
     look_pct: i32,
+    /// Scheduler op 0x89 (drawobj +0x840 bit 1): ticks left with no head-look, and the x / z it started at (taken on
+    /// the first frame); it ends early on a move of more than 1 in x or z (FUN_1005f540).
+    look_hold: Option<(f32, Option<(f32, f32)>)>,
     /// The attack scheduler used last (FUN_100d46f0 avoids repeating it).
     last_attack: String,
     /// Motion files on top of the model (event banks, battle files), newest last.
@@ -4916,6 +4919,7 @@ impl Actor {
             event_scale: None,
             turn_pct: 0,
             look_pct: 0,
+            look_hold: None,
             last_attack: String::new(),
             extra: Vec::new(),
             fx_files: Vec::new(),
@@ -7119,6 +7123,11 @@ enum LoadState {
     Idle,
     Loading,
     Failed,
+}
+
+/// Where op 0x89's look hold measures an actor: its event pose while an event drives it, else its own place.
+fn hold_pos(w: &World, id: u32) -> Option<Vec3> {
+    event::pose(w, id).map(|p| p.pos).or_else(|| if id == w.my_id { Some(w.pos) } else { w.entities.get(&id).map(|e| e.pos) })
 }
 
 /// The statuses 0x00E mask 4 never gives a trust (0x1009c118): healing, sitting and the chairs.
@@ -10473,6 +10482,24 @@ impl App {
                 a.motion_names = Some(n);
             } else if a.motion_names.is_some_and(|n| matches!(n.idle, "dft" | "df1")) {
                 a.motion_names = None;
+            }
+        }
+        // FUN_1005f540: op 0x89's hold is a scheduler task, so it counts down every frame whether the actor is drawn
+        // or still loading, and ends early once the body has moved more than 1 unit in x or z from where it started.
+        // The countdown runs before this frame's new holds, so a one-tick hold still covers the frame that set it.
+        let holding: Vec<u32> = world.actors.iter().filter(|(_, a)| a.look_hold.is_some()).map(|(id, _)| *id).collect();
+        for id in holding {
+            let now = hold_pos(world, id);
+            let Some(a) = world.actors.get_mut(&id) else { continue };
+            let Some((left, at)) = a.look_hold else { continue };
+            let moved = at.is_some_and(|(x, z)| now.is_some_and(|p| (p.x - x).abs() > 1.0 || (p.z - z).abs() > 1.0));
+            let left = left - dt * 60.0;
+            a.look_hold = (!moved && left > 0.0).then_some((left, at));
+        }
+        for (id, ticks) in std::mem::take(&mut world.effects.look_holds) {
+            let at = hold_pos(world, id);
+            if let Some(a) = world.actors.get_mut(&id) {
+                a.look_hold = Some((ticks, at.map(|p| (p.x, p.z))));
             }
         }
         for (id, op, set) in std::mem::take(&mut world.effects.motion_sets) {
@@ -14436,7 +14463,9 @@ impl App {
                     // FUN_100d5b10: an event's look, else the target / face target; eased and weighted in world space.
                     let point = |k: usize| ch.skeleton.points.get(k).copied().unwrap_or((0, Vec3::ZERO));
                     let p3 = model.transform_point3(a.rest.get(point(3).0 as usize).map_or(Vec3::ZERO, |x| x.at(point(3).1)));
+                    // FUN_100d5b10: while bit 1 is set the look has no target, forced look included.
                     let target = match a.look.mode {
+                        _ if a.look_hold.is_some() => None,
                         actmotion::LookMode::Actor(..) => look_points.get(id).copied(),
                         actmotion::LookMode::Facing(pitch, yaw) => {
                             let (p, y) = (pitch as f32 * TAU_4096, yaw as f32 * TAU_4096);
