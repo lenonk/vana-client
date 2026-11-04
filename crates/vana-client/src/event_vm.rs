@@ -51,6 +51,8 @@ pub enum Effect {
     /// `mode`: a 1f code's (msg+4); `sounds`: the 0d / 0e SeSep ids played as the text was built.
     /// `motions`: the `17 n` names the moogle plays.
     Message { op: u8, speaker: Option<u32>, id: u32, text: String, prompt: bool, wait: Option<u32>, place: [Option<i16>; 2], mode: Option<u8>, sounds: Vec<u32>, motions: Vec<&'static str> },
+    /// A message's `13 n`: the K.O. offer state (2 raise, 3 tractor) as s2c 0x0F9 sets it.
+    Offer(u8),
     /// Choice menu (op 0x24); answer with [`Runtime::choose`].
     Choice { id: u32, question: String, options: Vec<(u32, String)>, cursor: usize },
     /// Scheduler start (0x45 and family): file id (base + n), tag, actor, target, param.
@@ -186,6 +188,10 @@ pub trait Host {
     /// the server sends one, FUN_1008a350).
     fn male(&self, _actor: u32) -> bool {
         false
+    }
+    /// An actor's yaw (+0x18, radians; 0 east, increasing toward south), for text code `1d`.
+    fn yaw(&self, _actor: u32) -> Option<f32> {
+        None
     }
     /// A game config value by id (op 0xda reads 0x43, the aspect).
     fn game_config(&self, _id: u16) -> u32 {
@@ -1015,6 +1021,8 @@ impl Runtime {
             female: host.female(),
             // FUN_100c2e20's actors 1 / 2: the speaker (none: the player).
             actors: speaker.map(|s| [!host.male(s); 2]),
+            facing: host.yaw(speaker.unwrap_or(PLAYER)),
+            actor2_me: speaker.is_none_or(|s| s == PLAYER),
             names: self.names.clone(),
             slots: self.mem.names,
             ..host.text_ctx()
@@ -1038,6 +1046,9 @@ impl Runtime {
             self.last_speaker = about;
         }
         let (text, prompt, e) = self.text(id, self.last_speaker, host);
+        if let Some(o) = e.as_ref().and_then(|e| e.offer) {
+            host.effect(Effect::Offer(o));
+        }
         let (wait, place, mode, sounds, motions) = e.map_or((None, [None; 2], None, Vec::new(), Vec::new()), |e| (e.wait, e.place, e.mode, e.sounds, e.motions));
         let name = speaker.map(|s| host.name(s));
         let text = match name {
@@ -2405,6 +2416,10 @@ fn atoi(b: &[u8]) -> i32 {
                 let mut question = String::new();
                 let mut cursor = 0;
                 if let Some(e) = e {
+                    // The expander's side effects run wherever it expands in retail (FUN_100c1650), choices included.
+                    if let Some(o) = e.offer {
+                        host.effect(Effect::Offer(o));
+                    }
                     let at = e.choice.unwrap_or(e.lines.len());
                     question = e.lines[..at.min(e.lines.len())].iter().map(|l| decode_sjis(l)).collect::<Vec<_>>().join("\n");
                     let (default, mut mask) = (self.val(v, 3 + off) as u32, self.val(v, 5 + off) as u32);

@@ -126,6 +126,8 @@ pub struct BattleText {
     days: Option<Messages>,
     /// Group 0x11: the moon phase names.
     moons: Option<Messages>,
+    /// Group 0xf: the eight compass words ("east" .. "northeast"), text code 0x1d.
+    compass: Option<Messages>,
     /// Grammar kinds 0x87 / 0x88 / 0x8a (FUN_100bdc50 cases 6 / 7 / 9): expander tables +0x788 / +0x858 / +0x8c0, this
     /// build's language slots 0x1c / 0x22 / 0x1b (0x22: trust party lines, s2c 0x02D message 711).
     tables: [Option<Messages>; 3],
@@ -234,6 +236,7 @@ impl BattleText {
             group12: super::msg::group_file(ffximain, 1, 0xc).and_then(msgs),
             days: super::msg::group_file(ffximain, 1, 0x10).and_then(msgs),
             moons: super::msg::group_file(ffximain, 1, 0x11).and_then(msgs),
+            compass: super::msg::group_file(ffximain, 1, 0xf).and_then(msgs),
             tables: [0x1c, 0x22, 0x1b].map(|slot| super::msg::current_slot_file(ffximain, 1, slot).and_then(msgs)),
             phrases: super::autotrans::Dictionary::load(index, ffximain).map_err(|e| log::warn!("auto-translate: {e:#}")).ok(),
             modes,
@@ -423,6 +426,11 @@ impl BattleText {
     /// A group 10 string's bytes, its FA 40 codes kept (for dat::msgfmt).
     pub fn group10_raw(&self, id: usize) -> Option<Vec<u8>> {
         self.group10.as_ref()?.raw(id)
+    }
+
+    /// Group 0xf entry `k` (0 east, 1 southeast, .. 7 northeast) as Shift-JIS.
+    pub fn compass_raw(&self, k: usize) -> Option<Vec<u8>> {
+        self.compass.as_ref()?.raw(k)
     }
 
     /// Group 0x11 entry `phase` (0 New Moon .. 11).

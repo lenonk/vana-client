@@ -7054,6 +7054,11 @@ fn player_yaw(entity_yaw: f32) -> f32 {
     entity_yaw.cos().atan2(-entity_yaw.sin())
 }
 
+/// The entity yaw (+0x18, as packets and the text code `1d` use it) behind one of our player yaws.
+fn entity_yaw(player_yaw: f32) -> f32 {
+    (-player_yaw.cos()).atan2(player_yaw.sin())
+}
+
 fn dir_from_forward(f: Vec3) -> u8 {
     // FFXI dir: 0 east, 64 south, 128 west, 192 north.
     let theta = (-f.z).atan2(f.x);
@@ -15404,6 +15409,11 @@ mod tests {
             assert!(Vec3::new(face.sin(), 0.0, face.cos()).distance(want) < 1e-5, "{y}");
         }
         assert!((player_yaw(std::f32::consts::PI) + std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+        // entity_yaw undoes it, so the text code 1d sees east at 0 again.
+        for y in [std::f32::consts::PI, 0.0, 1.0, -2.5] {
+            let back = entity_yaw(player_yaw(y));
+            assert!((back.cos() - y.cos()).abs() < 1e-5 && (back.sin() - y.sin()).abs() < 1e-5, "{y} -> {back}");
+        }
     }
 
     /// MODLOG "The near-camera character fade": 0 within 0.2, linear to 0.5, nothing with the eye more than 0.5

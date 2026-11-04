@@ -803,6 +803,13 @@ impl Host for LiveHost<'_> {
         log::debug!("event: {}", crate::event_vm::describe(&e));
         let index = self.st.start.index;
         match e {
+            // FUN_10096620 / FUN_10096630: as s2c 0x0F9 (raise 2, tractor 3).
+            Effect::Offer(o) => {
+                self.w.ko_offer = o;
+                if o == 2 {
+                    self.w.raise_yes = true;
+                }
+            }
             Effect::Message { id, text, prompt, wait, speaker, op, place, mode, sounds, motions } => {
                 self.w.sounds.extend(sounds);
                 super::moogle::emote(self.w, &motions);
@@ -1801,6 +1808,15 @@ impl Host for LiveHost<'_> {
 
     fn server_id(&self, actor: u32) -> u32 {
         self.wid(actor)
+    }
+
+    fn yaw(&self, actor: u32) -> Option<f32> {
+        let id = self.wid(actor);
+        if id == self.w.my_id {
+            // Retail reads entity +0x18 for us too, so undo our north-zero player yaw.
+            return Some(super::entity_yaw(self.w.yaw));
+        }
+        self.w.entities.get(&id).map(|e| e.yaw)
     }
 
     /// Hume F, Elvaan F, Tarutaru F, Mithra.
@@ -3029,6 +3045,10 @@ struct EventTexts {
 impl dialog::Texts for EventTexts {
     fn kind(&self, kind: u8, id: u32) -> Option<Vec<u8>> {
         self.bt.as_ref()?.kind_name(kind, id)
+    }
+
+    fn compass(&self, k: usize) -> Option<Vec<u8>> {
+        self.bt.as_ref()?.compass_raw(k)
     }
 
     fn point(&self, sub: u8, id: u16) -> Option<Vec<u8>> {
