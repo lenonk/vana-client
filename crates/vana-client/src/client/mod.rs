@@ -1254,8 +1254,8 @@ fn chat_channel(cmd: &str) -> Option<u8> {
 /// s2c 0x017 (LAB_100e37a0 -> FUN_100d9b20): the line and its log mode by Kind (byte table 0x100e3de8, jump table
 /// 0x100e3da0); None for the kinds retail drops (2, 9..0xb, 0xc the GM prompt menu, past 0x23). Attr bit 0 adds
 /// "[GM]"; the yell takes the zone's name; assist (0x22 / 0x23) the rank icon 0xEF (mentor x 10 + mastery + 0x24,
-/// 0x2f..0x4c) when Data is set. Not done: PvP (s2c 0x0B4) dropping the
-/// linkshell's "[n]", the profanity mask, the line cut at a control byte.
+/// 0x2f..0x4c) when Data is set. The name and text arrive already cut at a control byte (net.rs chat_text). Not done:
+/// PvP (s2c 0x0B4) dropping the linkshell's "[n]", the profanity mask.
 fn chat_line(kind: u8, attr: u8, data: u16, from: &str, text: &str, zone: &str) -> Option<(String, u8)> {
     let gm = if attr & 1 != 0 { "[GM]" } else { "" };
     let n = from;

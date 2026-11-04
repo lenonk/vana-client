@@ -117,6 +117,29 @@ pub fn is_lead(b: u8) -> bool {
     (0x81..0xA0).contains(&b) || (0xE0..0xF0).contains(&b) || (0xFA..0xFD).contains(&b)
 }
 
+/// FUN_1018fc40: a chat line cut before the first byte FUN_1018fa20 rates 2 or 3 (0x1E, 0x1F, 0xEF, 0x7F not followed
+/// by 0xFB / 0xFC, any other byte below 0x20 but LF and CR), stepping by whole characters (FUN_1018fa80): an 0xFD
+/// auto-translate block, a lead byte and its pair. Returns how many bytes stay.
+pub fn chat_cut(s: &[u8]) -> usize {
+    let mut i = 0;
+    while i < s.len() {
+        let b = s[i];
+        let next = s.get(i + 1).copied().unwrap_or(0);
+        let len = match b {
+            0xFD if s.get(i + 5) == Some(&0xFD) => 6,
+            0x1e | 0x1f | 0xef => break,
+            0x7f if matches!(next, 0xfb | 0xfc) => 2,
+            0x7f => break,
+            0x0a | 0x0d => 1,
+            0..=0x1f => break,
+            _ if is_lead(b) && next != 0 => 2,
+            _ => 1,
+        };
+        i = (i + len).min(s.len());
+    }
+    i
+}
+
 /// Two-byte Shift-JIS to glyph index (FUN_10119620): JIS rows packed one after another.
 pub fn sjis_index(b0: u8, b1: u8) -> i32 {
     let mut row: i32 = (b0 as i32 + if b0 < 0xA0 { -0x71 } else { -0xB1 }) * 2 | 1;
@@ -569,6 +592,13 @@ mod tests {
         // JIS 0x2121 (SJIS 0x8140) follows the 96 single-byte cells; kanji level 1 starts at row 16.
         assert_eq!(sjis_index(0x81, 0x40), 96);
         assert_eq!(sjis_index(0x88, 0x9F), 1024);
+        // FUN_1018fc40: cut at 0x1E / 0xEF / a stray 0x7F / a control byte; blocks and pairs stay whole.
+        assert_eq!(chat_cut(b"hi there"), 8);
+        assert_eq!(chat_cut(b"a\x1e\x01b"), 1);
+        assert_eq!(chat_cut(b"a\xef\x30"), 1);
+        assert_eq!(chat_cut(b"a\x7f\xfbb\x7fc"), 4);
+        assert_eq!(chat_cut(b"a\nb\x07c"), 3);
+        assert_eq!(chat_cut(b"\xfd\x02\x02\x01\x05\xfd!\x82\xa0\x1f"), 9);
         // Gaiji: SJIS 0xEF1F.. are the usgaiji shapes.
         assert_eq!(sjis_index(0xEF, 0x1F), GAIJI_FIRST);
         assert_eq!(sjis_index(0xEF, 0x2F), GAIJI_END - 1);
