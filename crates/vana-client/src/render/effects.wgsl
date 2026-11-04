@@ -13,7 +13,7 @@ struct Params {
     c10: mat4x4<f32>,
     inv_view_rot: mat4x4<f32>,
     eye: vec4<f32>,
-    // moon phase, weekday
+    // moon phase, weekday, weather density (FUN_10002d80: config 0x3b, 1.0 under an event's op 0xab sub 9)
     extra: vec4<f32>,
     // the zone's area light (DAT_106175ac, MODLOG "Effect area-light tint")
     area: vec4<f32>,
@@ -645,7 +645,10 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
     outs[ob + 20u] = select(0.0, ef(b, E_UV), (st & ST_SCROLL_U) != 0u);
     outs[ob + 21u] = select(0.0, ef(b, E_UV + 1u), (st & ST_SCROLL_V) != 0u);
     outs[ob + 22u] = f32(el[b + E_FRAME]);
-    outs[ob + 23u] = select(0.0, 1.0, drawn);
+    // FUN_1003fbb0 (D3b), FUN_10040ba0 (D3m), FUN_10043320 (DistModel): nothing drawn from a generator with +0xde
+    // bit 7 while the weather density is 0.
+    let weather_off = (el[b + E_GEN_BITS] & 0x8000u) != 0u && p.extra.z == 0.0 && (kind == DK_MESH || kind == DK_MORPH || kind == DK_DIST_MODEL);
+    outs[ob + 23u] = select(0.0, 1.0, drawn && !weather_off);
     outs[ob + 24u] = pbias;
     // FUN_1003ea60: morph weights divided by their sum; none -> the largest of last frame's gets 1.0. A DistMorph's
     // weights never move (ops 0x1e..0x22 are D3b-only), so it shows key 0.
@@ -732,7 +735,8 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (kind == DK_BATCHED) {
         let nn = el[b + E_PART_N];
         var n = nn;
-        if (nn >= 20u && ((el[b + E_GEN_BITS] >> 8u) & 1u) != 0u) { n = u32(f32(nn) * 0.5); }
+        // FUN_10063c80: N from 20 up on a weather generator (+0xde bit 0) is N x the weather density x 0.5.
+        if (nn >= 20u && ((el[b + E_GEN_BITS] >> 8u) & 1u) != 0u) { n = u32(f32(nn) * p.extra.z * 0.5); }
         // 6 vertices a particle but 4n - 2 strip triangles from vertex 1: the first (2n + 1) / 3 show (as coded).
         let shown = select(0u, (2u * n + 1u) / 3u, n > 0u);
         outs[ob + 25u] = f32(shown);

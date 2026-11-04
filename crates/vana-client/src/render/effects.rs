@@ -171,6 +171,12 @@ pub fn soften_alpha(t: &crate::dat::zone::Texture) -> Option<crate::dat::zone::T
 
 /// FUN_10045950's blend modes as pipelines: 0 opaque, 1 alpha, 2 additive, 3 darken, 4 subtractive, 5 D3m 'I'
 /// (DESTCOLOR / SRCALPHA). None = the mode has no case and keeps the previous element's blend.
+/// FUN_10063c80 (0x10063c89..0x10063cc5): a CMoVuDist's draws each frame. N under 20 as is; from 20 up on a weather
+/// generator (+0xde bit 0) N x the weather density (FUN_10002d80) x 0.5, truncated; otherwise N.
+fn vu_dist_count(n: u32, weather: bool, density: f32) -> u32 {
+    if n < 20 || !weather { n } else { (n as f32 * density * 0.5) as u32 }
+}
+
 fn blend_class(mode: u16, d3m: bool) -> Option<usize> {
     Some(match mode & 0xff {
         0x00 => 0,
@@ -937,7 +943,7 @@ impl EffectsGpu {
             c10: m(c10),
             inv_view_rot: m(b90.inverse()),
             eye: [f.eye.x, f.eye.y, f.eye.z, 1.0],
-            extra: [f.moon_phase as f32, f.weekday as f32, 0.0, 0.0],
+            extra: [f.moon_phase as f32, f.weekday as f32, fx.weather_density, 0.0],
             area: [f.area_light.x, f.area_light.y, f.area_light.z, 0.0],
             light: self.light.map_or([0.0; 4], |(d, _, _)| [d.x, d.y, d.z, 1.0]),
         };
@@ -1091,7 +1097,7 @@ impl EffectsGpu {
             return;
         }
         let order = fx.draw_order();
-        let any_dist = order.iter().any(|&e| fx.elems[e as usize].as_ref().is_some_and(|c| matches!(c.draw, Draw::Dist | Draw::VuDist(_) | Draw::DistModel(_) | Draw::DistMorph(_) | Draw::DistRing)));
+        let any_dist = order.iter().any(|&e| fx.elems[e as usize].as_ref().is_some_and(|c| matches!(c.draw, Draw::Dist | Draw::VuDist(..) | Draw::DistModel(_) | Draw::DistMorph(_) | Draw::DistRing)));
         let copy_src = color_tex.filter(|t| any_dist && t.usage().contains(wgpu::TextureUsages::COPY_SRC));
         if let Some(t) = copy_src
             && self.scene_copy.as_ref().is_none_or(|(c, _)| c.size() != t.size() || c.format() != t.format())
@@ -1249,9 +1255,12 @@ impl EffectsGpu {
                 // FUN_100418b0 pass 1: the scene so far is copied (retail: the diamond's screen box into a 256x256
                 // texture, a 2002 limit; here the whole target at full size), then the shifted redraw.
                 // VuDist: the same diamond n times, each copy holding the last draw (the shift compounds).
-                Draw::Dist | Draw::VuDist(_) => {
+                Draw::Dist | Draw::VuDist(..) => {
                     let (Some(src), Some((copy, g))) = (copy_src, self.scene_copy.as_ref()) else { continue };
-                    let n = if let Draw::VuDist(n) = c.draw { n.min(64) } else { 1 };
+                    let n = match c.draw {
+                        Draw::VuDist(n, weather) => vu_dist_count(n, weather, fx.weather_density).min(64),
+                        _ => 1,
+                    };
                     for _ in 0..n {
                         drop(pass);
                         encoder.copy_texture_to_texture(src.as_image_copy(), copy.as_image_copy(), src.size());
@@ -1424,6 +1433,16 @@ impl EffectsGpu {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn vu_dist_weather_density() {
+        use super::vu_dist_count;
+        assert_eq!(vu_dist_count(19, true, 0.0), 19);
+        assert_eq!(vu_dist_count(40, false, 0.0), 40);
+        assert_eq!(vu_dist_count(40, true, 1.0), 20);
+        assert_eq!(vu_dist_count(41, true, 1.0), 20);
+        assert_eq!(vu_dist_count(40, true, 0.0), 0);
+    }
+
     use super::*;
     use crate::fx::elem::{Elem, update_ref};
 

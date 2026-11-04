@@ -6468,6 +6468,8 @@ struct World {
     auto_sort: u32,
     auto_sort_dirty: bool,
     sort_due: (u32, f32),
+    /// DAT_10487ef5 (event op 0xab subs 9 / 10): the weather density forced to 1.0; cleared by each zone load.
+    weather_forced: bool,
     /// FUN_1021c4c0's inventory record (items::retail_auto_sort): the free slots last seen (+8; None from zone-in
     /// until the inventory settles), Manual Sort's split hold (+6), and the seconds since the last inventory 0x03A.
     inv_free: Option<u32>,
@@ -8371,6 +8373,7 @@ impl App {
                             auto_sort: self.cfg.auto_sort,
                             auto_sort_dirty: false,
                             sort_due: (0, 0.0),
+                            weather_forced: false,
                             inv_free: None,
                             sort_hold: false,
                             sort_wait: f32::MAX,
@@ -8984,6 +8987,8 @@ impl App {
                     // LSB re-sends every container after c2s 0x00C and empties the temporary items and the recycle
                     // bin on zoning, so slots kept from the last zone would go stale (retail's reset: inferred).
                     world.inv = items::Inventory { sizes: world.inv.sizes, sizes2: world.inv.sizes2, ..Default::default() };
+                    // FUN_10093720: DAT_10487ef5 = 0.
+                    world.weather_forced = false;
                     // The resend refills the emptied view: Auto-sort's free-slot count starts again once it settles.
                     (world.inv_free, world.sort_hold) = (None, false);
                     if let Some(ev) = login_event {
@@ -14373,6 +14378,8 @@ impl App {
                     }
                     w.effects.filter = (w.game.get(0x92) as u32, matches!(w.my_motion.status, 1 | 3));
                     w.effects.weapon_effect_off = w.game.get(0xbe) == 1;
+                    // Misc.'s weather density (LAB_101aa650 case 0x3b: DAT_10456a68 = the value as a float).
+                    w.effects.weather_density = if w.weather_forced { 1.0 } else { w.game.get(0x3b) as f32 };
                     w.effects.reg.aspect = aspect;
                     perf::timed(|| "effects".into(), || w.effects.tick(&f, &fa));
                     event::camera_frame(&mut w.screen, &w.effects, &fa, f.dt);

@@ -1136,6 +1136,9 @@ impl Host for LiveHost<'_> {
                     a.blink_off = on == 0;
                 }
             }
+            // FUN_100bac90 subs 9 / 10 (FUN_10087120): DAT_10487ef5 = 1 / 0, the weather density held at 1.0 (FUN_10002d80)
+            // whatever config 0x3b says; the zone load (FUN_10093720) clears it.
+            Effect::Op { op: 0xab, sub: Some(s @ (9 | 10)), .. } => self.w.weather_forced = s == 9,
             // FUN_100bac90 0x0f / 0x10: DAT_10489900 = 1 / 0.
             Effect::Op { op: 0xab, sub: Some(s @ (0x0f | 0x10)), .. } => self.st.raw_pc_y = s == 0x0f,
             // FUN_100bac90 sub 0x11: DAT_1035af3c = val@2; anything but -1 rebuilds the models after the event.
