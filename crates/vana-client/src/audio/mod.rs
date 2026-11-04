@@ -76,8 +76,12 @@ struct Task {
     wait: i32,
 }
 
-/// The ambient loop's voice handle (above the effect voices' handles).
+/// The ambient loop's voice handles (above the effect voices' handles): two, so the old loop can fade out while the
+/// new one fades in.
 const AMBIENT: u32 = 0xffff_ff00;
+
+/// FUN_1024a1b0: a replaced flag-0x20 loop fades out over 0x96 sound steps (~2.5 s), in 60 Hz ticks for SeStop.
+const AMBIENT_FADE: i32 = 0x96 * 0x3c / 0x32;
 
 pub struct Audio {
     /// Requests to the loader thread, which reads files and feeds the mixer in order.
@@ -100,6 +104,9 @@ pub struct Audio {
     event_zone: f32,
     ambient_se: Option<u32>,
     ambient_level: u8,
+    /// The running loop's handle (AMBIENT or AMBIENT + 1) and the scene it belongs to.
+    ambient_handle: u32,
+    ambient_scene: Option<u16>,
     /// Fades running on event_se / event_stream / event_ui.
     fades: [Option<Fade>; 4],
     /// Voices started as the scheduler's stream.
@@ -131,7 +138,7 @@ impl Audio {
                 let (tx, req) = channel();
                 let ls = status.clone();
                 std::thread::Builder::new().name("audio-load".into()).spawn(move || loader(ffxi_dir, req, mixer_tx, ls)).ok()?;
-                Some(Self { tx, status, _out: out, wanted: 0, playing: 0, task: None, music, effects, tick_acc: 0.0, event_se: 1.0, event_stream: 1.0, event_ui: 1.0, event_zone: 1.0, ambient_se: None, ambient_level: 0, fades: [None; 4], streams: Default::default(), raw_levels: Default::default(), applied: (1.0, 1.0, 1.0), cur_vol: 0x7f, max_se: 12, pending: Default::default(), restarted: None })
+                Some(Self { tx, status, _out: out, wanted: 0, playing: 0, task: None, music, effects, tick_acc: 0.0, event_se: 1.0, event_stream: 1.0, event_ui: 1.0, event_zone: 1.0, ambient_se: None, ambient_level: 0, ambient_handle: AMBIENT, ambient_scene: None, fades: [None; 4], streams: Default::default(), raw_levels: Default::default(), applied: (1.0, 1.0, 1.0), cur_vol: 0x7f, max_se: 12, pending: Default::default(), restarted: None })
             }
             Err(e) => {
                 log::warn!("audio disabled: {e:#}");
@@ -373,23 +380,36 @@ impl Audio {
     }
 
     /// The zone's ambient loop (FUN_10036170): a different resource starts its SeSep centred (pan 0x40) at 127 x the
-    /// zone level (DAT_10351708, config x event mask 4); None stops it. A start the voice limit refuses is not
-    /// retried until the resource changes. Stopping the old voice at a change is ours (not traced).
-    pub fn ambient(&mut self, se: Option<u32>) {
-        if self.ambient_se == se {
+    /// zone level (DAT_10351708, config x event mask 4), fading in over 150 steps. The old loop is not stopped there:
+    /// the sound engine fades it out over the same 150 steps (FUN_1024a1b0), so a time of day, weather or indoor change
+    /// crossfades. A scene change (the zone's SeSep released, FUN_10037ac0) or no loop at all keys it off at once
+    /// (FUN_10036170(0)). A start the voice limit refuses is not retried until the resource changes.
+    pub fn ambient(&mut self, se: Option<u32>, scene: Option<u16>) {
+        let moved = scene != self.ambient_scene;
+        self.ambient_scene = scene;
+        if self.ambient_se == se && !moved {
             return;
         }
-        log::info!("ambient loop: {se:?}");
+        log::info!("ambient loop: {se:?}{}", if moved { " (new scene)" } else { "" });
         if self.ambient_se.is_some() {
-            self.send(Cmd::SeStop { handle: AMBIENT, ticks: 0 });
+            let cut = moved || se.is_none();
+            self.send(Cmd::SeStop { handle: self.ambient_handle, ticks: if cut { 0 } else { AMBIENT_FADE } });
+            self.ambient_handle = if self.ambient_handle == AMBIENT { AMBIENT + 1 } else { AMBIENT };
+            // The other handle may still hold a loop fading out from a change moments ago (ours: cut, so the level
+            // commands below only reach the new loop).
+            self.send(Cmd::SeStop { handle: self.ambient_handle, ticks: 0 });
         }
         self.ambient_se = se;
         let Some(id) = se else { return };
-        if self.status.voices.load(std::sync::atomic::Ordering::Relaxed) >= self.max_se {
+        // The ambient voices just stopped or fading still count in the mixer; they do not keep the new loop out.
+        let ours = self.alive().iter().filter(|&&h| h == AMBIENT || h == AMBIENT + 1).count() as u32;
+        if self.status.voices.load(std::sync::atomic::Ordering::Relaxed).saturating_sub(ours) >= self.max_se {
             return;
         }
         self.ambient_level = self.zone_level();
-        let _ = self.tx.send(Req::Voice { id, level: self.ambient_level, pan: 0x40, handle: AMBIENT, limit: self.max_se as u8 });
+        // Limit 0 in the mixer: the check above already applied the configured limit, so the loop takes any free slot
+        // while the one it replaces fades out there.
+        let _ = self.tx.send(Req::Voice { id, level: self.ambient_level, pan: 0x40, handle: self.ambient_handle, limit: 0 });
     }
 
     fn zone_level(&self) -> u8 {
@@ -418,7 +438,7 @@ impl Audio {
         let lv = self.zone_level();
         if self.ambient_se.is_some() && lv != self.ambient_level {
             self.ambient_level = lv;
-            self.send(Cmd::SeLevel { handle: AMBIENT, level: lv });
+            self.send(Cmd::SeLevel { handle: self.ambient_handle, level: lv });
         }
         self.tick_acc += dt * 60.0;
         let ticks = self.tick_acc.floor().min(30.0) as i32;

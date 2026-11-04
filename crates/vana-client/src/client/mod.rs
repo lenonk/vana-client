@@ -7544,7 +7544,8 @@ impl App {
             }
         }
         // The zone's ambient loop, only in the world (world+0x20 is 0 elsewhere).
-        a.ambient(if let Phase::World(w) = &self.phase { w.ambient } else { None });
+        let (se, scene) = if let Phase::World(w) = &self.phase { (w.ambient, w.scene) } else { (None, None) };
+        a.ambient(se, scene);
         if let Phase::World(w) = &mut self.phase {
             for (mask, level, ticks) in w.audio_cmds.drain(..) {
                 a.event_volume(mask, level, ticks);
