@@ -14095,8 +14095,22 @@ impl App {
                             a.blend = 0.0;
                         }
                         a.blend_len = blend;
+                        // FUN_1001ad00 (batch 5 item 9): a new motion in a region that already held one starts at the
+                        // same fraction of its cycle as the old entry had reached, pushed on by half the blend at the
+                        // new rate, so the feet stay in step through a walk / run change. Retail's lengths and
+                        // positions are in frames / speed; our tick is twice that unit.
+                        let span = |m: &str| frames_of(m, 0.0, false).first().map(|(x, _)| (x.frames as f32, x.speed)).filter(|(f, sp)| *f > 0.0 && *sp > 0.0);
+                        let old = a.prev.as_ref().filter(|p| !p.0.is_empty()).and_then(|p| span(&p.0).map(|(f, sp)| (p.1 * 0.5, f / sp)));
+                        a.ticks = match (old, span(&name)) {
+                            (Some((at, old_len)), Some((frames, speed))) if !once && old_len > 0.001 => {
+                                let new_len = frames / speed;
+                                let k = 1.0 / old_len;
+                                let b = if blend > 0.0 { blend } else { 1.0 };
+                                2.0 * ((at * k * new_len + k * new_len * speed * 0.5 * rate * b) % new_len)
+                            }
+                            _ => 0.0,
+                        };
                         a.motion = name.clone();
-                        a.ticks = 0.0;
                     }
                     a.once = once;
                     a.ticks += dt * 60.0 * rate;
