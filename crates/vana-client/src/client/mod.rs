@@ -1271,8 +1271,7 @@ fn chat_line(kind: u8, attr: u8, data: u16, from: &str, text: &str, zone: &str) 
         0x22 | 0x23 => {
             let c = if kind == 0x22 { 'J' } else { 'E' };
             let [mastery, mentor] = data.to_le_bytes();
-            let r = mentor.wrapping_mul(10).wrapping_add(mastery).wrapping_add(0x24);
-            let rank = if data != 0 { crate::dat::font::decode_sjis(&[0xef, if (0x2f..=0x4c).contains(&r) { r } else { 0x2f }]) } else { String::new() };
+            let rank = if data != 0 { rank_icon(mentor, mastery) } else { String::new() };
             (format!("{gm}{rank}{n}({c}) : {text}"), if kind == 0x22 { 0xdc } else { 0xde })
         }
         // "NS" kinds: the text alone.
@@ -1284,6 +1283,12 @@ fn chat_line(kind: u8, attr: u8, data: u16, from: &str, text: &str, zone: &str) 
         0x11..=0x17 | 0x1d | 0x1f | 0x20 => (text.to_string(), 0x79),
         _ => return None,
     })
+}
+
+/// The assist channels' rank icon: SJIS 0xEF R, R = mentor x 10 + mastery + 0x24, 0x2f outside 0x2f..0x4c.
+pub(super) fn rank_icon(mentor: u8, mastery: u8) -> String {
+    let r = mentor.wrapping_mul(10).wrapping_add(mastery).wrapping_add(0x24);
+    crate::dat::font::decode_sjis(&[0xef, if (0x2f..=0x4c).contains(&r) { r } else { 0x2f }])
 }
 
 /// A chat line in its log mode's colour (the config colour before the message tables load), auto-translate blocks
@@ -15444,6 +15449,10 @@ mod tests {
         assert_eq!(chat_line(0x1a, 0, 230, "Rabbit", "hi", "Southern San d'Oria"), Some(("Rabbit[Southern San d'Oria]: hi".into(), 0xb)));
         assert_eq!(chat_line(6, 0, 0, "", "Restarting", ""), Some(("----== SystemMessage ==----\nRestarting".into(), 0xc8)));
         assert_eq!(chat_line(0x22, 0, 0, "Rabbit", "hi", ""), Some(("Rabbit(J) : hi".into(), 0xdc)));
+        // Mentor 1, mastery 3: 0xEF 0x31; out of range falls back to 0x2f; the 0x017 icon and our echo's agree.
+        assert_eq!(chat_line(0x23, 0, 0x0103, "Rabbit", "hi", ""), Some((format!("{}Rabbit(E) : hi", rank_icon(1, 3)), 0xde)));
+        assert_eq!(rank_icon(1, 3), crate::dat::font::decode_sjis(&[0xef, 0x31]));
+        assert_eq!(rank_icon(9, 9), crate::dat::font::decode_sjis(&[0xef, 0x2f]));
         assert_eq!(chat_line(0x11, 0, 0, "Rabbit", "text only", ""), Some(("text only".into(), 0x79)));
         assert_eq!(chat_line(0xc, 0, 0, "GM", "menu", ""), None);
         assert_eq!(chat_line(2, 0, 0, "Rabbit", "hi", ""), None);

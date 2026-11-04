@@ -1852,9 +1852,14 @@ fn chat(w: &mut World, cid: u16, msg: &str) -> Done {
     } else if no_ls {
         system_line(w, 0x25);
     }
-    // The echoes (all.c 90072..90740): our name and the text as typed, in the sender's mode. Not done: the assist
-    // channels' rank icon (s2c 0x01B ranks, MentorFlg).
+    // The echoes (all.c 90072..90740): our name and the text as typed, in the sender's mode.
     let me = w.name.clone();
+    // FUN_10078be0 / FUN_10078d80: the assist echoes lead with the rank icon when our mentor and mastery ranks (s2c
+    // 0x01B @0x65 / @0x66) are both set and MentorFlg is on (s2c 0x0B4 byte 7 bit 1). No other echo has it.
+    let rank = match w.job_info {
+        Some(j) if j.mentor != 0 && j.mastery != 0 && w.conf_sys[3] & 2 != 0 => super::rank_icon(j.mentor, j.mastery),
+        _ => String::new(),
+    };
     let (line, mode) = match cid {
         id::YELL => {
             let zone = w.zone.and_then(|z| w.names.as_ref().and_then(|n| crate::dat::names::NameSource::place(&**n, z as u32))).unwrap_or_default();
@@ -1865,8 +1870,8 @@ fn chat(w: &mut World, cid: u16, msg: &str) -> Done {
         id::LS => (format!("[1]<{me}> {msg}"), 6),
         id::LS2 => (format!("[2]<{me}> {msg}"), 0xd5),
         id::UNITY => (format!("{{{me}}} {msg}"), 0xd3),
-        id::ASSISTJ => (format!("{me}(J) : {msg}"), 0xdb),
-        id::ASSISTE => (format!("{me}(E) : {msg}"), 0xdd),
+        id::ASSISTJ => (format!("{rank}{me}(J) : {msg}"), 0xdb),
+        id::ASSISTE => (format!("{rank}{me}(E) : {msg}"), 0xdd),
         // FUN_10078f20 (/emote): "%s %s", mode 7.
         id::EMOTE_TEXT => (format!("{me} {msg}"), 7),
         _ => (format!("{me} : {msg}"), 1),
