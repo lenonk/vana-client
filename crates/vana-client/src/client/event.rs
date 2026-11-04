@@ -850,6 +850,15 @@ impl Host for LiveHost<'_> {
                     self.w.effects.stop_actor_scheduler(id, u32::from_le_bytes(n));
                 }
             }
+            // FUN_100b7140: on a skeleton actor with a model (+0x120 bit 9), FUN_100ce070 gives every layer of its two
+            // motion lists (+0x674 -> +0x44, lists +0x60 / +0x9c) FUN_1001b520(8.0): each plays on for 8 frames, then
+            // goes, and the status motion (or the idle the script sets next) shows.
+            Effect::Op { op: 0xd3, sub: Some(0), args, .. } => {
+                let Some(id) = self.arg_actor(&args, 0) else { return };
+                if let Some(p) = self.w.actors.get_mut(&id).filter(|a| a.character.is_some()).and_then(|a| a.play.as_mut()) {
+                    p.end_in(8.0);
+                }
+            }
             // FUN_100b3870 (0x5f sub 2): drop the event motion files (FUN_100d2340(2)).
             Effect::Op { op: 0x5f, sub: Some(2), actor, .. } => {
                 let id = self.wid(actor);

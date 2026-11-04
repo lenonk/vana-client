@@ -322,12 +322,23 @@ pub struct Play {
     pub cut: f32,
     /// Scheduler op 0x28: the status motion comes back at this tick.
     pub stance_at: Option<f32>,
+    /// Event op 0xd3: every motion layer ends at this tick (FUN_1001b520(8): state 2, gone when its time runs out).
+    pub end: Option<f32>,
 }
 
 impl Play {
     pub fn new(name: &str, data: &[u8], base: &str) -> Play {
         let p = sched::plan(data, &[]);
-        let mut play = Play { name: name.to_string(), motions: p.motions, length: p.length as f32, ticks: 0.0, base: base.to_string(), cut: -1.0, stance_at: None };
+        let mut play = Play {
+            name: name.to_string(),
+            motions: p.motions,
+            length: p.length as f32,
+            ticks: 0.0,
+            base: base.to_string(),
+            cut: -1.0,
+            stance_at: None,
+            end: None,
+        };
         play.stance_at = p.stance_at.map(|t| t as f32);
         play
     }
@@ -347,6 +358,13 @@ impl Play {
         self.stance_at = self.stance_at.filter(|s| *s <= t);
     }
 
+    /// Event op 0xd3 (FUN_100ce070): the playing motion layers end in `ticks` (at their weights till then); the
+    /// scheduler task itself is left alone.
+    pub fn end_in(&mut self, ticks: f32) {
+        let at = self.ticks + ticks;
+        self.end = Some(self.end.map_or(at, |e| e.min(at)));
+    }
+
     /// 0x53: the scheduler task still exists.
     pub fn busy(&self) -> bool {
         self.ticks <= self.length + 1.0
@@ -354,6 +372,9 @@ impl Play {
 
     /// The motion playing now and its start tick.
     pub fn current(&self) -> Option<&sched::Motion> {
+        if self.end.is_some_and(|e| self.ticks >= e) {
+            return None;
+        }
         let cut = match self.stance_at {
             Some(s) if s <= self.ticks => self.cut.max(s + 0.5),
             _ => self.cut,
@@ -406,7 +427,7 @@ pub(super) fn start(a: &mut Actor, ch: &Character, name: &str, base: &str) -> bo
         None if !find(&a.extra, ch, name).is_empty() => {
             let len = find(&a.extra, ch, name).iter().map(|x| x.frames as f32 / (x.speed * 0.5).max(1e-3)).fold(0.0, f32::max);
             let m = sched::Motion { name: name.to_string(), at: 0, speed: 1.0, ticks: len.ceil() as u16, count: 1, blend: crate::motion::BLEND_TICKS as u16 };
-            Play { name: name.to_string(), motions: vec![m], length: len, ticks: 0.0, base: base.to_string(), cut: -1.0, stance_at: None }
+            Play { name: name.to_string(), motions: vec![m], length: len, ticks: 0.0, base: base.to_string(), cut: -1.0, stance_at: None, end: None }
         }
         None => return false,
     };
@@ -444,7 +465,7 @@ pub(super) fn play_op(w: &mut World, id: u32, m: Option<sched::Motion>) {
                 a.prev = Some((std::mem::take(&mut a.motion), a.ticks, a.once));
                 a.blend = 0.0;
             }
-            a.play = Some(Play { name: m.name.clone(), motions: vec![m], length: len, ticks: 0.0, base, cut: -1.0, stance_at: None });
+            a.play = Some(Play { name: m.name.clone(), motions: vec![m], length: len, ticks: 0.0, base, cut: -1.0, stance_at: None, end: None });
         }
         Some(m) => log::debug!("actor {id:#x}: scheduler motion {} not in its files", m.name),
         None => {
@@ -742,7 +763,16 @@ mod tests {
     #[test]
     fn scheduler_stop_keeps_current() {
         let m = |name: &str, at: u32, count: u8| sched::Motion { name: name.into(), at, speed: 1.0, ticks: 10, count, blend: 0 };
-        let mut p = Play { name: "tk00".into(), motions: vec![m("a", 0, 0), m("b", 60, 1)], length: 120.0, ticks: 30.0, base: "idl".into(), cut: -1.0, stance_at: Some(90.0) };
+        let mut p = Play {
+            name: "tk00".into(),
+            motions: vec![m("a", 0, 0), m("b", 60, 1)],
+            length: 120.0,
+            ticks: 30.0,
+            base: "idl".into(),
+            cut: -1.0,
+            stance_at: Some(90.0),
+            end: None,
+        };
         p.stop();
         assert!(!p.busy());
         assert_eq!(p.motions.len(), 1);
@@ -751,6 +781,22 @@ mod tests {
         assert_eq!(p.current().map(|m| m.name.as_str()), Some("a"));
         assert!(!p.over("idl"));
         assert!(p.over("run"));
+    }
+
+    /// Event op 0xd3: the looping motion plays 8 more ticks, then none; the scheduler stays busy as it was.
+    #[test]
+    fn motion_end_after_8() {
+        let m = |name: &str, at: u32, count: u8| sched::Motion { name: name.into(), at, speed: 1.0, ticks: 10, count, blend: 0 };
+        let mut p =
+            Play { name: "fm01".into(), motions: vec![m("a", 0, 0)], length: 120.0, ticks: 30.0, base: "idl".into(), cut: -1.0, stance_at: None, end: None };
+        p.end_in(8.0);
+        p.ticks = 37.0;
+        assert_eq!(p.current().map(|m| m.name.as_str()), Some("a"));
+        p.ticks = 38.0;
+        assert!(p.current().is_none());
+        assert!(p.busy());
+        p.ticks = 200.0;
+        assert!(p.over("idl"));
     }
 
     /// A hit pose of 2 frames (3 keys) at speed 1: in over a tick, full for 2 cycles (8 ticks), out over 24 on its
