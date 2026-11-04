@@ -4877,8 +4877,9 @@ struct Actor {
     rest: Vec<crate::dat::character::BoneXf>,
     /// /jump (draw actor +0x8bc): ticks left of the jump motion, below 0 none.
     jump: f32,
-    /// The pick's bones (FUN_100cff40): those with geometry whose parent has some too, once per model.
-    pick_bones: Option<Vec<u16>>,
+    /// The pick's bones (FUN_100cff40): those with geometry whose parent has some too, once per model (keyed by
+    /// the model they were found for: a costume or an event's model change replaces it).
+    pick_bones: Option<(usize, Vec<u16>)>,
     /// Status motion names changed by scheduler ops 0x79 / 0x8c / 0xa4 / 0xa5 (actor +0x7c8..+0x7d4), else the model's.
     motion_names: Option<crate::motion::MotionNames>,
     /// A mount's status motions run at this rate (info[15] / 100, ride.rs).
@@ -11774,8 +11775,9 @@ impl App {
             let c = vp * (root + p).extend(1.0);
             (c.w > 1e-3).then(|| glam::Vec2::new(c.x / c.w, c.y / c.w))
         };
-        for &b in a.pick_bones.iter().flatten() {
-            let parent = ch.skeleton.bones[b as usize].parent as u16;
+        let key = Arc::as_ptr(ch) as usize;
+        for &b in a.pick_bones.iter().filter(|(k, _)| *k == key).flat_map(|(_, v)| v) {
+            let Some(parent) = ch.skeleton.bones.get(b as usize).map(|x| x.parent as u16) else { continue };
             let (Some(pa), Some(pb)) = (pts.get(&b).and_then(|p| screen(*p)), pts.get(&parent).and_then(|p| screen(*p))) else { continue };
             let r = 0.4 * (pa - pb).length();
             if r >= 0.01 && [pa, pb, (pa + pb) * 0.5].iter().any(|c| (ndc - *c).length() < r) {
@@ -14668,10 +14670,12 @@ impl App {
                         // The pick's fine test: the geometry bones and attach points 1 / 3 / 13 / 15 of an actor whose rect
                         // held the pointer, read back a frame or two late.
                         if w.pick_rect.contains(id) {
-                            let bones = a.pick_bones.get_or_insert_with(|| {
+                            let key = Arc::as_ptr(&ch) as usize;
+                            if a.pick_bones.as_ref().is_none_or(|(k, _)| *k != key) {
                                 let f = ch.geometry_bones();
-                                (1..f.len()).filter(|&b| f[b] && f[ch.skeleton.bones[b].parent]).map(|b| b as u16).collect()
-                            });
+                                a.pick_bones = Some((key, (1..f.len()).filter(|&b| f[b] && f[ch.skeleton.bones[b].parent]).map(|b| b as u16).collect()));
+                            }
+                            let bones = a.pick_bones.as_ref().map(|(_, v)| v.as_slice()).unwrap_or_default();
                             let mut wanted: Vec<u16> = bones.iter().flat_map(|&b| [b, ch.skeleton.bones[b as usize].parent as u16]).collect();
                             wanted.sort_unstable();
                             wanted.dedup();
