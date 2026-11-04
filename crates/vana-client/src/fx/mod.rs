@@ -125,6 +125,11 @@ pub trait Actors {
     fn sub_anim(&self, _id: u32) -> u8 {
         0
     }
+    /// Drawobj +0x840 bit 6 (vtable +0x250 / +0x254, FUN_100d6850): this swing is the off-hand one, i.e. a dual-wield
+    /// model playing a `b...` scheduler. Scheduler system value 0x3b (batch 5 item 8).
+    fn off_hand(&self, _id: u32) -> bool {
+        false
+    }
     /// Our own actor (FUN_10081550), for op 0x53's nearest target.
     fn player(&self) -> Option<u32> {
         None

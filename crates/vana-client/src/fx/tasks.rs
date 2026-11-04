@@ -1822,6 +1822,8 @@ impl Effects {
                     // 0x3a: actor1's sub-animation (vtable +0xa4, +0x8a5 & 3), with or without an action (FUN_10061950).
                     3 => match op.u32_at(12) {
                         0x3a => t.a1.id().map_or(0, |id| actors.sub_anim(id) & 3) as f64,
+                        // 0x3b: actor1's off-hand flag (FUN_10062900 at 0x1006297f, through vt+0x254).
+                        0x3b => t.a1.id().is_some_and(|id| actors.off_hand(id)) as u8 as f64,
                         k => t.action.as_ref().map_or(0, |a| a.borrow().var(k, t.a1.id())) as f64,
                     },
                     _ => 0.0,

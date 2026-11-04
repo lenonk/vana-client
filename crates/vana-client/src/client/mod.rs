@@ -4770,6 +4770,9 @@ struct Actor {
     look_hold: Option<(f32, Option<(f32, f32)>)>,
     /// The attack scheduler used last (FUN_100d46f0 avoids repeating it).
     last_attack: String,
+    /// Drawobj +0x840 bit 6 (FUN_100d6850, set at every swing): the swing now playing is the off-hand one, i.e. a
+    /// dual-wield model playing a `b...` scheduler. Read as scheduler value 0x3b (batch 5 item 8).
+    off_hand: bool,
     /// Motion files on top of the model (event banks, battle files), newest last.
     extra: actmotion::Extra,
     /// Effect files whose schedulers play motions from them (Kind::Effect), wanted on `extra`.
@@ -4921,6 +4924,7 @@ impl Actor {
             look_pct: 0,
             look_hold: None,
             last_attack: String::new(),
+            off_hand: false,
             extra: Vec::new(),
             fx_files: Vec::new(),
             skill_want: Vec::new(),
@@ -5478,6 +5482,10 @@ impl crate::fx::Actors for FxActors<'_> {
 
     fn sub_anim(&self, id: u32) -> u8 {
         self.entities.get(&id).map_or(0, |e| e.sub[2])
+    }
+
+    fn off_hand(&self, id: u32) -> bool {
+        self.actors.get(&id).is_some_and(|a| a.off_hand)
     }
 
     fn ranged_class(&self, id: u32) -> Option<i8> {
@@ -10153,6 +10161,8 @@ impl App {
                 (actor.alpha, actor.fade, actor.spop) = (0.0, None, true);
             }
             (actor.shadow_off, actor.noblob) = shadow;
+            // The off-hand flag is drawobj +0x840 bit 6, so a new model starts without it.
+            actor.off_hand = false;
             actor.source = Some(source);
             // A look already loaded is shared at once; one load serves every actor waiting for it.
             if let Some(m) = world.models.get(&key) {
