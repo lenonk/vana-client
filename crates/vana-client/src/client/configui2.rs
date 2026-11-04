@@ -55,8 +55,8 @@ const CONF11L: &[(u16, Ctl)] = &[(1, Act(Act::Custom(1))), (2, Act(Act::Custom(2
 const CONFTXTC: &[(u16, Ctl)] = &[(1, Act(Act::Custom(1))), (2, Act(Act::Custom(2))), (3, Act(Act::Custom(3))), (4, Act(Act::Custom(4))), (5, Act(Act::AskReset(0)))];
 /// textcol3: R, G, B sliders (step 4), OK, Cancel.
 const TEXTCOL3: &[(u16, Ctl)] = &[(1, Act(Act::Custom(1))), (2, Act(Act::Custom(2))), (3, Act(Act::Custom(3))), (4, Act(Act::Custom(4))), (5, Act(Act::Custom(5)))];
-/// The shared yes/no box (FUN_102075f0) of conf6win's Default.
-const YESNO: &[(u16, Ctl)] = &[(1, Act(Act::Custom(1))), (2, Act(Act::Custom(2)))];
+/// conf6win's Default: retail asks in "menu    comyn" (FUN_10210e30 on DAT_10664520), group 0xb 0x8f, default No.
+const COMYN: &[(u16, Ctl)] = &[(1, Act(Act::Custom(1))), (2, Act(Act::Custom(2)))];
 /// The lobby's Config window (FUN_10196310): volume 0xa8, logout destination 0xac, aspect 0xab, title music 0xaf.
 const LOBYCWIN: &[(u16, Ctl)] = &[
     (1, Slider(0xa8, 0, 100, 1)),
@@ -89,7 +89,7 @@ pub fn page(name: &str) -> &'static [(u16, Ctl)] {
         "conftxtc" => CONFTXTC,
         "textcol1" => TEXTCOL1,
         "textcol3" => TEXTCOL3,
-        "yesno" => YESNO,
+        "comyn" => COMYN,
         "lobycwin" => LOBYCWIN,
         n if is_list(n) => LIST_ROWS,
         _ => &[],
@@ -239,7 +239,7 @@ pub fn closed(ui: &mut ConfigUi, name: &str, _out: &mut Out) {
     if name == "textcol1" && ui.stack.last().is_some_and(|w| w.name == "textcol2") {
         ui.stack.pop();
     }
-    if name == "yesno" {
+    if name == "comyn" {
         ui.extra.ask_keys = None;
     }
 }
@@ -524,12 +524,12 @@ pub fn custom(ui: &mut ConfigUi, v: &mut Values, name: &str, k: u8, out: &mut Ou
         ("textcol3", 5) => {
             ui.stack.pop();
         }
-        ("yesno", 1) => {
+        ("comyn", 1) => {
             reset_keys(v, out);
             ui.stack.pop();
             ui.extra.ask_keys = None;
         }
-        ("yesno", 2) => {
+        ("comyn", 2) => {
             ui.stack.pop();
             ui.extra.ask_keys = None;
         }
@@ -708,16 +708,16 @@ pub fn draw(ui: &ConfigUi, w: &Win, top: bool, gu: &mut GameUi, v: &Values, sw: 
             rects.extend(gu.window_rect(&name, sw, sh));
             true
         }
-        "yesno" => {
+        "comyn" => {
             draw_page(ui, w, top, gu, v, sw, sh);
-            // FUN_102075f0's text above the box *(inf: placement)*.
-            if let Some((x, y)) = gu.window_xy(&name, sw, sh) {
+            // FUN_10211050: the question inside the box at (+4, +4), wrapped to w - 8, 16 px lines, at comyn's own place.
+            if let Some(r) = gu.window_rect(&name, sw, sh) {
                 let t = gu.group_b(0x8f).unwrap_or_else(|| "Reset keyboard assignment to default?".into());
-                let tw = gu.text_width(&t);
-                gu.frame(x, y - 28.0, tw + 16.0, 24.0);
-                gu.text(&t, x + 8.0, y - 24.0, 0, white);
+                for (i, line) in gu.wrap(&t, r[2] - 8.0).iter().enumerate() {
+                    gu.text(line, r[0] + 4.0, r[1] + 4.0 + 16.0 * i as f32, 0, white);
+                }
+                rects.push(r);
             }
-            rects.extend(gu.window_rect(&name, sw, sh));
             true
         }
         _ => false,

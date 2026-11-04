@@ -267,7 +267,7 @@ impl Win {
     fn new(name: &str) -> Self {
         let first = page(name).first().map_or(1, |c| c.0);
         // confyn starts on No.
-        Win { name: name.to_string(), cursor: if matches!(name, "confyn" | "yesno") { 2 } else { first }, edit: None, offset: (0.0, 0.0) }
+        Win { name: name.to_string(), cursor: if matches!(name, "confyn" | "comyn") { 2 } else { first }, edit: None, offset: (0.0, 0.0) }
     }
 
     pub fn full(&self) -> String {
@@ -603,7 +603,7 @@ impl ConfigUi {
             Act(Act::Anon(h)) => self.anon = h,
             Act(Act::ResetKeys) => {
                 self.extra.ask_keys = Some(false);
-                self.push("yesno");
+                self.push("comyn");
             }
             Act(Act::Custom(k)) => super::configui2::custom(self, v, name, k, out),
             Act(Act::CamKeys(axis, x)) => {
