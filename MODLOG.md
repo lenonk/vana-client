@@ -21697,13 +21697,6 @@ SE 0001 plays only when the cursor ended on another row, which ours already did.
 direction, and `World::key_repeat` carries the repeat flag into the handler the way `key_shift` carries Shift.
 *(inf: the edge test is modelled as "no wrap"; retail moves by one page there)*
 
-## Modern UI: keys no longer hide the mouse cursor (2026-11-03)
-
-- Ours, a deliberate deviation from retail. Retail hides the cursor on any key function press outside a drag
-  (FUN_10125f70(0)), so walking with the keys makes the pointer vanish until the mouse moves. With the Modern UI
-  on, keyboard presses leave the cursor shown (login and character screens too); the classic UI keeps retail's behaviour. The other hides are
-  unchanged in both modes: a controller press, a look drag (the pointer held) and the UI hidden.
-
 ## Moogle motions: the NPC we talked to goes first (2026-11-03)
 
 - Retail (FFXiMain.dll, docs/re/notes/2026-11-03-modlog-gaps-batch6.md item 17): S+0x40daa holds the index of the
