@@ -1673,6 +1673,13 @@ impl Host for LiveHost<'_> {
         self.w.concierge_ui.is_none().then_some(self.w.concierge_pick)
     }
 
+    fn mog_house(&self, slot: Option<u8>) -> u32 {
+        match slot {
+            None => self.w.party.mog_mask(self.w.my_id),
+            Some(n) => self.w.party.mog_member(self.w.my_id, n),
+        }
+    }
+
     fn race_value(&self, sub: u8, a: i32, b: i32) -> u32 {
         self.w.racing.store.value(sub, a, b)
     }

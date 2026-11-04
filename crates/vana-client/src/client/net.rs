@@ -1273,7 +1273,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     }
                     0x0DD | 0x0E2 if matches!(p.u8(0x1C), 0 | 5) => {
                         let jobs = std::array::from_fn(|i| p.u8(0x22 + i));
-                        let u = super::party::ListUpdate { id: p.u32(4), index: p.u16(0x18), number: p.u8(0x1A), name: text(&p, 0x28, 16), hp: p.u32(8), mp: p.u32(12), tp: p.u32(16), hpp: p.u8(0x1D), mpp: p.u8(0x1E), zone: p.u16(0x20), flags: p.u32(0x14), jobs };
+                        let u = super::party::ListUpdate { id: p.u32(4), index: p.u16(0x18), number: p.u8(0x1A), name: text(&p, 0x28, 16), hp: p.u32(8), mp: p.u32(12), tp: p.u32(16), hpp: p.u8(0x1D), mpp: p.u8(0x1E), zone: p.u16(0x20), flags: p.u32(0x14), jobs, moghouse: p.u8(0x1B) != 0 };
                         tx.send(NetEvent::PartyList(u, p.id == 0x0E2))?;
                     }
                     0x029 => tx.send(NetEvent::Battle(battle_message(&p)))?,

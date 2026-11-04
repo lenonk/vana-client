@@ -27,6 +27,9 @@ pub struct Member {
     pub mon: u16,
     pub mon_ids: [u8; 2],
     pub mon_short: String,
+    /// +0x1a: the member's zone while they are in their Mog House (0x0DD / 0x0E2 MoghouseFlg, ZoneNo or ours when
+    /// 0), else 0.
+    pub mog_zone: u16,
     /// +0x1c the last update (the oldest record is reused when all 20 are taken).
     time: u64,
 }
@@ -49,6 +52,8 @@ pub struct ListUpdate {
     pub zone: u16,
     pub flags: u32,
     pub jobs: [u8; 5],
+    /// +0x1b MoghouseFlg.
+    pub moghouse: bool,
 }
 
 /// s2c 0x0DF GROUP_ATTR.
@@ -159,6 +164,7 @@ impl Roster {
             }
         };
         let Some(i) = i else { return };
+        let here = self.recs[0].zone;
         let t = self.tick();
         let r = &mut self.recs[i];
         (r.id, r.index, r.number, r.flags, r.time) = (u.id, u.index, u.number, u.flags, t);
@@ -166,6 +172,14 @@ impl Roster {
         if !u.name.is_empty() {
             r.name = u.name.clone();
         }
+        // LAB_100ea390 / 100ea560: +0x1a from MoghouseFlg (G+0x3c350, the current zone, for ZoneNo 0).
+        r.mog_zone = if !u.moghouse {
+            0
+        } else if u.zone != 0 {
+            u.zone
+        } else {
+            here
+        };
         if create {
             (r.zone, r.away) = (u.zone, 0);
         } else {
@@ -222,6 +236,25 @@ impl Roster {
             }
         }
         self.order = order;
+    }
+
+    /// FUN_100e9850 (event op 0xc2 sub 1): bit i for each record i listed, not ours, whose member is in their Mog House.
+    pub fn mog_mask(&self, me: u32) -> u32 {
+        self.recs.iter().enumerate().filter(|(_, r)| Self::in_mog(r, me)).fold(0, |m, (i, _)| m | 1 << i)
+    }
+
+    /// FUN_100e98b0 (op 0xc2 sub 2): the id of the member at display slot n (1..19, G+0x9534) if they are in their Mog
+    /// House, else 0.
+    pub fn mog_member(&self, me: u32, n: u8) -> u32 {
+        if !(1..RECORDS as u8).contains(&n) {
+            return 0;
+        }
+        let r = &self.recs[self.order.get(n as usize).copied().unwrap_or(0)];
+        if Self::in_mog(r, me) { r.id } else { 0 }
+    }
+
+    fn in_mog(r: &Member, me: u32) -> bool {
+        r.id != 0 && r.id != me && r.mog_zone != 0
     }
 
     /// Mode 5 (FUN_100e8b80 / FUN_100e8c70): ourselves, then everyone listed in order.
@@ -387,6 +420,24 @@ mod tests {
         r.list(&listed(ME, 0x400, 0, 0, "Me"), ME, false);
         assert_eq!(r.members().count(), 1);
         assert_eq!(r.slots().window(), "menu    ptw0");
+    }
+
+    /// Event op 0xc2: members in their Mog House (MoghouseFlg) by record bit and by display slot; ours never counts.
+    #[test]
+    fn mog_house_members() {
+        let mut r = Roster::default();
+        r.refresh_self(ME, 0x400, "Me", 230);
+        r.table(&[(ME, 0x400, 4, 230), (0x200, 0x401, 0, 230), (0x300, 0x402, 0, 231)]);
+        let mog = |id, zone, name: &str| ListUpdate { moghouse: true, ..listed(id, 0x401, 0, zone, name) };
+        r.list(&mog(ME, 230, "Me"), ME, false);
+        r.list(&listed(0x200, 0x401, 0, 230, "Ann"), ME, false);
+        r.list(&mog(0x300, 0, "Bo"), ME, false);
+        assert_eq!(r.recs[2].mog_zone, 230);
+        assert_eq!(r.mog_mask(ME), 1 << 2);
+        assert_eq!((r.mog_member(ME, 0), r.mog_member(ME, 1), r.mog_member(ME, 2), r.mog_member(ME, 3)), (0, 0, 0x300, 0));
+        // Bo leaves the Mog House.
+        r.list(&listed(0x300, 0x402, 0, 231, "Bo"), ME, false);
+        assert_eq!((r.mog_mask(ME), r.mog_member(ME, 2)), (0, 0));
     }
 
     /// Alliance: members of other party numbers go to slots 6.. and 12.. in order.

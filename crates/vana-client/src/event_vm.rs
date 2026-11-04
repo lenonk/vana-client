@@ -130,6 +130,11 @@ pub trait Host {
         Some([0; 3])
     }
     /// Op 0xbf (FUN_100bbd80): a value of the race store (s2c 0x069); 0 until it is complete or out of range.
+    /// Op 0xc2 (FUN_100bbf80): None, sub 1 (FUN_100e9850): bit i for each roster record but ours whose member is in
+    /// their Mog House; Some(n), sub 2 (FUN_100e98b0): the id of the member at display slot n (1..19) if so, else 0.
+    fn mog_house(&self, _slot: Option<u8>) -> u32 {
+        0
+    }
     fn race_value(&self, _sub: u8, _a: i32, _b: i32) -> u32 {
         0
     }
@@ -2095,6 +2100,22 @@ impl Runtime {
                 self.set_at(v, if two { 8 } else { 6 }, 0, value);
                 self.adv(v, len);
             }
+            // FUN_100bbf80: sub 1 set@2 = the Mog House mask, sub 2 set@4 = slot val@2's id (as a byte); other subs
+            // only advance 2. No frame end.
+            0xc2 => {
+                match sub {
+                    Some(1) => {
+                        let m = host.mog_house(None);
+                        self.set_at(v, 2, 0, m);
+                    }
+                    Some(2) => {
+                        let id = host.mog_house(Some(self.val(v, 2) as u8));
+                        self.set_at(v, 4, 0, id);
+                    }
+                    _ => {}
+                }
+                self.adv(v, len);
+            }
             // FUN_100bc000: name slot val@1 = the 16 bytes of str@3 and val@5. Retail never advances past a slot outside
             // 0..7; ours waits there a frame at a time.
             0xc3 => {
@@ -3163,6 +3184,33 @@ mod tests {
         assert_eq!(ops[..3], [(0xa8, Some(0), vec![230, 5]), (0xb9, Some(1), vec![230, 3, 5]), (0xa8, Some(2), vec![])]);
     }
 
+    /// Op 0xc2 (Mog House visits): sub 1 stores the host's mask, sub 2 the id at slot val@2, sub 0 only advances.
+    #[test]
+    fn mog_house_party() {
+        struct Mog(Scripted);
+        impl Host for Mog {
+            fn effect(&mut self, e: Effect) {
+                self.0.effect(e)
+            }
+            fn mog_house(&self, slot: Option<u8>) -> u32 {
+                slot.map_or(0b100, |n| if n == 2 { 0x300 } else { 0 })
+            }
+        }
+        let code = vec![
+            0xc2, 0x01, 0x01, 0x11, // M1 = mask
+            0xc2, 0x02, 0x00, 0x80, 0x02, 0x11, // M2 = slot #0's id
+            0xc2, 0x00, // nothing
+            0x21, 0x00,
+        ];
+        let actor = 0x010e_601b;
+        let blocks = vec![event::Block { actor, events: vec![(1, 0)], consts: vec![2], code }];
+        let mut host = Mog(Scripted::new(&[]));
+        let start = Start { zone: 230, event: 1, target: actor, ..Default::default() };
+        let mut rt = Runtime::start(blocks, None, start, Memory::default(), &mut host);
+        for _ in 0..10 {
+            rt.tick(&mut host, 1.0);
+        }
+        assert_eq!((rt.mem.m[1], rt.mem.m[2]), (0b100, 0x300));
     /// The actor flag ops reach the host with their operands: 0x95 val@1, 0xa4 u8@1, 0x86 u8@1 and actor@2, 0x84 /
     /// 0x96 bare (client/event.rs keeps the flags).
     #[test]
