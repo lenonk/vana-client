@@ -59,7 +59,7 @@ pub enum SubThen {
 }
 
 /// The party-list cursor of `<stpt>` / `<stal>` (FUN_10202d80, DAT_106643e0): a window slot below `count` (6 / 18)
-/// over the used slots; no candidate filter, the world target and lock untouched. The fellow row (-1) is not modelled.
+/// over the used slots; no candidate filter, the world target and lock untouched. The fellow row (-1) is `fellow`.
 pub struct PartyCursor {
     pub index: usize,
     pub count: usize,
@@ -68,6 +68,13 @@ pub struct PartyCursor {
     /// Rearrange's second stage (DAT_106643fc / +0x3f5 / +0x3f6): the member picked first and its window party's
     /// first slot; the cursor stays inside that party.
     pub moving: Option<(u32, usize)>,
+    /// Row -1, the fellow row (batch 1 §4): only for `<stpt>` / `<stal>` (modes 2 / 3), never in a two-step pick.
+    pub fellow: bool,
+}
+
+/// FUN_10202d80's low bound -1 (modes 2 / 3: the text-command picks, not the party menu's) and a fellow here.
+fn fellow_ok(w: &World, then: &SubThen) -> bool {
+    !matches!(then, SubThen::Party(_)) && super::petrow::fellow(w).is_some()
 }
 
 /// FUN_102031f0(id, 1, 0): a member of our six slots that is not a trust (FUN_10201eb0: ActIndex > 0x6ff).
@@ -88,8 +95,10 @@ pub fn sub_up(w: &World) -> bool {
 /// FUN_10202d80: the cursor opens on the current target's slot when it is below `count`, else on us (slot 0).
 pub fn open_party_cursor(w: &mut World, count: usize, then: SubThen, range: Option<f32>) {
     let slots = w.party.slots();
-    let index = w.target.and_then(|t| slots.slots.iter().position(|m| m.as_ref().is_some_and(|m| m.id == t))).filter(|&i| i < count).unwrap_or(0);
-    w.party_cursor = Some(PartyCursor { index, count, then, range, moving: None });
+    let row = w.target.and_then(|t| slots.slots.iter().position(|m| m.as_ref().is_some_and(|m| m.id == t))).filter(|&i| i < count);
+    // FUN_10203540 failing: -1 when the target is the fellow.
+    let fellow = row.is_none() && fellow_ok(w, &then) && super::petrow::fellow(w).map(|f| f.0) == w.target;
+    w.party_cursor = Some(PartyCursor { index: row.unwrap_or(0), count, then, range, moving: None, fellow });
 }
 
 /// FUN_10203570 / FUN_10203630 (FUN_102035c0 / FUN_10203680 in a stage-2 range): the next / previous used slot in
@@ -115,19 +124,36 @@ pub fn party_cursor_key(w: &mut World, key: egui::Key) -> bool {
     let mut used: Vec<bool> = w.party.slots().slots.iter().map(|m| m.is_some()).collect();
     // Slot 0 is always us.
     used[0] = true;
+    // Ours: the modern party panel has no fellow row, so the cursor doesn't stop on one there (a deviation of the
+    // modern UI; the classic window keeps retail's fellow row).
+    let fellow = w.party_cursor.as_ref().is_some_and(|pc| !w.modern && pc.moving.is_none() && fellow_ok(w, &pc.then)).then(|| super::petrow::fellow(w)).flatten();
     let Some(pc) = w.party_cursor.as_mut() else { return false };
     match key {
         K::ArrowDown | K::ArrowUp => {
+            let down = key == K::ArrowDown;
             let (lo, hi) = pc.moving.map_or((0, pc.count), |(_, base)| (base, base + 6));
-            let i = party_step(&used, pc.index, lo, hi, key == K::ArrowDown);
-            if i != pc.index {
-                pc.index = i;
+            // FUN_10203570 / FUN_10203630 with the low bound -1: ... last row, fellow, row 0 ...
+            let (i, f) = if pc.fellow {
+                (if down { 0 } else { party_step(&used, 0, lo, hi, false) }, false)
+            } else {
+                let i = party_step(&used, pc.index, lo, hi, down);
+                let wrapped = if down { i <= pc.index } else { pc.index == lo };
+                if fellow.is_some() && wrapped { (pc.index, true) } else { (i, false) }
+            };
+            if (i, f) != (pc.index, pc.fellow) {
+                (pc.index, pc.fellow) = (i, f);
                 w.sounds.push(crate::audio::Ui::Cursor as u32);
             }
         }
         K::Enter => {
             let (index, moving, then) = (pc.index, pc.moving, pc.then.clone());
+            let row = if pc.fellow { fellow.clone() } else { None };
             let (id, name) = match index {
+                // FUN_10202fe0 on -1: the fellow's id and name.
+                _ if pc.fellow => match row {
+                    Some(f) => f,
+                    None => return true,
+                },
                 0 => (w.my_id, w.name.clone()),
                 i => match w.party.slots().slots.get(i).cloned().flatten() {
                     Some(m) => (m.id, m.name),
@@ -200,7 +226,8 @@ pub fn party_cursor_pointer(w: &mut World, gu: &super::game_ui::GameUi, sw: f32,
     let mut used: Vec<bool> = w.party.slots().slots.iter().map(|m| m.is_some()).collect();
     used[0] = true;
     let (lo, hi) = pc.moving.map_or((0, pc.count), |(_, base)| (base, base + 6));
-    let index = pc.index;
+    // The mouse can't pick -1; hovering a row from it moves the cursor there.
+    let index = if pc.fellow { usize::MAX } else { pc.index };
     let inside = |r: [f32; 4]| p.0 >= r[0] && p.0 < r[0] + r[2] && p.1 >= r[1] && p.1 < r[1] + r[3];
     let mut hit = None;
     let mut over = false;
@@ -226,7 +253,7 @@ pub fn party_cursor_pointer(w: &mut World, gu: &super::game_ui::GameUi, sw: f32,
     gu.hover.set(true);
     if (moved || clicked) && i != index {
         if let Some(pc) = w.party_cursor.as_mut() {
-            pc.index = i;
+            (pc.index, pc.fellow) = (i, false);
         }
         w.sounds.push(crate::audio::Ui::Cursor as u32);
     } else if clicked {
@@ -237,11 +264,43 @@ pub fn party_cursor_pointer(w: &mut World, gu: &super::game_ui::GameUi, sw: f32,
 /// FUN_10203c80: a slot that emptied under the cursor steps it back to the previous used one (0 at the least).
 pub fn party_cursor_update(w: &mut World) {
     let used: Vec<bool> = w.party.slots().slots.iter().map(|m| m.is_some()).collect();
+    let fellow = super::petrow::fellow(w).is_some();
     if let Some(pc) = w.party_cursor.as_mut() {
+        // Ours: the fellow leaving under the cursor puts it on row 0.
+        if pc.fellow && !fellow {
+            (pc.fellow, pc.index) = (false, 0);
+        }
         while pc.index > 0 && !used.get(pc.index).copied().unwrap_or(false) {
             pc.index -= 1;
         }
     }
+}
+
+/// FUN_101505a0: the cursor hand's tint by the pick's range from us.
+fn hand_tint(w: &World, id: Option<u32>, range: Option<f32>) -> u32 {
+    match (id, range) {
+        (Some(id), Some(r)) => {
+            let p = if id == w.my_id { w.pos } else { w.entities.get(&id).map_or(w.pos, |e| e.pos) };
+            let raw = (p - w.pos).length();
+            let d = Vec3::new(p.x - w.pos.x, 0.0, p.z - w.pos.z).length();
+            if d > r + 0.5 || raw >= 25.0 {
+                0xe0d0_4040
+            } else if d > r - 0.5 {
+                0xe0d0_d040
+            } else {
+                0xa040_40d0
+            }
+        }
+        _ => 0xa040_40d0,
+    }
+}
+
+/// FUN_10202110 with the cursor at -1: the hand at the fellow row (FUN_102022b0), its tint and the fellow to flash.
+pub fn fellow_hand(w: &World) -> Option<(u32, Option<u32>)> {
+    let pc = w.party_cursor.as_ref().filter(|pc| pc.fellow)?;
+    let id = super::petrow::fellow(w)?.0;
+    let tint = hand_tint(w, Some(id), pc.range);
+    Some((tint, (tint != 0xe0d0_4040).then_some(id)))
 }
 
 /// FUN_10202110: the party window's hand: the cursor's slot, tinted by range from base 0xa04040d0 (red 0xe0d04040,
@@ -250,6 +309,8 @@ pub fn party_cursor_update(w: &mut World) {
 pub fn party_hand(w: &World) -> Option<(usize, u32, Option<u32>)> {
     let slots = w.party.slots();
     match &w.party_cursor {
+        // Row -1 hides all three windows' hands (each window's vtbl+0x48); see fellow_hand.
+        Some(pc) if pc.fellow => None,
         Some(pc) => {
             let id = match pc.index {
                 0 => Some(w.my_id),
@@ -259,21 +320,7 @@ pub fn party_hand(w: &World) -> Option<(usize, u32, Option<u32>)> {
                     None => return slots.slots.get(i).cloned().flatten().map(|_| (pc.index, 0xa040_40d0, None)),
                 },
             };
-            let tint = match (id, pc.range) {
-                (Some(id), Some(r)) => {
-                    let p = if id == w.my_id { w.pos } else { w.entities.get(&id).map_or(w.pos, |e| e.pos) };
-                    let raw = (p - w.pos).length();
-                    let d = Vec3::new(p.x - w.pos.x, 0.0, p.z - w.pos.z).length();
-                    if d > r + 0.5 || raw >= 25.0 {
-                        0xe0d0_4040
-                    } else if d > r - 0.5 {
-                        0xe0d0_d040
-                    } else {
-                        0xa040_40d0
-                    }
-                }
-                _ => 0xa040_40d0,
-            };
+            let tint = hand_tint(w, id, pc.range);
             Some((pc.index, tint, id.filter(|_| tint != 0xe0d0_4040)))
         }
         None => {

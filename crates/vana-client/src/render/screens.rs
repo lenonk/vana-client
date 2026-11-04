@@ -781,6 +781,26 @@ pub fn push_shape_text_right(b: &mut UiBatch, ui: &UiFile, s: &[u8], x: f32, y: 
     x
 }
 
+/// FUN_101c9d50(limit, x, y, text, tint): fontshp glyphs from x; the running width starts at 8 and adds each glyph's
+/// width - 1, and once it reaches `limit` the ellipsis sprite 0x6c is drawn instead and the text stops.
+pub fn push_shape_limited(b: &mut UiBatch, ui: &UiFile, s: &[u8], x: f32, y: f32, limit: f32, tint: u32) -> f32 {
+    if b.modern.is_some() {
+        return push_shape_text(b, ui, s, x, y, tint);
+    }
+    let Some(lib) = ui.lib("font    fontshp") else { return x };
+    let (mut x, mut run) = (x, 8.0);
+    for g in shape_glyphs(s) {
+        if run >= limit {
+            b.push_sprite(ui, lib, 0x6c, x, y, 1.0, 1.0, tint, 0);
+            return x + sprite_width(lib, 0x6c) - 1.0;
+        }
+        b.push_sprite(ui, lib, g, x, y, 1.0, 1.0, tint, 0);
+        let adv = sprite_width(lib, g) - 1.0;
+        (x, run) = (x + adv, run + adv);
+    }
+    x
+}
+
 /// Party names (FUN_101c08f0): longer than 8 bytes become the first 7 and the ellipsis sprite 0x6c.
 pub fn push_shape_name(b: &mut UiBatch, ui: &UiFile, name: &[u8], x: f32, y: f32, tint: u32) -> f32 {
     if name.len() <= 8 {

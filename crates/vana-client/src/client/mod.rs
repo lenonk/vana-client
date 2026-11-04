@@ -25,6 +25,7 @@ mod friendlist;
 mod polmail;
 mod modern;
 mod monstrosity;
+mod petrow;
 mod moncustom;
 mod objective;
 mod border;
@@ -3387,6 +3388,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         _ => (log.rect, world.log.faded()),
     };
     world.timers.log = Some(region);
+    let log_rects = (log.rect, log2.as_ref().map(|f| f.rect));
     gu.log_top = Some(region[1]);
     gu.log_bottom = Some(region[1] + region[3]);
     gu.log_faded = region_faded;
@@ -3918,6 +3920,17 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     // The party window's hand over the log's edge (partywin layer 3 above logwindo's 1).
     gu.party_hand(sw, sh, &st);
+    // FUN_102041d0's tail: the pet and fellow rows beside the party window, the hand at row -1 (FUN_10202110).
+    if !world.modern
+        && let Some(r) = gu.window_rect(&st.party_window, sw, sh)
+    {
+        let (x, y) = petrow::origin(r, log_rects.0, log_rects.1, second_mode);
+        if let Some((fx, fy)) = petrow::draw(gu, world, x, y)
+            && let Some((tint, _)) = target::fellow_hand(world)
+        {
+            gu.party_hand_at(fx, fy, tint);
+        }
+    }
 
     // The K.O. window ("menu    dead", FUN_1012def0): "Time Left:" baked in its frame sprite, the time "%d:%02d" (minutes
     // unwrapped) at (+75, +6) in the sprite font, child 1 "Back to Home Point" with the hand while it has the focus.
@@ -10471,7 +10484,7 @@ impl App {
         keyitems::update(world);
         linkshell::update(world);
         if world.party_cursor.is_some()
-            && let Some((_, _, Some(id))) = target::party_hand(world)
+            && let Some(id) = target::party_hand(world).and_then(|h| h.2).or_else(|| target::fellow_hand(world).and_then(|h| h.1))
         {
             target::force_flash(world, id);
         }

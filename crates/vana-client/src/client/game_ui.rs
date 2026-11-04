@@ -1681,6 +1681,11 @@ impl GameUi {
         screens::sprite_tint(&self.data.lobby, "menu    ncol", ncol)
     }
 
+    /// Sprite-font text cut with the ellipsis once its running width reaches `limit` (FUN_101c9d50).
+    pub fn shape_limited(&mut self, s: &str, x: f32, y: f32, limit: f32, tint: u32) -> f32 {
+        screens::push_shape_limited(&mut self.batch, &self.data.lobby, &encode_sjis(s), x, y, limit, tint)
+    }
+
     pub fn shape_name(&mut self, s: &str, x: f32, y: f32, tint: u32) {
         screens::push_shape_name(&mut self.batch, &self.data.lobby, &encode_sjis(s), x, y, tint);
     }
@@ -1969,6 +1974,14 @@ impl GameUi {
         let frame = self.cursor_frame();
         if let Some(anc) = self.data.lobby.lib(lib) {
             self.batch.push_sprite(&self.data.lobby, anc, frame % anc.sprites.len().max(1), x, y, s, s, 0x8080_8080, 0);
+        }
+    }
+
+    /// The party-list hand (anc2s, as screens::push_party_hand) at (x, y) in `tint`.
+    pub fn party_hand_at(&mut self, x: f32, y: f32, tint: u32) {
+        let frame = self.cursor_frame();
+        if let Some(anc) = self.data.lobby.lib("anc     anc2s") {
+            self.batch.push_sprite(&self.data.lobby, anc, frame % anc.sprites.len().max(1), x, y, 1.0, 1.0, tint, 0);
         }
     }
 
