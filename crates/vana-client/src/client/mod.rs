@@ -1361,7 +1361,8 @@ fn expand_phrases(world: &World, line: &str) -> String {
 fn push_chat_line(world: &mut World, line: String, mode: u8, kind: u8, gm: bool, who: Option<(String, u8)>) {
     let tell_sound = world.game.get(0x47) != 0;
     if let Some(n) = world.battle.as_ref().and_then(|bt| call_sound(bt, &line, mode, tell_sound)) {
-        world.sounds.push(n);
+        // Ours: the tell sound stays an interface sound; the call tags go through FUN_100380f0's level.
+        if mode == 0x0c { world.sounds.push(n) } else { world.call_sounds.push(n) }
     }
     let (colour, line, indent) = match world.battle.clone() {
         Some(bt) => {
@@ -6343,6 +6344,8 @@ struct World {
     bid: auction::BidState,
     /// Event volume changes for the mixer: (mask, level, ticks).
     audio_cmds: Vec<(i32, f32, f32)>,
+    /// Chat call sounds to play (FUN_100380f0, at the op 0x69 mask 0x10 level).
+    call_sounds: Vec<u32>,
     names: Option<Arc<crate::dat::names::Names>>,
     /// Spell / ability records, and the learned bits (s2c 0x0AA, 0x0AC).
     actions: Option<Arc<crate::dat::actions::Actions>>,
@@ -7619,6 +7622,9 @@ impl App {
             for id in w.sounds.drain(..) {
                 a.play_ui_se(id);
             }
+            for id in w.call_sounds.drain(..) {
+                a.play_call(id);
+            }
             // The Lua mods' sounds.
             for s in w.lua.sounds.drain(..) {
                 match s {
@@ -8326,6 +8332,7 @@ impl App {
                             ah_slots: Default::default(),
                             bid: Default::default(),
                             audio_cmds: Vec::new(),
+                            call_sounds: Vec::new(),
                             names: None,
                             actions: None,
                             spells_known: Vec::new(),

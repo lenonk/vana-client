@@ -100,6 +100,8 @@ pub struct Audio {
     event_se: f32,
     event_stream: f32,
     event_ui: f32,
+    /// DAT_10351710: the chat call sounds' level (1 from the sound init; event op 0x69 mask 0x10).
+    call_level: f32,
     /// Event mask 4: the zone's ambient loop; the loop's resource and the level it was last given.
     event_zone: f32,
     ambient_se: Option<u32>,
@@ -138,7 +140,7 @@ impl Audio {
                 let (tx, req) = channel();
                 let ls = status.clone();
                 std::thread::Builder::new().name("audio-load".into()).spawn(move || loader(ffxi_dir, req, mixer_tx, ls)).ok()?;
-                Some(Self { tx, status, _out: out, wanted: 0, playing: 0, task: None, music, effects, tick_acc: 0.0, event_se: 1.0, event_stream: 1.0, event_ui: 1.0, event_zone: 1.0, ambient_se: None, ambient_level: 0, ambient_handle: AMBIENT, ambient_scene: None, fades: [None; 4], streams: Default::default(), raw_levels: Default::default(), applied: (1.0, 1.0, 1.0), cur_vol: 0x7f, max_se: 12, pending: Default::default(), restarted: None })
+                Some(Self { tx, status, _out: out, wanted: 0, playing: 0, task: None, music, effects, tick_acc: 0.0, event_se: 1.0, event_stream: 1.0, event_ui: 1.0, call_level: 1.0, event_zone: 1.0, ambient_se: None, ambient_level: 0, ambient_handle: AMBIENT, ambient_scene: None, fades: [None; 4], streams: Default::default(), raw_levels: Default::default(), applied: (1.0, 1.0, 1.0), cur_vol: 0x7f, max_se: 12, pending: Default::default(), restarted: None })
             }
             Err(e) => {
                 log::warn!("audio disabled: {e:#}");
@@ -226,6 +228,14 @@ impl Audio {
         self.se_at(id, 127, self.event_ui);
     }
 
+    /// A chat `<call>` sound (FUN_100380f0): volume = DAT_10351710 x 127, its own level (event op 0x69 mask 0x10), not
+    /// the interface sounds'. At 0 retail still starts it, silent; ours skips it.
+    pub fn play_call(&mut self, id: u32) {
+        if self.call_level > 0.0 {
+            self.se_at(id, 127, self.call_level);
+        }
+    }
+
     fn se_at(&mut self, id: u32, level: i32, event: f32) {
         if self.status.voices.load(std::sync::atomic::Ordering::Relaxed) >= self.max_se {
             return;
@@ -301,9 +311,14 @@ impl Audio {
     /// Event volume (0x69 set / 0x6a fade, FUN_100b5c30 / FUN_10034be0): mask 1 world effects, 2 interface, 4 the zone's
     /// ambient loop (FUN_10035fb0), 8 all of them and the stream. The music is not among them: cutscenes mute the world
     /// and keep the music.
-    /// A set (0 ticks) first ends a running fade on its target (FUN_10036020), then applies at once.
+    /// A set (0 ticks) first ends a running fade on its target (FUN_10036020), then applies at once. Mask 0x10 (0x69
+    /// only; 0x6a ignores it) sets the chat call sounds' level DAT_10351710, which nothing resets but another 0x69.
     pub fn event_volume(&mut self, mask: i32, level: f32, ticks: f32) {
         let level = level.clamp(0.0, 1.0);
+        // The VM strips 0x10 from 0x6a, so it only reaches here from 0x69.
+        if mask & 0x10 != 0 {
+            self.call_level = level;
+        }
         // FUN_100b5c30: 1 world effects (FUN_10035200), 8 everything and the stream (FUN_100350e0); 2 interface sounds
         // (FUN_10035250).
         for (i, bits) in [(0, 0x9), (1, 0x8), (2, 0xa), (3, 0xc)] {

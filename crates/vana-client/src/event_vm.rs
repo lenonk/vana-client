@@ -1675,7 +1675,8 @@ impl Runtime {
             }
             0x6a => {
                 let (level, ticks) = (self.val(v, 1) as f32 * POS, self.val(v, 3) as f32);
-                host.effect(Effect::Volume { mask: self.val(v, 5), level, ticks });
+                // Mask 0x10 (the call sounds' level) is 0x69's alone: a fade ignores it, even at 0 ticks.
+                host.effect(Effect::Volume { mask: self.val(v, 5) & !0x10, level, ticks });
                 self.adv(v, 7);
             }
             0x6c => {
