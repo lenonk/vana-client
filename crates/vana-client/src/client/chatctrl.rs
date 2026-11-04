@@ -19,7 +19,7 @@ pub struct ChatCtrl {
 }
 
 /// FUN_100e9730: linkshell n is equipped (its item still at its slot).
-fn ls_on(w: &World, n: usize) -> bool {
+pub(super) fn ls_on(w: &World, n: usize) -> bool {
     let (index, bag) = w.linkshells[n];
     index != 0 && w.inv.slots.get(&(bag, index)).is_some_and(|s| s.0 != 0)
 }

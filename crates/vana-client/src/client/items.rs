@@ -777,6 +777,13 @@ pub(super) fn item_prompt(w: &World) -> bool {
 pub(super) fn list_rows(w: &World, info: &ItemCache, shown: &[(u8, Slot)], direct: bool) -> Vec<crate::inventory::Row> {
     let slots: Vec<Slot> = shown.iter().map(|(_, s)| s.clone()).collect();
     let mut rows = build_rows(&slots, info, false);
+    // FUN_101f06e0 rule 4: the equipped linkshell / linkshell 2 from this slot of this bag is green, after the
+    // equipped rules and before the yellow / white ones.
+    for (r, (c, s)) in rows.iter_mut().zip(shown) {
+        if matches!(r.tint, crate::inventory::TINT_FLAGGED | crate::inventory::TINT_WHITE) && linkshell_row(w, *c, s.index) {
+            r.tint = crate::inventory::TINT_EQUIPPED;
+        }
+    }
     for (r, _) in rows.iter_mut().zip(shown).filter(|(_, (c, _))| *c == TEMP) {
         (r.tint, r.count) = (TINT_TEMP, None);
     }
@@ -1286,8 +1293,13 @@ pub fn open_dae10(w: &mut World, c: u8, nomad: bool) -> bool {
     true
 }
 
+/// FUN_100e9730 for n = 1 / 2: the row (bag `c`, slot `index`) holds the equipped linkshell or linkshell 2
+/// (s2c 0x0E0 @5 slot / @6 bag, FUN_100ea780).
+pub(super) fn linkshell_row(w: &World, c: u8, index: u8) -> bool {
+    (1..=2).any(|n| super::chatctrl::ls_on(w, n) && w.linkshells[n] == (index, c))
+}
+
 /// FUN_101db220 for a row of the bank side (`bank_side`) or the inventory side; the first rule that applies wins.
-/// Not done: the equipped linkshell (7, s2c 0x0E0).
 pub(super) fn tint(w: &World, info: &ItemCache, st: &Storage, bank_side: bool, s: &Slot) -> u32 {
     use crate::inventory::{TINT_DIM, TINT_WHITE};
     let (own, dest) = if bank_side { (st.bank, st.side) } else { (st.side, st.bank) };
@@ -1323,9 +1335,12 @@ pub(super) fn tint(w: &World, info: &ItemCache, st: &Storage, bank_side: bool, s
         return TINT_DIM;
     }
     let equipped = (own == INVENTORY || wardrobe(own)) && w.inv.equip.contains(&Some((own, s.index)));
+    // Rule 7 (asm 0x101db46a..0x101db4e6): from bags 0 / 5 / 6 / 7, not into a wardrobe, the equipped linkshell or
+    // linkshell 2 is grey (the item lists draw it green; here it may not move).
+    let shell = matches!(own, 0 | 5 | 6 | 7) && !wardrobe(dest) && linkshell_row(w, own, s.index);
     let gear = it.as_ref().is_some_and(|it| it.level != 0 && it.races != 0);
     let moogle_only = |c: u8| matches!(c, 1 | 2 | 4 | 9);
-    if equipped || (wardrobe(dest) && !gear) || (dest == 2 && furniture) || (!st.at_moogle && (moogle_only(own) || moogle_only(dest))) {
+    if equipped || shell || (wardrobe(dest) && !gear) || (dest == 2 && furniture) || (!st.at_moogle && (moogle_only(own) || moogle_only(dest))) {
         return TINT_DIM;
     }
     if st.qty.is_some_and(|q| q.index == s.index && q.from == own) {
