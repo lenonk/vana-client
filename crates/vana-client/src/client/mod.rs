@@ -7,6 +7,7 @@ mod costume;
 mod chaticons;
 mod record;
 mod chair;
+mod spamfilter;
 pub mod cloth;
 mod battlemod;
 pub mod opening;
@@ -1247,7 +1248,7 @@ fn chat_channel(cmd: &str) -> Option<u8> {
 /// s2c 0x017 (LAB_100e37a0 -> FUN_100d9b20): the line and its log mode by Kind (byte table 0x100e3de8, jump table
 /// 0x100e3da0); None for the kinds retail drops (2, 9..0xb, 0xc the GM prompt menu, past 0x23). Attr bit 0 adds
 /// "[GM]"; the yell takes the zone's name; assist (0x22 / 0x23) the rank icon 0xEF (mentor x 10 + mastery + 0x24,
-/// 0x2f..0x4c) when Data is set. Not done: the block list, config 0xce's spam filter, PvP (s2c 0x0B4) dropping the
+/// 0x2f..0x4c) when Data is set. Not done: PvP (s2c 0x0B4) dropping the
 /// linkshell's "[n]", the profanity mask, the line cut at a control byte.
 fn chat_line(kind: u8, attr: u8, data: u16, from: &str, text: &str, zone: &str) -> Option<(String, u8)> {
     let gm = if attr & 1 != 0 { "[GM]" } else { "" };
@@ -6588,6 +6589,8 @@ struct World {
     cam_keys: [u8; 2],
     /// The Lua mods of this session (docs/lua-mods.md).
     lua: lua::Host,
+    /// Misc. 4 chat filter lists (config 0xce).
+    spam: spamfilter::SpamFilter,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -7824,7 +7827,10 @@ impl App {
                 _ => {}
             },
             Task::Battle(res) => match (res, &mut self.phase) {
-                (Ok(b), Phase::World(w)) => w.battle = Some(Arc::new(b)),
+                (Ok(b), Phase::World(w)) => {
+                    w.battle = Some(Arc::new(b));
+                    spamfilter::flush(w);
+                }
                 (Err(e), _) => log::warn!("battle messages: {e:#}"),
                 _ => {}
             },
@@ -8469,6 +8475,7 @@ impl App {
                             want_settings: None,
                             cam_keys: [self.cfg.cam_keys_y as u8, self.cfg.cam_keys_x as u8],
                             lua: std::mem::take(&mut self.lobby_mods),
+                            spam: spamfilter::SpamFilter::new(self.cfg.ffxi_dir()),
                         }));
                         if let Phase::World(w) = &mut self.phase {
                             cfgapply::apply_all(w);
@@ -9464,6 +9471,12 @@ impl App {
                     if kind != 0x19 && attr & 1 == 0 && partyreq::blacklisted(world, &from) == 1 {
                         continue;
                     }
+                    // The Misc. 4 filter (FUN_100da5e0): a hit hides the line or swaps its text.
+                    let text = match spamfilter::screen(world, kind, attr, &from, &text) {
+                        spamfilter::Verdict::Show => text,
+                        spamfilter::Verdict::Hide => continue,
+                        spamfilter::Verdict::Replace(t) => t,
+                    };
                     world.lua.raise("chat_message", vec![text.as_str().into(), from.as_str().into(), kind.into(), (attr & 1 != 0).into()]);
                     // Tells (and kind 0x15) go into the reply history.
                     if matches!(kind, 3 | 0x15) && !from.is_empty() {

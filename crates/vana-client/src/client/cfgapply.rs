@@ -44,6 +44,8 @@ pub fn apply(w: &mut World, id: u16) {
         0xbb | 0xbc => w.log2.fill(),
         // SE / music level (FUN_10035060 / FUN_10036480): the app sets the mixer.
         9 | 10 => w.volume_dirty = true,
+        // Misc. 4 chat filter (LAB_1019bf20 -> FUN_1019bec0): the lists load when it turns on.
+        0xce => super::spamfilter::apply(w),
         _ => {}
     }
 }
