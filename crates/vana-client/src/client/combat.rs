@@ -1434,7 +1434,11 @@ pub(super) fn die(actor: &mut Actor, sdep: bool) {
 }
 
 /// 0x038: a scheduler by name on an actor ("kesu", LSB FadeOut before a despawn: its op 0x29 fades to alpha 0).
-pub(super) fn on_scheduler(w: &mut World, actor: u32, name: [u8; 4]) {
+/// LAB_1009dee0 drops it when either actor has +0x124 bit 29 (event op 0x5f sub 1).
+pub(super) fn on_scheduler(w: &mut World, actor: u32, target: u32, name: [u8; 4]) {
+    if super::event::no_038(w, actor) || super::event::no_038(w, target) {
+        return;
+    }
     w.effects.on_scheduler(actor, actor, u32::from_le_bytes(name));
 }
 

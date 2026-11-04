@@ -9563,7 +9563,7 @@ impl App {
                     timers::on_action(world, &a);
                     combat::on_action(world, &a);
                 }
-                NetEvent::Scheduler { actor, name, .. } => combat::on_scheduler(world, actor, name),
+                NetEvent::Scheduler { actor, target, name } => combat::on_scheduler(world, actor, target, name),
                 NetEvent::MapScheduler { ids, indices, name } => combat::on_map_scheduler(world, ids, indices, name),
                 NetEvent::Dig { id, index, flags } => ride::on_dig(world, id, index, flags),
                 NetEvent::Racing { id, data } => racing::on_packet(world, id, &data),
