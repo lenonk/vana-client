@@ -13,6 +13,11 @@ pub fn fishing_status(s: u8) -> bool {
     (0x38..=0x3e).contains(&s)
 }
 
+/// FUN_100956c0: any of the fishing statuses, the old ones too (6, 0x26..0x2b, 0x32..0x35) and 0x38..0x3e.
+pub fn any_fishing_status(s: u8) -> bool {
+    matches!(s, 6 | 0x26..=0x2b | 0x32..=0x35 | 0x38..=0x3e)
+}
+
 /// s2c 0x115 (LAB_1009fd30), packet offsets 4..0x17.
 #[derive(Clone, Copy, Debug)]
 pub struct FishParams {

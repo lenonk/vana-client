@@ -90,6 +90,9 @@ pub struct EntityUpdate {
     pub sub_anim: Option<u8>,
     /// MonStat (actor +0x124 bits 13..14): 0x00E mask 0x04 without those two bits, @0x2A & 3 (asm 0x1009be5d).
     pub mon_stat: Option<u8>,
+    /// 0x00E u32 @0x28 bit 31 -> entity +0x130 bit 18 (FUN_100cd040): the character draws at half alpha, whatever the
+    /// near-camera fade says. Cleared on our own entity by 0x037.
+    pub half_fade: Option<bool>,
     /// The face target's ActIndex, (u32 @0x18 >> 17) & 0x7fff with the position (actor +0x1f8; LSB facetarget).
     pub face: Option<u16>,
     /// Mask 0x04, u8 @0x28 bit 0x04 (LSB PetNewFlag; actor +0x12c bit 23): the model is made with 'spop'.
@@ -1091,6 +1094,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
         mon_form: (kind == EntityKind::Player && flags & 0x04 != 0 && p.data.len() >= 0x40 && p.u16(0x3E) != 0).then(|| p.u8(0x2A) & 7),
         sub_anim: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C && (p.u8(0x20) & 1 != 0 || p.u32(0x28) & (1 << 26) != 0)).then(|| p.u8(0x2A) & 7),
         mon_stat: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C && p.u8(0x20) & 1 == 0 && p.u32(0x28) & (1 << 26) == 0).then(|| p.u8(0x2A) & 3),
+        half_fade: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| p.u32(0x28) >> 31 != 0),
         hp_bits: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| (p.u8(0x22) & 1 != 0, p.u8(0x22) & 1 == 0 && p.u8(0x2B) & 0x20 != 0)),
         face: (flags & 1 != 0).then(|| ((p.u32(0x18) >> 17) & 0x7fff) as u16),
         spawn_fx: (flags & 0x04 != 0 && p.data.len() > 0x28).then(|| p.u8(0x28) & 0x04 != 0),

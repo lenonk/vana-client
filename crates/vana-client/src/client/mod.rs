@@ -530,6 +530,9 @@ struct Entity {
     /// +0x12c bit 26 (event op 0xa4): the eye near it does not fade it (FUN_100c63d0 sets model +0x664 to 1); cleared
     /// when an event unbinds it (FUN_100ae3f0).
     no_near_fade: bool,
+    /// Entity +0x130 bit 18 (0x00E u32 @0x28 bit 31): drawn at half alpha, over the near-camera fade. Our own 0x037
+    /// clears it.
+    half_fade: bool,
     /// GroundFlag or HackMove (net.rs EntityUpdate::no_snap): no event ground snap and no ground tilt.
     no_snap: bool,
     /// A door's id (0x00E SubKind 2, u32 @0x34); 0 for anything else.
@@ -1658,6 +1661,7 @@ fn self_entity(w: &World) -> Entity {
         ev_reserved: false,
         no_occlusion: false,
         no_near_fade: false,
+        half_fade: false,
         no_snap: false,
         door: 0,
         lift: None,
@@ -4598,6 +4602,7 @@ fn place_mogdoor(w: &mut World) {
             ev_reserved: false,
             no_occlusion: false,
             no_near_fade: false,
+            half_fade: false,
             no_snap: false,
             door: 0,
             lift: None,
@@ -4999,6 +5004,18 @@ fn party_battle(w: &World) -> bool {
             && w.actors.get(id).is_some_and(|a| a.character.is_some())
             && (e.pos - w.pos).length() < 45.0
     })
+}
+
+/// FUN_100cd040's tail, on the cylinder's result: while we fish, another character within 1.0 of us is hidden and one
+/// out to 2.5 is faded by (d - 1) x 2/3; entity +0x130 bit 18 draws at 0.5 whatever the rest said; the result is
+/// capped at 1. The vt+0x260 test before them never fires in this build (nothing sets drawobj +0x8ac bit 0).
+fn near_fade_tail(f: f32, fishing: Option<f32>, half: bool) -> f32 {
+    let f = match fishing {
+        Some(d) if d < 1.0 => 0.0,
+        Some(d) if d < 2.5 => f * (d - 1.0) * (2.0 / 3.0),
+        _ => f,
+    };
+    if half { 0.5 } else { f.min(1.0) }
 }
 
 /// FUN_100cd040 with R 0.5 / r 0.2 (the 0x5e-chunk radii of a few large models are not kept): the eye's horizontal
@@ -9368,6 +9385,7 @@ impl App {
                         ev_reserved: false,
                         no_occlusion: false,
                         no_near_fade: false,
+                        half_fade: false,
                         no_snap: e.no_snap.unwrap_or(false),
                         door: 0,
                         lift: None,
@@ -9560,6 +9578,9 @@ impl App {
                     }
                     if let Some(s) = e.sub_anim {
                         entry.sub[0] = s;
+                    }
+                    if let Some(h) = e.half_fade {
+                        entry.half_fade = h;
                     }
                     if let Some(m) = e.mon_stat
                         && m != entry.mon_stat
@@ -9912,6 +9933,10 @@ impl App {
                     world.my_fellow = fellow;
                     world.costume.set_id(costume);
                     world.self_flags = flags;
+                    // 0x1009d84a: our own 0x037 clears entity +0x130 bit 18, the half-alpha draw.
+                    if let Some(e) = world.entities.get_mut(&me) {
+                        e.half_fade = false;
+                    }
                     world.buffs = icons;
                     world.my_team = team;
                     // 0x037 handler: the end time = dc2 when ahead of now, else now + dc1 / 60, only with dc1 > 0; the
@@ -14045,6 +14070,8 @@ impl App {
                 // FUN_10188a50: the gusts, every frame in retail (30 fps); ours on the cloth's 30 Hz clock.
                 w.wind.advance(dt);
                 let wind = (w.wind.tick, w.wind.dir, w.wind.strength);
+                // FUN_100cd040's fishing fade needs our own drawobj (FUN_101cc4f0) and our place.
+                let (fish, my_pos) = (fishing::any_fishing_status(w.my_motion.status) && w.actors.get(&w.my_id).is_some_and(|a| a.character.is_some()), w.pos);
                 for (id, a) in w.actors.iter_mut() {
                     let Some(ch) = a.character.clone() else { continue };
                     let Some(&Place { pos, forward, tilt, status, ratio, size }) = places.get(id) else { continue };
@@ -14372,7 +14399,15 @@ impl App {
                     // FUN_100cd040 (MODLOG "The near-camera character fade"): the eye near posed point 12 fades
                     // the actor (not the player in first person, who fades on its own). A CPU pose only when the
                     // rest pose is close.
-                    let cam_fade = if *id == w.my_id && w.camst.first || w.entities.get(id).is_some_and(|e| e.no_near_fade) {
+                    // While we fish, every other character entity fades by its horizontal distance to us (not the
+                    // rod, chair, mount or aura actors, which have no entity); +0x130 bit 18 draws at 0.5 over
+                    // everything (near_fade_tail).
+                    let fishing = (fish && *id != w.my_id && w.entities.contains_key(id)).then(|| Vec3::new(pos.x - my_pos.x, 0.0, pos.z - my_pos.z).length());
+                    let half = w.entities.get(id).is_some_and(|e| e.half_fade);
+                    // In first person the player skips FUN_100cd040, tail included (0x100c7d83 -> the self fade); op
+                    // 0xa4's +0x12c bit 26 then sets 1.0 over the whole result, tail included (0x100c7dc0..0x100c7dd5).
+                    let self_first = *id == w.my_id && w.camst.first;
+                    let cam_fade = if self_first {
                         1.0
                     } else {
                         let (b12, off12) = ch.skeleton.points.get(12).copied().unwrap_or((0, Vec3::ZERO));
@@ -14385,6 +14420,13 @@ impl App {
                         } else {
                             near_camera_fade(at(&a.bones), eye)
                         }
+                    };
+                    let cam_fade = if w.entities.get(id).is_some_and(|e| e.no_near_fade) {
+                        1.0
+                    } else if self_first {
+                        cam_fade
+                    } else {
+                        near_fade_tail(cam_fade, fishing, half)
                     };
                     // FUN_100d5b10: an event's look, else the target / face target; eased and weighted in world space.
                     let point = |k: usize| ch.skeleton.points.get(k).copied().unwrap_or((0, Vec3::ZERO));
@@ -15570,6 +15612,21 @@ mod tests {
             let back = entity_yaw(player_yaw(y));
             assert!((back.cos() - y.cos()).abs() < 1e-5 && (back.sin() - y.sin()).abs() < 1e-5, "{y} -> {back}");
         }
+    }
+
+    /// FUN_100cd040's tail: the fishing fade (hidden within 1.0, linear to full at 2.5) and the half-alpha bit,
+    /// which wins over everything.
+    #[test]
+    fn near_fade_tail_steps() {
+        assert_eq!(near_fade_tail(1.0, None, false), 1.0);
+        assert_eq!(near_fade_tail(1.0, Some(0.9), false), 0.0);
+        assert!((near_fade_tail(1.0, Some(1.75), false) - 0.5).abs() < 1e-5);
+        assert!((near_fade_tail(1.0, Some(2.5), false) - 1.0).abs() < 1e-5);
+        // The cylinder's fade and the fishing fade multiply.
+        assert!((near_fade_tail(0.5, Some(2.5 - 1e-4), false) - 0.5).abs() < 1e-3);
+        // Bit 18 overrides both ways.
+        assert_eq!(near_fade_tail(1.0, Some(0.5), true), 0.5);
+        assert_eq!(near_fade_tail(0.0, None, true), 0.5);
     }
 
     /// MODLOG "The near-camera character fade": 0 within 0.2, linear to 0.5, nothing with the eye more than 0.5
