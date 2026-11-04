@@ -58,10 +58,23 @@ pub fn open<R: Render>(device: Option<&str>, make: impl FnOnce(u32) -> R) -> Res
     }
     let (host, device) = match device.filter(|d| !d.is_empty()) {
         Some(s) => {
-            let id: cpal::DeviceId = s.parse()?;
-            let host = cpal::host_from_id(id.host())?;
-            let d = host.device_by_id(&id).with_context(|| format!("no audio device {s}"))?;
-            (host, d)
+            // A device saved by a build with PipeWire, in one built without it (--no-default-features): this build
+            // has no such host, so the id doesn't parse (or the host isn't there) and the default output plays
+            // instead of no sound at all. A malformed id or a missing device on a known host still fails.
+            let found = s.parse::<cpal::DeviceId>().and_then(|id| Ok((cpal::host_from_id(id.host())?, id)));
+            match found {
+                Ok((host, id)) => {
+                    let d = host.device_by_id(&id).with_context(|| format!("no audio device {s}"))?;
+                    (host, d)
+                }
+                Err(e) if e.kind() == cpal::ErrorKind::UnsupportedOperation || e.kind() == cpal::ErrorKind::HostUnavailable => {
+                    log::warn!("audio device {s}: {e}; using the default output");
+                    let host = cpal::default_host();
+                    let d = host.default_output_device().context("no audio output device")?;
+                    (host, d)
+                }
+                Err(e) => return Err(e.into()),
+            }
         }
         None => {
             let host = cpal::default_host();
@@ -132,3 +145,4 @@ fn build<T: SizedSample + FromSample<f32>, R: Render>(device: &cpal::Device, con
     )?;
     Ok(stream)
 }
+

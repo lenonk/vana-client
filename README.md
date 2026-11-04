@@ -81,6 +81,8 @@ No game data is included in this repository.
 cargo build --release
 ```
 
+On Linux the build needs PipeWire's headers (`libpipewire-0.3-dev`). Where they are too old for cpal's PipeWire bindings (Ubuntu 22.04 fails, 24.04 builds), `cargo build --release --no-default-features` leaves PipeWire output out; sound then goes through PulseAudio (or PipeWire's PulseAudio server) or ALSA.
+
 The binary is `target/release/vana-client`. Release builds are incremental, without link-time optimisation; for a binary to hand out, `cargo build --profile dist` (fat LTO, one codegen unit) writes `target/dist/vana-client`.
 
 Published releases are built with `release/build-linux.sh` (in the Steam Runtime 3 "sniper" SDK container, so one binary runs on every current distro) and `release/build-windows.sh` (a MinGW cross build), then `release/publish.sh VERSION` tags them, signs each with the release key (Ed25519, kept outside the repo; its public half is `release/signing-key.pub`, built into the client) and creates the GitHub release that the in-app Update offers. The client installs a release only when its signature checks.

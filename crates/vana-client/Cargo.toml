@@ -4,11 +4,18 @@ version = "1.0.4"
 edition = "2024"
 license = "MIT"
 
+[features]
+default = ["pipewire"]
+# cpal's PipeWire host (tried before PulseAudio). Its libspa bindings need newer PipeWire headers than some distros
+# ship (Ubuntu 22.04's 0.3.48 fails; 24.04's 1.0.5 builds): `cargo build --no-default-features` leaves it out, and
+# sound goes through PulseAudio (pipewire-pulse) or ALSA instead.
+pipewire = ["cpal/pipewire"]
+
 [dependencies]
 anyhow = "1.0.104"
 bytemuck = { version = "1.25.2", features = ["derive"] }
 clap = { version = "4.6.7", features = ["derive"] }
-cpal = { version = "0.18.2", features = ["pipewire", "pulseaudio"] }
+cpal = { version = "0.18.2", features = ["pulseaudio"] }
 dirs = "7.0.0"
 egui = { version = "0.37", features = ["default_fonts"] }
 # Rasterizes the modern name plates (already in the tree through egui).
