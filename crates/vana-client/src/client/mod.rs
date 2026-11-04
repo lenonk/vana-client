@@ -4945,6 +4945,20 @@ fn look_source(tbl: [u16; 9]) -> Source {
     if tbl[8] == 0xFFFF { Source::Npc(crate::dat::npc::NpcLook::Model(tbl[0])) } else { Source::Pc(look_from(tbl)) }
 }
 
+/// FUN_1009afe0 with Misc.'s PC armour Hide (config 0xa5 != 0), for another PC's look (not ours, not a model id):
+/// head, body, hands, legs and feet become the defaults of table 0x1032d678 (0, 8, 8, 8, 8), the face and weapons
+/// stay. Retail reads it as each look arrives, so a change shows on the next look update. Its third exclusion, a slot
+/// with +0x78's high byte set, is a client-made model (FUN_100ab750: the menu preview FUN_101cd3b0, the lobby's
+/// FUN_10242cd0), which never gets a 0x00D look here.
+fn hide_armour(mut tbl: [u16; 9]) -> [u16; 9] {
+    if tbl[8] != 0xFFFF {
+        for (i, v) in [0u16, 8, 8, 8, 8].into_iter().enumerate() {
+            tbl[i + 1] = ((i as u16 + 1) << 12) | v;
+        }
+    }
+    tbl
+}
+
 const TAU_4096: f32 = std::f32::consts::TAU / 4096.0;
 
 /// Where and how an actor is drawn this frame: position, facing, status, motion ratio, size.
@@ -9093,6 +9107,7 @@ impl App {
                         continue;
                     }
                     if let Some(tbl) = e.look {
+                        let tbl = if e.id != world.my_id && world.game.get(0xa5) != 0 { hide_armour(tbl) } else { tbl };
                         looks.push((e.id, look_source(tbl)));
                     }
                     if let Some(npc) = e.npc {
@@ -15180,6 +15195,15 @@ pub fn run(cfg: Config, drive: Drive) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Hide PC armour: slots 1..5 to the defaults, face, weapons and a model look kept.
+    #[test]
+    fn hide_armour_keeps_face_and_weapons() {
+        let tbl = [0x0105, 0x1123, 0x2234, 0x3345, 0x4456, 0x5567, 0x6678, 0x7789, 0x889a];
+        assert_eq!(hide_armour(tbl), [0x0105, 0x1000, 0x2008, 0x3008, 0x4008, 0x5008, 0x6678, 0x7789, 0x889a]);
+        let model = [0x0123, 0, 0, 0, 0, 0, 0, 0, 0xFFFF];
+        assert_eq!(hide_armour(model), model);
+    }
 
     /// A new install's login form opens on Server Type Private.
     #[test]
