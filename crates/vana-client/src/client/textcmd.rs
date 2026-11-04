@@ -2649,7 +2649,8 @@ fn recruitlist(w: &mut World, args: &[String]) -> Done {
 
 /// FUN_1007d9c0 (/partyrequestcmd, /prcmd): add [target] asks to join that player's party (c2s 0x11C kind 0, group 10
 /// 0x76), remove [target] takes it back (kind 1); someone not here is looked up by name. Refusals 7 0xc4 / 0xc5 (on
-/// our blacklist) / 0xc6 (blacklist not in yet). Not done: the own actor's +0x124 bits 22 / 23 (0xc6).
+/// our blacklist) / 0xc6 (blacklist not in yet; or we are /anon or /away: own actor +0x124 bit 23 / 22, from 0x037
+/// u32 @0x28 bits 5 / 7, asm 0x1007da8b..0x1007dab7; the name-lookup path does not test them).
 fn prcmd(w: &mut World, args: &[String], mode: Mode) -> Done {
     let kind = match args.get(1).map(String::as_str) {
         Some("add") => 0,
@@ -2664,7 +2665,11 @@ fn prcmd(w: &mut World, args: &[String], mode: Mode) -> Done {
         return Ok(());
     };
     let name = if id == w.my_id { w.name.clone() } else { w.entities.get(&id).map(|e| e.name.clone()).unwrap_or_default() };
+    // Anonymous (bit 5) or Away (bit 7): "You were unable to make a request to join." and nothing is sent. Checked
+    // here before the blacklist *(inf: the order between the two tests, and that remove skips it)*.
+    let anon_away = kind == 0 && w.self_flags & (1 << 5 | 1 << 7) != 0;
     match if kind == 0 { super::partyreq::blacklisted(w, &name) } else { 0 } {
+        _ if anon_away => refuse(w, 0xc6),
         1 => refuse(w, 0xc5),
         2 => refuse(w, 0xc6),
         _ if (kind == 0 && id == w.my_id) || id >> 24 == 1 => refuse(w, 0xc4),
