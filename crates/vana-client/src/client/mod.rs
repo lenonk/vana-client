@@ -4206,8 +4206,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         if !world.lua.hides("plates") {
             name_plates(gu, world, sw, sh, view_proj);
         }
+        let modern = world.modern;
         if let Some(m) = world.map.as_mut() {
-            m.draw(gu, sw, sh);
+            m.draw(gu, sw, sh, modern);
         }
         // cnqframe has flag 0x40 too; its info windows don't.
         region::draw_map(gu, world);
