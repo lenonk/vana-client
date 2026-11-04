@@ -398,9 +398,14 @@ pub fn open_sub(w: &mut World, flags: u32, then: SubThen, range: Option<f32>, ti
         w.prompt = None;
         return false;
     };
-    w.locked = false;
-    w.target = Some(first);
-    w.target_since = std::time::Instant::now();
+    // The lock is only saved (+0x5c bits 2..3); a first pick that moves the target ends it as any change does.
+    if w.target != Some(first) {
+        if w.locked {
+            lock(w, false, "prompt pick");
+        }
+        w.target = Some(first);
+        w.target_since = std::time::Instant::now();
+    }
     true
 }
 
@@ -539,11 +544,18 @@ pub fn cancel_sub(w: &mut World) {
     }
 }
 
-/// FUN_10159040.
+/// FUN_10159040: the saved target back (a change ends a lock taken meanwhile), then the saved lock state
+/// (FUN_10157660), so a lock on the same target never moves the camera.
 fn restore(w: &mut World, s: &Sub) {
-    w.target = s.saved.filter(|&t| t == w.my_id || w.entities.contains_key(&t));
-    w.target_since = std::time::Instant::now();
-    w.locked = s.saved_lock && w.target.is_some();
+    let back = s.saved.filter(|&t| t == w.my_id || w.entities.contains_key(&t));
+    if w.target != back {
+        if w.locked {
+            lock(w, false, "prompt closed");
+        }
+        w.target = back;
+        w.target_since = std::time::Instant::now();
+    }
+    lock(w, s.saved_lock && back.is_some(), "prompt closed");
 }
 
 /// The prompt's own picks (FUN_101587f0 with +0xc4 set): F1 / F7 us when allowed, F2..F6 / F11 / F12 party slots
@@ -581,7 +593,8 @@ pub fn range_tint(w: &World, t: u32) -> u32 {
     }
 }
 
-/// FUN_10151280: sets the target with its sound; a different target ends the lock (FUN_10153040).
+/// FUN_10151280: sets the target with its sound; a different target ends the lock (FUN_10153040), a prompt's pick
+/// too (the prompt's close locks again).
 pub fn set(w: &mut World, t: Option<u32>) {
     if w.target == t {
         return;
@@ -595,7 +608,7 @@ pub fn set(w: &mut World, t: Option<u32>) {
     log::info!("target {:#x} {:?} at {:?} radius {:?} (ours {})", t.unwrap_or(0), e.map(|e| e.name.as_str()), e.map(|e| (e.pos.x, e.pos.z)), e.map(|e| e.hitbox), w.my_plate.hitbox);
     w.target = t;
     w.target_since = std::time::Instant::now();
-    if w.locked && w.prompt.is_none() {
+    if w.locked {
         lock(w, false, "target changed");
     }
 }
@@ -618,6 +631,7 @@ pub fn lock(w: &mut World, on: bool, why: &str) {
         }
         // The locked camera starts from the camera on screen (the same eye and look).
         w.lock_height = w.target.map_or(-1.5, |t| lock_height(w, t));
+        w.lock_posed = w.target.is_some_and(|t| posed(w, t));
         w.locked = true;
         log::info!("lock on {:#x} ({why})", w.target.unwrap_or(0));
     } else {
@@ -1059,12 +1073,22 @@ fn point_height(w: &World, id: u32, k: usize) -> f32 {
     point.and_then(|(b, off)| bones.get(b as usize).map(|x| x.at(off).y * a.scale)).unwrap_or(a.top * 0.7)
 }
 
-/// FUN_1001ee60's target height: a snapshot at lock-on of the actor's look point (+0x8a8: point 7 for PCs and
-/// monsters without an init op 0xad), x0.8 when we are a Tarutaru. Never re-read while locked, so a bobbing flyer
-/// doesn't move the camera.
+/// FUN_100d6670 (vtable +0x3f8 of the target, from the lock callback): the posed point init's op 0xad set (+0x8a8),
+/// else by the model kind: a model-id body (kinds 2 / 7) with leg mode 1 or 2 (+0x878) point 5 x 0.8 (_DAT_10329a34),
+/// any other point 7. Taken at lock-on, never re-read while locked, so a bobbing flyer doesn't move the camera.
 fn lock_height(w: &World, id: u32) -> f32 {
-    let y = point_height(w, id, 7);
-    if matches!(w.my_race, 5 | 6) { y * 0.8 } else { y }
+    let Some(a) = w.actors.get(&id) else { return -1.5 };
+    if a.anchors[2] != 0x80 {
+        return point_height(w, id, a.anchors[2] as usize);
+    }
+    let model = matches!(a.source, Some(super::Source::Npc(crate::dat::npc::NpcLook::Model(_))));
+    let legs = a.character.as_ref().map_or(-1, |c| c.cib[0]);
+    if model && matches!(legs, 1 | 2) { point_height(w, id, 5) * 0.8 } else { point_height(w, id, 7) }
+}
+
+/// Whether the actor's bones are this frame's pose (else `point_height` reads the rest pose).
+fn posed(w: &World, id: u32) -> bool {
+    w.actors.get(&id).is_some_and(|a| !a.bones.is_empty())
 }
 
 /// FUN_1001e030, locked branch, run in 1/60 s ticks: look at the player / target midpoint, keep the eye
@@ -1078,8 +1102,19 @@ fn mon_extent(w: &World) -> f32 {
     (b[4] - b[5]).max(b[2] - b[3]) * 1.5
 }
 
+/// Our bones are posed only once locked: the height snapshot is taken again from the first posed frame (retail reads the
+/// posed point at lock-on); the look's easing hides the change.
+pub(super) fn refresh_lock_height(w: &mut World) {
+    if let Some(t) = w.target.filter(|_| w.locked && !w.lock_posed)
+        && posed(w, t)
+    {
+        (w.lock_height, w.lock_posed) = (lock_height(w, t), true);
+    }
+}
+
 pub fn step_camera(w: &mut World, ticks: f32, turn: f32, rise: f32) {
     let Some(t) = w.target.and_then(|t| w.entities.get(&t).map(|e| (t, e.pos))) else { return };
+    refresh_lock_height(w);
     let mut c = w.cam;
     let (_, tpos) = t;
     let me = super::drawn_pos(w);
@@ -1126,7 +1161,7 @@ pub fn step_camera(w: &mut World, ticks: f32, turn: f32, rise: f32) {
         if let Some(h) = g.cam_ray(from, eye) {
             eye = h + (h - eye).normalize_or_zero() * 0.2;
         }
-        eye = super::camera::tail(g, eye, c.look, c.eye, false, false);
+        eye = super::camera::tail(g, eye, c.look, c.eye, false, false, ticks);
     }
     c.eye = eye;
     w.cam = c;

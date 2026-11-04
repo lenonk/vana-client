@@ -170,4 +170,13 @@ mod tests {
         assert!(a.spells.iter().enumerate().all(|(i, s)| s.id == 0 || s.id as usize == i));
         assert!(a.can_cast(1, (3, 1), (0, 0), 0) && !a.can_cast(1, (1, 75), (0, 0), 0) && a.can_cast(1, (1, 75), (3, 37), 0));
     }
+
+    /// The schools the battle menu's suggestions keep apart: Dia and Protect white, Bio, Water and Poison black.
+    #[test]
+    fn white_and_black_kinds() {
+        let Some(a) = real() else { return };
+        for (id, kind) in [(23, 1), (43, 1), (230, 2), (169, 2), (220, 2)] {
+            assert_eq!(a.spell(id).map(|s| s.kind), Some(kind), "spell {id}");
+        }
+    }
 }

@@ -4852,8 +4852,8 @@ struct Actor {
     noblob: bool,
     /// Last frame's bone transforms (model space) and model scale, for look points.
     bones: Vec<crate::dat::character::BoneXf>,
-    /// Attach points of the target arrow (+0x8a6), the name plate (+0x8a7) and +0x8a8, 2 from the constructor
-    /// (FUN_100c3d20); scheduler ops 0x9e / 0x9f / 0xad set them.
+    /// Attach points of the target arrow (+0x8a6), the name plate (+0x8a7) and the lock look (+0x8a8, read by
+    /// FUN_100d6670), ANCHORS from the model reset; scheduler ops 0x9e / 0x9f / 0xad set them.
     anchors: [u8; 3],
     /// The arrow's and the plate's posed points this frame (world), for anchors other than 2.
     anchor_at: [Option<Vec3>; 2],
@@ -4987,7 +4987,7 @@ impl Actor {
             shadow_off: false,
             noblob: false,
             bones: Vec::new(),
-            anchors: [2; 3],
+            anchors: ANCHORS,
             anchor_at: [None; 2],
             scale: 1.0,
             top_key: String::new(),
@@ -5146,6 +5146,10 @@ fn window_icon() -> Option<winit::window::Icon> {
 }
 
 /// Where the player is drawn: between the physics steps (drawn_between_steps), or where something else just put us.
+/// The model reset's points (2019 all.c 145867..145870): arrow and plate 2, the lock look 0x80 (none: by the model
+/// kind, FUN_100d6670).
+const ANCHORS: [u8; 3] = [2, 2, 0x80];
+
 fn drawn_pos(w: &World) -> Vec3 {
     // The model's place (vt+0x1bc, what the camera follows): an event's pose while one holds us.
     if let Some(p) = event::own_pose(w) {
@@ -6077,8 +6081,10 @@ struct World {
     /// was set, and manual camera turns waiting for the locked camera.
     locked: bool,
     cam: target::LockCam,
-    /// The locked camera's target height, taken once at lock-on (actor +0x8a8's point).
+    /// The locked camera's target height, taken once at lock-on (FUN_100d6670), and whether from the posed skeleton
+    /// (else taken again the first locked frame the target's bones are posed).
     lock_height: f32,
+    lock_posed: bool,
     unlock_ticks: f32,
     /// The free camera's state (camera.rs), and our status last frame.
     camst: camera::State,
@@ -8236,6 +8242,7 @@ impl App {
                             locked: false,
                             cam: Default::default(),
                             lock_height: -1.5,
+                            lock_posed: false,
                             unlock_ticks: 0.0,
                             camst: camera::State::new(),
                             last_status: 0,
@@ -8729,7 +8736,7 @@ impl App {
                             (a.motion_names, a.rebase, a.fresh) = (None, true, true);
                             // Attach points from the rest pose while the GPU model builds ('spop' dolls it at once).
                             (a.rest, a.bones, a.motion_link) = (crate::dat::character::pose(&ch.skeleton, &[]), Vec::new(), None);
-                            (a.anchors, a.anchor_at) = ([2; 3], [None; 2]);
+                            (a.anchors, a.anchor_at) = (ANCHORS, [None; 2]);
                         }
                         world.models.insert(key, ch);
                         // Looks no actor wears any more go once there are more than MODEL_CACHE.
@@ -9782,17 +9789,23 @@ impl App {
                 NetEvent::EventRelease { mode, event: e } => event::release(world, mode, e),
                 NetEvent::Fish(p) => fishing::on_fish(world, p),
                 NetEvent::Wpos { id, pos, dir, mode } => {
-                    // POSMODE (LSB): 0 normal, 1 event, 3 pop, 5 reset, 6 materialize move us; 0x0a turns.
+                    // POSMODE (LSB): 0 normal, 1 event, 3 pop, 5 reset, 6 materialize, 7; 0x0a rotate.
                     // FUN_1009ee60: mode 7 about us unloads the sub-area.
                     if id == world.my_id && mode == 7 {
                         world.sub.asked = Some((0, false));
                     }
-                    if id == world.my_id && matches!(mode, 0 | 1 | 3 | 5 | 6 | 0x0a) {
-                        if mode != 0x0a {
-                            world.pos = Vec3::from(pos);
-                        }
+                    // FUN_1009ee60 (30261006 all.c 119012..119147): 0 / 1 / 3 / 5 / 6 / 7 place us; only 0, 1, 5 and 7
+                    // put the camera behind us (FUN_1008f200 -> FUN_10021680); 0x0a only turns us (FUN_1009edd0).
+                    if id == world.my_id && matches!(mode, 0 | 1 | 3 | 5 | 6 | 7) {
+                        world.pos = Vec3::from(pos);
+                    }
+                    if id == world.my_id && matches!(mode, 0 | 1 | 5 | 7) {
                         let f = forward_from_dir(dir);
                         camera::face(world, f.x.atan2(f.z));
+                    } else if id == world.my_id && mode == 0x0a
+                        && let Ok(mut me) = world.net.me.lock()
+                    {
+                        me.dir = dir;
                     }
                     if mode == 1 {
                         event::server_place(world, id, pos, dir);
@@ -10223,7 +10236,7 @@ impl App {
                 actor.gpu = None;
                 (actor.motion_names, actor.rebase, actor.fresh) = (None, true, true);
                 (actor.rest, actor.bones, actor.motion_link) = (crate::dat::character::pose(&m.skeleton, &[]), Vec::new(), None);
-                (actor.anchors, actor.anchor_at) = ([2; 3], [None; 2]);
+                (actor.anchors, actor.anchor_at) = (ANCHORS, [None; 2]);
             } else if world.models_loading.insert(key.clone()) {
                 wanted.push((key, source));
             }
@@ -11032,6 +11045,9 @@ impl App {
         }
         // Locked: the keys move relative to the target (FUN_100a6210) and the camera follows FUN_1001e030.
         let lock_target = world.target.filter(|_| world.locked).and_then(|t| world.entities.get(&t)).map(|e| e.pos);
+        // The locked camera's input this frame; it steps after the player has moved, as the free branch does
+        // (FUN_1001ee60 runs after the move input in both).
+        let mut lock_cam = None;
         if let Some(tp) = lock_target {
             // FUN_1001ee60 locked: axis 6 turns at the free rate (scaled 6 / distance in step_camera), axis 7 raises
             // and lowers the eye at the free rate, unscaled.
@@ -11041,7 +11057,7 @@ impl App {
             // negated so it turns the same way locked as free, as FUN_1001ee60 sends both through FUN_1001ebb0 (the
             // mouse's cam_turn already does).
             let sp = camera::speed(&world.camst);
-            target::step_camera(world, ticks, dx - turn_keys * camera::YAW_RATE * sp * ticks, dy + v7 * camera::RISE_RATE * sp * ticks);
+            lock_cam = Some((ticks, dx - turn_keys * camera::YAW_RATE * sp * ticks, dy + v7 * camera::RISE_RATE * sp * ticks));
             let to = tp - world.pos;
             if to.x.abs() + to.z.abs() > 1e-3 {
                 world.yaw = to.x.atan2(to.z);
@@ -11127,6 +11143,12 @@ impl App {
             let c = Self::camera(world);
             let mt = world.net.me.lock().map_or(0, |m| m.move_time);
             log::info!("me t {:.4} steps {steps} y {:.4} drawn ({:.3}, {:.4}, {:.3}) eye ({:.3}, {:.4}, {:.3}) look ({:.3}, {:.4}, {:.3}) move_time {mt}", world.started.elapsed().as_secs_f32(), world.pos.y, world.draw_pos.x, world.draw_pos.y, world.draw_pos.z, c.eye.x, c.eye.y, c.eye.z, c.target.x, c.target.y, c.target.z);
+        }
+        if let Some((ticks, turn, rise)) = lock_cam
+            && world.locked
+            && !world.camst.first
+        {
+            target::step_camera(world, ticks, turn, rise);
         }
         camera::step(world, dt, &cam_in);
         let in_event = event::active(world);

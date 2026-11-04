@@ -81,6 +81,9 @@ pub struct MapLogin {
     pub search: (Ipv4Addr, u16),
     /// The 16-byte value and the key counter at world entry; the map's Blowfish key is their MD5.
     pub key: [u8; 20],
+    /// LSB: the same counter behind xiloader's zero value, as LSB keyed the map before it took the profile's value;
+    /// tried when the first datagrams fail with `key`.
+    pub old_key: Option<[u8; 20]>,
     /// The LSB login's account id and session hash (xi_profile's credentials); none for PlayOnline.
     pub lsb: Option<(u32, [u8; 16])>,
     /// PlayOnline: the chat link, kept open while the game runs.
@@ -490,6 +493,8 @@ impl Lobby {
         let mut key20 = [0u8; 20];
         key20[..16].copy_from_slice(&self.k16);
         key20[16..].copy_from_slice(&self.key_counter.wrapping_add(2).to_le_bytes());
+        let mut old_key = [0u8; 20];
+        old_key[16..].copy_from_slice(&key20[16..]);
         Ok(MapLogin {
             // The record's (FUN_100ef1a0): +0xB << 16 | u16 +4.
             char_id: (rec[0xB] as u32) << 16 | rd_u16(&rec, 4) as u32,
@@ -497,6 +502,7 @@ impl Lobby {
             map: (ip(0x38), rd_u32(&pkt, 0x3C) as u16),
             search: (ip(0x40), rd_u32(&pkt, 0x44) as u16),
             key: key20,
+            old_key: self.data.is_some().then_some(old_key),
             lsb: match self.session {
                 Session::Lsb { account_id, hash } => Some((account_id, hash)),
                 Session::PlayOnline { .. } => None,
@@ -670,6 +676,66 @@ mod create_tests {
         // The 0x07 hashed c; 0x0B makes it c + 2 and world entry c + 4 (MODLOG "PlayOnline sign-in").
         let c = server.join().unwrap();
         assert_eq!((m.char_id, m.map.1, m.key[..16].to_vec(), u32::from_le_bytes(m.key[16..].try_into().unwrap())), (2 << 16 | 0x1234, 54230, k16.to_vec(), c + 4));
+    }
+
+    /// LSB's dialect with its old fixed counter seed: a plain login reaches world entry at xiloader's 0xAD5DE058, the
+    /// counter LSB's older login keyed the map with, so `old_key` is the loader's zero value and that counter.
+    #[test]
+    fn old_key_matches_the_older_lsb_login() {
+        use std::net::TcpListener;
+        let (view, data) = (TcpListener::bind("127.0.0.1:0").unwrap(), TcpListener::bind("127.0.0.1:0").unwrap());
+        let (vp, dp) = (view.local_addr().unwrap().port(), data.local_addr().unwrap().port());
+        let server = std::thread::spawn(move || {
+            let (mut d, _) = data.accept().unwrap();
+            let (mut v, _) = view.accept().unwrap();
+            let mut hello = [0u8; 28];
+            d.read_exact(&mut hello).unwrap();
+            let req = |v: &mut TcpStream| {
+                let mut n = [0u8; 4];
+                v.read_exact(&mut n).unwrap();
+                let mut p = vec![0u8; u32::from_le_bytes(n) as usize - 4];
+                v.read_exact(&mut p).unwrap();
+                p[4]
+            };
+            let reply = |v: &mut TcpStream, cmd: u8, body: &[u8]| {
+                let mut p = packet(28 + body.len());
+                p[8] = cmd;
+                p[28..].copy_from_slice(body);
+                v.write_all(&p).unwrap();
+            };
+            assert_eq!(req(&mut v), 0x26);
+            let mut b = [0u8; 12];
+            b[..4].copy_from_slice(&0xAD5DE04Fu32.to_le_bytes());
+            reply(&mut v, 0x05, &b);
+            assert_eq!(req(&mut v), 0x1F);
+            d.write_all(&[1, 0, 0, 0, 0]).unwrap();
+            let mut ident = [0u8; 28];
+            d.read_exact(&mut ident).unwrap();
+            let mut list = vec![0u8; 0x148];
+            list[0] = 3;
+            d.write_all(&list).unwrap();
+            let mut chars = vec![0u8; 4 + CHAR_INFO_LEN];
+            chars[0] = 1;
+            chars[4..8].copy_from_slice(&7u32.to_le_bytes());
+            chars[4 + 12..4 + 16].copy_from_slice(b"Nine");
+            reply(&mut v, 0x20, &chars);
+            assert_eq!(req(&mut v), 0x24);
+            reply(&mut v, 0x23, &[0u8; 4]);
+            assert_eq!(req(&mut v), 0x07);
+            d.write_all(&[2, 0, 0, 0, 0]).unwrap();
+            let mut key = [0u8; 28];
+            d.read_exact(&mut key).unwrap();
+            reply(&mut v, 0x0B, &[0u8; 0x48 - 28]);
+        });
+        let hash = [0x33u8; 16];
+        let mut l = Lobby::connect("127.0.0.1", vp, dp, Session::Lsb { account_id: 1, hash }, b"dll", "30261006_0", 5, 0, Default::default()).unwrap();
+        let chars = l.characters().unwrap();
+        l.worlds().unwrap();
+        let m = l.select(&chars[0]).unwrap();
+        server.join().unwrap();
+        let old = m.old_key.unwrap();
+        assert_eq!((old[..16].to_vec(), u32::from_le_bytes(old[16..].try_into().unwrap())), (vec![0u8; 16], 0xAD5DE058));
+        assert_eq!((m.key[..16].to_vec(), m.key[16..].to_vec()), (Md5::digest(hash).to_vec(), old[16..].to_vec()));
     }
 
     /// A lobby whose replies stop at the header: each one is an error, not a panic.

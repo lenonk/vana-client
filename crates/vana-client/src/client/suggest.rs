@@ -214,6 +214,16 @@ fn ninja_tool(spell: u16) -> Option<(u16, u16)> {
     NINJA_TOOLS.iter().find(|t| (t.0..=t.1).contains(&spell)).map(|t| (t.2, t.3))
 }
 
+/// A white-magic main (WHM 3, PLD 7) is offered no black magic (spell kind 2) from its support job, a black-magic main
+/// (BLM 4, DRK 8) no white (kind 1) (user, 2026-11-04); other mains take both.
+fn other_school(main: u8, kind: u16) -> bool {
+    match main {
+        3 | 7 => kind == 2,
+        4 | 8 => kind == 1,
+        _ => false,
+    }
+}
+
 /// The tool is in the inventory, or the universal one with NIN (13) the main job.
 fn has_tool(spell: u16, held: impl Fn(u16) -> bool, main: u8) -> bool {
     ninja_tool(spell).is_none_or(|(own, any)| held(own) || (main == 13 && held(any)))
@@ -630,7 +640,7 @@ pub fn facts(w: &World) -> Facts {
         .into_iter()
         .filter(|&s| magic::magic_check(w, s).is_none() && has_tool(s, held, main))
         .filter_map(|s| {
-            let r = w.actions.as_ref()?.spell(s)?;
+            let r = w.actions.as_ref()?.spell(s).filter(|r| !other_school(main, r.kind))?;
             Some(SpellFact { id: s, name: magic::spell_name(w, s), skill: r.skill, element: r.element, mp: r.mp, targets: r.targets, area: r.area != 0 })
         })
         .collect();
@@ -748,6 +758,18 @@ mod tests {
         let nuke = |id, name: &str, mp, area| SpellFact { id, name: name.into(), skill: 32, element: 6, mp, targets: 0x20, area };
         let f = Facts { party: vec![me(1000, 1000)], resonance: Some(ResonanceFact { against: vec![11], chain: Some(11), age: 1.0, left: 8.0 }), spells: vec![nuke(39, "Banishga II", 120, true), nuke(21, "Holy", 100, false)], ..Default::default() };
         assert_eq!(suggest(&f)[0].action, Action::Spell(21));
+    }
+
+    /// BLM / WHM gets no white magic and WHM / BLM no black; RDM and the melee jobs keep both.
+    #[test]
+    fn mains_keep_to_their_school() {
+        assert!(other_school(4, 1) && !other_school(4, 2));
+        assert!(other_school(3, 2) && !other_school(3, 1));
+        assert!(other_school(7, 2) && other_school(8, 1));
+        for main in [1, 5, 16, 20, 21] {
+            assert!(!other_school(main, 1) && !other_school(main, 2), "job {main}");
+        }
+        assert!(!other_school(4, 4), "ninjutsu is neither");
     }
 
     #[test]

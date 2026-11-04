@@ -60,8 +60,11 @@ fn now() -> u32 {
 pub struct MapSession {
     sock: UdpSocket,
     cipher: Blowfish,
-    /// The key the cipher was made from, for 0x00A's ticket.
+    /// The key the cipher was made from, for 0x00A's ticket, and the 20 bytes hashed for it.
     key: [u8; 16],
+    key20: [u8; 20],
+    /// A second key (MapLogin::old_key) tried while no datagram has been read; the first to pass with it makes it ours.
+    alt: Option<(Blowfish, [u8; 20])>,
     codec: Codec,
     seq: u16,
     server_seq: u16,
@@ -105,14 +108,39 @@ fn sub_ids(plain: &[u8]) -> String {
     out.join(" ")
 }
 
+/// FUN_100dc430: the socket binds to 54090, then 50 more tries 0x100 apart (a u16, so it wraps), at every connection; a
+/// zone change comes from the same port, which LSB's older map servers key the session by.
+fn bind_socket() -> Result<UdpSocket> {
+    let mut port = 54090u16;
+    for _ in 0..=50 {
+        if let Ok(s) = UdpSocket::bind(("0.0.0.0", port)) {
+            return Ok(s);
+        }
+        port = port.wrapping_add(0x100);
+    }
+    bail!("no local UDP port for the zone server: 54090 and the 50 after it 256 apart are all taken")
+}
+
 /// FUN_100fac80's raw payload limit.
 const MAX_PAYLOAD: usize = 4000;
 
 impl MapSession {
     pub fn connect(server: SocketAddr, key: &[u8; 20], codec: Codec) -> Result<Self> {
-        let sock = UdpSocket::bind("0.0.0.0:0")?;
+        let sock = bind_socket()?;
         sock.connect(server)?;
-        Ok(Self { sock, cipher: Blowfish::for_session_key(key), key: super::blowfish::session_key(key), codec, seq: 0, server_seq: 0, bytes_out: 0, bytes_in: 0, bad_in: 0, bad_run: 0, unacked: Vec::new(), server_ack: 0, last_in: None, logged: (0, 0), cert: None, clock: None })
+        log::info!("map: {server} from local port {}", sock.local_addr()?.port());
+        Ok(Self { sock, cipher: Blowfish::for_session_key(key), key: super::blowfish::session_key(key), key20: *key, alt: None, codec, seq: 0, server_seq: 0, bytes_out: 0, bytes_in: 0, bad_in: 0, bad_run: 0, unacked: Vec::new(), server_ack: 0, last_in: None, logged: (0, 0), cert: None, clock: None })
+    }
+
+    /// Also tries `alt` until a datagram has been read.
+    pub fn or_key(mut self, alt: Option<[u8; 20]>) -> Self {
+        self.alt = alt.map(|k| (Blowfish::for_session_key(&k), k));
+        self
+    }
+
+    /// The 20 bytes behind the cipher in use, stepped by the caller for the next zone.
+    pub fn key20(&self) -> [u8; 20] {
+        self.key20
     }
 
     /// @0 our sequence, @2 the last server datagram handled, @4 / @8 the clock's ms and seconds; after the zone-in
@@ -260,6 +288,19 @@ impl MapSession {
         }
         let mut dgram = buf[..n].to_vec();
         self.cipher.decrypt(&mut dgram[HEADER..]);
+        let sealed = |d: &[u8]| {
+            let (data, digest) = d[HEADER..].split_at(d.len() - HEADER - 16);
+            Md5::digest(data).as_slice() == digest
+        };
+        if !sealed(&dgram) && self.last_in.is_none() && let Some((cipher, _)) = &self.alt {
+            let mut again = buf[..n].to_vec();
+            cipher.decrypt(&mut again[HEADER..]);
+            if sealed(&again) {
+                log::info!("map: the server keys this session with the loader's zero value (LSB's older login)");
+                let (cipher, k) = self.alt.take().unwrap();
+                (self.cipher, self.key, self.key20, dgram) = (cipher, super::blowfish::session_key(&k), k, again);
+            }
+        }
         let (data, digest) = dgram[HEADER..].split_at(n - HEADER - 16);
         // A datagram that fails its checksum or doesn't decompress (corrupt, cut short, not the server's) is dropped
         // and counts as no answer; LSB resends what we haven't acked. Only a run of them ends the session.
@@ -405,5 +446,42 @@ mod tests {
         }
         server.send_to(&corrupt, to).unwrap();
         assert!(s.recv(t).is_err());
+    }
+
+    /// The older key is taken when the first datagram passes only with it, and never once a datagram was read.
+    #[test]
+    fn old_key_taken_before_the_first_read() {
+        let codec = plain_codec();
+        let (ours, old) = ([7u8; 20], [0u8; 20]);
+        let dgram = |key: &[u8; 20], seq: u16| {
+            let mut sub = build(0x029, &[0u8; 24]);
+            sub[2..4].copy_from_slice(&seq.to_le_bytes());
+            let (mut body, bits) = codec.compress(&sub);
+            body.extend_from_slice(&bits.to_le_bytes());
+            let digest = Md5::digest(&body);
+            body.extend_from_slice(&digest);
+            Blowfish::for_session_key(key).encrypt(&mut body);
+            let mut d = vec![0u8; HEADER];
+            d[..2].copy_from_slice(&seq.to_le_bytes());
+            d.extend_from_slice(&body);
+            d
+        };
+        let t = Duration::from_secs(1);
+        let server = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let mut s = MapSession::connect(server.local_addr().unwrap(), &ours, codec.clone()).unwrap().or_key(Some(old));
+        let to = s.sock.local_addr().unwrap();
+        server.send_to(&dgram(&old, 1), to).unwrap();
+        assert_eq!(s.recv(t).unwrap().unwrap().len(), 1);
+        assert_eq!((s.key20(), s.key), (old, crate::net::map::blowfish::session_key(&old)));
+        server.send_to(&dgram(&ours, 2), to).unwrap();
+        assert!(s.recv(t).unwrap().is_none());
+        // Ours read first: the older key is never tried after it.
+        let mut s = MapSession::connect(server.local_addr().unwrap(), &ours, codec.clone()).unwrap().or_key(Some(old));
+        let to = s.sock.local_addr().unwrap();
+        server.send_to(&dgram(&ours, 1), to).unwrap();
+        server.send_to(&dgram(&old, 2), to).unwrap();
+        assert_eq!(s.recv(t).unwrap().unwrap().len(), 1);
+        assert!(s.recv(t).unwrap().is_none());
+        assert_eq!(s.key20(), ours);
     }
 }
