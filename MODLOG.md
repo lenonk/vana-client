@@ -20761,3 +20761,254 @@ From the 30261006_0 decompile; ours in client/swkbd.rs (classic) and modern/keyb
   (standing: 0.44 s); before, only when autorun was switched off. A mount took 0.53 s running and 0.82 s standing
   (the next 400 ms datagram and the server's update); the first mount of a session waits for the chocobo's model
   (retail's state 0xe hides only a mount's rider, cVar7, so a chocobo's rider shows without the bird meanwhile).
+
+## Event op 0x5f subs 0 / 1: keep s2c 0x038 schedulers off an actor (2026-11-02)
+
+- Op 0x5f (FUN_100b72c0, from the dispatcher table at 0x100bc960; the old FUN_100b5490 name was off) subs 0 / 1
+  set +0x124 bit 29 of the thread's own actor to the sub, two bytes. The only reader is the s2c 0x038 handler
+  (LAB_1009dee0, 0x1009e007 / 0x1009e01f): a scheduler naming either actor with the bit is dropped. The event
+  teardowns (FUN_100ae3f0 at 0x100ae599, 0x100bd4b7) clear it. Ours keeps the set in the event state
+  (`no_038`), so it ends with the event, and `combat::on_scheduler` checks both ids of the packet. 33 uses in 5
+  zones.
+- Op 0x7e sub 4 (FUN_100b8b80) has no case in the handler's second switch: once actor@2 resolves with a model it
+  only ends the frame and advances 6, which ours already does.
+
+## Event actor flag ops 0x84 / 0x86 / 0x95 / 0x96 / 0xa4 (2026-11-02)
+
+- Traced in the current build (30261006_0) through the dispatcher's jump table (0x100bc960). The handler names `event_ops.rs`
+  gave these ops pointed inside other functions and are corrected. The real handlers: 0x84 FUN_100b9100, 0x86 FUN_100b8f30,
+  0x95 FUN_100b9c20, 0x96 FUN_100b9c70, 0xa4 FUN_100ba8d0, 0xab FUN_100bac90. Ours had no handler for any of them.
+  Sites in zones 0..299: 0x84 131 (40 zones), 0x86 208 (30), 0x95 267 (54), 0x96 166 (49), 0xa4 446 (81).
+- 0x84: the event actor's +0x12c bit 0. The entity pass (FUN_10095900 -> FUN_10095da0) then drops its model
+  (FUN_10092900), makes it again (FUN_1008f740) and clears the bit. Ours makes the model again at once (the same
+  path as op 0xab 0x11's rebuild).
+- 0x95 val@1 / 0x96: the event actor's +0x12c bit 19 set with bits 20..21 = val & 3 (FUN_10087d80) / bit 19 cleared
+  (FUN_10087db0), then its model goes (FUN_10092900) and comes back. While bit 19 is set, FUN_10087dc0 returns bits
+  20..21 instead of the 0x00E MonStat (+0x124 bits 13..14). Ours: `Entity::ev_mon_stat`, read by the MonStat 2
+  idles and motion names. MonStat 1 (another model class at init, FUN_100c5880) and 3 (FUN_1008f250) are not
+  modelled for 0x00E either.
+- 0xa4 u8@1: the event actor's +0x12c bit 26. FUN_100c63d0 then sets the model's near-camera fade (+0x664, from
+  FUN_100cd040) to 1 each frame, so the eye close to it never fades it. Unbinding clears it (FUN_100ae3f0).
+- 0x86 u8@1, actor@2: actor@2's +0x12c bit 3 (only with a model, +0x120 bit 9). While the actor is bound and an
+  event runs, FUN_1008cd90 then skips the turn steps ('@tl0' / '@tr0', FUN_1008af60). Unbinding clears it. Ours
+  keeps the set per event, so an actor flagged while unbound does not carry it into a later event *(retail would)*.
+- 0xab 9 / 0xa (FUN_10087120): DAT_10487ef5 = 1 / 0 (cleared on zone load, FUN_10093720). While it is set,
+  FUN_10002d80 returns 1.0 instead of the weather effects density (DAT_10456a68), which weather generators (+0xde
+  bits 7 / 1) run by. It shows weather effects even with the Weather setting (config 0x3b) off *(inf: the setter
+  call at 0x101aa703 was not tied to 0x3b)*. Ours always runs weather at 1.0 (fx/mod.rs), so nothing changes and
+  the ops stay unhandled until that setting is wired.
+- Test: `actor_flag_ops` (the operands reach the host). The event sweep runs on the scripted host, which these
+  handlers do not touch. Not checked live.
+
+## Cutscene actors drawn between VM steps (ours, 2026-11-02)
+
+- NPCs shook during cutscenes. The event VM moves its bodies in 60 Hz ticks, as retail does, but we draw at up to the
+  frame limit (300 by default). The bodies stood still for several frames and then jumped, while the scheduler camera
+  path is sampled every frame, so a walking actor visibly vibrated (and a camera framed on actors jumped with them).
+- Not retail (it draws a whole number of ticks a frame): `event::pose` draws each bound actor on its way to its last
+  VM step, from where it was drawn when that step came, over the tick after it (`Pose::since` counts the ticks drawn,
+  the step's own frame included). It never goes back, rotation and tilt go the short way round, and a placement (s2c
+  0x05B / 0x065 snap, or a jump of over 2 a tick) puts the place and tilt down at once. A frame of a tick or more
+  (60 fps and below) draws the stepped pose, as before.
+- The VM, its host (`drawn_at`), our own place (`keep_pose`) and the event's end still use the stepped pose.
+
+## Event ops: the cutscene clock, sub-area wait and wind gusts (2026-11-02)
+
+- Op 0xa9 (FUN_100bab50, from the dispatcher table at 0x100bc960) holds the Vana'diel clock still (FUN_1018c4f0) at
+  day val@1 x 7, 00:30 (FUN_1018be70 / bfa0 / bf00; one minute = 3600 units, a day 0x4f1a00) and sets
+  DAT_1065cb20, so the weekday (FUN_1018bd90 = day & 7) and moon phase (FUN_1018bde0 = ((t + 12 h) day / 7) % 12)
+  come from that clock instead of the server's. Moon phase = val % 12. The zone lighting, the music hour and the
+  effect generators' weekday / moon ops (FUN_1004a980) read it while the event runs.
+- Op 0xc9 (FUN_100b87e0): if the clock is held (DAT_104886da, set by 0x77 with an hour or by 0xa9), it runs again
+  (FUN_1018c4d0) and DAT_1065cb20 clears. Op 0x78 (FUN_100b87b0) does the same and goes back to the server's
+  weather (FUN_100940f0). Before this, 0xc9 did nothing, and 0x78 was the only way back.
+- Op 0x77 (FUN_100b8710) with an hour holds the clock's current day at that hour, minute 0 (FUN_1018bf50 / bf00);
+  it keeps a day and the moon source that 0xa9 set. Event state keeps the held clock and 0x77's weather apart
+  (`HeldClock` in client/event.rs); both still end with the event as before (retail only restores through
+  0x78 / 0xc9; FUN_100aed00 just clears DAT_104886da).
+- Op 0x98 (FUN_100b8630) ends the frame while a sub-area load runs (DAT_10631f24 +0x44), the same check as
+  op 0x75 sub 0 (`SubArea.loading` / `asked`).
+- Op 0x97 (FUN_100ba0c0) sets the wind gust range of the environment object (DAT_1065cb04 +0x138 base / +0x13c
+  spread, stock 4 / 10 from FUN_10187050; saved once by FUN_100ba040). FUN_10188a50 toggles gusts at random
+  (rand % 60 frames, x1.2 while blowing) with strength (rand % spread + base) x 0.0025, decaying 0.01 a frame
+  when calm, and FUN_10023700 pulls the cloth vertices of character meshes toward +0x124 by it. Our client draws
+  cloth vertices skinned and has no cloth simulation, so 0x97 stays unhandled until one exists.
+- Op names and descriptions for 0x77 / 0x78 / 0x97 / 0x98 / 0xa9 / 0xc9 in dat/event_ops.rs now name the real
+  handlers (the old FUN names were off); 0xc9 is `clock_run`.
+
+## Event op 0x83: the game clock (2026-11-02)
+
+- Op 0x83 (FUN_100b90e0, current build 30261006_0): var@1 = FUN_101039e0, the game clock in Earth seconds since the
+  Vana'diel epoch (FUN_100dc130's whole seconds plus the server offset DAT_104e0af8), 3 bytes. Ours left the variable
+  untouched, so scripts read 0 or an old value (285 sites in 98 zones of 0..299).
+- Scripts divide it by 3456 (a Vana'diel day) or 103680 (30 days) for cycles, e.g. Port Bastok (231) counts days
+  left in a 25-day cycle before message 7022.
+- Ours: Host::game_time, LiveHost from `vana_now` (s2c 0x00A's time plus the time since). Test: `game_clock_83`.
+  Event sweep of zones 2 / 4 / 5 / 7 / 24 / 231 / 232 unchanged (1,307 events, 0 faults). Not checked live.
+
+## Event op 0xcc 0x20: the Key Items window on one key item (2026-11-02)
+
+- Op 0xcc sub 0x20 (FUN_100b9d90, case at 0x100b9fb6) reads val@2 and advances 4 bytes. With a key item number it
+  calls FUN_1022a640 on the evitem object (DAT_106671d4): event mode on (+0x89 = 1), then FUN_1022a660 stores the
+  number (+0x8e), opens "menu    evitem" and goes straight to the description state (FUN_1022a7b0: +0x90 = 3).
+  With 0 it calls FUN_1022a6d0: event mode off, the number cleared, the window closed.
+- In event mode FUN_1022aaa0's description state ignores Enter and Escape, so only the script closes it. The event's
+  end closes it too (FUN_100ae3f0 calls FUN_1022a6d0 at 0x100ae926), whoever opened it.
+- Ours ignored the sub. Now it opens our evitem on that key item's name and description, the keys and a click leave
+  it up, and 0 or the event's end closes it. 10 zones use it (130, 154, 165, 230, 235, 241, 245, 257, 280, 291), e.g.
+  zone 257's `cc 20 #2842`, a message, then `cc 20 #0`.
+
+## Event ops 0xa8 / 0xb9: map marker clear reaches the map (2026-11-02)
+
+- Ops 0xa8 (FUN_100b9780) and 0xb9 (FUN_100b9820) have fixed lengths (6 / 8), but byte 1 picks the form: sub 0
+  loads the zone's marker file (FUN_100b2570(4, zone, key); 0xa8 passes key -1), clears slot val@4 / val@6
+  (FUN_101f8da0) and its name (FUN_101f8e30 ""), then saves (FUN_100b2a60); sub 1 clears the loaded data only; 2 and up
+  do nothing. Retail, current build 30261006_0 (dispatcher jump table 0x100bc960).
+- Ours had the map side (`map::Cmd::Unmark`) since "Event marker ops", but the op table gave both ops a fixed length,
+  so the VM never read the sub byte: the host got no sub and no operands and the clear never ran (304 sites in 32 zones
+  of 0..299). The table now reads the form from byte 1 with the same fixed lengths.
+- Event sweep of zones 43 / 50 / 101 / 102 / 103 / 208 / 238 / 257 unchanged (3,090 events, 0 faults). Test:
+  `marker_clear_subs`. Not checked live.
+
+## Event op 0xc2: party members in their Mog House (2026-11-02)
+
+- Op 0xc2 (FUN_100bbf80, from the dispatcher table at 0x100bc960) feeds the residential-area NPCs' "visit a
+  party member's Mog House" choice (zones 230..241, 245, 256, 257). Sub 1 stores FUN_100e9850's mask: bit i for each
+  roster record (G+0x57d8, 20 x 0x70) that is listed, not ours, and has +0x1a set. Sub 2 stores FUN_100e98b0's
+  answer for display slot val@2 (1..19, the order table G+0x9534): that member's id under the same test, else 0.
+  Other subs only advance 2. Before this, both stored nothing, so the scripts hid every member from the choice.
+- Record +0x1a is set by the 0x0DD / 0x0E2 handlers (LAB_100ea390 / 100ea560): MoghouseFlg (+0x1b) set gives
+  ZoneNo, or the current zone (G+0x3c350) when ZoneNo is 0; clear gives 0. `ListUpdate.moghouse` and
+  `Member.mog_zone` carry it (client/party.rs). LSB sends the flag (PARTY_MOGHOUSE).
+- Op 0x9e (FUN_100ba8a0) only sets _DAT_104898fc = (u8@1 == 0). Nothing in the DLL reads that word (writes only: here,
+  FUN_10094190 and the event resets in FUN_100ae3f0 / 100aed00), so ours rightly does nothing with it.
+
+## Event op 0xd3: end the actor's motions (2026-11-02)
+
+- Op 0xd3 sub 0 (FUN_100b7140, from the dispatcher table at 0x100bc960; the old FUN_100b5310 name was off) takes
+  actor@2. When it resolves to a CXiSkeletonActor with a model (+0x120 bit 9), FUN_100ce070 goes through both
+  motion lists of its model (+0x674 -> +0x44, lists +0x60 / +0x9c) and calls FUN_1001b520(8.0) on each layer.
+  A steady layer (state 0) then has state 2 with 8 frames left, so it plays on at its weight and is dropped when
+  that time runs out (FUN_1001b5d0 returns 0). A layer fading in (state 1) gets state 3 with 8 frames. Layers
+  already ending (2 / 3) keep their time unless it is 1 or less. The scheduler task is not touched. While actor@2
+  does not resolve, the op does not advance.
+- Scripts use it after a looping event motion (motion_file 'fm01' ...), usually followed by set_idle_motion
+  'idl0' (zones 25..293, mostly Adoulin and later). Ours: `Play::end_in(8)` on the actor's play, after which
+  `current()` is None and the status motion or the event idle shows. Before this, the loop played on until the
+  idle change cut it.
+
+## Event ops 0x5f sub 2 / 0xc1: reset the named actor's event motions (2026-11-02)
+
+- Op 0x5f sub 2 and op 0xc1 run the same FUN_100b5510 (0xc1 through FUN_100b5500, from the dispatcher table at
+  0x100bc960; the old FUN_100b3870 names were off). It takes the actor operand after the sub byte (0x5f: pc+2;
+  0xc1: pc+1). When the event binds that actor (+0x120 bit 7) and it has a model (bit 9), it waits for the model
+  (FUN_100d12d0), stops the actor's event scheduler (FUN_10087d40: vtable +0x29c on +0x1ec / +0x1f4) and drops its
+  motion files of kind 2 (FUN_100d44b0(2)). 0xc1 ends the frame after it; 0x5f does not.
+- Ours applied 0x5f sub 2 to the thread's own actor instead of the named one, so the 204 uses (every one names an NPC
+  other than the block's own) reset the wrong actor and left the named NPC's event motions running. It now takes the operand,
+  checks that the actor is bound and has a model, and handles 0xc1 the same way.
+- Traced, unchanged: op 0xac sub 4 (FUN_100bb180) ORs val@6 & 3 into actor@2's +0x13c, which the event teardown
+  reads (FUN_100ae3f0 at 0x100ae422); its only uses (zone 280, four) pass 0, so it does nothing. Op 0x5c 0xb0 /
+  0xb1 (FUN_100b6e30): 0xb0 stores whether the streamed BGM is playing (FUN_10246710(0, -1): 1 / 0, -1 without
+  the stream player); 0xb1 restarts the current BGM (FUN_100378b0(DAT_10463940)) when it is not. Used by ambient
+  loops in zones 210, 232, 236 and 239; ours stores nothing for 0xb0 and ignores 0xb1. That needs a "music playing"
+  query from the audio thread.
+
+## Event op 0x5c 0xb0 / 0xb1: the music stream's state and its restart (2026-11-02)
+
+- FUN_100b6e30 0xb0 (case at 0x100b6f14): set@2 = FUN_10246710(0, -1), which is 1 while the BGM stream has a track
+  (+0x94 >= 0) and 0 when it has none, or -1 with no stream player (DAT_1046393c). 4 bytes, no frame end.
+- 0xb1 (0x100b6f3c): when the stream has no track and DAT_10463940 is set, FUN_100378b0(DAT_10463940) starts that
+  track again. 2 bytes. DAT_10463940 is the track the music change task last started (0x1003748e / 0x100376ce, from
+  its +0x3c), and FUN_100378b0 sets it too.
+- Zones 210, 232, 236 and 239 use the pair in the same ambient loop: it sets music slots 0 / 1 to Z48 and, for tracks
+  168, 131, 130 and 166, checks every frame whether the music stopped and restarts it.
+- Ours: the VM stores the host's state for 0xb0 (the mixer has a track: 1 / 0; -1 without audio), and 0xb1 asks the
+  audio to start its last task track again when the mixer has none. Ours skips the restart while a music change is
+  under way, since that change starts its own track, and for 2 s after its own restart until the mixer has the track
+  (the scripts ask every frame, and each request reads the whole file).
+
+## Event op 0xab 0x0f / 0x10: unbound player characters keep the sent height (2026-11-02)
+
+- FUN_100bac90 0x0f / 0x10 set DAT_10489900 to 1 / 0 (2 bytes each). The event's end clears it (FUN_100ae3f0).
+- The s2c 0x00D handler (LAB_10099ae0 at 0x10099e89) stands a player character's sent position on the floor
+  (FUN_10181290, 50 up) unless DAT_10489900 is set, the player is held
+  (FUN_10087060: DAT_10487e48, which events set and their end clears), and the character is neither bound
+  (+0x120 bit 7) nor part of the event (bit 8, set by FUN_100aeea0). Then the sent height stays.
+- Ours already leaves heights alone while an event runs. The one place it stood a player character on the floor was
+  the first update (FUN_10091220's spawn). That now keeps the sent height while 0x0f is on and the character is not
+  bound. Used in zones 51, 65, 243, 244 and 256 (7 uses; 0x10 in 9).
+- Traced, unchanged: 0x12 / 0x13 set and clear +0x128 bit 24 on the thread's actor. The only reader is FUN_100883e0
+  (0x10088426 / 0x10088466), which runs only for our own character (+0x1d0 bit 9, FUN_1008e290) and moves its
+  fishing state (+0x128 bits 21..23) to 3. Every use (zone 48, nine, actor 0x206) names an NPC, so nothing happens;
+  0x13 is not used.
+
+## Event op 0x50: stop an actor's scheduler (2026-11-02)
+
+- Op 0x50 (FUN_100b4d10, current build 30261006_0), 13 bytes: actor@1 and actor@5 must both be in the zone with a
+  model (+0x120 bit 9), then actor@1's model vtable +0x29c(4cc@9, actor@5's model). For CXiSkeletonActor (vtable
+  0x10330f40) that is FUN_10084cc0: the type-7 resource of that name, the actor's own files first (FUN_100ce480), then
+  FUN_10056ef0 deletes every CMoSchedularTask ('sM') of it on that pair (actor1, actor2). The task's destructor
+  (FUN_100574a0) only drops its actor references (vtable +0x16c = FUN_100833a0, a count): the motion already playing
+  is not reset.
+- Used 98 times in 21 zones of 0..299, after a 0x2c / 0x5b start: doors' 'open' (wait 90, stop) in the cities, an
+  NPC's 'tlk0' stopped once its line is closed (Port Bastok npc005).
+- Ours: an event start still loading loses its name, a running Play stops where it is (no later motion, not busy for
+  0x53; its current motion runs on), and the effects side stops (Effects::stop_actor_scheduler). Tests:
+  `scheduler_stop_keeps_current`. Not checked live.
+
+## Event op 0xae sub 0: weather change (2026-11-02)
+
+- Op 0xae sub 0 (FUN_100bb620, from the dispatcher table at 0x100bc960; the old FUN_100b9790 name was off) calls
+  FUN_10094040(val@2, 0, val@4): weather val@2 through FUN_101874f0, blended in over val@4 x 60 clock units
+  (0x1009405d..66; the clock runs 3600 units a Vana minute, 1500 a second, so val@4 / 25 s), the same call the
+  s2c 0x057 path makes. It does not touch the server's number (DAT_10485fe0), and the event's end does not undo it;
+  a later 0x057 or op 0x78 (FUN_100940f0, back to DAT_10485fe0) does. 57 uses in 11 zones (zones 9, 10, 17, 19,
+  21, 70, 79, 85, 90, 210, 277).
+- Ours: the weather chain and the weather effects as for 0x057, `w.weather` unchanged. Op 0x78 now also puts the
+  chain back to the server's weather at once when it differs, as FUN_100940f0 does whatever set it.
+
+## Event op 0xb3: the Fishing Ranking (2026-11-02)
+
+- Op 0xb3 (FUN_100bbaf0, current build 30261006_0) is the Fishing Ranking, used in Jugner Forest (104), Pashhow
+  Marshlands (109), Meriphataud Mountains (119), Ru'Lude Gardens (243), Upper Jeuno (244), Selbina (248) and Mhaura
+  (249). Ours sent every sub to the host as an unhandled effect, so the request never went out and sub 1 / 5 left
+  their variables untouched.
+- Subs (every one ends the frame): 0 / 3 / 4 / 6 / 7 start request 1 / 10 / 11 / 12 / 13 with val@2 (FUN_100a3310:
+  only while no transfer runs, the server message's included; a value of 0 or over 7 is 0). 1 waits for a result,
+  then set@2 = the result (i8), @4 the entry count (i16), @6 our contest rank, @8 our main job (only for values 1..4,
+  6, 7), @10 dataset_b, @12 share. 5 does the same and also @14 score and @16 submit time, and also waits while no
+  request was made. 2 opens "menu    ranking" when the request's value is 1..7, 8 closes it, 9 set@2 = it is open.
+- The request (DAT_10480aa8) uses the server message's transfer (c2s 0x04B / s2c 0x04D) with kind 2:
+  - Command 1 asks the table in 0xb4-byte pieces (five 36-byte entries), up to four at once after the first, each
+    piece asked twice at most (3 s apart); 450 ticks without a reply starts over once, then fails. The reply carries
+    the entry count @0x18, our entry @0x1c and the piece's data @0x40 (FUN_100a2dd0). Any piece out of order, past
+    0xe10 bytes or with another timestamp fails the request.
+  - Commands 10..13 send one empty request; the reply's result byte is the answer, with the entry count and our
+    entry when it is -3, -2 or 1 (FUN_100a2d20).
+  - A request that ends with result 0 reads -1 (FUN_100a2810), which the scripts check before their "no ranking"
+    messages.
+- The window (FUN_10209b90, list base FUN_101f67c0): 15 rows 16 apart from (+0, +4), rows with a contest rank
+  only (FUN_100a3500). Columns and cells by type (FUN_1020a2a0):
+  - 1..3 (0, 18, 160, 243, 275, 305): rank, job / level cell (FUN_101ca6c0 over the entry's jobs, levels, race,
+    allegiance and fishing rank), name, "[score]", the submit time as a Vana'diel date (FUN_101c92b0(t, 2)).
+  - 4 (0, 18, 24, 120, 243, 305): rank, fishing rank icon (keytops3 0xc0 + rank + 1), name, "[score]".
+  - 5 (0, 18, 185, 200, 265, 305): rank, name, score, "[%d-%d-%d]" of +0x14 (short), +0x17, +0x16, the submit time
+    moved to Earth time (t - game clock + time()) as a long date (FUN_101c8fd0(t, 7)).
+  - 6 / 7 (0, 24, 160, 250, 265, 305): rank, name, "score P", the Earth date when on or after 2002-04-01.
+  - The rank is right-aligned, dimmer above 10. Up / Down move, Left / Right page by 15. Escape closes it *(inf:
+    the generic window handler)*, which ends the scripts' sub 9 loop. Modern mode lists the same rows as a panel.
+- Ours: client/ranking.rs, Host::ranking / ranking_open. Tests: `table_in_pieces`, `bad_piece_fails`,
+  `answer_result`, `fishing_ranking_b3`. Event sweep of the seven zones: unchanged but Selbina 0x2717, which now
+  takes the script's failure path (message 7669, then `ret`) since a headless run has no server; 0 faults. Not
+  checked live or on screen.
+
+## Fix the build after the event-op merges (2026-11-02)
+
+- The conflict fixes made while merging #43 to #50 kept both sides of each conflict in `event_vm.rs`, `client/event.rs`
+  and `dat/event_ops.rs`, so master stopped compiling: an unclosed `game_time` in the test host, tests spliced into
+  each other, a half-kept 0x78 arm still reading the removed `State.time`, the old 0x5f sub 2 arm left open, and
+  duplicate op table rows for 0x5f, 0x95..0x98, 0xc1 and 0xc2.
+- Rebuilt from the feature branches merged in the same order: every test from each PR is back as its own function,
+  0x78 both restores the server weather held by op 0x77 and resets op 0xae's blend, and each op row keeps its newest
+  description. No behaviour beyond what the PRs added.
