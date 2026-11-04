@@ -446,11 +446,11 @@ pub struct State {
     /// Op 0x92 (+0x12c bit 16): a bound actor's name is not drawn while the event runs (FUN_10096000); unbinding
     /// clears it.
     pub no_name: HashSet<u32>,
+    /// Op 0x86 (+0x12c bit 3): a bound actor's turns play no step motion; unbinding clears it.
+    no_turn_steps: HashSet<u32>,
     /// Op 0x5f sub 1 (+0x124 bit 29): s2c 0x038 schedulers naming this actor are dropped (LAB_1009dee0) until sub 0
     /// or the event's end (FUN_100ae3f0 / FUN_100bd3xx clear it).
     pub no_038: HashSet<u32>,
-    /// Op 0x86 (+0x12c bit 3): a bound actor's turns play no step motion; unbinding clears it.
-    no_turn_steps: HashSet<u32>,
     /// First person at the event's start (DAT_10351bb8 = DAT_10475578, FUN_100ad2c0): op 0x46 sub 1 leaves it, sub 0
     /// and the end put it back (FUN_100acf70).
     first_saved: bool,
@@ -525,8 +525,8 @@ impl State {
             idle: HashMap::new(),
             bound: HashSet::new(),
             no_name: HashSet::new(),
-            no_038: HashSet::new(),
             no_turn_steps: HashSet::new(),
+            no_038: HashSet::new(),
             first_saved: false,
             poses: HashMap::new(),
             event_status: HashMap::new(),
@@ -854,22 +854,6 @@ impl Host for LiveHost<'_> {
                     self.w.effects.stop_actor_scheduler(id, u32::from_le_bytes(n));
                 }
             }
-            // FUN_100b5510 (0x5f sub 2, and op 0xc1 with a frame end): on actor@2 (0xc1: actor@1) when the event binds
-            // it (+0x120 bit 7) and it has a model, its event scheduler stops (FUN_10087d40, vtable +0x29c on
-            // +0x1ec / +0x1f4) and its event motion files go (FUN_100d44b0(2)).
-            Effect::Op { op: op @ (0x5f | 0xc1), sub, args, .. } if op == 0xc1 || sub == Some(2) => {
-                let Some(id) = self.arg_actor(&args, if op == 0xc1 { 0 } else { 1 }) else { return };
-                if !self.st.bound.contains(&id) {
-                    return;
-                }
-                if let Some(a) = self.w.actors.get_mut(&id).filter(|a| a.character.is_some()) {
-            // FUN_100b72c0 subs 0 / 1: the thread's own actor (+0x124 bit 29 = sub).
-            Effect::Op { op: 0x5f, sub: Some(s @ (0 | 1)), actor, .. } => {
-                let id = self.wid(actor);
-                if s == 1 {
-                    self.st.no_038.insert(id);
-                } else {
-                    self.st.no_038.remove(&id);
             // FUN_100b7140: on a skeleton actor with a model (+0x120 bit 9), FUN_100ce070 gives every layer of its two
             // motion lists (+0x674 -> +0x44, lists +0x60 / +0x9c) FUN_1001b520(8.0): each plays on for 8 frames, then
             // goes, and the status motion (or the idle the script sets next) shows.
@@ -879,10 +863,24 @@ impl Host for LiveHost<'_> {
                     p.end_in(8.0);
                 }
             }
-            // FUN_100b3870 (0x5f sub 2): drop the event motion files (FUN_100d2340(2)).
-            Effect::Op { op: 0x5f, sub: Some(2), actor, .. } => {
+            // FUN_100b72c0 subs 0 / 1: the thread's own actor (+0x124 bit 29 = sub).
+            Effect::Op { op: 0x5f, sub: Some(s @ (0 | 1)), actor, .. } => {
                 let id = self.wid(actor);
-                if let Some(a) = self.w.actors.get_mut(&id) {
+                if s == 1 {
+                    self.st.no_038.insert(id);
+                } else {
+                    self.st.no_038.remove(&id);
+                }
+            }
+            // FUN_100b5510 (0x5f sub 2, and op 0xc1 with a frame end): on actor@2 (0xc1: actor@1) when the event binds
+            // it (+0x120 bit 7) and it has a model, its event scheduler stops (FUN_10087d40, vtable +0x29c on
+            // +0x1ec / +0x1f4) and its event motion files go (FUN_100d44b0(2)).
+            Effect::Op { op: op @ (0x5f | 0xc1), sub, args, .. } if op == 0xc1 || sub == Some(2) => {
+                let Some(id) = self.arg_actor(&args, if op == 0xc1 { 0 } else { 1 }) else { return };
+                if !self.st.bound.contains(&id) {
+                    return;
+                }
+                if let Some(a) = self.w.actors.get_mut(&id).filter(|a| a.character.is_some()) {
                     super::actmotion::drop_kind(&mut a.extra, super::actmotion::Kind::Event);
                     a.play = None;
                 }
@@ -1261,16 +1259,6 @@ impl Host for LiveHost<'_> {
                     }
                 }
             }
-            // FUN_10092940: back to the server's weather, effects too.
-            // FUN_100940f0 runs whatever held it: op 0xae sub 0's weather goes too (FUN_101874f0 makes a new weather
-            // object only for a new number).
-            Effect::Op { op: 0x78, .. } => {
-                let wt = self.w.weather;
-                let off = self.w.weather_chain.last().is_some_and(|c| c.0 != wt);
-                if off {
-                    self.w.weather_chain = vec![(wt, Instant::now(), 0.0)];
-                }
-                if off || self.st.time.is_some_and(|t| t.1.is_some()) {
             // FUN_100bab50: day val@1 x 7 at 00:30 (FUN_1018be70 / bfa0 / bf00), and the weekday and moon phase read it
             // (DAT_1065cb20) instead of the server's.
             Effect::Op { op: 0xa9, args, .. } => {
@@ -1279,12 +1267,19 @@ impl Host for LiveHost<'_> {
                 }
             }
             // FUN_100b87e0: the clock runs again; FUN_100b87b0 (0x78) also goes back to the server's weather (FUN_100940f0),
-            // effects too.
+            // effects too. FUN_100940f0 runs whatever held it: op 0xae sub 0's weather goes too (FUN_101874f0 makes a new
+            // weather object only for a new number).
             Effect::Op { op: op @ (0x78 | 0xc9), .. } => {
                 self.st.clock = None;
-                if op == 0x78 && self.st.weather.take().is_some() {
+                if op == 0x78 {
                     let wt = self.w.weather;
-                    self.w.effects.set_weather(crate::dat::weather::weather_tag(wt), 0.0);
+                    let off = self.w.weather_chain.last().is_some_and(|c| c.0 != wt);
+                    if off {
+                        self.w.weather_chain = vec![(wt, Instant::now(), 0.0)];
+                    }
+                    if self.st.weather.take().is_some() || off {
+                        self.w.effects.set_weather(crate::dat::weather::weather_tag(wt), 0.0);
+                    }
                 }
             }
             // FUN_100bb620 sub 0 -> FUN_10094040: weather val@2 blended in over val@4 x 60 clock units (1500 a second,

@@ -2684,11 +2684,11 @@ pub struct Scripted {
     pub inputs: std::collections::VecDeque<Vec<u8>>,
     /// The map is not ready (op 0xd4 sub 0 waits).
     pub map_busy: bool,
+    /// The game clock op 0x83 reads (Earth seconds since the Vana'diel epoch).
+    pub time: u32,
     /// Op 0xb3's request values (None: no result yet) and window.
     pub ranking: Option<[i32; 8]>,
     pub ranking_open: bool,
-    /// The game clock op 0x83 reads (Earth seconds since the Vana'diel epoch).
-    pub time: u32,
     running: Vec<(Busy, u32)>,
     seed: u32,
     frame: u32,
@@ -2743,9 +2743,9 @@ impl Scripted {
             race: 0,
             inputs: Default::default(),
             map_busy: false,
+            time: 0,
             ranking: Some([-1, 0, 0, 0, 0, 0, 0, 0]),
             ranking_open: false,
-            time: 0,
             running: Vec::new(),
             seed: 1,
             frame: 0,
@@ -2754,14 +2754,16 @@ impl Scripted {
 }
 
 impl Host for Scripted {
+    fn game_time(&self) -> u32 {
+        self.time
+    }
+
     fn ranking(&self, _full: bool) -> Option<[i32; 8]> {
         self.ranking
     }
 
     fn ranking_open(&self) -> bool {
         self.ranking_open
-    fn game_time(&self) -> u32 {
-        self.time
     }
 
     fn race(&self, actor: u32) -> u8 {
@@ -3184,29 +3186,62 @@ mod tests {
         assert_eq!(ops[..3], [(0xa8, Some(0), vec![230, 5]), (0xb9, Some(1), vec![230, 3, 5]), (0xa8, Some(2), vec![])]);
     }
 
-    /// Op 0x5f sub 2 names its actor at pc+2 (FUN_100b5510 reads operand 1 after the sub byte), op 0xc1 at pc+1.
+    /// The cutscene clock ops reach the host in order with their operands: 0xa9 day val@1, 0x98 (no wait headless),
+    /// 0xc9, 0x77 hour / weather, 0x78.
     #[test]
-    fn motion_reset_actor_operand() {
-        let npc = 0x010e_6030u32.to_le_bytes();
-        let mut code = vec![0x5f, 0x02];
-        code.extend_from_slice(&npc);
-        code.push(0xc1);
-        code.extend_from_slice(&npc);
-        code.extend_from_slice(&[0x21, 0x00]);
+    fn cutscene_clock_ops() {
+        let code = vec![
+            0xa9, 0x00, 0x80, // day #0 x 7
+            0x98, //
+            0xc9, //
+            0x77, 0x01, 0x80, 0x02, 0x80, // hour #1, weather #2
+            0x78, //
+            0x21, 0x00,
+        ];
+        let actor = 0x010e_601b;
+        let blocks = vec![event::Block { actor, events: vec![(1, 0)], consts: vec![5, 18, 0xff], code }];
+        let mut host = Scripted::new(&[]);
+        let start = Start { zone: 230, event: 1, target: actor, ..Default::default() };
+        let mut rt = Runtime::start(blocks, None, start, Memory::default(), &mut host);
+        run_scripted(&mut rt, &mut host, 60).expect("finished");
+        let ops: Vec<(u8, Vec<i32>)> = host
+            .log
+            .iter()
+            .filter_map(|e| match e {
+                Effect::Op { op: op @ (0xa9 | 0x98 | 0xc9 | 0x77 | 0x78), args, .. } => {
+                    Some((*op, args.iter().map(|a| if let Arg::Int(i) = a { *i } else { -1 }).collect()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ops[..5], [(0xa9, vec![5]), (0x98, vec![]), (0xc9, vec![]), (0x77, vec![18, 0xff]), (0x78, vec![])]);
+    }
+
+    /// The actor flag ops reach the host with their operands: 0x95 val@1, 0xa4 u8@1, 0x86 u8@1 and actor@2, 0x84 /
+    /// 0x96 bare (client/event.rs keeps the flags).
+    #[test]
+    fn actor_flag_ops() {
+        let code = vec![
+            0x95, 0x10, 0x00, // MonStat override = L16
+            0xa4, 0x01, // no near fade
+            0x86, 0x01, 0xf0, 0xff, 0xff, 0x7f, // no turn steps for the player
+            0x84, 0x96, 0x21, 0x00,
+        ];
         let actor = 0x010e_601b;
         let blocks = vec![event::Block { actor, events: vec![(1, 0)], consts: vec![], code }];
-    /// Op 0xae sub 0 (FUN_100bb620 -> FUN_10094040): six bytes, weather val@2 and blend time val@4 to the host.
-    #[test]
-    fn event_weather_change() {
-        let code = vec![0xae, 0x00, 0x00, 0x80, 0x01, 0x80, 0x21, 0x00];
-        let actor = 0x010e_601b;
-        let blocks = vec![event::Block { actor, events: vec![(1, 0)], consts: vec![6, 120], code }];
-    /// Op 0x5f subs 0 / 1 (FUN_100b72c0): two bytes, to the host with the thread's own actor (its +0x124 bit 29).
-    #[test]
-    fn scheduler_guard_subs() {
-        let code = vec![0x5f, 0x01, 0x5f, 0x00, 0x21, 0x00];
-        let actor = 0x010e_601b;
-        let blocks = vec![event::Block { actor, events: vec![(1, 0)], consts: vec![], code }];
+        let mut host = Scripted::new(&[]);
+        let start = Start { zone: 230, event: 1, target: actor, ..Default::default() };
+        let mut rt = Runtime::start(blocks, None, start, Memory::default(), &mut host);
+        run_scripted(&mut rt, &mut host, 60).expect("finished");
+        let ops: Vec<(u8, Vec<Arg>)> =
+            host.log.iter().filter_map(|e| if let Effect::Op { op, args, .. } = e { Some((*op, args.clone())) } else { None }).collect();
+        assert_eq!(
+            ops[..5],
+            [(0x95, vec![Arg::Int(0)]), (0xa4, vec![Arg::Int(1)]), (0x86, vec![Arg::Int(1), Arg::Actor(PLAYER)]), (0x84, vec![]), (0x96, vec![])],
+            "{ops:?}"
+        );
+    }
+
     /// Op 0xc2 (Mog House visits): sub 1 stores the host's mask, sub 2 the id at slot val@2, sub 0 only advances.
     #[test]
     fn mog_house_party() {
@@ -3234,32 +3269,55 @@ mod tests {
             rt.tick(&mut host, 1.0);
         }
         assert_eq!((rt.mem.m[1], rt.mem.m[2]), (0b100, 0x300));
-    /// The actor flag ops reach the host with their operands: 0x95 val@1, 0xa4 u8@1, 0x86 u8@1 and actor@2, 0x84 /
-    /// 0x96 bare (client/event.rs keeps the flags).
+    }
+
+    /// Op 0x5f subs 0 / 1 (FUN_100b72c0): two bytes, to the host with the thread's own actor (its +0x124 bit 29).
     #[test]
-    fn actor_flag_ops() {
-        let code = vec![
-            0x95, 0x10, 0x00, // MonStat override = L16
-            0xa4, 0x01, // no near fade
-            0x86, 0x01, 0xf0, 0xff, 0xff, 0x7f, // no turn steps for the player
-            0x84, 0x96, 0x21, 0x00,
-        ];
+    fn scheduler_guard_subs() {
+        let code = vec![0x5f, 0x01, 0x5f, 0x00, 0x21, 0x00];
         let actor = 0x010e_601b;
         let blocks = vec![event::Block { actor, events: vec![(1, 0)], consts: vec![], code }];
-    /// The cutscene clock ops reach the host in order with their operands: 0xa9 day val@1, 0x98 (no wait headless),
-    /// 0xc9, 0x77 hour / weather, 0x78.
+        let mut host = Scripted::new(&[]);
+        let start = Start { zone: 230, event: 1, target: actor, ..Default::default() };
+        let mut rt = Runtime::start(blocks, None, start, Memory::default(), &mut host);
+        run_scripted(&mut rt, &mut host, 60).expect("finished");
+        let subs: Vec<(Option<u8>, u32)> =
+            host.log.iter().filter_map(|e| if let Effect::Op { op: 0x5f, sub, actor, .. } = e { Some((*sub, *actor)) } else { None }).collect();
+        assert_eq!(subs[..2], [(Some(1), actor), (Some(0), actor)]);
+    }
+
+    /// Op 0xae sub 0 (FUN_100bb620 -> FUN_10094040): six bytes, weather val@2 and blend time val@4 to the host.
     #[test]
-    fn cutscene_clock_ops() {
-        let code = vec![
-            0xa9, 0x00, 0x80, // day #0 x 7
-            0x98, //
-            0xc9, //
-            0x77, 0x01, 0x80, 0x02, 0x80, // hour #1, weather #2
-            0x78, //
-            0x21, 0x00,
-        ];
+    fn event_weather_change() {
+        let code = vec![0xae, 0x00, 0x00, 0x80, 0x01, 0x80, 0x21, 0x00];
         let actor = 0x010e_601b;
-        let blocks = vec![event::Block { actor, events: vec![(1, 0)], consts: vec![5, 18, 0xff], code }];
+        let blocks = vec![event::Block { actor, events: vec![(1, 0)], consts: vec![6, 120], code }];
+        let mut host = Scripted::new(&[]);
+        let start = Start { zone: 230, event: 1, target: actor, ..Default::default() };
+        let mut rt = Runtime::start(blocks, None, start, Memory::default(), &mut host);
+        run_scripted(&mut rt, &mut host, 60).expect("finished");
+        let ops: Vec<Vec<i32>> = host
+            .log
+            .iter()
+            .filter_map(|e| match e {
+                Effect::Op { op: 0xae, sub: Some(0), args, .. } => Some(args.iter().map(|a| if let Arg::Int(i) = a { *i } else { -1 }).collect()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ops[0], vec![6, 120]);
+    }
+
+    /// Op 0x5f sub 2 names its actor at pc+2 (FUN_100b5510 reads operand 1 after the sub byte), op 0xc1 at pc+1.
+    #[test]
+    fn motion_reset_actor_operand() {
+        let npc = 0x010e_6030u32.to_le_bytes();
+        let mut code = vec![0x5f, 0x02];
+        code.extend_from_slice(&npc);
+        code.push(0xc1);
+        code.extend_from_slice(&npc);
+        code.extend_from_slice(&[0x21, 0x00]);
+        let actor = 0x010e_601b;
+        let blocks = vec![event::Block { actor, events: vec![(1, 0)], consts: vec![], code }];
         let mut host = Scripted::new(&[]);
         let start = Start { zone: 230, event: 1, target: actor, ..Default::default() };
         let mut rt = Runtime::start(blocks, None, start, Memory::default(), &mut host);
@@ -3273,36 +3331,6 @@ mod tests {
             })
             .collect();
         assert_eq!(found[..2], [(0x5f, Some(0x010e_6030)), (0xc1, Some(0x010e_6030))]);
-        let ops: Vec<Vec<i32>> = host
-            .log
-            .iter()
-            .filter_map(|e| match e {
-                Effect::Op { op: 0xae, sub: Some(0), args, .. } => Some(args.iter().map(|a| if let Arg::Int(i) = a { *i } else { -1 }).collect()),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(ops[0], vec![6, 120]);
-        let subs: Vec<(Option<u8>, u32)> =
-            host.log.iter().filter_map(|e| if let Effect::Op { op: 0x5f, sub, actor, .. } = e { Some((*sub, *actor)) } else { None }).collect();
-        assert_eq!(subs[..2], [(Some(1), actor), (Some(0), actor)]);
-        let ops: Vec<(u8, Vec<Arg>)> =
-            host.log.iter().filter_map(|e| if let Effect::Op { op, args, .. } = e { Some((*op, args.clone())) } else { None }).collect();
-        assert_eq!(
-            ops[..5],
-            [(0x95, vec![Arg::Int(0)]), (0xa4, vec![Arg::Int(1)]), (0x86, vec![Arg::Int(1), Arg::Actor(PLAYER)]), (0x84, vec![]), (0x96, vec![])],
-            "{ops:?}"
-        );
-        let ops: Vec<(u8, Vec<i32>)> = host
-            .log
-            .iter()
-            .filter_map(|e| match e {
-                Effect::Op { op: op @ (0xa9 | 0x98 | 0xc9 | 0x77 | 0x78), args, .. } => {
-                    Some((*op, args.iter().map(|a| if let Arg::Int(i) = a { *i } else { -1 }).collect()))
-                }
-                _ => None,
-            })
-            .collect();
-        assert_eq!(ops[..5], [(0xa9, vec![5]), (0x98, vec![]), (0xc9, vec![]), (0x77, vec![18, 0xff]), (0x78, vec![])]);
     }
 
     #[test]
