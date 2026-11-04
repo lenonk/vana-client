@@ -132,22 +132,25 @@ fn back(p: &Painter, m: &Modern, r: Rect, s: State, style: Style) {
     }
 }
 
-/// The mark of a row that opens a submenu, at its right.
-fn more(p: &Painter, m: &Modern, r: Rect, s: State, style: Style) {
+/// The mark of a row that opens a submenu, at its right: an arrow toward the side the submenu opens on.
+fn more(p: &Painter, m: &Modern, r: Rect, s: State, style: Style, left: bool) {
     let c = if s.on && style != Style::Bevel { m.theme.color("gold") } else if s.on { Color32::WHITE } else { m.theme.color("muted") };
     let at = pos2(r.max.x - 16.0, r.center().y);
+    // The tip's and the tail's x.
+    let (tip, tail) = if left { (at.x - 3.0, at.x + 2.0) } else { (at.x + 2.0, at.x - 3.0) };
     match style {
         Style::Framed => {
-            if let Some(sp) = m.art.sprite("controls/arrow_right") {
+            if let Some(sp) = m.art.sprite(if left { "controls/arrow_left" } else { "controls/arrow_right" }) {
                 p.add(paint::image(&sp, pos2(r.max.x - 26.0, r.center().y - 8.0), 16.0, Color32::WHITE));
             }
         }
         Style::Bevel => {
-            p.add(Shape::convex_polygon(vec![pos2(at.x - 3.0, at.y - 5.0), pos2(at.x + 3.0, at.y), pos2(at.x - 3.0, at.y + 5.0)], c, Stroke::NONE));
+            let (tip, tail) = if left { (at.x - 3.0, at.x + 3.0) } else { (at.x + 3.0, at.x - 3.0) };
+            p.add(Shape::convex_polygon(vec![pos2(tail, at.y - 5.0), pos2(tip, at.y), pos2(tail, at.y + 5.0)], c, Stroke::NONE));
         }
         _ => {
-            p.line_segment([pos2(at.x - 3.0, at.y - 5.0), pos2(at.x + 2.0, at.y)], Stroke::new(1.6, c));
-            p.line_segment([pos2(at.x + 2.0, at.y), pos2(at.x - 3.0, at.y + 5.0)], Stroke::new(1.6, c));
+            p.line_segment([pos2(tail, at.y - 5.0), pos2(tip, at.y)], Stroke::new(1.6, c));
+            p.line_segment([pos2(tip, at.y), pos2(tail, at.y + 5.0)], Stroke::new(1.6, c));
         }
     }
 }
@@ -186,13 +189,14 @@ pub fn label_colour(m: &Modern, on: bool, off: bool) -> Color32 {
 
 /// The submenu mark at a row's right in the current style; the rect it takes (a click there opens the submenu).
 pub fn more_mark(p: &Painter, m: &Modern, r: Rect, on: bool) -> Rect {
-    more(p, m, r, State { on, ..Default::default() }, m.row_style.get());
+    more(p, m, r, State { on, ..Default::default() }, m.row_style.get(), false);
     Rect::from_center_size(pos2(r.max.x - 18.0, r.center().y), vec2(22.0, 22.0))
 }
 
-/// A menu row in the current style (Modern::row_style): its icon, its label, the submenu mark when `sub`; hovered by
-/// the pointer or `hover`. Its response.
-pub fn menu_row(ui: &mut Ui, m: &Modern, icon: &str, label: &str, on: bool, off: bool, sub: bool, hover: bool) -> egui::Response {
+/// A menu row in the current style (Modern::row_style): its icon, its label, the submenu mark when `sub` (pointing left
+/// when `left`, the submenu opening at that side); hovered by the pointer or `hover`. Its response.
+#[allow(clippy::too_many_arguments)]
+pub fn menu_row(ui: &mut Ui, m: &Modern, icon: &str, label: &str, on: bool, off: bool, sub: bool, left: bool, hover: bool) -> egui::Response {
     let style = m.row_style.get();
     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::click());
     let s = State { on, off, hover: hover || resp.hovered() };
@@ -203,7 +207,7 @@ pub fn menu_row(ui: &mut Ui, m: &Modern, icon: &str, label: &str, on: bool, off:
     }
     p.text(pos2(r.min.x + 50.0, r.center().y), Align2::LEFT_CENTER, label, FontId::new(m.theme.ui, FontFamily::Name(super::STRONG.into())), ink(m, s, style));
     if sub {
-        more(p, m, r, s, style);
+        more(p, m, r, s, style, left);
     }
     ui.add_space(2.0);
     resp

@@ -64,14 +64,14 @@ fn menu_sample(p: &mut Panels) {
     p.panel_at("command", Some(super::Title { icon: None, text: "Menu", note: None }), 250.0, at, |ui| {
         let r = ui.min_rect();
         for (label, icon, sub) in &top {
-            super::rows::menu_row(ui, m, icon, label, *label == "Journal", false, *sub, *label == "Magic");
+            super::rows::menu_row(ui, m, icon, label, *label == "Journal", false, *sub, true, *label == "Magic");
         }
         rect = Some(r);
     });
     let Some(r) = rect else { return };
     p.panel_at("command sub", Some(super::Title { icon: Some("icons/quest_log"), text: "Journal", note: None }), 250.0, pos2(r.min.x - 274.0, r.min.y - 12.0), |ui| {
         for (label, icon, sub) in &journal {
-            super::rows::menu_row(ui, m, icon, label, *label == "Quests", *label == "Key Items", *sub, false);
+            super::rows::menu_row(ui, m, icon, label, *label == "Quests", *label == "Key Items", *sub, false, false);
         }
     });
 }

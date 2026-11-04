@@ -92,6 +92,9 @@ pub(super) fn sample() -> [Vec<(&'static str, &'static str, bool)>; 2] {
 pub struct CmdMenu {
     pub top: usize,
     pub sub: Option<usize>,
+    /// The submenu opens at the menu's left: no room at its right (the menu at the screen's right edge, its default).
+    /// The category rows' arrows point that way.
+    pub left: bool,
 }
 
 /// A row's label where the retail menu swaps it (FUN_10140070): Customization in Monstrosity.
@@ -191,17 +194,21 @@ fn pick(w: &mut World, e: &Entry) {
 }
 
 /// One list of rows; the row clicked.
-fn rows(ui: &mut egui::Ui, m: &super::Modern, w: &World, list: &[Entry], cursor: Option<usize>, open: Option<usize>) -> Option<usize> {
+fn rows(ui: &mut egui::Ui, m: &super::Modern, w: &World, list: &[Entry], cursor: Option<usize>, open: Option<usize>, left: bool) -> Option<usize> {
     let mut clicked = None;
     for (k, e) in list.iter().enumerate() {
         let on = cursor == Some(k) || open == Some(k);
-        let resp = super::rows::menu_row(ui, m, e.icon, label(w, e), on, disabled(w, e), matches!(e.kind, Kind::Sub(_)), false);
+        let resp = super::rows::menu_row(ui, m, e.icon, label(w, e), on, disabled(w, e), matches!(e.kind, Kind::Sub(_)), left, false);
         if resp.clicked() {
             clicked = Some(k);
         }
     }
     clicked
 }
+
+/// The submenu's width and its gap from the menu.
+const SUB_WIDTH: f32 = 250.0;
+const SUB_GAP: f32 = 12.0;
 
 pub fn draw(p: &mut Panels, w: &mut World) {
     if w.menu.is_none() || w.main_off {
@@ -213,7 +220,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let c = w.cmd;
     let mut top_click = None;
     let rect = p.panel("command", Some(Title { icon: None, text: "Menu", note: None }), 250.0, |ui| {
-        top_click = rows(ui, m, w, list_top, c.sub.is_none().then_some(c.top), c.sub.map(|_| c.top));
+        top_click = rows(ui, m, w, list_top, c.sub.is_none().then_some(c.top), c.sub.map(|_| c.top), c.left);
     });
     let mut c = w.cmd;
     // A click takes a row (a category opens beside the menu); hovering only lights it.
@@ -227,14 +234,20 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             Kind::Row(..) | Kind::Roe => pick(w, &list_top[k]),
         }
     }
+    // The submenu opens at the right of the menu, as the rows' arrows point, level with its category; at the left when
+    // it would run past the screen's right edge (the arrows turn to match from the next frame).
+    let Some(r) = rect else {
+        w.cmd = c;
+        return;
+    };
+    c.left = r.max.x + SUB_GAP + SUB_WIDTH > p.ctx.content_rect().max.x;
     w.cmd = c;
     let Kind::Sub(list) = list_top[c.top].kind else { return };
     let Some(sub) = c.sub else { return };
-    let Some(r) = rect else { return };
-    // The submenu opens at the left of the menu, level with its category.
+    let x = if c.left { r.min.x - SUB_GAP - SUB_WIDTH } else { r.max.x + SUB_GAP };
     let mut sub_click = None;
-    p.panel_at("command sub", Some(Title { icon: Some(list_top[c.top].icon), text: list_top[c.top].label, note: None }), 250.0, egui::pos2(r.min.x - 262.0, r.min.y), |ui| {
-        sub_click = rows(ui, m, w, list, Some(sub), None);
+    p.panel_at("command sub", Some(Title { icon: Some(list_top[c.top].icon), text: list_top[c.top].label, note: None }), SUB_WIDTH, egui::pos2(x, r.min.y), |ui| {
+        sub_click = rows(ui, m, w, list, Some(sub), None, false);
     });
     if let Some(k) = sub_click
         && let Some(e) = list.get(k)
