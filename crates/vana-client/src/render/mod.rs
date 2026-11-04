@@ -349,6 +349,8 @@ pub struct ZoneRenderer {
     pub lights: wgpu::Buffer,
     pub light_keys: Vec<u32>,
     scenery: [[wgpu::RenderPipeline; 3]; 4],
+    /// Modes 2 / 3 (the blended classes) for furniture: depth writes on, no bias (batch 7 item 23).
+    scenery_furn: [[wgpu::RenderPipeline; 3]; 2],
     scenery_bump: [wgpu::RenderPipeline; 3],
     /// The scenery as lines by cull, where the device draws lines (a mod's wireframe switch).
     scenery_wire: Option<[wgpu::RenderPipeline; 3]>,
@@ -863,6 +865,7 @@ pub struct ZonePipes {
     pose_layout: wgpu::BindGroupLayout,
     /// Scenery by Draw::mode (opaque, cut out, blend, blend + cut out) and cull (none, back, front).
     scenery: [[wgpu::RenderPipeline; 3]; 4],
+    scenery_furn: [[wgpu::RenderPipeline; 3]; 2],
     scenery_bump: [wgpu::RenderPipeline; 3],
     scenery_wire: Option<[wgpu::RenderPipeline; 3]>,
     actor_pipeline: wgpu::RenderPipeline,
@@ -1037,17 +1040,19 @@ impl ZonePipes {
         // Scenery: front faces clockwise as D3D's; normal placements cull CCW (back), mirrored ones CW (front).
         // Bit-31 models: SRCALPHA / INVSRCALPHA, depth tested (LESSEQUAL) but not written, ZBIAS 8 *(inf: as a constant
         // depth bias of -8)*.
-        let make_scenery = |fragment: &str, blend: bool, cull: Option<wgpu::Face>, wire: bool| device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        // `furn`: furniture's own pass (FUN_101844c0) sets neither ZWRITEENABLE nor ZBIAS, so its blended meshes keep
+        // the actor pass's depth writes and bias 0 (batch 7 item 23).
+        let make_scenery_z = |fragment: &str, blend: bool, cull: Option<wgpu::Face>, wire: bool, furn: bool| device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(fragment),
             layout: Some(&layout),
             vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_main"), compilation_options: Default::default(), buffers: &vertex_layouts },
             primitive: wgpu::PrimitiveState { front_face: wgpu::FrontFace::Cw, cull_mode: cull, polygon_mode: if wire { wgpu::PolygonMode::Line } else { wgpu::PolygonMode::Fill }, ..Default::default() },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: Some(!blend),
-                depth_compare: Some(if blend { wgpu::CompareFunction::LessEqual } else { wgpu::CompareFunction::Less }),
+                depth_write_enabled: Some(!blend || furn),
+                depth_compare: Some(if blend && !furn { wgpu::CompareFunction::LessEqual } else { wgpu::CompareFunction::Less }),
                 stencil: Default::default(),
-                bias: if blend { wgpu::DepthBiasState { constant: -8, slope_scale: 0.0, clamp: 0.0 } } else { Default::default() },
+                bias: if blend && !furn { wgpu::DepthBiasState { constant: -8, slope_scale: 0.0, clamp: 0.0 } } else { Default::default() },
             }),
             multisample: Default::default(),
             fragment: Some(wgpu::FragmentState {
@@ -1060,7 +1065,10 @@ impl ZonePipes {
             cache: None,
         });
         let culls = [None, Some(wgpu::Face::Back), Some(wgpu::Face::Front)];
+        let make_scenery = |f: &str, b: bool, c: Option<wgpu::Face>, w: bool| make_scenery_z(f, b, c, w, false);
         let scenery = [("fs_opaque", false), ("fs_alpha_test", false), ("fs_blend", true), ("fs_blend_test", true)].map(|(f, b)| culls.map(|c| make_scenery(f, b, c, false)));
+        // The same two blended classes for furniture, with depth writes on.
+        let scenery_furn = [("fs_blend", true), ("fs_blend_test", true)].map(|(f, b)| culls.map(|c| make_scenery_z(f, b, c, false, true)));
         let scenery_wire = device.features().contains(wgpu::Features::POLYGON_MODE_LINE).then(|| culls.map(|c| make_scenery("fs_opaque", false, c, true)));
         // Config 0017's type-3 meshes (FUN_10175ac0 case 3): the colour texture, then the normal map at group 2.
         let bump_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("zone bumped"), bind_group_layouts: &[Some(&globals_layout), Some(&texture_layout), Some(&texture_layout)], immediate_size: 0 });
@@ -1331,7 +1339,7 @@ impl ZonePipes {
         let cull_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("cull"), bind_group_layouts: &[Some(&globals_layout), None, None, Some(&cull_layout)], immediate_size: 0 });
         let make_cull = |entry: &str| device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some(entry), layout: Some(&cull_pl), module: &shader, entry_point: Some(entry), compilation_options: Default::default(), cache: None });
         let cull = [make_cull("cs_cull_vis"), make_cull("cs_cull_compact")];
-        Self { globals_layout, texture_layout, pose_layout, scenery, scenery_bump, scenery_wire, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_wrap_layout, shine_pipeline, refract_pipeline, skin_solid_pipeline, faded_pipeline, color_format, line_pipeline, world_pipelines, sil_layout, sil_pipeline, cull_layout, cull }
+        Self { globals_layout, texture_layout, pose_layout, scenery, scenery_furn, scenery_bump, scenery_wire, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_wrap_layout, shine_pipeline, refract_pipeline, skin_solid_pipeline, faded_pipeline, color_format, line_pipeline, world_pipelines, sil_layout, sil_pipeline, cull_layout, cull }
     }
 }
 
@@ -1777,6 +1785,7 @@ impl ZoneRenderer {
             bump_mode: true,
             scenery_bump: p.scenery_bump,
             scenery: p.scenery,
+            scenery_furn: p.scenery_furn,
             scenery_wire: p.scenery_wire,
             wireframe: false,
             actor_pipeline: p.actor_pipeline,
@@ -2798,7 +2807,9 @@ impl ZoneRenderer {
                 pass.set_vertex_buffer(0, f.vertices.slice(..));
                 pass.set_index_buffer(f.indices.slice(..), wgpu::IndexFormat::Uint16);
                 for d in f.draws.iter().filter(|d| d.mode == mode) {
-                    self.draw_scenery(&mut pass, d, mode, &mut bound, &mut pipe, None);
+                    // FUN_101844c0 leaves depth writes on for the blended meshes (batch 7 item 23), so modes 2 / 3
+                    // take the furniture pipelines; `pipe` is invalidated either way by the different set.
+                    self.draw_scenery_pipes(&mut pass, d, mode, &mut bound, &mut pipe, None, mode >= 2);
                 }
             }
             if self.furniture.iter().any(|f| f.shown) {
@@ -2817,9 +2828,12 @@ impl ZoneRenderer {
                             continue;
                         }
                         pass.set_bind_group(1, &m.textures[d.texture.min(m.textures.len() - 1)], &[]);
-                        if pipe != c {
-                            pass.set_pipeline(self.wire(c).unwrap_or(&self.scenery[mode as usize][c]));
-                            pipe = c;
+                        // A ship's model is drawn through FUN_101844c0 too, so its blended meshes keep depth writes.
+                        let want = if mode >= 2 { 16 + c } else { c };
+                        if pipe != want {
+                            let normal = if mode >= 2 { &self.scenery_furn[mode as usize - 2][c] } else { &self.scenery[mode as usize][c] };
+                            pass.set_pipeline(self.wire(c).unwrap_or(normal));
+                            pipe = want;
                         }
                         pass.draw_indexed(d.first_index..d.first_index + d.index_count, d.base_vertex, range);
                     }
@@ -3076,6 +3090,13 @@ impl ZoneRenderer {
     /// One model: both-sided models in one draw; otherwise the normal instances culled back, the mirrored front.
     /// `args`: the culled draws' indirect arguments (render/cull.rs), each run's at its slot.
     fn draw_scenery(&self, pass: &mut wgpu::RenderPass, d: &Draw, mode: u8, bound: &mut usize, pipe: &mut usize, culled: Option<(&cull::Cull, &wgpu::Buffer, &[bool])>) {
+        self.draw_scenery_pipes(pass, d, mode, bound, pipe, culled, false)
+    }
+
+    /// `furn`: the furniture pipelines for a blended mode (depth writes on, no bias).
+    #[allow(clippy::too_many_arguments)]
+    fn draw_scenery_pipes(&self, pass: &mut wgpu::RenderPass, d: &Draw, mode: u8, bound: &mut usize, pipe: &mut usize, culled: Option<(&cull::Cull, &wgpu::Buffer, &[bool])>, furn: bool) {
+        let furn = furn && mode >= 2;
         let runs = d.runs();
         let live = |k: usize| !runs[k].1.is_empty() && culled.is_none_or(|(c, _, shown)| shown[c.run_of(d.args[k])]);
         if !live(0) && !live(1) {
@@ -3093,9 +3114,10 @@ impl ZoneRenderer {
             if !live(k) {
                 continue;
             }
-            let want = if bump.is_some() { 8 + c } else { c };
+            let want = if bump.is_some() { 8 + c } else if furn { 16 + c } else { c };
             if *pipe != want {
-                pass.set_pipeline(self.wire(c).unwrap_or(if bump.is_some() { &self.scenery_bump[c] } else { &self.scenery[mode as usize][c] }));
+                let normal = if furn { &self.scenery_furn[mode as usize - 2][c] } else { &self.scenery[mode as usize][c] };
+                pass.set_pipeline(self.wire(c).unwrap_or(if bump.is_some() { &self.scenery_bump[c] } else { normal }));
                 *pipe = want;
             }
             match culled {
