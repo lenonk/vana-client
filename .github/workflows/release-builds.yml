@@ -1,0 +1,71 @@
+# The release binaries this machine can't build: Linux on ARM (aarch64) and macOS (Apple Silicon and Intel), with the
+# dist profile, uploaded as artifacts. release/fetch-ci-builds.sh starts this on master, waits and downloads them into
+# target/assets, where release/publish.sh signs them with the Linux and Windows builds (the signing key never leaves
+# the release machine). Runs on its own on pull requests that change it or the build scripts.
+name: Release builds
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/release-builds.yml
+      - release/build-linux.sh
+
+concurrency:
+  group: release-builds-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux-aarch64:
+    name: Linux aarch64
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # The Steam Runtime's arm64 SDK, as the x86_64 build uses its own (glibc 2.31: every current distro).
+      - name: Build
+        env:
+          VANA_CPUSET: ""
+        run: release/build-linux.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vana-client-linux-aarch64
+          path: target/assets/vana-client-linux-aarch64
+          if-no-files-found: error
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [aarch64, x86_64]
+    runs-on: macos-14
+    env:
+      # Big Sur, the first macOS on Apple Silicon.
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.arch }}-apple-darwin
+      - name: Build
+        env:
+          RUSTFLAGS: ${{ matrix.arch == 'x86_64' && '-C target-cpu=x86-64-v2' || '' }}
+        run: cargo build --profile dist --locked --target ${{ matrix.arch }}-apple-darwin
+      # Apple Silicon runs only signed code: the linker signs ad hoc; check that it did and that the binary starts.
+      - name: Check
+        run: |
+          bin=target/${{ matrix.arch }}-apple-darwin/dist/vana-client
+          file "$bin"
+          codesign --verify --verbose "$bin" || [ "${{ matrix.arch }}" = x86_64 ]
+          arch -${{ matrix.arch == 'aarch64' && 'arm64' || 'x86_64' }} "$bin" --version
+          mkdir -p target/assets
+          cp "$bin" target/assets/vana-client-macos-${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vana-client-macos-${{ matrix.arch }}
+          path: target/assets/vana-client-macos-${{ matrix.arch }}
+          if-no-files-found: error
