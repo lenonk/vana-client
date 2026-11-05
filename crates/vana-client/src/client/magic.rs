@@ -1247,8 +1247,34 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
 }
 
 /// The help and title bars: the list's title (group 0xd 76 "Magic List" / 68 "Abilities") and the cursor row's
-/// description; while the prompt is up "Select target of spell." / "...ability." and the name in slot 2.
+/// description; while the prompt is up "Select target of spell." / "...ability." and the name in slot 2. A search
+/// (modern UI) describes its highlighted hit.
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
+    cursor_bars(gu, w, bars);
+    if let Some((kind, id)) = searched(w).filter(|_| w.prompt.is_none()) {
+        bars.help[1] = description(w, kind, id);
+    }
+}
+
+/// The search's highlighted spell, ability, mount or emote.
+fn searched(w: &World) -> Option<(Kind, u16)> {
+    let s = w.list_search.as_ref()?;
+    let h = super::listsearch::hits(w, &s.text).into_iter().nth(s.sel)?;
+    (h.journal.is_none() && h.slot.is_none()).then_some((h.kind, h.id))
+}
+
+fn description(w: &World, kind: Kind, id: u16) -> String {
+    let Some(n) = w.names.as_ref() else { return String::new() };
+    match kind {
+        Kind::Magic => n.spell_description(id as u32),
+        Kind::Ability => n.ability_description(id as u32),
+        Kind::Mount => n.mount_description(id as u32),
+        Kind::Emote => emote_entry(w, id).and_then(|e| n.emote_text(e.help as u32)),
+    }
+    .unwrap_or_default()
+}
+
+fn cursor_bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     if let Some(p) = w.prompt.as_ref().filter(|p| p.help != 0) {
         bars.help[2] = gu.menu_msg(p.help as usize, "");
         bars.title[2] = if matches!(p.then, SubThen::Item { .. }) { gu.title_msg(2).unwrap_or_default() } else { p.title.clone() };
@@ -1293,13 +1319,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
         bars.help[1] = gu.menu_msg(base + (win.manual as usize - 1), "");
         return;
     }
-    bars.help[1] = match (win.kind, win.at(), w.names.as_ref()) {
-        (Kind::Magic, Some(s), Some(n)) => n.spell_description(s as u32).unwrap_or_default(),
-        (Kind::Ability, Some(i), Some(n)) => n.ability_description(i as u32).unwrap_or_default(),
-        (Kind::Mount, Some(i), Some(n)) => n.mount_description(i as u32).unwrap_or_default(),
-        (Kind::Emote, Some(i), Some(n)) => emote_entry(w, i).and_then(|e| n.emote_text(e.help as u32)).unwrap_or_default(),
-        _ => String::new(),
-    };
+    bars.help[1] = win.at().map_or_else(String::new, |id| description(w, win.kind, id));
 }
 
 #[cfg(test)]

@@ -459,9 +459,7 @@ fn key_items(w: &World) -> bool {
 
 /// The search's keys and typed text this frame. True when it took them (the game then sees none).
 pub fn events(w: &mut World, gu: &GameUi, events: &[egui::Event]) -> bool {
-    let run = can_run(w);
-    trace(w, events, run);
-    if !run {
+    if !can_run(w) {
         w.list_search = None;
         return false;
     }
@@ -470,6 +468,8 @@ pub fn events(w: &mut World, gu: &GameUi, events: &[egui::Event]) -> bool {
         return false;
     }
     for e in events {
+        // A typed letter's key press comes before its text: only a search its keys ended stops the walk.
+        let was = w.list_search.is_some();
         match e {
             egui::Event::Text(t) => {
                 let s = w.list_search.get_or_insert_with(Default::default);
@@ -479,28 +479,11 @@ pub fn events(w: &mut World, gu: &GameUi, events: &[egui::Event]) -> bool {
             egui::Event::Key { key, pressed: true, .. } => key_in(w, gu, *key),
             _ => {}
         }
-        if w.list_search.is_none() {
+        if was && w.list_search.is_none() {
             break;
         }
     }
     true
-}
-
-/// What reaches a magic or ability window with no search running (a report of 2026-11-05: Alt+M, then typing did
-/// nothing): the text and letter keys, and why no search runs.
-fn trace(w: &World, events: &[egui::Event], run: bool) {
-    if !w.modern || w.list_search.is_some() || !(w.magic.is_some() || w.ability.is_some() || w.cats.is_some()) {
-        return;
-    }
-    let list = w.ability.as_ref().or(w.magic.as_ref()).map(|l| (l.kind, l.hidden, l.sort_focus, l.ask.is_some(), l.manual));
-    for e in events {
-        match e {
-            egui::Event::Text(t) => log::info!("list search: text {t:?} (runs {run}; prompt {}, confirm {}, typing {}, list {list:?})", w.prompt.is_some(), w.confirm.is_some(), w.typing),
-            egui::Event::Ime(i) => log::info!("list search: IME {i:?} (runs {run})"),
-            egui::Event::Key { key, pressed: true, modifiers, .. } if key.name().len() == 1 => log::info!("list search: key {key:?} {modifiers:?} (runs {run})"),
-            _ => {}
-        }
-    }
 }
 
 /// Up / Down move among the hits, Enter picks, Backspace deletes a letter, Escape ends the search.

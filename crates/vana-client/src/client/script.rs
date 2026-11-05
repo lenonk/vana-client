@@ -178,9 +178,20 @@ impl Script {
                 }
                 hit || out
             }
-            // One event a character, as typing sends them (a whole string at once is a paste).
+            // One event a character, as typing sends them (a whole string at once is a paste); letters and digits come
+            // after their key's press, as winit sends them.
             Step::Text(t) => {
-                events.extend(t.chars().map(|c| egui::Event::Text(c.to_string())));
+                for c in t.chars() {
+                    let key = c.is_ascii_alphanumeric().then(|| egui::Key::from_name(&c.to_ascii_uppercase().to_string())).flatten();
+                    let modifiers = if c.is_ascii_uppercase() { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE };
+                    if let Some(key) = key {
+                        events.push(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers });
+                    }
+                    events.push(egui::Event::Text(c.to_string()));
+                    if let Some(key) = key {
+                        events.push(egui::Event::Key { key, physical_key: None, pressed: false, repeat: false, modifiers });
+                    }
+                }
                 true
             }
             Step::Ime(t, commit) => {
