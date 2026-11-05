@@ -269,7 +269,7 @@ pub fn connect_pinned(store: &Path, host: &str, port: u16) -> Result<TlsStream> 
     let key = key(host, port);
     let pin = KnownServers::load(store).0.get(&key).cloned().or_else(|| session_pin(store, &key));
     let seen: Arc<Mutex<Option<Seen>>> = Default::default();
-    let mut tcp = TcpStream::connect((host, port))?;
+    let mut tcp = super::tcp(host, port)?;
     // The login server sends nothing back for requests it rejects as malformed.
     tcp.set_read_timeout(Some(std::time::Duration::from_secs(10)))?;
     let name = ServerName::try_from(host.to_string())?;

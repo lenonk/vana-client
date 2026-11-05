@@ -208,10 +208,10 @@ impl Lobby {
     #[allow(clippy::too_many_arguments)]
     pub fn connect(host: &str, view_port: u16, data_port: u16, session: Session, ffximain: &[u8], version: &str, region: u32, content: u32, replies: Arc<AtomicU32>) -> Result<Self> {
         let data = match session {
-            Session::Lsb { .. } => Some(TcpStream::connect((host, data_port)).with_context(|| format!("connecting to lobby data {host}:{data_port}"))?),
+            Session::Lsb { .. } => Some(super::tcp(host, data_port).with_context(|| format!("connecting to lobby data {host}:{data_port}"))?),
             Session::PlayOnline { .. } => None,
         };
-        let view = TcpStream::connect((host, view_port)).with_context(|| format!("connecting to the lobby {host}:{view_port}"))?;
+        let view = super::tcp(host, view_port).with_context(|| format!("connecting to the lobby {host}:{view_port}"))?;
         let server_ip = match view.peer_addr()?.ip() {
             std::net::IpAddr::V4(ip) => ip,
             std::net::IpAddr::V6(ip) => ip.to_ipv4().unwrap_or(Ipv4Addr::LOCALHOST),
