@@ -3135,7 +3135,10 @@ From the research notes:
   pixels alpha 0x80), while our parse_img doubles it for the zone's MODULATE4X; in the UI that makes DXT3 cells
   up to 2 x retail's alpha (a full DXT3 texel with cell alpha 0x7f is ~0.80 in retail, 1.0 here). Not changed.
 
-### Portability notes (Windows / macOS, not done; 2026-10-21)
+### Portability notes (Windows / macOS; 2026-10-21)
+- Status (2026-11-05): Windows builds and runs (see "Windows: monitors of different scale ..."). macOS: a player built it
+  from the source with no changes and ran it on a Mac mini (Apple M4, macOS 26.4.1) with no issues: the lobby in a
+  native window, the game file update, and in game (zone, effects, plates, the classic UI) on another LSB server.
 - The stack is cross-platform: wgpu (Vulkan / DX12 / Metal), winit, cpal (WASAPI / CoreAudio), egui, tokio, rustls, msi, unrar. BC textures work on Windows GPUs and Apple Silicon, and the RGBA fallback exists.
 - Linux-only spots to gate:
   - Cargo.toml: cpal features "pipewire" / "pulseaudio" become target-specific (`[target.'cfg(target_os = "linux")'.dependencies]`).
