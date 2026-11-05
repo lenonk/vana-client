@@ -10,7 +10,8 @@ pub const DOOR_INDEX: u16 = 0x900;
 pub const DOOR_NAME: &str = "Door: Back to Town";
 /// The RID record the door stands at (0x3032375f).
 pub const DOOR_RECT: &str = "_720";
-pub const WINDOW: &str = "menu    mogdoor ";
+/// Layout names are kept trimmed (dat::ui::norm_name), so no trailing pad here.
+pub const WINDOW: &str = "menu    mogdoor";
 /// RectID of the exit request.
 pub const ZMRQ: u32 = u32::from_le_bytes(*b"zmrq");
 /// Mog Garden in the area lists.

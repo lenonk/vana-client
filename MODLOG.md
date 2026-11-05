@@ -22271,3 +22271,11 @@ Checked in Steven's unpacked FFXiMain.dll (sha256 8097dbf8..., 2026-11-03).
 - The sheathe is unchanged: "out N" unpins at its start, and the motion takes the staff from the hands over the head
   to the back (live, same staff). Seen live after the change: the staff comes off her back over her head into her
   hands.
+
+## The Mog House door menu drawn again (2026-11-05, reported on [Reddit](https://www.reddit.com/r/FFXIPrivateServers/comments/1xla0lk/comment/19s664xtf8pky/))
+
+- The classic UI never drew "mogdoor" (the exit menu when the house's exits are unlocked: Stay, Area you entered
+  from, Change floors, Select an area): myroom::WINDOW was the 16-byte padded "menu    mogdoor ", while layouts are
+  kept trimmed (dat::ui::norm_name), so the window lookup, its children (the mouse rows) and the drawing all missed.
+  The keys still worked, so the menu answered while invisible. The name is now trimmed, and UiFile::menu trims the
+  name it is given, so a padded name finds its layout. The Modern UI draws its own list and was not affected.

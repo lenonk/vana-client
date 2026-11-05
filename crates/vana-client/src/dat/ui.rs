@@ -285,8 +285,9 @@ impl UiFile {
         self.libs.iter().find(|l| l.name == name)
     }
 
+    /// A layout by name; a name padded to 16 bytes ("menu    mogdoor ") finds the trimmed one as norm_name keeps it.
     pub fn menu(&self, name: &str) -> Option<&Menu> {
-        let name = name.to_ascii_lowercase();
+        let name = name.trim_end().to_ascii_lowercase();
         self.menus.iter().find(|m| m.name == name)
     }
 }
