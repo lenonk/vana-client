@@ -12,9 +12,17 @@ use std::sync::{Arc, Mutex};
 /// Where releases are published.
 pub const RELEASE_REPO: &str = "lenonk/vana-client";
 
-/// The release asset for this platform.
+/// The release asset for this platform. A build for a platform no release carries (macOS, Linux on ARM so far) finds
+/// none and is never offered another platform's binary.
 pub fn asset_name() -> &'static str {
-    if cfg!(windows) { "vana-client-windows-x86_64.exe" } else { "vana-client-linux-x86_64" }
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("windows", "x86_64") => "vana-client-windows-x86_64.exe",
+        ("linux", "x86_64") => "vana-client-linux-x86_64",
+        ("linux", "aarch64") => "vana-client-linux-aarch64",
+        ("macos", "aarch64") => "vana-client-macos-aarch64",
+        ("macos", "x86_64") => "vana-client-macos-x86_64",
+        _ => "vana-client-unsupported-platform",
+    }
 }
 
 pub enum Game {
@@ -683,7 +691,20 @@ impl View {
 
 #[cfg(test)]
 mod tests {
-    use super::{SIGNING_KEY, newer, signed_by, signed_text, thousands};
+    use super::{SIGNING_KEY, asset_name, newer, signed_by, signed_text, thousands};
+
+    /// Each platform asks for its own asset; only the published ones carry the release names.
+    #[test]
+    fn asset_for_this_platform() {
+        let want = if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+            "vana-client-linux-x86_64"
+        } else if cfg!(all(windows, target_arch = "x86_64")) {
+            "vana-client-windows-x86_64.exe"
+        } else {
+            return assert!(!["vana-client-linux-x86_64", "vana-client-windows-x86_64.exe"].contains(&asset_name()));
+        };
+        assert_eq!(asset_name(), want);
+    }
 
     /// A signature covers the tag, the asset's name and its bytes; openssl's Ed25519 (pkeyutl -sign -rawin) checks.
     #[test]
