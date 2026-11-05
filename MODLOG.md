@@ -1903,6 +1903,12 @@ From the research notes:
   DAT_10443fe4 +0x2c x _DAT_1031f864, asm ~0x100a5360) and the move follows it; no input and |vector| <= 0.001 ends it,
   so Num7 standing still does nothing. With Q / E turning while on, forward is forced and the turn acts as X input.
   Forced off in statuses 2, 3, 6, 7, 0x21, 0x26..0x2c, 0x2f, 0x30, 0x32..0x35, 0x38..0x53 and events.
+- Autorun's cancel by input (the vector already set, /follow's too; off ends /follow, group 9 0x41): the input turned
+  by the camera yaw against the vector. Free camera FUN_100a6030: dot < 0 and |cross y| < 0.4 (_DAT_10322dd0 /
+  _DAT_10322d70 = -0.4 / 0.4: within 23.6 degrees of straight back, e.g. Num2 / S / the stick down with the camera
+  behind). Locked FUN_100a6210: dot of the normalized pair < 0.3 (_DAT_1031ffcc). First person (FUN_100a48d0):
+  < -0.5 (_DAT_1031f240). The frame it ends does not move (the cleared vector is copied into the move). Ours had none
+  until 2026-11-05.
 - /follow's stop (FUN_100a79a0, free camera, cur 30261006): the autorun vector is the unit direction to the target;
   when the horizontal distance less both radii (FUN_100aaef0) is under 0 the step is DAT_10487f8c instead *(inf:
   zero)*, so you stand just behind the target and the follow stays on. Ours did not stop (ran onto the target) until

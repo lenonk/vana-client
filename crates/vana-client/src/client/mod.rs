@@ -11046,6 +11046,25 @@ impl App {
                 world.autorun_dir = d.normalize();
             }
         }
+        // Input against a run already going (/follow's too) ends it: free camera within 23.6 degrees of straight back
+        // (FUN_100a6030: dot < 0, |cross| < 0.4), locked on dot < 0.3 (FUN_100a6210), first person dot < -0.5
+        // (FUN_100a48d0).
+        if world.autorun && world.autorun_dir != Vec3::ZERO && step != Vec3::ZERO {
+            let (i, r) = (step.normalize(), world.autorun_dir.normalize());
+            let dot = i.dot(r);
+            let against = if world.camst.first {
+                dot < -0.5
+            } else if world.locked {
+                dot < 0.3
+            } else {
+                dot < 0.0 && i.cross(r).y.abs() < 0.4
+            };
+            // The run's vector is cleared, and this frame's move with it.
+            if against {
+                world.autorun = false;
+                step = Vec3::ZERO;
+            }
+        }
         if world.autorun && !world.locked && !move_locked {
             if world.autorun_dir == Vec3::ZERO && step != Vec3::ZERO {
                 world.autorun_dir = step.normalize();
