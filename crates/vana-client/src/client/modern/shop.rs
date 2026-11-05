@@ -139,6 +139,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     };
     let gil = crate::inventory::gil_text(w.inv.gil() as i64);
     let mut mouse = Mouse::default();
+    let mut found = super::lists::found(p, w, "shop");
     p.panel("window", Some(Title { icon: Some("icons/currency"), text: &title, note: Some(&gil) }), W, |ui| {
         // shopmain / guildsho: Buy and Sell as tabs; the open list's open, else the cursor's marked.
         if !v.bazaar && !v.wares {
@@ -154,7 +155,8 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             }
             ui.add_space(6.0);
         }
-        if v.view.is_some() {
+        if super::lists::rows_or(ui, m, &mut found) {
+        } else if v.view.is_some() {
             list(ui, m, gu, &info, &v, free && !asking, &mut mouse);
         } else {
             ui.label(egui::RichText::new("Buy or sell?").size(m.theme.small).color(m.theme.color("muted")));
@@ -173,6 +175,10 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         }
     });
     if !free {
+        return;
+    }
+    if let Some(f) = found {
+        f.pick(w, p.gu);
         return;
     }
     let cursor = |w: &mut World| w.sounds.push(Se::Cursor as u32);

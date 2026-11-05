@@ -759,6 +759,25 @@ pub(super) fn open_slot(w: &mut World, child: u16) {
     w.sounds.push(Ui::Select as u32);
 }
 
+/// Type-to-search (listsearch.rs) in the modern list: while it has the keys and no piece is on its way.
+pub(super) fn search_open(w: &World) -> bool {
+    win(w).is_some_and(|e| e.modern && e.focus == Focus::List && e.list_slot.is_some() && e.pending.is_none())
+}
+
+/// The modern list's pieces.
+pub(super) fn search_list(w: &World) -> Vec<Candidate> {
+    win(w).and_then(|e| e.list_slot).map_or(Vec::new(), |s| candidates(w, s))
+}
+
+/// A search pick: the cursor onto piece `k` (scrolled into view), then Enter.
+pub(super) fn search_pick(w: &mut World, _: Option<&GameUi>, k: usize) {
+    if let Some(e) = win_mut(w) {
+        e.scroll = if k < e.scroll || k >= e.scroll + MODERN_ROWS { (k + 1).saturating_sub(MODERN_ROWS) } else { e.scroll };
+        e.cursor = k - e.scroll;
+    }
+    modern_key(w, egui::Key::Enter);
+}
+
 /// The modern list's cursor onto a shown row, the list taking the focus back from the grid. True when it moved.
 pub(super) fn point_row(w: &mut World, row: usize) -> bool {
     let Some(slot) = win(w).and_then(|e| e.list_slot) else { return false };

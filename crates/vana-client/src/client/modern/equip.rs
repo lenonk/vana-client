@@ -40,7 +40,7 @@ struct Mouse {
 }
 
 /// A bag's name for the list (the wardrobes are one Mog Wardrobe, the safes one Mog Safe).
-fn bag(c: u8) -> &'static str {
+pub(super) fn bag(c: u8) -> &'static str {
     match c {
         0 => "Inventory",
         1 | 9 => "Mog Safe",
@@ -81,6 +81,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     });
     let mono = |size: f32| FontId::monospace(size);
     let mut mouse = Mouse::default();
+    let mut found = super::lists::found(p, w, "equip");
     let title = Title { icon: None, text: "Equipment", note: Some(&gil) };
     p.panel("window", Some(title), GRID_W + 18.0 + LIST_W, |ui| {
         persona_row(ui, m, &persona, &stats);
@@ -173,7 +174,9 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             ui.add_space(18.0);
             let col = ui.vertical(|ui| {
                 ui.set_width(LIST_W);
-                list(ui, m, &v, &row_icons, &names, room, &mut mouse);
+                if !super::lists::rows_or(ui, m, &mut found) {
+                    list(ui, m, &v, &row_icons, &names, room, &mut mouse);
+                }
             });
             // The whole list column takes a worn piece dropped on it: off it comes.
             let area = Rect::from_min_max(col.response.rect.min, pos2(col.response.rect.max.x, ui.min_rect().max.y));
@@ -188,6 +191,10 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     {
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("equip drag")));
         painter.image(t, Rect::from_center_size(at, vec2(32.0, 32.0)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::from_white_alpha(220));
+    }
+    if let Some(f) = found {
+        f.pick(w, p.gu);
+        return;
     }
     apply(w, &v, mouse, held.is_some());
 }

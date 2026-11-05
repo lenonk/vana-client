@@ -179,6 +179,25 @@ fn pane(ui: &mut Ui, m: &super::Modern, gu: &GameUi, info: &ItemCache, p: &Pane,
     .height()
 }
 
+/// Type-to-search (modern/search.rs) in the item list, Sales Status or the inventory for sale while it has the keys.
+pub(super) fn search_open(w: &World) -> bool {
+    w.confirm.is_none() && auction::look(w).is_some_and(|v| !v.busy && v.money.is_none() && v.shopsell.is_none() && matches!(v.panes.last(), Some(Pane::List { .. } | Pane::Sell { .. })))
+}
+
+pub(super) fn search_rows(w: &World) -> Vec<super::super::listsearch::Entry> {
+    let rows = match auction::look(w).and_then(|v| v.panes.into_iter().last()) {
+        Some(Pane::List { rows, .. } | Pane::Sell { rows, .. }) => rows,
+        _ => return Vec::new(),
+    };
+    rows.into_iter().map(|r| super::super::listsearch::Entry::item(w, r.item).note(r.right).dim(r.tint == crate::inventory::TINT_DIM)).collect()
+}
+
+/// A pick: the cursor onto row `k`, then Enter.
+pub(super) fn search_pick(w: &mut World, _: Option<&GameUi>, k: usize) {
+    auction::set_row(w, k);
+    auction::key(w, egui::Key::Enter);
+}
+
 pub fn draw(p: &mut Panels, w: &mut World) {
     if !w.modern {
         return;
@@ -203,6 +222,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     }
     let loading = auction::index(w).is_none();
     let (mut found, mut start) = (super::lists::Mouse::default(), false);
+    let mut generic = super::lists::found(p, w, "auction");
     let wide = if search.is_some() { LIST_W + 44.0 } else { 0.0 };
     p.panel("window", Some(Title { icon: Some("icons/currency"), text: &title, note: Some(&gil) }), total.max(MENU_W + 44.0).max(wide), |ui| {
         if let Some((text, sel, hits, icons)) = search.as_ref().filter(|s| !s.0.is_empty()) {
@@ -233,6 +253,14 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                     ui.add_space(16.0);
                 }
                 let top = k + 1 == panes.len();
+                // A search in the top list: its hits in the list's place.
+                if top && generic.is_some() {
+                    ui.vertical(|ui| {
+                        ui.set_width(width(pn));
+                        super::lists::rows_or(ui, m, &mut generic);
+                    });
+                    continue;
+                }
                 let h = pane(ui, m, gu, &info, pn, top && free && !asking && !v.busy && search.is_none(), bazaar, &mut mouse, fill);
                 if matches!(pn, Pane::Menu { .. }) {
                     tallest = tallest.max(h);
@@ -262,8 +290,12 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     if !free {
         return;
     }
+    if let Some(f) = generic {
+        f.pick(w, p.gu);
+        return;
+    }
     if let Some((_, _, hits, _)) = search.as_ref().filter(|s| !s.0.is_empty()) {
-        super::lists::search_mouse(w, &found, hits);
+        super::lists::search_mouse(w, p.gu, &found, hits);
         return;
     }
     if search.is_some() {

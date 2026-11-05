@@ -299,6 +299,12 @@ fn menu_swap(w: &World) -> Vec<(u16, usize)> {
 /// The text engine has the keyboard (FUN_101adbd0: mode 4 the chat line, 5 a window's field): key functions with mask
 /// 0x41 and movement stay off, as while typing in the chat line.
 fn text_field_open(w: &World) -> bool {
+    // The modern list search (magic, abilities, items, journal, every other list) takes the letters.
+    typing_elsewhere(w) || w.list_search.is_some()
+}
+
+/// A text field other than the list search's takes the typing.
+fn typing_elsewhere(w: &World) -> bool {
     w.typing
         || event::input(w).is_some()
         || w.map.as_ref().is_some_and(|m| m.typing())
@@ -312,8 +318,6 @@ fn text_field_open(w: &World) -> bool {
         // A Lua mod window's line being typed, or the voice chat window's.
         || w.lua.typing()
         || w.voice.typing()
-        // The modern list search (magic, abilities, items, journal, the auction's bid pages) takes the letters.
-        || w.list_search.is_some()
         // The modern Wide Scan name filter and the full log's find.
         || (w.modern && w.scan_typing)
         || (w.modern && w.full_log.is_some() && w.log_find.is_some())
@@ -2048,7 +2052,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         keys.clear();
     }
     // The modern magic and ability windows' search takes the keys and text while it runs.
-    let list_typing = listsearch::events(world, &input.events);
+    let list_typing = listsearch::events(world, gu, &input.events);
     if list_typing {
         keys.clear();
     }

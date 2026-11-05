@@ -95,6 +95,80 @@ fn gauge(ui: &mut Ui, m: &super::Modern, f: f32, label: &str, value: &str, full:
     ui.add_space(8.0);
 }
 
+/// Type-to-search (modern/search.rs): the points list with the keys (Merit Points' list, Job Points' jobs or page,
+/// Alter Ego Points' categories or attributes) and its rows.
+fn search_list(w: &World) -> Option<(u8, PointList)> {
+    if w.confirm.is_some() {
+        return None;
+    }
+    if w.merits_ui.is_some() {
+        return merits::look(w)?.list.filter(|l| l.focused).map(|l| (0, l));
+    }
+    if w.jp_ui.is_some() {
+        let v = jobpoints::look(w)?;
+        return match v.page {
+            Some((_, l)) if l.focused => Some((2, l)),
+            _ => v.jobs.focused.then_some((1, v.jobs)),
+        };
+    }
+    if w.ae_ui.is_some() {
+        let v = aepoints::look(w)?;
+        return match v.attrs {
+            Some(l) if l.focused => Some((4, l)),
+            _ => v.cats.focused.then_some((3, v.cats)),
+        };
+    }
+    None
+}
+
+pub(super) fn search_open(w: &World) -> bool {
+    search_list(w).is_some()
+}
+
+/// The rows by name (a group header's has none, so it never matches), the level as the note.
+pub(super) fn search_rows(w: &World) -> Vec<super::super::listsearch::Entry> {
+    search_list(w).map_or(Vec::new(), |(_, l)| {
+        l.rows.into_iter().map(|r| super::super::listsearch::Entry::named(if r.header.is_some() { String::new() } else { r.name }).note(r.level.map_or(String::new(), |x| x.0))).collect()
+    })
+}
+
+/// A pick: the list's cursor onto row `k`, then Enter.
+pub(super) fn search_pick(w: &mut World, gu: Option<&GameUi>, k: usize) {
+    match search_list(w).map(|x| x.0) {
+        Some(0) => {
+            let Some(gu) = gu else { return };
+            merits::set_row(w, k);
+            merits::key(w, gu, egui::Key::Enter);
+        }
+        Some(1) => {
+            jobpoints::set_job(w, k);
+            jobpoints::key(w, egui::Key::Enter, false);
+        }
+        Some(2) => {
+            jobpoints::set_row(w, k);
+            jobpoints::key(w, egui::Key::Enter, false);
+        }
+        Some(3) => {
+            aepoints::set_cat(w, k);
+            aepoints::key(w, egui::Key::Enter, false);
+        }
+        Some(4) => {
+            aepoints::set_row(w, k);
+            aepoints::key(w, egui::Key::Enter, false);
+        }
+        _ => {}
+    }
+}
+
+/// `rows`, or a search's hits in their place while this list has the keys.
+#[allow(clippy::too_many_arguments)]
+fn rows_found(ui: &mut Ui, m: &super::Modern, gu: &GameUi, found: &mut Option<super::lists::Found>, salt: &str, l: &PointList, width: f32, cost_col: bool) -> Got {
+    if l.focused && super::lists::rows_or(ui, m, found) {
+        return None;
+    }
+    rows(ui, m, gu, salt, l, width, cost_col)
+}
+
 /// A list's mouse: a click moves its cursor and is Enter.
 fn act(w: &mut World, got: Got, set: impl Fn(&mut World, usize) -> bool, enter: impl Fn(&mut World)) {
     if let Some(k) = got {
@@ -206,6 +280,7 @@ fn merit_points(p: &mut Panels, w: &mut World) {
     let cols = 1.0 + v.mode.is_some() as u8 as f32;
     let width = cols * (COL_W + 16.0) + if v.list.is_some() { LIST_W } else { 0.0 } + 44.0;
     let mut mouse = MeritMouse::default();
+    let mut found = super::lists::found(p, w, "points");
     p.panel("window", Some(Title { icon: Some("icons/status"), text: "Merit Points", note: note.as_deref() }), width, |ui| {
         let limit = v.limit.unwrap_or(0);
         let value = v.limit.map_or("----/10000".to_string(), |l| format!("{l}/10000"));
@@ -224,7 +299,7 @@ fn merit_points(p: &mut Panels, w: &mut World) {
             ui.vertical(|ui| {
                 ui.set_width(LIST_W);
                 heading(ui, m, if v.cat == 0 { "Categories" } else { "Merits" });
-                mouse.list = rows(ui, m, gu, "merit rows", l, LIST_W, v.cat != 0);
+                mouse.list = rows_found(ui, m, gu, &mut found, "merit rows", l, LIST_W, v.cat != 0);
                 help(ui, m, &l.help);
                 let Some((sel, sortyn, raise, lower)) = v.edit else { return };
                 ui.add_space(8.0);
@@ -255,6 +330,10 @@ fn merit_points(p: &mut Panels, w: &mut World) {
     if !free {
         return;
     }
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
+        return;
+    }
     let enter = |w: &mut World| merits::key(w, gu, egui::Key::Enter);
     if let Some(yes) = mouse.yes {
         merits::set_sortyn(w, yes);
@@ -280,6 +359,7 @@ fn job_points(p: &mut Panels, w: &mut World) {
     let note = v.points.map(|[_, cur, _]| format!("{cur}/500 P"));
     let width = SIDE_W + if v.page.is_some() { 16.0 + LIST_W } else { 0.0 } + 44.0;
     let (mut jobs, mut page, mut tab) = (None, None, None);
+    let mut found = super::lists::found(p, w, "points");
     p.panel("window", Some(Title { icon: Some("icons/status"), text: "Job Points", note: note.as_deref() }), width, |ui| {
         let cap = v.points.map_or(0, |q| q[0]);
         let value = v.points.map_or(String::new(), |q| format!("{}/30000", q[0]));
@@ -287,7 +367,7 @@ fn job_points(p: &mut Panels, w: &mut World) {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(SIDE_W);
-                jobs = rows(ui, m, gu, "jp jobs", &v.jobs, SIDE_W, false);
+                jobs = rows_found(ui, m, gu, &mut found, "jp jobs", &v.jobs, SIDE_W, false);
                 if v.page.is_none() {
                     help(ui, m, &v.jobs.help);
                 }
@@ -309,12 +389,16 @@ fn job_points(p: &mut Panels, w: &mut World) {
                     let spent = v.points.map_or(0, |q| q[2]);
                     heading(ui, m, &format!("{head} {spent}"));
                 }
-                page = rows(ui, m, gu, "jp page", l, LIST_W, *pg == 0);
+                page = rows_found(ui, m, gu, &mut found, "jp page", l, LIST_W, *pg == 0);
                 help(ui, m, &l.help);
             });
         });
     });
     if !free {
+        return;
+    }
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
         return;
     }
     if let Some(k) = tab {
@@ -335,11 +419,12 @@ fn alter_ego(p: &mut Panels, w: &mut World) {
     let note = v.points.map(|n| format!("{n}/1000 P"));
     let width = SIDE_W + if v.attrs.is_some() { 16.0 + LIST_W } else { 0.0 } + 44.0;
     let (mut cats, mut attrs) = (None, None);
+    let mut found = super::lists::found(p, w, "points");
     p.panel("window", Some(Title { icon: Some("icons/status"), text: "Alter Ego Points", note: note.as_deref() }), width, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(SIDE_W);
-                cats = rows(ui, m, gu, "ae cats", &v.cats, SIDE_W, false);
+                cats = rows_found(ui, m, gu, &mut found, "ae cats", &v.cats, SIDE_W, false);
                 if v.attrs.is_none() {
                     help(ui, m, &v.cats.help);
                 }
@@ -348,12 +433,16 @@ fn alter_ego(p: &mut Panels, w: &mut World) {
             ui.add_space(16.0);
             ui.vertical(|ui| {
                 ui.set_width(LIST_W);
-                attrs = rows(ui, m, gu, "ae attrs", l, LIST_W, true);
+                attrs = rows_found(ui, m, gu, &mut found, "ae attrs", l, LIST_W, true);
                 help(ui, m, &l.help);
             });
         });
     });
     if !free {
+        return;
+    }
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
         return;
     }
     let enter = |w: &mut World| aepoints::key(w, egui::Key::Enter, false);

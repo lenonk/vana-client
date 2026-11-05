@@ -82,6 +82,22 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     }
 }
 
+/// Type-to-search (modern/search.rs) in the mannequin's storage list while it has the keys.
+pub(super) fn search_open(w: &World) -> bool {
+    w.confirm.is_none() && mannequin::look(w).is_some_and(|v| !v.on_grid)
+}
+
+pub(super) fn search_rows(w: &World) -> Vec<super::super::listsearch::Entry> {
+    mannequin::look(w).map_or(Vec::new(), |v| v.rows.iter().zip(&v.tints).map(|(s, &t)| super::super::listsearch::Entry::item(w, s.id).note(super::super::listsearch::count_note(s.count)).dim(t == crate::inventory::TINT_DIM)).collect())
+}
+
+/// A pick: the list's cursor onto row `k`, then Enter.
+pub(super) fn search_pick(w: &mut World, gu: Option<&super::super::game_ui::GameUi>, k: usize) {
+    let Some(gu) = gu else { return };
+    mannequin::set_list(w, k);
+    mannequin::key(w, gu, egui::Key::Enter);
+}
+
 /// Dressing a mannequin: the grid (the worn pieces, the slots it can't wear shaded), Remove All under it (dim with
 /// nothing worn), the Storage list beside it in its tints (picked orange, worn here green, elsewhere or the wrong race
 /// grey); the side without the keys takes them on the mouse first.
@@ -97,6 +113,7 @@ pub fn dress(p: &mut Panels, w: &mut World) {
     let free = w.confirm.is_none();
     let title = gu.title_msg(4).filter(|t| !t.is_empty()).unwrap_or_else(|| "Layout".into());
     let (mut grid, mut rows) = (None, None);
+    let mut found = super::lists::found(p, w, "mannequin");
     p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None }), GRID_W + 16.0 + LIST_W + 44.0, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
@@ -124,11 +141,18 @@ pub fn dress(p: &mut Panels, w: &mut World) {
             ui.add_space(16.0);
             ui.vertical(|ui| {
                 ui.set_width(LIST_W);
+                if super::lists::rows_or(ui, m, &mut found) {
+                    return;
+                }
                 rows = list(ui, m, ctx, &info, "dress storage", &v.rows, &v.tints, v.row, free && !v.on_grid, &[]);
             });
         });
     });
     if !free {
+        return;
+    }
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
         return;
     }
     if let Some(k) = grid {

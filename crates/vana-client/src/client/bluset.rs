@@ -609,6 +609,29 @@ pub(super) fn look(w: &World, gu: &GameUi) -> Option<Look> {
 
 /// The mouse's cursor moves: a slot (bluequip), a row of bluinven, bluesibo's row; with nothing picked a row of the
 /// other list takes the focus first (as Num+). True when the cursor moved.
+/// Type-to-search (modern/search.rs) in the spells: while either list has the keys and no slot waits for a spell.
+pub(super) fn search_open(w: &World) -> bool {
+    w.confirm.is_none() && w.bluset.as_ref().is_some_and(|s| s.sibo.is_none() && (s.focus == Focus::Inven || s.slot_pick.is_none()))
+}
+
+/// The spells by name ("Type" and "(Remove All)" have none, so they never match), greyed as their list greys them.
+pub(super) fn search_rows(w: &World) -> Vec<super::listsearch::Entry> {
+    let Some(s) = w.bluset.as_ref() else { return Vec::new() };
+    inven_rows(w, s)
+        .into_iter()
+        .map(|r| match r {
+            Row::Spell(id) => super::listsearch::Entry::named(spell_name(w, id)).dim(spell_tint(w, s, id) == GREY),
+            _ => super::listsearch::Entry::default(),
+        })
+        .collect()
+}
+
+/// A pick: the spell list's cursor onto row `k`, then Enter.
+pub(super) fn search_pick(w: &mut World, _: Option<&GameUi>, k: usize) {
+    set_row(w, false, k);
+    key(w, egui::Key::Enter);
+}
+
 pub(super) fn set_row(w: &mut World, equip: bool, k: usize) -> bool {
     let Some(s) = w.bluset.as_ref().filter(|s| s.sibo.is_none()) else { return false };
     if (s.focus == Focus::Equip) != equip {

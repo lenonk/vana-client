@@ -75,6 +75,23 @@ fn receive(ui: &mut Ui, m: &super::Modern, gu: &GameUi, info: &ItemCache, look: 
     }
 }
 
+/// Type-to-search (modern/search.rs) in the send picker while it has the keys.
+pub(super) fn search_open(w: &World) -> bool {
+    w.confirm.is_none() && matches!(post::look(w), Some(Look::Send { part: SendPart::List, qty: None, money: None, busy: false, editing: false, .. }))
+}
+
+pub(super) fn search_rows(w: &World) -> Vec<super::super::listsearch::Entry> {
+    let Some(Look::Send { rows, tints, .. }) = post::look(w) else { return Vec::new() };
+    rows.iter().zip(&tints).map(|(s, &t)| super::super::listsearch::Entry::item(w, s.id).note(super::super::listsearch::count_note(s.count)).dim(t == crate::inventory::TINT_DIM)).collect()
+}
+
+/// A pick: the picker's cursor onto row `k`, then Enter.
+pub(super) fn search_pick(w: &mut World, gu: Option<&GameUi>, k: usize) {
+    let Some(gu) = gu else { return };
+    post::set_cursor(w, k as u16);
+    post::key(w, gu, egui::Key::Enter);
+}
+
 pub fn draw(p: &mut Panels, w: &mut World) {
     if !w.modern {
         return;
@@ -85,6 +102,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let ctx = p.ctx;
     let free = w.confirm.is_none();
     let mut mouse = Mouse::default();
+    let mut found = super::lists::found(p, w, "delivery");
     let gil = crate::inventory::gil_text(w.inv.gil() as i64);
     match &v {
         Look::Recv { slots: s, cursor, post2, no_return, sender, busy } => {
@@ -167,6 +185,9 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                         ui.add_space(16.0);
                         ui.vertical(|ui| {
                             ui.set_width(LIST_W);
+                            if super::lists::rows_or(ui, m, &mut found) {
+                                return;
+                            }
                             let got = list(ui, m, ctx, &info, "delivery picker", rows, tints, *row, can, &[]);
                             mouse.click = mouse.click.or(got.map(|k| k as u16));
                         });
@@ -184,6 +205,10 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         }
     }
     if !free {
+        return;
+    }
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
         return;
     }
     let cursor = |w: &mut World| w.sounds.push(Se::Cursor as u32);

@@ -220,11 +220,23 @@ Milestone 1:
   modern_recent, newest first, 24 kept; a spell, ability, mount, emote, item, key item, quest or mission by its id or
   place) and ranks first among the matches (+400, less the older it is), marked "recent". Live: Potion over
   Hi-Potion for "potion" until Hi-Potion was picked, then Hi-Potion first, marked, and saved.
+- Search in every list (2026-11-05, user: "type to search ... on every list box"; modern/search.rs): the same
+  typing, field, hits, keys and recent picks in the other lists, each pick going through the list's own cursor and
+  Enter (what a click on the row does). Storage searches every bag the view can show (the bag as each hit's note;
+  a pick shows its bag and moves the stack across); the Equipment list; shops (buy, sell, Set Prices, a bazaar);
+  the synthesis crystals, history and picker; the trade picker; the Delivery Box's picker; the auction's item list,
+  Sales Status and the inventory for sale; the treasure pool; Merit Points, Job Points and Alter Ego Points; the
+  macro books, the equipment sets and the set editor's storage; the search results, Friend List, PlayOnline
+  messages, Link List and Level Sync; the map's Wide Scan, Change Map and Markers; the Primer, the Linkshell
+  Concierge, the Fishing Ranking, the block list, gardening and layout lists; Set Spells, the automaton's parts and
+  the mannequin's storage. Left out: menus of commands (the main menu, the battle menu, the moogle's, Region Info,
+  the party menu), the key assignment lists (a key pressed there is the assignment), display-only lists (the
+  currencies page) and the Lua mods' own windows. Twelve hits show; past that a line says how many more.
 - The Items window (modern/items.rs) over items.rs's state: the list and the action menu's direct-use list with the
   game's icons, quantities and row colours, the count, a bar; itmsort2 as a strip (Auto-sort and its question, Manual
   Sort, the Recycle Bin), iuse (Use / Drop) and the drop question under the rows, Manual Sort's hint; the mouse as
   retail's, the wheel. Search there gives one hit per item with its total; a pick puts the cursor on its first slot
-  and presses Enter. The storage views are still drawn retail-style.
+  and presses Enter.
 - The command window ("window"): the Items window and the Equipment screen show in the same panel at the same place
   (user's rule: every window the command menu opens).
 - The Equipment screen (modern/equip.rs; equipwin.rs's modern path): the persona (name, main / sub job, HP / MP / TP),

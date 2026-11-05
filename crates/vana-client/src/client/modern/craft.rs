@@ -3,6 +3,7 @@
 
 use super::super::game_ui::GameUi;
 use super::super::items::ItemCache;
+use super::super::listsearch::{Entry, count_note};
 use super::super::{World, synth, trade};
 use super::{MenuWin, Panels, Title, paint, social};
 use crate::inventory::{Slot, TINT_DIM, TINT_WHITE};
@@ -233,6 +234,64 @@ fn heading(ui: &mut Ui, m: &super::Modern, text: &str, colour: Color32) {
     ui.add_space(4.0);
 }
 
+/// The synthesis list with the keys for type-to-search (modern/search.rs): the crystals, the history or the picker.
+#[derive(Clone, Copy, PartialEq)]
+enum SynthList {
+    Crystals,
+    History,
+    Picker,
+}
+
+fn synth_list(w: &World) -> Option<(SynthList, synth::View)> {
+    let v = synth::view(w);
+    let free = w.confirm.is_none();
+    let list = match () {
+        _ if free && v.menu.is_some() && v.crystals.is_some() => SynthList::Crystals,
+        _ if v.history.as_ref().is_some_and(|h| h.3 && h.2.is_none()) => SynthList::History,
+        _ if v.win.as_ref().is_some_and(|x| x.on_list && x.picker.is_some() && x.count.is_none()) => SynthList::Picker,
+        _ => return None,
+    };
+    Some((list, v))
+}
+
+pub(super) fn synth_open(w: &World) -> bool {
+    (w.synth.menu.is_some() || w.synth.win.is_some()) && synth_list(w).is_some()
+}
+
+pub(super) fn synth_rows(w: &World) -> Vec<Entry> {
+    let Some((list, v)) = synth_list(w) else { return Vec::new() };
+    match list {
+        SynthList::Crystals => v.crystals.map_or(Vec::new(), |(rows, _)| rows.iter().map(|s| Entry::item(w, s.id).note(count_note(s.count))).collect()),
+        SynthList::History => v.history.map_or(Vec::new(), |(records, ..)| records.iter().map(|r| Entry::item(w, r.item).note(if r.crystal & 0x8000 != 0 { "favorite" } else { "" })).collect()),
+        SynthList::Picker => v.win.and_then(|x| x.picker).map_or(Vec::new(), |(rows, tints, _)| rows.iter().zip(tints).map(|(s, t)| Entry::item(w, s.id).note(count_note(s.count)).dim(t == TINT_DIM)).collect()),
+    }
+}
+
+/// A pick: the list's cursor onto row `k`, then Enter (a click on the row).
+pub(super) fn synth_pick(w: &mut World, gu: Option<&GameUi>, k: usize) {
+    let (Some(gu), Some((list, _))) = (gu, synth_list(w)) else { return };
+    match list {
+        SynthList::Crystals => _ = synth::set_crystal(w, k),
+        SynthList::History => _ = synth::set_history(w, k as u16 + 1),
+        SynthList::Picker => _ = synth::set_row(w, k),
+    }
+    synth::key(w, gu, egui::Key::Enter);
+}
+
+pub(super) fn trade_open(w: &World) -> bool {
+    w.confirm.is_none() && trade::view(w).is_some_and(|v| v.on_list && v.qty.is_none() && v.money.is_none())
+}
+
+pub(super) fn trade_rows(w: &World) -> Vec<Entry> {
+    trade::view(w).map_or(Vec::new(), |v| v.picker.0.iter().zip(&v.picker.1).map(|(s, &t)| Entry::item(w, s.id).note(count_note(s.count)).dim(t == TINT_DIM)).collect())
+}
+
+pub(super) fn trade_pick(w: &mut World, gu: Option<&GameUi>, k: usize) {
+    let Some(gu) = gu else { return };
+    trade::set_row(w, k);
+    trade::key(w, gu, egui::Key::Enter);
+}
+
 /// Synthesis: cmbmenu and the crystal list; the history with cmbhwin; tskill1 (the crystal, eight materials, OK and
 /// Cancel) beside the picker.
 fn synthesis(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
@@ -246,6 +305,7 @@ fn synthesis(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
     let wide = v.crystals.is_some() || v.win.as_ref().is_some_and(|x| x.picker.is_some()) || v.history.is_some();
     let width = if wide { GRID_W + LIST_W + 70.0 } else { social::width(1) };
     let title = Title { icon: Some("icons/craft"), text: "Synthesis", note: None };
+    let mut found = super::lists::found(p, w, "synth");
     p.panel("window", Some(title), width, |ui| {
         if let Some((sel, off, focused)) = v.menu {
             ui.horizontal_top(|ui| {
@@ -257,6 +317,9 @@ fn synthesis(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
                         ui.set_width(LIST_W);
                         heading(ui, m, &caption(gu, synth::CMBMENU, 1, "Crystal Synthesis"), m.theme.color("gold"));
                         let tints = vec![CRYSTAL; rows.len()];
+                        if super::lists::rows_or(ui, m, &mut found) {
+                            return;
+                        }
                         mouse.row = list(ui, m, ctx, info, "synth crystals", rows, &tints, *cur, w.confirm.is_none(), &[]);
                     });
                 }
@@ -310,6 +373,9 @@ fn synthesis(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
                     let rows: Vec<Slot> = records.iter().map(|r| Slot { index: 0, id: r.item, count: 0, equipped: false, equipped_ex: false }).collect();
                     // The favourites starred (retail's keytops3 101).
                     let stars: Vec<bool> = records.iter().map(|r| r.crystal & 0x8000 != 0).collect();
+                    if super::lists::rows_or(ui, m, &mut found) {
+                        return;
+                    }
                     mouse.row = list(ui, m, ctx, info, "synth history", &rows, &vec![TINT_WHITE; rows.len()], (*cur as usize).saturating_sub(1), *focused && fav.is_none(), &stars);
                     // cmbhwin's two rows as buttons (Num+ gives them the keys).
                     ui.add_space(8.0);
@@ -324,11 +390,18 @@ fn synthesis(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
                 } else if let Some((rows, tints, cur)) = v.win.as_ref().and_then(|x| x.picker.as_ref()) {
                     heading(ui, m, "Inventory", m.theme.color("gold"));
                     let focused = v.win.as_ref().is_some_and(|x| x.on_list);
+                    if super::lists::rows_or(ui, m, &mut found) {
+                        return;
+                    }
                     mouse.row = list(ui, m, ctx, info, "synth picker", rows, tints, *cur, focused, &[]);
                 }
             });
         });
     });
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
+        return;
+    }
     let enter = |w: &mut World| synth::key(w, gu, egui::Key::Enter);
     if v.menu.is_some() {
         social::act(w, gu, menu_got, synth::set_menu, |w, gu| synth::key(w, gu, egui::Key::Enter));
@@ -380,6 +453,7 @@ fn trading(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
     let title = Title { icon: Some("icons/trade"), text: "Trade", note: Some(&v.with) };
     let free = w.confirm.is_none();
     let mine: [(u16, u32, bool); 8] = std::array::from_fn(|i| (v.mine[i].0, v.mine[i].1, false));
+    let mut found = super::lists::found(p, w, "trade");
     p.panel("window", Some(title), GRID_W * if v.player { 2.0 } else { 1.0 } + LIST_W + if v.player { 96.0 } else { 70.0 }, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
@@ -439,10 +513,17 @@ fn trading(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
                 ui.set_width(LIST_W);
                 heading(ui, m, "Inventory", m.theme.color("gold"));
                 let (rows, tints, cur) = &v.picker;
+                if super::lists::rows_or(ui, m, &mut found) {
+                    return;
+                }
                 mouse.row = list(ui, m, ctx, info, "trade picker", rows, tints, *cur, v.on_list, &[]);
             });
         });
     });
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
+        return;
+    }
     let enter = |w: &mut World| trade::key(w, gu, egui::Key::Enter);
     if let Some(c) = mouse.tile {
         if trade::set_cursor(w, c) || v.cursor == c {

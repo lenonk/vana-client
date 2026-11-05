@@ -90,6 +90,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let open = free && v.sibo.is_none();
     let title = gu.title_msg(0x14).unwrap_or_else(|| "Equipment".into());
     let (mut grid, mut list, mut sibo) = (None, None, None);
+    let mut found = super::lists::found(p, w, "pupset");
     p.panel("window", Some(Title { icon: Some("icons/equipment"), text: &title, note: None }), STAT_W + 2.0 * COL_W + 32.0 + 44.0, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
@@ -114,6 +115,9 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                     }
                     None => {
                         heading(ui, m, "Parts");
+                        if super::lists::rows_or(ui, m, &mut found) {
+                            return;
+                        }
                         list = rows(ui, m, w, "pupset parts", &v.list, v.list_cursor, (open && !v.on_grid, open && (!v.on_grid || !v.picking)));
                     }
                 }
@@ -132,6 +136,10 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         }
     });
     if !free {
+        return;
+    }
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
         return;
     }
     if let Some(k) = sibo {

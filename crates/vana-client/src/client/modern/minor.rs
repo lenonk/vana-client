@@ -4,7 +4,8 @@
 //! (concierge.rs), Mog House Remodel (remodel.rs), the Adventuring Primer's lists (primer.rs) and layout mode's
 //! windows (layout.rs), pupequip (equipwin.rs), the fishing gauge (fishing.rs) and the Fishing Ranking (ranking.rs).
 
-use super::super::{World, blklist, chatctrl, concierge, equipwin, fishing, layout, primer, ranking, remodel, seacom};
+use super::super::listsearch::{Entry, count_note};
+use super::super::{World, blklist, chatctrl, concierge, equipwin, fishing, garden, layout, map, primer, ranking, remodel, seacom};
 use super::craft::{button, caption};
 use super::{MenuWin, Panels, Title, social};
 use crate::audio::Ui as Se;
@@ -37,7 +38,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
 
 /// The map's menu (map0: Markers, Wide Scan, Change Map) as a column; Wide Scan dim until a scan is possible.
 fn map_menu(p: &mut Panels, w: &mut World) {
-    use super::super::map;
     let Some(gu) = p.gu else { return };
     let Some((sel, scan)) = w.map.as_ref().filter(|m| m.has_menu()).map(|m| (m.cursor, m.scan_ok())) else { return };
     let m = p.m;
@@ -56,7 +56,6 @@ fn map_menu(p: &mut Panels, w: &mut World) {
 /// Markers (mapv3): the set strip (the four sets' icons, the shown one lit, those with nothing to show dim), the ten
 /// rows with their icons and names, and mapv2 (View, Place / Remove, Rename) at the left of its row, as retail's.
 fn map_markers(p: &mut Panels, w: &mut World) {
-    use super::super::map;
     let Some(gu) = p.gu else { return };
     let Some(v) = w.map.as_ref().and_then(|m| m.markers_look()) else { return };
     let m = p.m;
@@ -64,6 +63,7 @@ fn map_markers(p: &mut Panels, w: &mut World) {
     let full = egui::Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
     let (mut set_click, mut row_click, mut v2_row) = (None, None, None);
     let follow = v.cursor.is_some_and(|c| m.moved("map markers", c));
+    let mut found = small_found(p, w, &[Small::Markers]);
     p.panel("mapv3", Some(Title { icon: None, text: "Markers", note: None }), W, |ui| {
         ui.horizontal(|ui| {
             for (s, &on) in v.sets.iter().enumerate() {
@@ -85,6 +85,9 @@ fn map_markers(p: &mut Panels, w: &mut World) {
             }
         });
         ui.add_space(4.0);
+        if super::lists::rows_or(ui, m, &mut found) {
+            return;
+        }
         let out = super::kit::list(ui, m, "map markers", v.rows.len(), v.cursor, free, follow, ROW, TALL, |_| false, |ui, row| {
             let (icon, name) = &v.rows[row.index];
             if let Some(t) = icon.and_then(|k| m.sprite_icon(ui.ctx(), gu, "menu    keytops3", k)) {
@@ -97,6 +100,10 @@ fn map_markers(p: &mut Panels, w: &mut World) {
         });
         row_click = out.clicked;
     });
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
+        return;
+    }
     let mut menu_click = None;
     if let (Some((_, c, placed)), Some(r)) = (v.v2, v2_row) {
         let width = social::width(1);
@@ -122,7 +129,6 @@ fn map_markers(p: &mut Panels, w: &mut World) {
 /// Wide Scan from the map (scanlist): a row per name with its icon (player, NPC, monster); on a pick mapscan (Track,
 /// Remote Scan) at map0's place, Track dim for a player as retail's.
 fn map_scan(p: &mut Panels, w: &mut World) {
-    use super::super::map;
     let Some(gu) = p.gu else { return };
     let Some(v) = w.map.as_ref().and_then(|m| m.scan_look()) else { return };
     let m = p.m;
@@ -131,7 +137,11 @@ fn map_scan(p: &mut Panels, w: &mut World) {
     let follow = m.moved("map scan", v.cursor);
     let title = gu.focus_text("menu    scanlist", 1)[1].clone().unwrap_or_else(|| "Wide Scan".into());
     let mut click = None;
+    let mut found = small_found(p, w, &[Small::MapScan]);
     p.panel("scanlist", Some(Title { icon: None, text: &title, note: None }), W, |ui| {
+        if super::lists::rows_or(ui, m, &mut found) {
+            return;
+        }
         let out = super::kit::list(ui, m, "map scan", v.rows.len(), Some(v.cursor), free && v.mapscan.is_none(), follow, ROW, TALL, |_| false, |ui, row| {
             let (icon, name) = &v.rows[row.index];
             if let Some(t) = m.sprite_icon(ui.ctx(), gu, "menu    keytops3", *icon) {
@@ -152,6 +162,10 @@ fn map_scan(p: &mut Panels, w: &mut World) {
     if !free {
         return;
     }
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
+        return;
+    }
     if let Some(k) = click {
         map::scan_click(w, k);
     }
@@ -160,13 +174,16 @@ fn map_scan(p: &mut Panels, w: &mut World) {
 
 /// Change Map's list (maplist): a row per area or map, the name at the left and its count or area at the right.
 fn map_list(p: &mut Panels, w: &mut World) {
-    use super::super::map;
     let Some(v) = w.map.as_ref().and_then(|m| m.maplist_look()) else { return };
     let m = p.m;
     let free = w.confirm.is_none();
     let follow = m.moved("map list", v.cursor);
     let mut click = None;
+    let mut found = small_found(p, w, &[Small::MapList]);
     p.panel("maplist", Some(Title { icon: None, text: "Change Map", note: None }), W + 80.0, |ui| {
+        if super::lists::rows_or(ui, m, &mut found) {
+            return;
+        }
         let out = super::kit::list(ui, m, "map list", v.rows.len(), Some(v.cursor), free, follow, ROW, TALL, |_| false, |ui, row| {
             let (name, value) = &v.rows[row.index];
             let font = FontId::proportional(m.theme.small);
@@ -175,6 +192,10 @@ fn map_list(p: &mut Panels, w: &mut World) {
         });
         click = out.clicked;
     });
+    if let Some(f) = found {
+        f.pick(w, p.gu);
+        return;
+    }
     if free && let Some(k) = click {
         map::maplist_click(w, k);
     }
@@ -211,6 +232,106 @@ fn plain_rows(ui: &mut egui::Ui, m: &super::Modern, salt: &str, rows: &[(String,
     click
 }
 
+/// Type-to-search (modern/search.rs) in the small windows' lists: whichever has the keys.
+#[derive(Clone, Copy, PartialEq)]
+enum Small {
+    MapScan,
+    MapList,
+    Markers,
+    PrimerCats,
+    PrimerTopics,
+    Concierge,
+    Ranking,
+    Blocks,
+    Garden,
+    Layout,
+}
+
+fn small(w: &World) -> Option<Small> {
+    if w.confirm.is_some() {
+        return None;
+    }
+    if let Some(mw) = w.map.as_ref() {
+        if mw.scan_look().is_some_and(|v| v.mapscan.is_none()) {
+            return Some(Small::MapScan);
+        }
+        if mw.maplist_look().is_some() {
+            return Some(Small::MapList);
+        }
+        if mw.markers_look().is_some_and(|v| v.cursor.is_some() && !v.placing) {
+            return Some(Small::Markers);
+        }
+    }
+    if let Some(v) = primer::look(w).filter(|v| !v.page) {
+        return Some(if v.list.is_some() { Small::PrimerTopics } else { Small::PrimerCats });
+    }
+    if concierge::look(w).is_some_and(|v| v.lsc.is_none()) {
+        return Some(Small::Concierge);
+    }
+    if ranking::look(w).is_some() {
+        return Some(Small::Ranking);
+    }
+    if blklist::view(w).is_some_and(|v| !v.2) {
+        return Some(Small::Blocks);
+    }
+    if garden::look(w).is_some_and(|v| v.list.is_some()) {
+        return Some(Small::Garden);
+    }
+    layout::look(w).is_some_and(|v| v.list.is_some()).then_some(Small::Layout)
+}
+
+pub(super) fn search_open(w: &World) -> bool {
+    small(w).is_some()
+}
+
+/// The search's hits for the small window's list `s`, only while it is the one with the keys (`any`: either of two).
+fn small_found(p: &Panels, w: &World, any: &[Small]) -> Option<super::lists::Found> {
+    small(w).is_some_and(|s| any.contains(&s)).then(|| super::lists::found(p, w, "small")).flatten()
+}
+
+pub(super) fn search_rows(w: &World) -> Vec<Entry> {
+    let slots = |list: Option<(Vec<crate::inventory::Slot>, Vec<u32>, usize)>| {
+        list.map_or(Vec::new(), |(rows, tints, _)| rows.iter().zip(&tints).map(|(s, &t)| Entry::item(w, s.id).note(count_note(s.count)).dim(t == crate::inventory::TINT_DIM)).collect())
+    };
+    let named = |v: Vec<String>| v.into_iter().map(Entry::named).collect::<Vec<_>>();
+    match small(w) {
+        Some(Small::MapScan) => w.map.as_ref().and_then(|m| m.scan_look()).map_or(Vec::new(), |v| named(v.rows.into_iter().map(|r| r.1).collect())),
+        Some(Small::MapList) => w.map.as_ref().and_then(|m| m.maplist_look()).map_or(Vec::new(), |v| v.rows.into_iter().map(|(a, b)| Entry::named(a).note(b)).collect()),
+        Some(Small::Markers) => w.map.as_ref().and_then(|m| m.markers_look()).map_or(Vec::new(), |v| named(v.rows.into_iter().map(|r| r.1).collect())),
+        Some(Small::PrimerCats) => primer::look(w).map_or(Vec::new(), |v| named(v.cats)),
+        Some(Small::PrimerTopics) => primer::look(w).and_then(|v| v.list).map_or(Vec::new(), |(_, t, _)| named(t)),
+        Some(Small::Concierge) => concierge::look(w).map_or(Vec::new(), |v| v.rows.into_iter().map(|r| r.map_or(Entry::default(), |r| Entry::named(r.name).note(r.wanted.to_string()))).collect()),
+        Some(Small::Ranking) => ranking::look(w).map_or(Vec::new(), |(_, _, rows)| rows.into_iter().map(|r| Entry::named(r.name).note(format!("#{}", r.rank))).collect()),
+        Some(Small::Blocks) => blklist::view(w).map_or(Vec::new(), |v| named(v.0)),
+        Some(Small::Garden) => slots(garden::look(w).and_then(|v| v.list)),
+        Some(Small::Layout) => slots(layout::look(w).and_then(|v| v.list)),
+        None => Vec::new(),
+    }
+}
+
+/// A pick: the list's cursor onto row `k`, then Enter (as a click on the row; the ranking only moves its cursor).
+pub(super) fn search_pick(w: &mut World, gu: Option<&super::super::game_ui::GameUi>, k: usize) {
+    match small(w) {
+        Some(Small::MapScan) => map::scan_click(w, k),
+        Some(Small::MapList) => map::maplist_click(w, k),
+        Some(Small::Markers) => map::marker_click(w, k),
+        Some(Small::PrimerCats) => act(w, Some(k), primer::set_cat, |w| primer::key(w, egui::Key::Enter, false)),
+        Some(Small::PrimerTopics) => act(w, Some(k), primer::set_topic, |w| primer::key(w, egui::Key::Enter, false)),
+        Some(Small::Concierge) => {
+            let Some(gu) = gu else { return };
+            concierge::set_row(w, k);
+            concierge::key(w, gu, egui::Key::Enter);
+        }
+        Some(Small::Ranking) => ranking::set_cursor(w, k),
+        Some(Small::Blocks) => act(w, Some(k), blklist::set_cursor, |w| blklist::key(w, egui::Key::Enter)),
+        Some(Small::Garden) => act(w, Some(k), garden::set_row, |w| garden::key(w, egui::Key::Enter)),
+        Some(Small::Layout) => act(w, Some(k), layout::set_row, |w| {
+            layout::key(w, egui::Key::Enter);
+        }),
+        None => {}
+    }
+}
+
 /// A list's mouse: a click moves the cursor and is Enter.
 fn act(w: &mut World, click: Option<usize>, set: impl Fn(&mut World, usize) -> bool, enter: impl Fn(&mut World)) {
     if let Some(k) = click {
@@ -242,7 +363,11 @@ fn primer_lists(p: &mut Panels, w: &mut World) {
     let title = w.battle.as_ref().and_then(|b| b.group9(0xc5)).unwrap_or_else(|| "Help Desk".into());
     let width = W + if v.list.is_some() { 16.0 + W } else { 0.0 } + 44.0;
     let (mut cats, mut topics, mut turn) = (None, None, None);
+    let mut found = small_found(p, w, &[Small::PrimerCats, Small::PrimerTopics]);
     p.panel("window", Some(Title { icon: Some("icons/help"), text: &title, note: None }), width, |ui| {
+        if super::lists::rows_or(ui, m, &mut found) {
+            return;
+        }
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(W);
@@ -271,6 +396,10 @@ fn primer_lists(p: &mut Panels, w: &mut World) {
     if !free {
         return;
     }
+    if let Some(f) = found {
+        f.pick(w, p.gu);
+        return;
+    }
     if let Some(k) = turn {
         primer::key(w, k, false);
         return;
@@ -297,6 +426,7 @@ fn concierge_list(p: &mut Panels, w: &mut World) {
     let free = w.confirm.is_none();
     let focused = free && v.lsc.is_none();
     let (mut tab, mut click) = (None, None);
+    let mut found = small_found(p, w, &[Small::Concierge]);
     let title = gu.focus_text(super::super::linkshell::LIST, 0)[1].clone().unwrap_or_else(|| "Linkshell".into());
     p.panel("window", Some(Title { icon: Some("icons/linkshell"), text: &title, note: None }), LIST_W + 44.0, |ui| {
         if !v.title.is_empty() {
@@ -312,6 +442,9 @@ fn concierge_list(p: &mut Panels, w: &mut World) {
             tab = Some(k as u16 + 1);
         }
         ui.add_space(6.0);
+        if super::lists::rows_or(ui, m, &mut found) {
+            return;
+        }
         let seen = egui::Id::unique("concierge cursor seen");
         let follow = ui.ctx().data(|d| d.get_temp::<usize>(seen)) != Some(v.cursor);
         ui.ctx().data_mut(|d| d.insert_temp(seen, v.cursor));
@@ -353,6 +486,10 @@ fn concierge_list(p: &mut Panels, w: &mut World) {
         });
     });
     if !free {
+        return;
+    }
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
         return;
     }
     if let Some(k) = tab {
@@ -400,7 +537,11 @@ fn fishing_ranking(p: &mut Panels, w: &mut World) {
     let m = p.m;
     let focused = w.confirm.is_none();
     let mut click = None;
+    let mut found = small_found(p, w, &[Small::Ranking]);
     p.panel("window", Some(Title { icon: None, text: "Fishing Ranking", note: None }), LIST_W + 44.0, |ui| {
+        if super::lists::rows_or(ui, m, &mut found) {
+            return;
+        }
         let seen = egui::Id::unique("ranking cursor seen");
         let follow = ui.ctx().data(|d| d.get_temp::<usize>(seen)) != Some(cursor);
         ui.ctx().data_mut(|d| d.insert_temp(seen, cursor));
@@ -432,6 +573,10 @@ fn fishing_ranking(p: &mut Panels, w: &mut World) {
             }
         });
     });
+    if let Some(f) = found {
+        f.pick(w, p.gu);
+        return;
+    }
     if let Some(k) = click.filter(|&k| k != cursor) {
         ranking::set_cursor(w, k);
         w.sounds.push(Se::Cursor as u32);
@@ -484,7 +629,11 @@ fn block_list(p: &mut Panels, w: &mut World) {
     let free = w.confirm.is_none();
     let title = gu.focus_text(blklist::LIST, 1)[1].clone().unwrap_or_else(|| "Blacklist".into());
     let (mut click, mut delete) = (None, false);
+    let mut found = small_found(p, w, &[Small::Blocks]);
     p.panel("blklist", Some(Title { icon: Some("icons/party"), text: &title, note: None }), W + 44.0, |ui| {
+        if super::lists::rows_or(ui, m, &mut found) {
+            return;
+        }
         if !empty.is_empty() {
             ui.label(egui::RichText::new(&empty).size(m.theme.small).color(m.theme.color("muted")));
         }
@@ -519,6 +668,10 @@ fn block_list(p: &mut Panels, w: &mut World) {
         }
     });
     if !free {
+        return;
+    }
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
         return;
     }
     if delete {
@@ -560,7 +713,6 @@ fn chat_mode(p: &mut Panels, w: &mut World) {
 /// Gardening (garden.rs): the plnt window as a column, bankmenu beside it, the pot / seed / crystal list in their place
 /// while it is open.
 fn garden_windows(p: &mut Panels, w: &mut World) {
-    use super::super::garden;
     let Some(gu) = p.gu else { return };
     let Some(v) = garden::look(w) else { return };
     if v.win.is_none() && v.bank.is_none() && v.list.is_none() {
@@ -574,8 +726,12 @@ fn garden_windows(p: &mut Panels, w: &mut World) {
     let title = gu.title_msg(0x59).filter(|t| !t.is_empty()).unwrap_or_else(|| "Gardening".into());
     let wide = if v.list.is_some() { 360.0 } else { social::width(1 + v.bank.is_some() as usize) - 44.0 };
     let (mut win, mut bank, mut row) = (None, None, None);
+    let mut found = small_found(p, w, &[Small::Garden]);
     p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None }), wide + 44.0, |ui| {
         if let (Some((rows, tints, cur)), Some(info)) = (&v.list, &info) {
+            if super::lists::rows_or(ui, m, &mut found) {
+                return;
+            }
             row = super::craft::list(ui, m, ctx, info, "garden list", rows, tints, *cur, free, &[]);
             return;
         }
@@ -592,6 +748,10 @@ fn garden_windows(p: &mut Panels, w: &mut World) {
         });
     });
     if !free {
+        return;
+    }
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
         return;
     }
     let enter = |w: &mut World, _: &super::super::game_ui::GameUi| garden::key(w, egui::Key::Enter);
@@ -616,8 +776,12 @@ fn layout_windows(p: &mut Panels, w: &mut World) {
     let title = gu.title_msg(4).filter(|t| !t.is_empty()).unwrap_or_else(|| "Layout".into());
     let wide = if v.list.is_some() { 360.0 } else { social::width(1 + v.bank.is_some() as usize) - 44.0 };
     let (mut win, mut bank, mut row) = (None, None, None);
+    let mut found = small_found(p, w, &[Small::Layout]);
     p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None }), wide + 44.0, |ui| {
         if let (Some((rows, tints, cur)), Some(info)) = (&v.list, &info) {
+            if super::lists::rows_or(ui, m, &mut found) {
+                return;
+            }
             row = super::craft::list(ui, m, ctx, info, "layout furniture", rows, tints, *cur, free, &[]);
             return;
         }
@@ -634,6 +798,10 @@ fn layout_windows(p: &mut Panels, w: &mut World) {
         });
     });
     if !free {
+        return;
+    }
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
         return;
     }
     let enter = |w: &mut World, _: &super::super::game_ui::GameUi| {

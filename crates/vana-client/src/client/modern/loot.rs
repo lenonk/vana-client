@@ -14,6 +14,21 @@ const ICON: f32 = 28.0;
 /// loot's row tints: lotted orange, passed grey.
 const LOTTED: u32 = 0x8080_4020;
 
+/// Type-to-search (modern/search.rs) in the pool while it has the keys (no lootope).
+pub(super) fn search_open(w: &World) -> bool {
+    w.confirm.is_none() && treasure::view(w).is_some_and(|v| v.ope.is_none() && !v.done)
+}
+
+pub(super) fn search_rows(w: &World) -> Vec<super::super::listsearch::Entry> {
+    treasure::view(w).map_or(Vec::new(), |v| v.rows.iter().map(|r| super::super::listsearch::Entry::item(w, r.item).note(super::super::listsearch::count_note(r.qty)).dim(r.own_lot == -1)).collect())
+}
+
+/// A pick: the cursor onto row `k`, then Enter (lootope).
+pub(super) fn search_pick(w: &mut World, _: Option<&super::super::game_ui::GameUi>, k: usize) {
+    treasure::set_cursor(w, k as u16 + 1);
+    treasure::key(w, egui::Key::Enter);
+}
+
 pub fn draw(p: &mut Panels, w: &mut World) {
     if !w.modern {
         return;
@@ -24,7 +39,11 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let free = w.confirm.is_none();
     let note = format!("{} / {}", v.rows.len(), treasure::SLOTS);
     let (mut click, mut act, mut rest) = (None, None, false);
+    let mut found = super::lists::found(p, w, "loot");
     p.panel("loot", Some(Title { icon: Some("icons/currency"), text: "Treasure Pool", note: Some(&note) }), W, |ui| {
+        if super::lists::rows_or(ui, m, &mut found) {
+            return;
+        }
         for (k, r) in v.rows.iter().enumerate() {
             let row = k as u16 + 1;
             let on = row == v.cursor && !v.done;
@@ -97,6 +116,10 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         });
     });
     if !free {
+        return;
+    }
+    if let Some(f) = found {
+        f.pick(w, p.gu);
         return;
     }
     if let Some((row, lot)) = act {

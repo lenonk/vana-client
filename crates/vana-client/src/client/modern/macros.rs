@@ -27,6 +27,53 @@ struct Mouse {
     lopt: Option<u16>,
 }
 
+/// Type-to-search (modern/search.rs): the macro books, the equipment sets of the page, or the set editor's storage.
+#[derive(Clone, Copy, PartialEq)]
+enum Found {
+    Books,
+    Sets,
+    Storage,
+}
+
+fn search_list(w: &World) -> Option<Found> {
+    if macroedit::search_books(w).is_some() {
+        return Some(Found::Books);
+    }
+    let v = esmenu::view(w).filter(|_| w.confirm.is_none())?;
+    match &v.editor {
+        Some(e) if e.on_list => Some(Found::Storage),
+        None if v.focused && v.opt.is_none() && v.rename.is_none() => Some(Found::Sets),
+        _ => None,
+    }
+}
+
+pub(super) fn search_open(w: &World) -> bool {
+    search_list(w).is_some()
+}
+
+pub(super) fn search_rows(w: &World) -> Vec<super::super::listsearch::Entry> {
+    use super::super::listsearch::{Entry, count_note};
+    match search_list(w) {
+        Some(Found::Books) => macroedit::search_books(w).unwrap_or_default().into_iter().map(Entry::named).collect(),
+        Some(Found::Sets) => esmenu::view(w).map_or(Vec::new(), |v| v.names.into_iter().map(Entry::named).collect()),
+        Some(Found::Storage) => esmenu::view(w).and_then(|v| v.editor).map_or(Vec::new(), |e| {
+            e.rows.into_iter().map(|(id, name, count, _)| Entry { item: (id != 0).then_some(id), ..Entry::named(name) }.note(count_note(count))).collect()
+        }),
+        None => Vec::new(),
+    }
+}
+
+/// A pick: the list's cursor onto row `k`, then Enter.
+pub(super) fn search_pick(w: &mut World, gu: Option<&GameUi>, k: usize) {
+    let (Some(gu), Some(list)) = (gu, search_list(w)) else { return };
+    match list {
+        Found::Books => _ = macroedit::set_book(w, k),
+        Found::Sets => _ = esmenu::set_row(w, k),
+        Found::Storage => _ = esedit::set_row(w, k),
+    }
+    macroedit::key(w, gu, egui::Key::Enter);
+}
+
 pub fn draw(p: &mut Panels, w: &mut World) {
     if !w.modern {
         return;
@@ -50,7 +97,11 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     } else {
         social::width(1)
     };
+    let mut found = super::lists::found(p, w, "macros");
     p.panel("window", Some(Title { icon: Some("icons/macro"), text: "Macros", note: None }), width, |ui| {
+        if super::lists::rows_or(ui, m, &mut found) {
+            return;
+        }
         if let Some(e) = &v.editor {
             editor(ui, m, gu, e, &mut mouse);
         } else if let Some(pv) = &v.palettes {
@@ -63,6 +114,10 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             mouse.menu = social::stack(ui, m, gu, std::slice::from_ref(&mw), focused);
         }
     });
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
+        return;
+    }
     act(w, gu, mouse);
 }
 
@@ -394,6 +449,7 @@ fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
     let Some(info) = w.item_info.clone() else { return };
     let title = gu.title_msg(0xac).unwrap_or_else(|| "Equipment Sets".into());
     let enter = |w: &mut World| macroedit::key(w, gu, egui::Key::Enter);
+    let mut found = super::lists::found(p, w, "macros");
     if let Some(e) = &v.editor {
         let (mut tile_click, mut row) = (None, None);
         let mut store = None;
@@ -458,6 +514,9 @@ fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
                         }
                     }
                     ui.add_space(6.0);
+                    if super::lists::rows_or(ui, m, &mut found) {
+                        return;
+                    }
                     let tall = 10.0 * (ROW + 4.0);
                     let follow = m.moved("equip set list", e.cur.unwrap_or(usize::MAX));
                     egui::ScrollArea::vertical().id_salt("set list").max_height(tall).min_scrolled_height(tall).auto_shrink([false, true]).show(ui, |ui| {
@@ -486,6 +545,10 @@ fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
                 });
             });
         });
+        if let Some(f) = found {
+            f.pick(w, Some(gu));
+            return;
+        }
         if let Some(c) = store {
             esedit::set_container(w, c);
         }
@@ -518,6 +581,9 @@ fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(BOOK_W);
+                if super::lists::rows_or(ui, m, &mut found) {
+                    return;
+                }
                 for (k, name) in v.names.iter().enumerate() {
                     let (r, resp) = ui.allocate_exact_size(vec2(BOOK_W - 14.0, ROW), Sense::click());
                     row_face(ui, m, r, v.cur == Some(k) || (v.opt.is_some() && v.row == k), v.focused, resp.hovered());
@@ -541,6 +607,10 @@ fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
             }
         });
     });
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
+        return;
+    }
     if let Some(k) = page {
         esmenu::go_page(w, k);
     }

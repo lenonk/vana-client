@@ -204,8 +204,98 @@ struct People<'a> {
     opt_sel: Option<u16>,
 }
 
+/// The people list with the keys for type-to-search (modern/search.rs).
+#[derive(Clone, Copy, PartialEq)]
+enum Crowd {
+    Friends,
+    Mail,
+    Links,
+    Sync,
+    Results,
+}
+
+fn crowd(w: &World) -> Option<Crowd> {
+    if w.confirm.is_some() {
+        return None;
+    }
+    if friendlist::focused(w) && w.friendui.as_ref().is_some_and(|u| u.list.is_some() && u.mes.is_none() && u.stat.is_none()) {
+        return Some(Crowd::Friends);
+    }
+    if polmail::focused(w) && !polmail::composing(w) && w.polmail.read.is_none() && w.polmail.list.is_some() {
+        return Some(Crowd::Mail);
+    }
+    if linklist::search_names(w).is_some() {
+        return Some(Crowd::Links);
+    }
+    if w.levelsync.as_ref().is_some_and(|l| !l.busy) {
+        return Some(Crowd::Sync);
+    }
+    let res = w.search.as_ref()?;
+    (res.option.is_none() && !res.busy && !searchmenu::refining(w) && w.arealist.is_none() && w.seacom_edit.is_none()).then_some(Crowd::Results)
+}
+
+pub(super) fn search_open(w: &World) -> bool {
+    crowd(w).is_some()
+}
+
+/// The search's hits for people list `c`, only while it is the one with the keys.
+fn crowd_found(p: &Panels, w: &World, c: Crowd) -> Option<super::lists::Found> {
+    (crowd(w) == Some(c)).then(|| super::lists::found(p, w, "people")).flatten()
+}
+
+/// The list's people by name (the Friend List's bars have none, so they never match).
+pub(super) fn search_rows(w: &World) -> Vec<super::super::listsearch::Entry> {
+    use super::super::listsearch::Entry;
+    let job = |r: &crate::net::search::Record| super::super::items::JOBS.get(r.job.0 as usize).filter(|s| !s.is_empty() && r.present & 1 << 6 != 0 && r.flags & 0x4000 == 0).map_or(String::new(), |s| format!("{s}{}", r.level.0));
+    match crowd(w) {
+        Some(Crowd::Friends) => friendlist::rows_view(w).map_or(Vec::new(), |(rows, _)| {
+            rows.iter()
+                .map(|r| match *r {
+                    friendlist::Row::Header(_) => Entry::default(),
+                    friendlist::Row::Entry(i) => Entry::named(w.friends.list.get(i).map_or(String::new(), |f| f.name.clone())),
+                })
+                .collect()
+        }),
+        Some(Crowd::Mail) => w.polmail.list.as_ref().map_or(Vec::new(), |(rows, ..)| rows.iter().skip(1).map(|n| Entry::named(polmail::mail(w, n).map_or(String::new(), |ml| polmail::from_name(w, ml)))).collect()),
+        Some(Crowd::Links) => linklist::search_names(w).unwrap_or_default().into_iter().map(Entry::named).collect(),
+        Some(Crowd::Sync) => w.levelsync.as_ref().map_or(Vec::new(), |l| l.rows.iter().map(|r| Entry::named(r.name.clone()).note(job(r))).collect()),
+        Some(Crowd::Results) => w.search.as_ref().map_or(Vec::new(), |res| res.rows.iter().map(|r| Entry::named(r.name.clone()).note(job(r))).collect()),
+        None => Vec::new(),
+    }
+}
+
+/// A pick: the list's cursor onto person `k` (the header row counted where there is one), then Enter.
+pub(super) fn search_pick(w: &mut World, gu: Option<&GameUi>, k: usize) {
+    match crowd(w) {
+        Some(Crowd::Friends) => {
+            friendlist::set_cursor(w, k);
+            friendlist::key(w, egui::Key::Enter);
+        }
+        Some(Crowd::Mail) => {
+            polmail::set_cursor(w, k + 1);
+            polmail::key(w, egui::Key::Enter);
+        }
+        Some(Crowd::Links) => {
+            let Some(gu) = gu else { return };
+            linklist::set_cursor(w, k);
+            linklist::key(w, gu, egui::Key::Enter);
+        }
+        Some(Crowd::Sync) => {
+            levelsync::set_cursor(w, k);
+            levelsync::key(w, egui::Key::Enter);
+        }
+        Some(Crowd::Results) => {
+            if let Some(r) = w.search.as_mut() {
+                r.cursor = k + 1;
+            }
+            search::key(w, egui::Key::Enter);
+        }
+        None => {}
+    }
+}
+
 /// A people list beside the window panel (in its place when none is open): the search results, the link list.
-fn people(p: &mut Panels, v: People) -> PeopleMouse {
+fn people(p: &mut Panels, v: People, found: &mut Option<super::lists::Found>) -> PeopleMouse {
     let m = p.m;
     let screen = p.ctx.content_rect();
     let at = m.rects.borrow().get("window").map_or(pos2(screen.width() * 0.0047, screen.height() * 0.0347), |r| pos2(r.max.x + 8.0, r.min.y));
@@ -216,6 +306,9 @@ fn people(p: &mut Panels, v: People) -> PeopleMouse {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(RES_W);
+                if v.focused && super::lists::rows_or(ui, m, found) {
+                    return;
+                }
                 if let Some(e) = &v.empty {
                     ui.label(egui::RichText::new(e).size(m.theme.small).color(m.theme.color("muted")));
                 }
@@ -339,7 +432,12 @@ fn results(p: &mut Panels, w: &mut World, gu: &GameUi) {
     let title = gu.title_msg(res.title).unwrap_or_else(|| "Search".into());
     let note = if res.mode == 3 { "" } else { "Refine" };
     let v = People { id: "results", title: &title, icon: "icons/find", header: Some((header, note)), empty: None, rows, cursor: res.cursor, focused, opts, opt_sel: res.option };
-    let mouse = people(p, v);
+    let mut found = crowd_found(p, w, Crowd::Results);
+    let mouse = people(p, v, &mut found);
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
+        return;
+    }
     if let Some(k) = mouse.click {
         if let Some(r) = w.search.as_mut()
             && r.cursor != k
@@ -421,7 +519,12 @@ fn friends(p: &mut Panels, w: &mut World, gu: &GameUi) {
     let title = w.friends.handle.as_ref().map(|h| format!("{} ({})", h.1, friendlist::handle_id_text(h.0))).unwrap_or_default();
     let empty = rows.is_empty().then(|| w.battle.as_ref().and_then(|bt| bt.group7(0x66)).unwrap_or_default());
     let v = People { id: "friendlist", title: &title, icon: "icons/party", header: None, empty, rows: people_rows, cursor, focused: free && ui.mes.is_none(), opts, opt_sel: ui.mes };
-    let mouse = people(p, v);
+    let mut found = crowd_found(p, w, Crowd::Friends);
+    let mouse = people(p, v, &mut found);
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
+        return;
+    }
     if let Some(k) = mouse.click {
         if friendlist::set_cursor(w, k) {
             w.sounds.push(crate::audio::Ui::Cursor as u32);
@@ -471,7 +574,12 @@ fn messages(p: &mut Panels, w: &mut World, gu: &GameUi) {
     });
     let title = gu.title_msg(0x52).unwrap_or_else(|| "Messages".into());
     let v = People { id: "msglist", title: &title, icon: "icons/party", header: Some(("Messages".into(), "")), empty: None, rows: people_rows, cursor, focused: free && read.is_none(), opts, opt_sel: read.map(|r| r.2) };
-    let mouse = people(p, v);
+    let mut found = crowd_found(p, w, Crowd::Mail);
+    let mouse = people(p, v, &mut found);
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
+        return;
+    }
     for k in mouse.click.into_iter().chain(mouse.opt_click.map(|c| c as usize)) {
         if polmail::set_cursor(w, k) {
             w.sounds.push(crate::audio::Ui::Cursor as u32);
@@ -494,7 +602,12 @@ fn link_list(p: &mut Panels, w: &mut World, gu: &GameUi) {
     let empty = v.empty.clone();
     let title = gu.title_msg(0x47).unwrap_or_else(|| "Linkshell".into());
     let pv = People { id: "linklist", title: &title, icon: "icons/linkshell", header: None, empty, rows, cursor: v.cursor, focused: v.focused, opts: v.acts.clone(), opt_sel: v.act_sel };
-    let mouse = people(p, pv);
+    let mut found = crowd_found(p, w, Crowd::Links);
+    let mouse = people(p, pv, &mut found);
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
+        return;
+    }
     if let Some(k) = mouse.click {
         if linklist::set_cursor(w, k) {
             w.sounds.push(crate::audio::Ui::Cursor as u32);
@@ -533,7 +646,12 @@ fn level_sync(p: &mut Panels, w: &mut World, gu: &GameUi) {
     let empty = if l.busy { Some("Please wait...".to_string()) } else { None };
     let title = gu.title_msg(0x95).unwrap_or_else(|| "Level Sync".into());
     let pv = People { id: "levelsync", title: &title, icon: "icons/party", header: None, empty, rows, cursor: l.cursor, focused: w.confirm.is_none(), opts: Vec::new(), opt_sel: None };
-    let mouse = people(p, pv);
+    let mut found = crowd_found(p, w, Crowd::Sync);
+    let mouse = people(p, pv, &mut found);
+    if let Some(f) = found {
+        f.pick(w, Some(gu));
+        return;
+    }
     if let Some(k) = mouse.click {
         if levelsync::set_cursor(w, k) {
             w.sounds.push(crate::audio::Ui::Cursor as u32);

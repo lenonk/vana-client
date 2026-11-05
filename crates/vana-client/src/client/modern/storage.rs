@@ -71,6 +71,50 @@ fn target(w: &World, b: &Storage, g: usize, s: &Slot) -> Option<u8> {
     BAGS[g].1.iter().copied().find(|&c| gitems::has_free(w, c) && tint(w, b, false, gitems::INVENTORY, c, s) != TINT_DIM)
 }
 
+/// Type-to-search's places (listsearch.rs): the open bag, the inventory, then the other bags this view may show; each
+/// row's bag (None: the inventory), its row there, part and slot.
+fn places(w: &World) -> Vec<(Option<usize>, usize, u8, Slot)> {
+    let Some((b, ..)) = view(w) else { return Vec::new() };
+    let g = group(b.bank);
+    let bag = |g: usize| rows(w, g).into_iter().enumerate().map(move |(k, (c, s))| (Some(g), k, c, s));
+    let inv = gitems::store_rows(w, gitems::INVENTORY).into_iter().enumerate().map(|(k, s)| (None, k, gitems::INVENTORY, s));
+    let others: Vec<_> = bags(w, &b).into_iter().filter(|&o| o != g).flat_map(bag).collect();
+    bag(g).chain(inv).chain(others).collect()
+}
+
+pub(in crate::client) fn search_open(w: &World) -> bool {
+    w.modern && view(w).is_some()
+}
+
+/// Every place's item: its bag (and count) as the note, greyed when it can't move across.
+pub(in crate::client) fn search_rows(w: &World) -> Vec<super::super::listsearch::Entry> {
+    let Some((b, ..)) = view(w) else { return Vec::new() };
+    let g = group(b.bank);
+    places(w)
+        .into_iter()
+        .map(|(bag, _, c, s)| {
+            let dim = b.read_only
+                || match bag {
+                    Some(_) => tint(w, &b, true, c, gitems::INVENTORY, &s) == TINT_DIM,
+                    None => target(w, &b, g, &s).is_none_or(|t| tint(w, &b, false, gitems::INVENTORY, t, &s) == TINT_DIM),
+                };
+            let name = bag.map_or("Inventory", |o| BAGS[o].0);
+            let note = if s.count > 1 { format!("{name} · {}", s.count) } else { name.to_string() };
+            super::super::listsearch::Entry::item(w, s.id).note(note).dim(dim)
+        })
+        .collect()
+}
+
+/// A pick: its bag shown, the cursor on it, and across it goes (Enter).
+pub(in crate::client) fn search_pick(w: &mut World, _: Option<&super::super::game_ui::GameUi>, k: usize) {
+    let Some(&(bag, row, ..)) = places(w).get(k) else { return };
+    if let Some(g) = bag {
+        switch(w, g);
+    }
+    set_cursor(w, bag.is_some(), row);
+    take(w, bag.is_some(), row, false);
+}
+
 /// The view's mouse.
 #[derive(Default)]
 struct Mouse {
@@ -106,6 +150,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let on_bank = b.on_bank;
     let (bcur, icur) = (b.scroll + b.cursor, iscroll + icursor);
     let mut mouse = Mouse::default();
+    let mut found = super::lists::found(p, w, "storage");
     p.panel("window", Some(Title { icon: Some("icons/mog_safe"), text: "Storage", note: b.read_only.then_some("Away from the moogle") }), 720.0, |ui| {
         let labels: Vec<&str> = tabs.iter().map(|&k| BAGS[k].0).collect();
         for (i, resp) in super::tabs::strip(ui, m, "storage tabs", &labels, tabs.iter().position(|&k| k == g), None).into_iter().enumerate() {
@@ -123,6 +168,10 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                 ui.vertical(|ui| {
                     ui.set_width(340.0);
                     ui.label(egui::RichText::new(title).size(m.theme.small).color(m.theme.color("gold")));
+                    // A search runs over every bag in the side with the cursor.
+                    if bank_side == on_bank && super::lists::rows_or(ui, m, &mut found) {
+                        return;
+                    }
                     egui::ScrollArea::vertical().id_salt(bank_side).max_height(tall).min_scrolled_height(tall).auto_shrink([false, true]).show(ui, |ui| {
                         for (k, name) in names.iter().enumerate() {
                             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
@@ -170,8 +219,12 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         if bazaar_held {
             ui.label(egui::RichText::new(super::items::BAZAAR_NOTE).size(m.theme.small).color(m.theme.color("gold")));
         }
-        ui.label(egui::RichText::new("Click moves a stack across, right click one. Tab changes the bag.").size(m.theme.small).color(m.theme.color("muted")));
+        ui.label(egui::RichText::new("Click moves a stack across, right click one. Tab changes the bag. Type to search every bag.").size(m.theme.small).color(m.theme.color("muted")));
     });
+    if let Some(f) = found {
+        f.pick(w, p.gu);
+        return;
+    }
     if let Some(k) = mouse.bag {
         switch(w, k);
     }

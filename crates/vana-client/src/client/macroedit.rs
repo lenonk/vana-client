@@ -880,6 +880,13 @@ pub(super) fn set_menu(w: &mut World, c: u16) -> bool {
     moved
 }
 
+/// The 40 book names while the book list has the keys (type-to-search, modern/macros.rs).
+pub(super) fn search_books(w: &World) -> Option<Vec<String>> {
+    let (me, m) = (w.macroedit.as_ref()?, w.macros.as_ref()?);
+    me.book.as_ref().filter(|b| me.sets.is_none() && w.confirm.is_none() && b.opt.is_none() && b.edit.is_none() && b.rename.is_none())?;
+    Some((0..40).map(|k| m.book_title(k)).collect())
+}
+
 /// The book list's cursor onto book `k` (0..39: its page and row).
 pub(super) fn set_book(w: &mut World, k: usize) -> bool {
     let Some(b) = w.macroedit.as_mut().and_then(|m| m.book.as_mut()).filter(|b| b.opt.is_none() && b.edit.is_none() && b.rename.is_none()) else { return false };

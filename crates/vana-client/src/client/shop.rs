@@ -1461,6 +1461,17 @@ pub(super) fn set_main(w: &mut World, k: u16) -> bool {
     }
 }
 
+/// Type-to-search (listsearch.rs) in the open list: while it has the keys (nothing asked, the rows in).
+pub(super) fn search_open(w: &World) -> bool {
+    w.shop.as_ref().is_some_and(|s| s.view.is_some() && s.qty.is_none() && s.money.is_none() && s.confirm.is_none()) && look(w).is_some_and(|l| !l.loading)
+}
+
+/// A search pick: the cursor onto row `at`, then Enter (a click on the row).
+pub(super) fn search_pick(w: &mut World, _: Option<&GameUi>, at: usize) {
+    set_row(w, at);
+    key(w, egui::Key::Enter);
+}
+
 /// The list's cursor onto row `at` (the scroll follows) while the list has the keys. True when it moved.
 pub(super) fn set_row(w: &mut World, at: usize) -> bool {
     let n = w.shop.as_ref().map_or(0, |s| rows(w, s).len());

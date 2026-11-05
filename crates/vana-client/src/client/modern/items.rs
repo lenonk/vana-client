@@ -204,7 +204,7 @@ fn list(p: &mut Panels, w: &mut World) {
         }
     });
     if let Some((_, _, hits, _)) = &search {
-        lists::search_mouse(w, &found, hits);
+        lists::search_mouse(w, p.gu, &found, hits);
         return;
     }
     apply(w, mouse, sort, sub);

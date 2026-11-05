@@ -506,7 +506,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     });
 
     if let (Some(f), Some((_, _, hits, _))) = (found, &search) {
-        lists::search_mouse(w, &f, hits);
+        lists::search_mouse(w, p.gu, &f, hits);
         return;
     }
     if let Some(to) = mouse.tab {
