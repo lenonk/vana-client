@@ -78,6 +78,8 @@ pub struct UiBatch {
     runs: Vec<Run>,
     clip: Option<[f32; 4]>,
     depth: Option<f32>,
+    /// The first run drawn over everything else (the mouse cursor, after the modern layer); None = all in one pass.
+    top: Option<usize>,
     /// While Modern is on: the frame the retail windows' frames are drawn with, and the frames drawn this frame (the
     /// modern layer's edge windows give way to them).
     pub modern: Option<ModernFrame>,
@@ -402,7 +404,10 @@ impl UiBatch {
         for k in [0, 1, 2, 1, 3, 2] {
             self.vertices.push(UiVertex { pos: corners[k], uv: uvs[k], color: colors[k], depth: self.depth.unwrap_or(-1.0) });
         }
+        // A run before the top mark is closed.
+        let open = self.top.is_none_or(|t| self.runs.len() > t);
         if let Some(r) = self.runs.last_mut()
+            && open
             && r.texture.as_deref() == texture
             && r.blend == blend
             && r.clip == self.clip
@@ -411,6 +416,11 @@ impl UiBatch {
             return;
         }
         self.runs.push(Run { texture: texture.map(str::to_string), blend, first, count: 6, clip: self.clip });
+    }
+
+    /// Quads pushed from now on are drawn by [`UiRenderer::render_top`], after the modern layer.
+    pub fn start_top(&mut self) {
+        self.top = Some(self.runs.len());
     }
 
     /// Vertices pushed so far: a mark for [`UiBatch::fade_from`].
@@ -912,7 +922,36 @@ impl UiRenderer {
         let Some(vb) = vb else { return };
         pass.set_bind_group(0, &self.globals, &[]);
         pass.set_vertex_buffer(0, vb.slice(..bytes.len() as u64));
-        for r in &batch.runs {
+        self.draw_runs(&mut pass, &batch.runs[..batch.top.unwrap_or(batch.runs.len()).min(batch.runs.len())], kx, ky, size);
+    }
+
+    /// The batch's top runs (the mouse cursor) over what is drawn since [`UiRenderer::render`], from the vertices it
+    /// uploaded.
+    pub fn render_top(&mut self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView, layout: [u32; 2], size: [u32; 2], batch: &UiBatch) {
+        let Some(top) = batch.top.filter(|&t| t < batch.runs.len()) else { return };
+        let Some((vb, _)) = self.vertices.as_ref() else { return };
+        let (kx, ky) = (size[0] as f32 / layout[0].max(1) as f32, size[1] as f32 / layout[1].max(1) as f32);
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("ui top"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_bind_group(0, &self.globals, &[]);
+        pass.set_vertex_buffer(0, vb.slice(..(batch.vertices.len() * std::mem::size_of::<UiVertex>()) as u64));
+        self.draw_runs(&mut pass, &batch.runs[top..], kx, ky, size);
+    }
+
+    fn draw_runs(&self, pass: &mut wgpu::RenderPass<'_>, runs: &[Run], kx: f32, ky: f32, size: [u32; 2]) {
+        let [width, height] = size;
+        for r in runs {
             let (x, y, w, h) = match r.clip {
                 Some([x, y, w, h]) => {
                     let (x, y, w, h) = (x * kx, y * ky, w * kx, h * ky);

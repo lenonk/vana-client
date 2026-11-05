@@ -13735,7 +13735,14 @@ impl App {
             let consumed = gfx.egui_ctx.egui_wants_pointer_input();
             for e in &events {
                 match e {
-                    egui::Event::PointerMoved(p) => self.last_cursor = Some((p.x as f64 * ppp, p.y as f64 * ppp)),
+                    // In the window, and shown past 2 px, as the window's motion.
+                    egui::Event::PointerMoved(p) => {
+                        let at = (p.x as f64 * ppp, p.y as f64 * ppp);
+                        if self.last_cursor.is_none_or(|(x, y)| (at.0 - x).abs() > 2.0 || (at.1 - y).abs() > 2.0) {
+                            self.mouse.visible = true;
+                        }
+                        (self.cursor_in, self.last_cursor) = (true, Some(at));
+                    }
                     egui::Event::PointerButton { button, pressed, .. } if !consumed || !*pressed => {
                         let b = if *button == egui::PointerButton::Secondary { MouseButton::Right } else { MouseButton::Left };
                         self.mouse_button(b, *pressed, consumed);
@@ -15086,6 +15093,8 @@ impl App {
                 let s = self.cfg.cursor_scale(size[1]) * self.ui_k.1;
                 let fs = if self.cfg.cursor_size == 0 { 1.0 } else { self.cfg.cursor_size as f32 / 100.0 } * self.ui_k.1;
                 let dy = if let Phase::World(w) = &self.phase { w.ptr_dy } else { 0.0 };
+                // Over the modern layer too: drawn after its pass.
+                lu.start_top();
                 self.mouse.draw(lu, self.index.as_ref(), x as f32 * self.ui_k.0, y as f32 * self.ui_k.1 + dy, dt, s, fs);
             }
             counts.ui_vertices = lu.vertex_count();
@@ -15122,6 +15131,11 @@ impl App {
             gfx.egui_renderer.render(&mut pass, &jobs, &screen);
         }
         mark!("egui");
+        if self.ui_drawn
+            && let Some(lu) = &mut self.game_ui
+        {
+            lu.render_top(&mut encoder, &view, self.cfg.ui_size(size), size);
+        }
         for id in &textures.free {
             gfx.egui_renderer.free_texture(id);
         }

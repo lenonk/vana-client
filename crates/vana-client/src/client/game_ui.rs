@@ -2003,6 +2003,18 @@ impl GameUi {
         }
     }
 
+    /// Quads pushed from now on (the mouse cursor) are drawn by [`GameUi::render_top`], over the modern layer.
+    pub fn start_top(&mut self) {
+        self.batch.start_top();
+    }
+
+    /// The top quads, after the modern layer's pass.
+    pub fn render_top(&mut self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, layout: [u32; 2], size: [u32; 2]) {
+        if let Some(r) = self.renderer.as_mut() {
+            r.render_top(encoder, view, layout, size, &self.batch);
+        }
+    }
+
     /// Draws this frame's batch, over the lobby clear colour or (`over`) on top of the 3D scene.
     /// Draws the batch; `fade` is the 2D layer level, `scene` the lobby scene level the clear colour takes.
     #[allow(clippy::too_many_arguments)]
