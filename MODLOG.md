@@ -22290,3 +22290,105 @@ Checked in Steven's unpacked FFXiMain.dll (sha256 8097dbf8..., 2026-11-03).
   kept trimmed (dat::ui::norm_name), so the window lookup, its children (the mouse rows) and the drawing all missed.
   The keys still worked, so the menu answered while invisible. The name is now trimmed, and UiFile::menu trims the
   name it is given, so a padded name finds its layout. The Modern UI draws its own list and was not affected.
+
+## Effect elements: no t = 0 frame (2026-11-05)
+
+Heavens Tower's waterfalls (sub-area 426, `r_5w/effe/wat0/tpB1` / `tpB2`, mesh `tk00`) flashed at full strength for one
+frame every respawn (life 60, a new sheet every ~22 ticks).
+
+- The sheets' alpha key `tk01` is (0, base), (1e-7, 0), (0.49, 0.22), (0.9999999, 0), (1, 1): the first and last points
+  are guards that a sample in (0, 1) never reaches. Op 0x2d's base is the element's colour alpha (0x80), so a sample at
+  exactly t = 0 shows the sheet at alpha 0x80 instead of ~0.
+- Ours spawned the element with LIFE_SET (the CPU's lives ran before the spawn, so the GPU skips its first decrement
+  to stay in step); its first update then sampled t = 0. Retail counts the life down before the keys, so a timed
+  element's samples run t = dt / life .. (life - 1) / life *(inf: from the guard points; no DLL pass)*.
+- Fix: a spawn also sets ctl::BORN; the update pass runs the element's stream as before but leaves it undrawn that
+  frame when it has a life and lives on past the next decrement (outs[23] = 0). Elements without a life (t stays 0)
+  and one-tick elements (life - dt < 1: their only frame) draw at once. Point lights and op 0x60 flashes are not
+  gated (they do not read outs[23]). Test:
+  `gpu_born_hidden_one_frame`.
+
+## Events: idle motion ops stop the event motion scheduler (2026-11-05)
+
+- Ops 0x6b (`FUN_100b7070`) and 0x5e (`FUN_100b71e0`), reached through the jump table at 0x100bc960, call
+  `FUN_10087d40` on the actor before they set the idle motion (+0x1a4, model +0x7c8, +0x7d8 = "    ").
+  `FUN_10087d40` calls model vtable +0x29c with actor +0x1ec (scheduler 4cc) and +0x1f4 (second actor's model).
+  It needs both fields set and +0x120 bit 9. This is the same call that op 0x50 makes, and it deletes the scheduler task.
+- +0x1ec / +0x1f4 are written only by the motion op body `FUN_100b5210` (0x100b5466). Ops 0x5b / 0x66 and 0x5f
+  subs 3..6 reach it. Unbinding clears both (0x100bd355).
+- Client: `State.event_sched` keeps the last motion-op scheduler for each actor, and `Effect::IdleMotion` stops it
+  through `LiveHost::stop_scheduler` (the op 0x50 path) before it cuts the motion.
+- Seen in the Records of Eminence intro (Bastok Markets 235 event 24). The memorandoll (npc 0x0b2, model 970) gets
+  `motion_file #252 'bru0'` and `set_idle_motion 'idl0'` 120 ticks later. Scheduler `bru0` (file 32356) plays `bru` once,
+  then loops `br1` (`br10`, a shake) from tick 480. Before this change that loop started anyway and ran to the end.
+
+## Motions: flagged tracks in a legs chunk still write the bone (2026-11-05)
+
+- `FUN_10019b30` (one layer's tracks onto the pose, through `FUN_10019a50` from the layer's vtable +0x38,
+  `FUN_1001ab60`): when a track's rotation index has bit 31 set, a chunk of region 1..4 sets the bone to identity
+  and leaves it unmarked, so another region or layer can still write it. A region 0 (legs) chunk masks the flag
+  off and uses the track like any other, constants included, and marks the bone as written.
+- So a gesture's legs chunk resets the bones it flags. The Taru event motions (file 32752: th10, wav0, tlk0, poi0, ...)
+  flag bones 0, 2, 72, 73, 77 and 82, and the Taru idle `idl0` keys bone 2 with a hip sway. We dropped every
+  flagged track, so the idle under a gesture kept moving bone 2, and the NPC's feet slid about 3 cm on the
+  idle's 2-second cycle (Kupipi's trust intro, Wetata). Retail footage of the same scene shows the feet still.
+- Client: `parse_animation` keeps flagged tracks in chunks whose name ends in `0`. It masks bit 31 off every
+  channel index there, and still skips flagged tracks in other regions. Test:
+  `legs_chunk_flagged_tracks_cover_the_idle`.
+
+## /heal: sitting down and standing up (2026-11-05)
+
+From FFXiMain.dll (Steven's unpacked copy, all_decomp.c) and the Hume M skeleton file 7072 (ROM/27/82).
+
+- FUN_1008b460 (the entity's transition machine, run from FUN_1008e9a0 before and after the applied status +0x170
+  takes the server's +0x16c): state 0 with an applied status of 0x21 or 7 goes to state 7. State 7 waits for
+  FUN_100d12d0 (the model ready) and for no `waot` on the actor (vt+0x2a0), then starts scheduler `res0` (vt+0x298)
+  and goes to state 8. State 8 starts `res2` once the applied status is no longer 0x21 / 7 and goes back to state 0.
+- FUN_1008b3a0 (read by FUN_100964f0, the local walk's gate in FUN_100a6240) refuses movement in states 7 and 8, and
+  FUN_100a5ec0 skips the walk while op 0x2e holds the actor (vt+0x310).
+- The schedulers (7072): `res0` 145 ticks: op 0x1f 145, op 0x07 145, op 0x2e 145, `rx0` for 52 ticks, then `rx1` 93.
+  `res2` 56 ticks: op 0x1f 56, op 0x2e 56, op 0x07 56, `rx2` 56. `res1` is `rx1` alone. So standing up from a rest
+  takes 56 ticks (0.93 s) in which the character cannot walk.
+- Ours (client/rest.rs): we never played `res0` / `res2`, only the status motion `rx1`; the server's status 0 let the
+  walk start at once, and the walk's motion replaced the blend back to standing. Now each actor runs states 7 / 8 per
+  frame (`res0` once its model is in, `res2` on leaving healing) through actmotion::start plus the scheduler's holds in
+  fx, as synth.rs does for `res0` / `res2`. Our own walk (keys, pad, autorun, follow, click-to-move) stays held for
+  `res2`'s 56 ticks from the frame it starts, under the same `move_lock` rule as op 0x2e (the scheduler's own op 0x2e
+  starts a frame later).
+
+## The key that opens the list search is no hotkey (2026-11-05)
+
+- The modern list search (listsearch.rs) opens on the first typed letter or digit, but `key_functions` runs before
+  the frame's egui events reach `listsearch::events`, so that first key still ran its key function (later keys were
+  fine: `list_search` is set and counts in `text_field_open`). `key_functions` now looks at the frame's typed text
+  still queued in egui-winit (`egui_input().events`): a letter or digit while `listsearch::can_run` makes the frame
+  a typing one, and key functions with mask 0x41 fail for it.
+
+## Action menu: which commands show on a target (2026-11-06)
+
+From FFXiMain.dll (Steven's unpacked copy, full_text.asm / all_decomp.c).
+
+- FUN_1012b4b0 picks the layout (table 0x1036f390, 13 bytes each): engaged 6; else a target FUN_101cc220 calls
+  hostile takes 2 (layouts 4 / 5); an NPC (+0x1d0 bit 1) that FUN_1008e150 does not call an ally takes layout 7 when
+  +0x1d0 bit 8 is set (FUN_1008e290: +0x12c bit 13, 0x00E @0x27 bit 3, a player owns it), else 0; anything else
+  (players, us, allies) 1. Riding (status 5 / 0x55) doubles plus one and passes flag 1; layout 7 has no riding form.
+- FUN_1012af30 (jump index 0x1012b2a8, table 0x1012b26c, command - 3) per command: 3 Disengage (Call for help while
+  DAT_10578174); 4 Chat, none on an NPC (UniqueNo high byte 1), Tell on any other target; 6 Talk / 0x11 Disband /
+  0x14 NPC Trade only on FUN_101cc550 (our +0x2a0: the adventuring fellow, 0x037 @0x48) while its +0x170 is not 1;
+  0xa (player layouts' Check) none on us while riding, Fish (0xd) on us when FUN_10177730 and zone != 0xd3, else
+  hidden by FUN_1008e150; 0xb Check needs a target, not +0x1d0 bit 8, not FUN_1008e150; 0xc Treasure hidden by
+  FUN_101cc350(1, 0), else FUN_1013eff0; 0xd Fish hidden by FUN_101cc350(0, 0), else FUN_10177730 and zone != 0xd3;
+  0xe Dig (mount, [S] zones FUN_100fd3a0, +0x123 & 7 tests); 0x10 Invite hidden by FUN_10201f00, else a target other
+  than us with +0x124 bit 20 or 21 (0x00D flags1 bit 11 seeking party, flags2 bit 31 auto-party); 0x13 Trade hidden
+  by FUN_101cc350(0, 0), else a non-NPC target; 0x16 / 0x17 Quarry / Scout need FUN_101cc350(1, 1); 0x18 Sprint the
+  same, Scout with +0x27c; 0x1a Release: FUN_1012aed0, the target's +0x12c bit 22 (trust) and its +0x2a4 master (s2c
+  0x067 kind 3 @0x0C) our own entity; 0x1b Request a target with +0x140 bit 3 (0x00D flags3 bit 1, recruiting).
+  Every other command shows.
+- FUN_101cc350(a, b): our +0x1d0 bit 10 (team 2..99), not 8 / 9 when a, not 0x28..0x2b when b.
+- FUN_1012b880 (command - 1, table 0x1012bc2c): 0xd "/fish"; 0x10 FUN_100e8fd0 (c2s 0x06E, kind 0); 0x11 group 0xb
+  0xb8 yes / no, Yes (LAB_1012bcc0) FUN_1007bf30(target, 1) and closes playermo; 0x1a FUN_1007bf30(target, 1) with
+  the menu left up; 0x1b "/partyrequestcmd add <name>" (+0x214 when +0x210, else +0x7c). Talk (6) is
+  FUN_1007bf30(target, 0) and closes playermo.
+- FUN_1007bf30's second argument reaches FUN_100780a0 / FUN_100780d0 as the action packet's u32 @0x0C (c2s 0x01A
+  action 0): 1 releases a trust (LSB checks the trust's master).
+- Ours (client/combat.rs): all of the above except Dig's zone and ground tests and Sprint's Scout swap.
