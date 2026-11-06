@@ -12,6 +12,7 @@ pub mod cloth;
 mod battlemod;
 pub mod opening;
 mod flyover;
+mod rest;
 mod resttick;
 mod creator;
 mod netwait;
@@ -5967,6 +5968,8 @@ struct World {
     anglers: HashMap<u32, fishrod::Angler>,
     /// /sitchair sitters' chairs (client/chair.rs).
     seats: HashMap<u32, chair::Seat>,
+    /// Resting actors' sit-down and stand-up (client/rest.rs).
+    rests: HashMap<u32, rest::Phase>,
     /// Event music fades (ops 0x5d, 0x5c 0xa0 / 0xa1): volume, ticks.
     music_fades: Vec<(i32, i32)>,
     /// The audio still changing music (event op 0x9a waits), as of the last frame.
@@ -8491,6 +8494,7 @@ impl App {
                             rides: HashMap::new(),
                             anglers: HashMap::new(),
                             seats: HashMap::new(),
+                            rests: HashMap::new(),
                             music_fades: Vec::new(),
                             music_changing: false,
                             music_state: -1,
@@ -9425,6 +9429,8 @@ impl App {
                     world.noreact.clear();
                     world.loads.clear();
                     world.knocks.clear();
+                    // A rest machine starts afresh in the new zone (rest.rs).
+                    world.rests.clear();
                     let current = world.zone == Some(zone) && world.scene == Some(scene);
                     let pending = world.loading == Some(zone) && world.loading_scene == scene;
                     if !current && !pending {
@@ -9470,6 +9476,7 @@ impl App {
                         if !event::holds(world, e.id) {
                             world.entities.remove(&e.id);
                             world.actors.remove(&e.id);
+                            world.rests.remove(&e.id);
                             world.effects.forget_actor(e.id);
                             timers::on_gone(world, e.id, false);
                         }
@@ -10739,6 +10746,7 @@ impl App {
         ride::update(world, dt);
         fishrod::update(world, dt);
         chair::update(world);
+        rest::update(world);
         indi::update(world, dt);
         border::update(world);
         racing::step(world, dt * 60.0);
@@ -10967,7 +10975,8 @@ impl App {
             self.stand_sent = false;
         }
         // Scheduler op 0x2e: the effect of our own action holds the walk input (FUN_100a5ec0 skips FUN_100a6240).
-        let move_locked = world.opts.move_lock && world.effects.rooted.contains(&world.my_id);
+        // `res2` (rest.rs) holds the walk the same way, from the frame it starts.
+        let move_locked = world.opts.move_lock && (world.effects.rooted.contains(&world.my_id) || rest::rising(world));
         if resting || move_locked {
             (ax, ay) = (0.0, 0.0);
         }
@@ -11008,8 +11017,9 @@ impl App {
             world.autorun = !world.autorun;
             world.autorun_dir = Vec3::ZERO;
         }
-        // Turning while autorunning steers it: the move goes forward and the turn counts as X input.
-        if world.autorun && turn != 0.0 {
+        // Turning while autorunning steers it: the move goes forward and the turn counts as X input. Not while a move
+        // lock (op 0x2e, our stand-up) holds the walk.
+        if world.autorun && turn != 0.0 && !move_locked {
             (ax, ay) = (turn, -1.0);
         }
         let mut step = right * ax - forward * ay;
