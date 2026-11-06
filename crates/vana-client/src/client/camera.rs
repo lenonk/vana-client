@@ -162,6 +162,18 @@ pub fn first_look(w: &mut World, dyaw: f32, dpitch: f32) {
     st.fp_mouse = Some(((p + dpitch).clamp(-1.4, 1.4), y + dyaw));
 }
 
+/// The mouse's first-person look yaw (ours), which stands for the heading once dragged.
+pub fn fp_mouse_yaw(w: &World) -> Option<f32> {
+    w.camst.fp_mouse.map(|(_, y)| y)
+}
+
+/// First person's tank turn carries a dragged look along, so the view keeps turning with the heading.
+pub fn fp_turn(w: &mut World, d: f32) {
+    if let Some((_, y)) = w.camst.fp_mouse.as_mut() {
+        *y += d;
+    }
+}
+
 /// The view shake (camera +0x7c offset, +0x80 speed, +0x84 scale; effect op 0x5f's kicks), stepped in retail frames
 /// of 2 ticks, held between them.
 #[derive(Default)]

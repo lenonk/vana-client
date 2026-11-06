@@ -20,4 +20,4 @@ From FFXiMain.dll (Steven's unpacked copy).
   0x1004bce3 / 0x1004bd7d, unconfirmed as an actor.)
 - First person (DAT_10487f80, key 0x10): tank controls, stick X turns (heading += 2 x X x speed x 0.0174528), Y moves
   along the heading; 0x9c held with |X| > 0.01 zeroes the turn and X moves sideways (vt+0x344(1)), camera FUN_10021110;
-  +0x598 not updated *(not done in ours)*.
+  +0x598 not updated. Done in ours: see "First-person tank controls".

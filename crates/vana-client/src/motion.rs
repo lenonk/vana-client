@@ -100,6 +100,14 @@ pub fn choose(names: &MotionNames, status: u8, ratio: f32) -> (&'static str, f32
     }
 }
 
+/// First person's tank turn (FUN_100a6240, 0x100a7381): heading (our yaw, forward = (sin, 0, cos)) += 2 x X x ticks x
+/// 0.01745, X the stick's normalised and tiered side (FUN_100a78d0), wrapped to +-pi. Stick right turns right.
+pub fn tank_turn(heading: f32, x: f32, mag: f32, tier: f32, ticks: f32) -> f32 {
+    let x = if mag > 0.0 { x / mag * tier } else { 0.0 };
+    let pi = std::f32::consts::PI;
+    (heading + 2.0 * x * ticks * 0.017452778 + pi).rem_euclid(std::f32::consts::TAU) - pi
+}
+
 /// FUN_100a80d0: the quarter of a step about the heading `f` (both level): 1 forward, 2 right, 3 back, 4 left, the
 /// sectors 90 degrees wide and centred on the axes; 0 under 0.001.
 pub fn strafe_dir(f: glam::Vec3, step: glam::Vec3) -> u8 {
@@ -147,6 +155,22 @@ pub fn choose_strafed(names: &MotionNames, status: u8, ratio: f32, dir: u8, fixe
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tank_turns_right_two_degrees_a_tick() {
+        use glam::Vec3;
+        let h = super::tank_turn(0.0, 1.0, 1.0, 1.0, 1.0);
+        assert!((h.to_degrees() - 2.0).abs() < 1e-3);
+        // Toward the right vector (forward x -Y), as a step of +X goes.
+        let (f, nf) = (Vec3::Z, Vec3::new(h.sin(), 0.0, h.cos()));
+        assert!(nf.dot(f.cross(Vec3::NEG_Y)) > 0.0);
+        // A partial stick (tier a third) turns a third as fast; none, or a dead stick, not at all.
+        assert!((super::tank_turn(0.0, 0.5, 0.5, 1.0 / 3.0, 1.0).to_degrees() - 2.0 / 3.0).abs() < 1e-3);
+        assert!((super::tank_turn(0.3, 0.0, 0.0, 0.0, 1.0) - 0.3).abs() < 1e-5);
+        // Wrapped to +-pi.
+        let w = super::tank_turn(std::f32::consts::PI - 0.01, 1.0, 1.0, 1.0, 1.0);
+        assert!(w < 0.0 && w > -std::f32::consts::PI);
+    }
 
     #[test]
     fn strafe_quarters() {

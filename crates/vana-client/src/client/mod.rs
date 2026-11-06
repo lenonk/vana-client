@@ -11014,7 +11014,26 @@ impl App {
         // the camera keeps its offset, its keys and Q / E are off and the heading stays. Q / E turn the player (0xaa /
         // 0xa9, FUN_10253a60 / FUN_102539f0) while the camera axes are idle.
         let type2 = world.game.get(0x42) == 2 && !world.locked;
-        let face_cam = type2 && self.input.test(0x9c, input::mode::HELD);
+        let face_cam = type2 && !world.camst.first && self.input.test(0x9c, input::mode::HELD);
+        // First person, free (FUN_100a6240 from 0x100a70ae, every control type): tank controls. Stick X turns the
+        // heading 2 degrees a tick at full tilt, Y moves along it (back is the same speed, still facing forward); 0x9c
+        // held with |X| > 0.01 (vt+0x344(1)) moves X sideways instead and the heading stays. Not with /follow, which
+        // steers the heading itself. Ours: a mouse drag's look stands for the heading.
+        let tank = world.camst.first && !world.locked && world.follow.is_none();
+        let fp_side = tank && self.input.test(0x9c, input::mode::HELD) && ax.abs() > 0.01;
+        let mut heading = if tank {
+            camera::fp_mouse_yaw(world).unwrap_or_else(|| {
+                let dir = world.net.me.lock().map_or(0, |m| m.dir);
+                let f = world.my_face.filter(|f| f.0 == dir).map_or_else(|| forward_from_dir(dir), |f| f.1);
+                f.x.atan2(f.z)
+            })
+        } else {
+            0.0
+        };
+        let tank_step = |h: f32, ax: f32, ay: f32| {
+            let f = Vec3::new(h.sin(), 0.0, h.cos());
+            -f * ay + if fp_side { f.cross(Vec3::NEG_Y) * ax } else { Vec3::ZERO }
+        };
         let turn = if type2 && !face_cam && cx == 0.0 && cy == 0.0 && px == 0.0 && py == 0.0 && ax == 0.0 {
             self.input.test(0xaa, input::mode::HELD) as i32 as f32 - self.input.test(0xa9, input::mode::HELD) as i32 as f32
         } else {
@@ -11033,7 +11052,7 @@ impl App {
         if world.autorun && turn != 0.0 {
             (ax, ay) = (turn, -1.0);
         }
-        let mut step = right * ax - forward * ay;
+        let mut step = if tank { tank_step(heading, ax, ay) } else { right * ax - forward * ay };
         // Autorun: the first move becomes the vector; X input steers it 2 degrees a tick (ticks x 0.01745 x 2); no
         // input and no vector ends it. Forced off while dead, resting or seated and in events. Locked on, the
         // keys move as usual *(inf)*.
@@ -11102,8 +11121,13 @@ impl App {
             } else {
                 if ax != 0.0 && !look_steer {
                     let d = world.autorun_dir;
-                    let a = d.x.atan2(d.z) + 2.0 * ax * ticks * 0.017452778;
+                    let delta = 2.0 * ax * ticks * 0.017452778;
+                    let a = d.x.atan2(d.z) + delta;
                     world.autorun_dir = Vec3::new(a.sin(), 0.0, a.cos());
+                    // First person (0x100a764c / 0x100a7381): the heading turns with it; a dragged look follows.
+                    if tank && !directed_run(world) {
+                        camera::fp_turn(world, delta);
+                    }
                 }
                 step = if touching {
                     Vec3::ZERO
@@ -11140,6 +11164,27 @@ impl App {
         // Q / E: player yaw += ticks x 0.01745 x 1.57075; the camera follows the turn (FUN_1001d4c0).
         let turn_delta = if turn != 0.0 && !world.autorun && !in_event && world.unlock_ticks <= 0.0 { turn * ticks * 0.017452778 * 1.57075 } else { 0.0 };
         world.yaw += turn_delta;
+        // The turn (0x100a7381): heading += 2 x X x ticks x 0.01745, X normalised and tiered (FUN_100a78d0), wrapped;
+        // the step goes along the new heading this frame. Autorun steers itself (the same 2 degrees a tick).
+        let mut tank_face = None;
+        let mut tank_turn = 0.0;
+        if tank && !world.autorun {
+            if !fp_side && mag > 0.0 && !in_event && !world.dead() && world.my_motion.status != 33 {
+                let h = crate::motion::tank_turn(heading, ax, mag, tier, ticks);
+                tank_turn = 2.0 * (ax / mag * tier) * ticks * 0.017452778;
+                heading = h;
+                camera::fp_turn(world, tank_turn);
+            }
+            // Q / E (ours: as in third person) turn the heading too.
+            if turn_delta != 0.0 {
+                heading += turn_delta;
+                camera::fp_turn(world, turn_delta);
+            }
+            if tier != 0.0 {
+                step = tank_step(heading, ax, ay);
+            }
+            tank_face = (!in_event).then(|| Vec3::new(heading.sin(), 0.0, heading.cos()));
+        }
         // Mouse/Cam.: 0x8b / 0x8c invert the camera axes, 0x8d / 0x8e in first person (FUN_1001ee60: the keys' and
         // the stick's axes 6 / 7 alike).
         let first = world.camst.first;
@@ -11339,6 +11384,8 @@ impl App {
             // Standing still keeps the facing; only the camera turns. Locked, we face the target.
             let to = if let Some((_, Some(y))) = pin {
                 Some(Vec3::new(y.cos(), 0.0, -y.sin()))
+            } else if let Some(f) = tank_face {
+                Some(f)
             } else if face_cam {
                 // 0x9c held (B / Shift, control type 2): a strafe lock. Retail's FUN_100a6240 returns before the turn
                 // to the move direction while actor +0xfb is set, so the heading stays and the stick strafes.
@@ -11356,7 +11403,8 @@ impl App {
             }
             // FUN_100a80d0: with the heading held (the strafe lock; ours also the right drag's facing), the step's
             // quarter about it, the sectors 90 degrees wide and centred on the axes.
-            let held = (face_cam || world.mouse_look) && pin.is_none() && lock_target.is_none();
+            // First person never writes +0x598 (walk / run forward, back and sideways alike).
+            let held = (face_cam || world.mouse_look) && pin.is_none() && lock_target.is_none() && !tank;
             world.my_strafe = if lock_target.is_some() && pin.is_none() {
                 lock_dir
             } else if held && stepping {
@@ -11382,7 +11430,8 @@ impl App {
             }
             me.move_time = (flame.round() as u32 & 0xffff) as u16;
         }
-        world.moving = moving;
+        // FUN_100c8930 takes the tier, not the step: turning on the spot in first person walks or runs in place.
+        world.moving = moving || tank_turn != 0.0;
         // FUN_100c4390 (free camera): the heading turns at once, the model eases its drawn rotation (+0x61c) 0.125 a
         // tick toward it (the step's direction while moving). Snapped at zone-in, in events and when pinned.
         // Toward the float facing while the byte is still ours (a stick's slow turn would step on the byte), else
