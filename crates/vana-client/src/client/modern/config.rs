@@ -243,7 +243,13 @@ fn refresh_hits(gu: Option<&GameUi>, c: &mut ConfigUi, v: &Values, s: Option<&Se
     }
 }
 
+/// The search has text being typed (see `find_events`): its keys are no game keys.
+pub fn finding(w: &World) -> bool {
+    w.modern && shown(w) && w.config.as_ref().is_some_and(|c| c.m_find.is_some() && c.m_sub.is_none() && c.m_keys.is_none() && c.extra.ask_keys.is_none())
+}
+
 /// The search's typed text, Backspace, Escape and Ctrl+R (Retail only) while the Settings window shows a topic page.
+
 /// True when it took them (the game then sees none).
 pub fn find_events(w: &mut World, events: &[egui::Event]) -> bool {
     if !find_open(w) {

@@ -322,7 +322,10 @@ fn typing_elsewhere(w: &World) -> bool {
         // The modern Wide Scan name filter and the full log's find.
         || (w.modern && w.scan_typing)
         || (w.modern && w.full_log.is_some() && w.log_find.is_some())
+        // Ours: the Settings window's search.
+        || modern::config_finding(w)
 }
+
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {

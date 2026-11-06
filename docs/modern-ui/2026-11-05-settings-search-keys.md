@@ -1,0 +1,1 @@
+- Typing in the Settings window's search no longer triggers game hotkeys (ours).
