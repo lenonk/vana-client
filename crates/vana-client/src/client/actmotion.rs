@@ -513,7 +513,7 @@ fn status_motion_posed(w: &World, id: u32, ch: &Character, posed: Option<f32>) -
     let (status, ratio) = if let Some(r) = posed {
         (0, r)
     } else if id == w.my_id {
-        (w.my_motion.status, if w.moving { 1.0 } else { 0.0 })
+        (w.my_motion.status, if w.moving || w.turn_in_place { 1.0 } else { 0.0 })
     } else {
         w.entities.get(&id).map_or((0, 0.0), |e| (e.motion.status, e.ratio))
     };

@@ -1917,7 +1917,8 @@ From the research notes:
 - Q / E (0xaa / 0xa9, keyboard type 2, free camera, X input 0, camera axes idle): player yaw += ticks x 0.0174528 x
   1.57075 x (E - Q) (_DAT_10322260 = 1.57075; 94 degrees a second); the camera turns with it (FUN_1001d4c0).
 - Strafe lock 0x9c (LShift / pad B held, control type 2, free): the camera keeps its offset and the heading stays, so the
-  stick strafes; camera axes and Q / E off (docs/modlog 2026-11-04-strafe-lock-b).
+  stick strafes; camera axes and Q / E off (cur 30261006: FUN_100a6240 sets vt+0x344(1) under FUN_1025e070 and keeps
+  the camera offset, FUN_1025e090).
 - The heading (actor +0xe4 rotation, vt+0x1c0 FUN_100a3350) is set at once to the move vector's direction (FUN_100a48d0
   end, -atan2), the move vector being the input turned by the camera's forward (camera +0x24 / +0x2c, FUN_100a6030).
   What is drawn eases: FUN_100c4390 (vt+0x330, player +0xf9 set) takes the step's direction when the actor moved 0.01
@@ -22597,9 +22598,9 @@ From FFXiMain.dll (Steven's unpacked copy).
   the locked step's own frame (forward toward the target, target::locked_step), not against each frame's way to the
   target: a monster's position jumping in melee range swung that between sideways and forward every frame, cutting
   mvr / mvl to the run and back (Steven's log, 2026-11-06).
-- FUN_10084400 is the actor's model kind ([+0x70]+0xee): 2 / 7 are fixed models without the mv? motions, so
+- FUN_10084400 is the actor's model kind ([+0x70]+0xee): FUN_100c8bb0 tests == 2 (a fixed model without the mv? motions), so
   FUN_100c8bb0 (0x100c8d5e) plays the move motion (+0x7cc) for 2..4 instead. Ours: an actor drawn from one model
-  id (Source::Npc(NpcLook::Model), mod.rs fixed_model) takes its walk.
+  id (Source::Npc(NpcLook::Model), mod.rs fixed_model) takes its walk. *(inf: kind 2 taken as such a model.)*
 - Other actors: only local-player code writes +0x598 or +0xf9 / +0xfb (the base vtable 0x1032e3c8 returns 1 / 0), so
   retail never plays mv? on other players or NPCs. (FUN_1004a980 writes +0xf9 / +0xfb on some script object at
   0x1004bce3 / 0x1004bd7d, unconfirmed as an actor.)
@@ -22619,12 +22620,13 @@ From FFXiMain.dll (Steven's unpacked copy; 0x100c6b70 / 0x100c4390 are inside FU
 - FUN_100c8bb0 (from FUN_100c83c0) picks the walk / run as usual, then while +0xfb is set: on foot 2 'mvr ', 3 'mvb ',
   4 'mvl '; riding (status 5 or 0x55) 3 'mvb ', 2 / 4 'wlk '; FUN_10084400() == 2 takes the walk for 2..4 instead. The
   rate is the walk / run's. No fallback: a model without the motion keeps its last one (only 'id1 ' and 'df1 ' retry).
-- FUN_100c63d0 (~0x100c69e9): our model with +0xfb set, not riding, eases toward the heading, not the step.
-- FUN_100a8000 (after FUN_100a80d0): back = speed x 1/3 (vt+0x1b0) / 60 (x2 riding); sideways a fixed 0.0625 a tick
+- FUN_100c63d0 (~0x100c69e9; cur 30261006): our model with +0xfb set, not riding, eases toward the heading, not the step.
+- FUN_100a8000 (after FUN_100a80d0; cur 30261006): back = speed x 1/3 (vt+0x1b0) / 60 (x2 riding); sideways a fixed 0.0625 a tick
   (0.125 riding), whatever the speed or the stick. Ours: the same under the strafe lock (update_movement's step);
   the right drag (ours, not retail) keeps the normal speed.
 - Ours: World::my_strafe (motion::strafe_dir) while the strafe lock is held, and also while the right drag holds the
-  facing (ours, not retail), and motion::strafe over our walk / run. The FUN_10084400 == 2 case: see 2026-11-05-lock-on-strafe.
+  facing (ours, not retail), and motion::strafe over our walk / run. The FUN_10084400 == 2 case: see "Strafing while
+  locked on; control types 0 / 1".
 
 ## Lock-on flip guard (2026-11-06)
 

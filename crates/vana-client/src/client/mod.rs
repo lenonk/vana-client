@@ -5469,7 +5469,7 @@ fn base_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
         let m = w.my_motion;
         // The eased drawn facing (my_draw_yaw), which itself follows the float facing while the byte is still ours.
         let forward = w.my_draw_yaw.map_or_else(|| forward_from_dir(my_dir), |t| Vec3::new(t.cos(), 0.0, -t.sin()));
-        return Some(Place { pos: drawn_pos(w), forward, tilt: [0.0; 2], status: m.status, ratio: if w.moving { w.move_tier * own_rate(w) } else { 0.0 }, size });
+        return Some(Place { pos: drawn_pos(w), forward, tilt: [0.0; 2], status: m.status, ratio: if w.moving || w.turn_in_place { w.move_tier * own_rate(w) } else { 0.0 }, size });
     }
     let e = w.entities.get(&id)?;
     Some(Place { pos: e.pos, forward: Vec3::new(e.yaw.cos(), 0.0, -e.yaw.sin()), tilt: [0.0; 2], status: e.motion.status, ratio: e.ratio, size })
@@ -6206,6 +6206,9 @@ struct World {
     unsettled: bool,
     actors: HashMap<u32, Actor>,
     moving: bool,
+    /// First person's turn on the spot this frame: the walk or run motion plays in place (FUN_100c8930 takes the
+    /// tier), though we do not move (combat and the effects read `moving`).
+    turn_in_place: bool,
     /// The ticks of our move so far (c2s 0x015 @0x12, actor +0x1b4).
     move_acc: f32,
     /// Walk mode (0x45, DAT_10565d34 +0x50 / player +0xfa), autorun (0x1c, DAT_10475579) and its world-space
@@ -7296,7 +7299,8 @@ fn dir_from_forward(f: Vec3) -> u8 {
     ((theta / std::f32::consts::TAU * 256.0).rem_euclid(256.0)) as u8
 }
 
-/// A fixed-model actor (FUN_10084400 2 / 7: one model id, not race + gear), which has no mv? motions.
+/// A fixed-model actor (FUN_10084400 == 2, which FUN_100c8bb0 tests: one model id, not race + gear), which has no mv?
+/// motions. Inferred: that kind taken as an NPC sent as a model (NpcLook::Model).
 fn fixed_model(a: &Actor) -> bool {
     matches!(a.source, Some(Source::Npc(crate::dat::npc::NpcLook::Model(_))))
 }
@@ -8381,6 +8385,7 @@ impl App {
                             inv_loaded: 0,
                             actors: HashMap::new(),
                             moving: false,
+                            turn_in_place: false,
                             move_acc: 0.0,
                             walk: false,
                             autorun: false,
@@ -11133,9 +11138,16 @@ impl App {
         }
         // Input against a run already going (/follow's too) ends it: free camera within 23.6 degrees of straight back
         // (FUN_100a6030: dot < 0, |cross| < 0.4), locked on dot < 0.3 (FUN_100a6210), first person dot < -0.5
-        // (FUN_100a48d0).
-        if world.autorun && world.autorun_dir != Vec3::ZERO && step != Vec3::ZERO {
-            let (i, r) = (step.normalize(), world.autorun_dir.normalize());
+        // (FUN_100a48d0). First person tests the input turned by the heading with its X unless the strafe lock holds
+        // it (vt+0x340 zeroes it then), not the tank step, which drops X the other way round.
+        let against_in = if tank {
+            let f = Vec3::new(heading.sin(), 0.0, heading.cos());
+            -f * ay + if fp_side { Vec3::ZERO } else { f.cross(Vec3::NEG_Y) * ax }
+        } else {
+            step
+        };
+        if world.autorun && world.autorun_dir != Vec3::ZERO && against_in != Vec3::ZERO {
+            let (i, r) = (against_in.normalize(), world.autorun_dir.normalize());
             let dot = i.dot(r);
             let against = if world.camst.first {
                 dot < -0.5
@@ -11427,7 +11439,8 @@ impl App {
             let to = if let Some((_, Some(y))) = pin {
                 Some(Vec3::new(y.cos(), 0.0, -y.sin()))
             } else if held {
-                // FUN_100a6210 returns before any turn while an effect holds us: the camera moves, the facing stays.
+                // FUN_100a6240 (cur 30261006) returns before any turn while an effect holds us: the camera moves, the
+                // facing stays.
                 None
             } else if let Some(f) = tank_face {
                 Some(f)
@@ -11449,10 +11462,10 @@ impl App {
             // FUN_100a80d0: with the heading held (the strafe lock; ours also the right drag's facing), the step's
             // quarter about it, the sectors 90 degrees wide and centred on the axes.
             // First person never writes +0x598 (walk / run forward, back and sideways alike).
-            let held = (face_cam || world.mouse_look) && pin.is_none() && lock_target.is_none() && !tank;
+            let facing_held = (face_cam || world.mouse_look) && pin.is_none() && lock_target.is_none() && !tank;
             world.my_strafe = if lock_target.is_some() && pin.is_none() {
                 lock_dir
-            } else if held && stepping {
+            } else if facing_held && stepping {
                 let f = world.my_face.filter(|f| f.0 == me.dir).map_or_else(|| forward_from_dir(me.dir), |f| f.1);
                 crate::motion::strafe_dir(f, step)
             } else {
@@ -11476,7 +11489,7 @@ impl App {
             me.move_time = (flame.round() as u32 & 0xffff) as u16;
         }
         // FUN_100c8930 takes the tier, not the step: turning on the spot in first person walks or runs in place.
-        world.moving = moving || tank_turn != 0.0;
+        (world.moving, world.turn_in_place) = (moving, tank_turn != 0.0);
         // FUN_100c4390 (free camera): the heading turns at once, the model eases its drawn rotation (+0x61c) 0.125 a
         // tick toward it (the step's direction while moving). Snapped at zone-in, in events and when pinned.
         // Toward the float facing while the byte is still ours (a stick's slow turn would step on the byte), else
