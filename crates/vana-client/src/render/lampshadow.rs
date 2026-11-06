@@ -34,8 +34,7 @@ const MAX_HALF: f32 = 60.0 * std::f32::consts::PI / 180.0;
 const MIN_HALF: f32 = 5.0 * std::f32::consts::PI / 180.0;
 
 /// The zone shader's view (group 0 binding 5): per layer the lamp's light slot + 1 (0 = unused) and its matrix;
-/// misc = (strength, PCF step in uv, REACH, TAKEOVER). The strength is 0: the receive pass darkens instead (zone.wgsl lamp_vis
-/// would take the light out a second time).
+/// misc = (0, 0, REACH, TAKEOVER), for the sun's depth pass (zone.wgsl vs_skinned_sun_lamped).
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 pub struct LampShadowU {
@@ -85,21 +84,19 @@ pub fn casts(lamp: Vec3, vp: Mat4, feet: Vec3) -> bool {
     p.x.abs() < 1.0 && p.y.abs() < 1.0 && p.z > 0.0 && p.z < 1.0
 }
 
-/// This frame's shadowed lights (light slot, matrix, position) from `lamps` (position, light slot): those with a character of `feet` in reach, the
-/// nearest to `target` first, at most LAYERS.
+/// This frame's shadowed lights (light slot, matrix, position) from `lamps` (position, light slot): those with a
+/// character of `feet` in reach, the nearest to `target` first, at most LAYERS.
 pub fn pick(lamps: &[(Vec3, u32)], feet: &[Vec3], target: Vec3) -> Vec<(u32, Mat4, Vec3)> {
     let mut near: Vec<(f32, Vec3, u32)> = lamps.iter().filter(|(p, _)| feet.iter().any(|f| f.distance(*p) < REACH)).map(|&(p, s)| (p.distance(target), p, s)).collect();
     near.sort_by(|a, b| a.0.total_cmp(&b.0));
     near.into_iter().filter_map(|(_, p, s)| Some((s, matrix(p, feet)?, p))).take(LAYERS).collect()
 }
 
-/// The maps, their matrices for the depth passes (group 3 of the silhouette layout, 256 bytes apart) and the zone
-/// shader's uniform, comparison sampler and array view (bound in the zone's globals).
+/// The maps, their matrices for the depth passes (group 3 of the silhouette layout, 256 bytes apart), the zone shader's
+/// uniform, and the receive pass (its array view and comparison sampler).
 pub struct LampShadows {
     pub layers: Vec<wgpu::TextureView>,
     pub array: wgpu::TextureView,
-    /// A 1x1 map for the depth passes' group 0: a pass may not sample the array it draws a layer of.
-    pub blank: wgpu::TextureView,
     pub cmp: wgpu::Sampler,
     pub uniform: wgpu::Buffer,
     pub matrices: wgpu::Buffer,
@@ -127,18 +124,6 @@ impl LampShadows {
             .map(|l| tex.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2), base_array_layer: l, array_layer_count: Some(1), ..Default::default() }))
             .collect();
         let array = tex.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() });
-        let blank = device
-            .create_texture(&wgpu::TextureDescriptor {
-                label: Some("lamp shadow blank"),
-                size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: super::DEPTH_FORMAT,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            })
-            .create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() });
         let cmp = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("lamp shadow compare"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -158,10 +143,11 @@ impl LampShadows {
         });
         let (receive_layout, receive_pipeline) = receive_pipeline(device, format);
         let receive_uniform = device.create_buffer(&wgpu::BufferDescriptor { label: Some("lamp shadow receive"), size: std::mem::size_of::<ReceiveU>() as u64, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
-        Self { layers, array, blank, cmp, uniform, matrices, matrix_group, receive_layout, receive_pipeline, receive_uniform }
+        Self { layers, array, cmp, uniform, matrices, matrix_group, receive_layout, receive_pipeline, receive_uniform }
     }
 
-    /// Writes this frame's lamps (light slot, matrix) for the depth passes and the zone shader; none clears them.
+    /// Writes this frame's lamps (light slot, matrix, position) for the depth passes and the zone shader; none clears
+    /// them.
     pub fn set(&self, gpu: &Gpu, lamps: &[(u32, Mat4, Vec3)]) {
         let mut u = LampShadowU::zeroed();
         for (k, (slot, m, _)) in lamps.iter().take(LAYERS).enumerate() {
@@ -169,15 +155,14 @@ impl LampShadows {
             u.vp[k] = m.to_cols_array_2d();
             super::Put::put(&gpu.queue, &self.matrices, 256 * k as u64, bytemuck::cast_slice(&m.to_cols_array()));
         }
-        u.misc = [0.0, 1.0 / SIZE as f32, REACH, TAKEOVER];
+        u.misc = [0.0, 0.0, REACH, TAKEOVER];
         super::Put::put(&gpu.queue, &self.uniform, 0, bytemuck::bytes_of(&u));
     }
 
     /// Darkens `color` where this frame's `lamps` (as given to `set`, whose maps are drawn) shadow the scenery in
-    /// `depth` (the scene's). Nothing without lamps.
+    /// `depth` (the scene's). `lights`: the zone's point lights (zone.wgsl plights), whose live range and intensity
+    /// limit each shadow to where its light reaches. Nothing without lamps.
     #[allow(clippy::too_many_arguments)]
-    /// `lights`: the zone's point lights (zone.wgsl plights), whose live range and intensity limit each shadow to
-    /// where its light reaches.
     pub fn receive(&self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, color: &wgpu::TextureView, depth: &wgpu::TextureView, view_proj: Mat4, lamps: &[(u32, Mat4, Vec3)], eye: Vec3, lights: &wgpu::Buffer) {
         if lamps.is_empty() {
             return;

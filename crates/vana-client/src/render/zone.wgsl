@@ -59,17 +59,15 @@ struct Part {
 };
 @group(0) @binding(3) var<storage, read> parts: array<Part>;
 
-// Lamp shadows (ours, render/lampshadow.rs): per layer the lamp's light slot + 1 (0 = unused) and its matrix;
-// misc = (strength, PCF step in uv, REACH, the fraction of a light's range within which a lamp takes over the main
-// shadow).
+// Lamp shadows (ours, render/lampshadow.rs; its receive pass darkens the scenery): per layer the lamp's light slot + 1
+// (0 = unused) and its matrix; misc.z REACH, misc.w the fraction of a light's range within which a lamp takes over the
+// main shadow (vs_skinned_sun_lamped).
 struct LampShadowU {
     slots: vec4<u32>,
     vp: array<mat4x4<f32>, 4>,
     misc: vec4<f32>,
 };
 @group(0) @binding(5) var<uniform> lamp_sh: LampShadowU;
-@group(0) @binding(6) var lamp_map: texture_depth_2d_array;
-@group(0) @binding(7) var lamp_cmp: sampler_comparison;
 // Config 0011: the animated meshes' vertex deltas (vertex flags >> 8, minus 1); the instance's sway is area.y.
 @group(0) @binding(4) var<storage, read> deltas: array<vec4<f32>>;
 
@@ -161,27 +159,6 @@ fn actor_lamp(packed: u32, pos: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     return col * max(dot(n, dir), 0.0);
 }
 
-// How much of light slot `s` (+1) reaches `p`: 1 unless a lamp shadow map has it, then 3 x 3 PCF from the point
-// pushed out along the normal, scaled by the strength. Outside the map's cone: lit.
-fn lamp_vis(s: u32, p: vec3<f32>, n: vec3<f32>) -> f32 {
-    for (var j = 0u; j < 4u; j = j + 1u) {
-        if (lamp_sh.slots[j] != s) { continue; }
-        let c = lamp_sh.vp[j] * vec4<f32>(p + n * 0.05, 1.0);
-        if (c.w <= 0.0) { return 1.0; }
-        let q = c.xyz / c.w;
-        if (abs(q.x) >= 1.0 || abs(q.y) >= 1.0 || q.z >= 1.0) { return 1.0; }
-        let uv = q.xy * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5);
-        var sum = 0.0;
-        for (var dy = -1; dy <= 1; dy = dy + 1) {
-            for (var dx = -1; dx <= 1; dx = dx + 1) {
-                sum = sum + textureSampleCompareLevel(lamp_map, lamp_cmp, uv + vec2<f32>(f32(dx), f32(dy)) * lamp_sh.misc.y, j, q.z - 0.0005);
-            }
-        }
-        return mix(1.0, sum / 9.0, lamp_sh.misc.x);
-    }
-    return 1.0;
-}
-
 // Retail's D3D8 POINT lights (C x I x max(N.L, 0) / d^2, cut at the range) ran per vertex, which draws triangles
 // of light on coarse walls. Ours, per pixel: the same term with the distance floored at 1 and a smooth window over
 // the range instead of the hard cut (not retail).
@@ -198,7 +175,7 @@ fn point_lights(lights: vec4<u32>, p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
         if (d2 >= r2) { continue; }
         let q = d2 / r2;
         let win = (1.0 - q * q) * (1.0 - q * q);
-        sum = sum + c.rgb * c.w * max(dot(n, l * inverseSqrt(max(d2, 1e-6))), 0.0) * win / max(d2, 1.0) * lamp_vis(s, p, n);
+        sum = sum + c.rgb * c.w * max(dot(n, l * inverseSqrt(max(d2, 1e-6))), 0.0) * win / max(d2, 1.0);
     }
     return sum;
 }

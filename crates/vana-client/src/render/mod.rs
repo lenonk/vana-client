@@ -373,8 +373,6 @@ pub struct ZoneRenderer {
     sampler: wgpu::Sampler,
     uniforms: wgpu::Buffer,
     globals: wgpu::BindGroup,
-    /// `globals` with a blank map for binding 6, for the lamp shadow depth passes.
-    globals_depth: wgpu::BindGroup,
     textures: Vec<wgpu::BindGroup>,
     instances: wgpu::Buffer,
     /// The animated meshes' sway (config 0011, render/sway.rs), run before the culling.
@@ -425,8 +423,8 @@ pub struct ZoneRenderer {
     sun_shadow: Option<sunshadow::SunShadow>,
     /// Ambient occlusion on the scenery (render/ssao.rs; prepare_ssao).
     ssao: Option<ssao::Ssao>,
-    /// Lamp shadows (render/lampshadow.rs): the maps (always made; bound in `globals`) and this frame's lamps (light
-    /// slot, matrix; empty = none), which the client sets.
+    /// Lamp shadows (render/lampshadow.rs): the maps (always made) and this frame's lamps (light slot, matrix,
+    /// position; empty = none), which the client sets.
     lamp_shadow: lampshadow::LampShadows,
     pub lamp_shadows: Vec<(u32, Mat4, Vec3)>,
     /// The real shadows' level from the Vana'diel clock (sunshadow::twilight; 0 at the sun / moon change) and their PCF
@@ -989,20 +987,13 @@ impl ZonePipes {
                     ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
                     count: None,
                 },
-                // Lamp shadows (render/lampshadow.rs): their uniform, maps and comparison sampler.
+                // Lamp shadows (render/lampshadow.rs): their uniform (the sun's depth pass reads which lamps take over).
                 wgpu::BindGroupLayoutEntry {
                     binding: 5,
                     visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 6,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2Array, multisampled: false },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry { binding: 7, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison), count: None },
             ],
         });
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1856,25 +1847,18 @@ impl ZoneRenderer {
             gpu.queue.put(&deltas, 0, bytemuck::cast_slice(&geo.deltas));
         }
         let lamp_shadow = lampshadow::LampShadows::new(gpu, &p.sil_layout, color_format);
-        let globals_with = |label, maps: &wgpu::TextureView| {
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some(label),
-                layout: &p.globals_layout,
-                entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: uniforms.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: lights.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 2, resource: areas.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 3, resource: parts_gpu.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 4, resource: deltas.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 5, resource: lamp_shadow.uniform.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::TextureView(maps) },
-                    wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::Sampler(&lamp_shadow.cmp) },
-                ],
-            })
-        };
-        let globals = globals_with("globals", &lamp_shadow.array);
-        // The lamp depth passes draw into the maps, so their group 0 binds the blank one instead.
-        let globals_depth = globals_with("globals (lamp depth)", &lamp_shadow.blank);
+        let globals = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("globals"),
+            layout: &p.globals_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: uniforms.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: lights.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 2, resource: areas.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 3, resource: parts_gpu.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 4, resource: deltas.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 5, resource: lamp_shadow.uniform.as_entire_binding() },
+            ],
+        });
         let sampler = mip_sampler(device);
         // Slot 0 is plain white for models whose texture lives elsewhere; the others fill in as they go up.
         let white = texture_bind_group(gpu, &p.texture_layout, &sampler, 1, 1, &[255, 255, 255, 255]);
@@ -1935,7 +1919,6 @@ impl ZoneRenderer {
             sampler,
             uniforms,
             globals,
-            globals_depth,
             textures: vec![white; textures + 1],
             magenta,
             instances,
@@ -2919,7 +2902,7 @@ impl ZoneRenderer {
             pass.set_pipeline(&self.sun_depth_lamped_pipeline);
             self.draw_actor_depth(&mut pass, actors, group, done, Depth::SunLamped);
         }
-        // Lamp shadows (render/lampshadow.rs): each shadowed lamp's characters into its layer; the zone shader reads them.
+        // Lamp shadows (render/lampshadow.rs): each shadowed lamp's characters into its layer; its receive pass reads them.
         let lamps: &[(u32, Mat4, Vec3)] = if self.pose_gpu.is_some() { &self.lamp_shadows } else { &[] };
         self.lamp_shadow.set(gpu, lamps);
         if let Some((_, group, _)) = &self.pose_gpu {
@@ -2933,7 +2916,7 @@ impl ZoneRenderer {
                     multiview_mask: None,
                 });
                 pass.set_pipeline(&self.lamp_depth_pipeline);
-                pass.set_bind_group(0, &self.globals_depth, &[]);
+                pass.set_bind_group(0, &self.globals, &[]);
                 pass.set_bind_group(3, &self.lamp_shadow.matrix_group, &[256 * k as u32]);
                 self.draw_actor_depth(&mut pass, actors, group, done, Depth::Lamp);
             }
@@ -3211,8 +3194,7 @@ impl ZoneRenderer {
         }
     }
 
-    /// The skinned actors into a shadow depth pass (the sun's or a lamp's; its pipeline and groups 0 and 3 set).
-    /// The actors' depth into a shadow map (`which`'s).
+    /// The skinned actors into a shadow depth pass (`which`: the sun's or a lamp's; its pipeline and groups 0 and 3 set).
     fn draw_actor_depth(&self, pass: &mut wgpu::RenderPass<'_>, actors: &[&ActorGpu], group: &wgpu::BindGroup, done: u64, which: Depth) {
         let pick = |a: &ActorGpu| match which {
             Depth::Sun => !a.lamp_lit,

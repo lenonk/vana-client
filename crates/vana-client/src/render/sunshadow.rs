@@ -20,8 +20,7 @@ const BACK: f32 = 150.0;
 const DEPTH: f32 = 300.0;
 /// The most a shadow takes off a surface (multiplied by 1 - this), at full sun: half of retail's silhouette's
 /// (MODULATE2X of diffuse 0x40 into ZERO / INVSRCCOLOR, render/shadow.rs vs_ground, which keeps half the light), so a
-/// shadowed surface keeps three quarters of its light. Steven found the full one too dark beside the lamp shadows,
-/// which match it (lampshadow::STRENGTH).
+/// shadowed surface keeps three quarters of its light; the lamp shadows match it (lampshadow::STRENGTH).
 pub const STRENGTH: f32 = 64.0 / 255.0;
 /// Below this strength (dawn and dusk, a dim light) retail's shadows draw instead, so no character goes without one.
 pub const HANDOFF: f32 = 0.25 * STRENGTH;

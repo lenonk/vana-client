@@ -22491,7 +22491,7 @@ Character Shadows (config `actor_shadows`: 0 Retail, 1 Real), Shadow Quality (`s
   its centre snapped to whole texels; characters beyond it keep retail's shadows; a light under 60
   degrees is held at 40.9, retail's silhouette rule (FUN_10033080), so shadows keep the game's length. The zone pass splits after the opaque and cut-out scenery (mode 4); a full-screen pass rebuilds
   each pixel's position from depth, takes a 3 x 3 PCF (taps 2 texels apart under the moon) and multiplies the frame by
-  1 - k, k at most `STRENGTH` (retail's silhouette: MODULATE2X of 0x40, about 0.5) scaled by the light's brightness, faded toward the map's edge (from 0.8 of its
+  1 - k, k at most `STRENGTH` (64/255, half of retail's silhouette's MODULATE2X of 0x40) scaled by the light's brightness, faded toward the map's edge (from 0.8 of its
   half side), on surfaces turning away and with the caster's height (full within 3 units below its feet, gone by 7,
   measured straight down). Blended scenery and every actor draw after it, so characters never shadow themselves or
   each other. `sunshadow::twilight` fades them to nothing at 6:00 and 18:00 over 45 Vana'diel minutes either side.
@@ -22499,12 +22499,20 @@ Character Shadows (config `actor_shadows`: 0 Retail, 1 Real), Shadow Quality (`s
   light) none draw and retail's do. Otherwise an actor whose box lies inside the map and that the depth pass draws
   (`ActorGpu::casts_shadow`: mips in, alpha 0.5 and up, skinned, not refracting, no no-shadow latch +0x12c bits 10 /
   11) takes no retail shadow, caster slot or layer; the others keep retail's. Config 0x3a = 1 (Off) turns both off.
-  Known limit: area-lit interiors still take the zone's light direction.
-- Lamp shadows (render/lampshadow.rs): with Real shadows and Real lamp lights (client/lamps.rs), the up to 4 lamps
-  nearest the camera with a character within 16 yalms each get a 512 x 512 perspective depth layer of those
-  characters; zone.wgsl's per-pixel point lights scale that lamp's term by its 3 x 3 PCF visibility (0.85), so only
-  its own light is cut. Group 0 holds the maps (bindings 5-7, always made: 4 MiB); the depth passes bind a copy with a
-  1 x 1 blank in binding 6, since a pass may not sample the array it draws a layer of (wgpu refuses it).
+  An invisible character (InvisFlag, a GM's !hide) casts no shadow of any kind.
+- Indoors: a fixed-light environment (flags bit 0: Mog Houses, shops; `Lighting::fixed`) casts from its light's data
+  direction with no twilight fade; a dark room light (every Mog House's points straight down, black) at
+  `INDOOR_STRENGTH` (= STRENGTH), a lit one at its own strength, with day's PCF spacing.
+- Lamp shadows (render/lampshadow.rs, 2026-11-06 from Steve's #77): only our own character (and its mount) casts
+  them, from up to 4 of the lights lighting it this frame (its floor's data lights and the lamps offered it, nearest
+  first, within 16 yalms), so two lamps give two shadows. Each gets a 512 x 512 perspective depth layer; a receive
+  pass after the scenery (as the sun's) darkens by its 3 x 3 PCF at the sun's STRENGTH, only where the light is lit
+  (zone.wgsl plights: intensity and colour) and fading out over 60-100% of its live range (at most 16). While one of
+  those lamps is lit and our character is within 0.8 of its range, the sun's depth pass leaves it out
+  (zone.wgsl vs_skinned_sun_lamped, decided on the GPU from the live lights), so its main shadow turns to the lamp and
+  back past its reach; a character a lamp map takes in drops retail's shadow. The zone shader's own lamp term is gone
+  (it scaled the lamp's light, much lighter than the sun's shadow), and with it group 0's map bindings: the receive
+  pass binds the maps alone. RUST_LOG=...,sunshadow=debug logs the real shadows' state on each change.
 - Ambient occlusion (render/ssao.rs): at the same split, a scene-size R8 target of 12 cosine-weighted samples within
   1.5 units (normals from depth, interleaved gradient noise, a range check against halos, faded out 40 to 80 units
   from the eye), a depth-aware 4 x 4 blur, the frame multiplied by 1 - 0.55 x AO. Test
@@ -22514,7 +22522,8 @@ Character Shadows (config `actor_shadows`: 0 Retail, 1 Real), Shadow Quality (`s
   will be affected.", since the receive pass runs at the Background size. Test
   client::settings::background_warns_with_real_shadows.
 - Tests: render::sunshadow::light_matrix_frames_the_target, render::sunshadow::receive_darkens_shadowed_floor,
-  render::lampshadow (framing, lamp choice), render::faded_tests::zone_renders_with_lamp_shadows (an empty zone: its
+  render::lampshadow (framing, lamp choice, casts_only_inside_the_map, the receive and zone shaders validate),
+  render::faded_tests::zone_renders_with_lamp_shadows (an empty zone: its
   depth pass never runs). Seen live: West Ronfaure's gate lamps (two shadowed), no validation error; the Real shadows
   in Southern San d'Oria by day keep the body, ears and tail, as dark as retail's silhouette beside them.
 
