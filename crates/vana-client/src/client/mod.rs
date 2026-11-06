@@ -11281,8 +11281,9 @@ impl App {
         }
         world.step_ticks += dt * 60.0;
         let speed = own_speed(world);
-        // FUN_100a8000, under the strafe lock or locked on (ours: not the right drag): backing up goes at a third of the
-        // speed (vt+0x1b0), sideways at a fixed 0.0625 a tick (0.125 riding), whatever the speed or the stick.
+        // FUN_100a8000, under the strafe lock or locked on (ours: the right drag's facing too, Steven 2026-11-05): backing
+        // up goes at a third of the speed (vt+0x1b0), sideways at a fixed 0.0625 a tick (0.125 riding), whatever the
+        // speed or the stick.
         let riding = matches!(world.my_motion.status, 5 | 0x55);
         // Locked on (FUN_100a7b80), every control type: the same quarters and speeds, the stick read in the frame the
         // locked step moves in (forward toward the target, side about it, target::locked_step). Measured against this
@@ -11305,6 +11306,9 @@ impl App {
             let dir = world.net.me.lock().map_or(0, |m| m.dir);
             let f = world.my_face.filter(|f| f.0 == dir).map_or_else(|| forward_from_dir(dir), |f| f.1);
             crate::motion::strafe_dir(f, step)
+        } else if world.mouse_look && !directed_run(world) && !tank {
+            // The right drag faces the camera's forward this frame (see `to` below), so the quarter is about that.
+            crate::motion::strafe_dir(face, step)
         } else {
             0
         };
@@ -11431,7 +11435,7 @@ impl App {
             // FUN_100a80d0: with the heading held (the strafe lock; ours also the right drag's facing), the step's
             // quarter about it, the sectors 90 degrees wide and centred on the axes.
             // First person never writes +0x598 (walk / run forward, back and sideways alike).
-            let held = (face_cam || world.mouse_look) && pin.is_none() && lock_target.is_none() && !tank;
+            let held = (face_cam || (world.mouse_look && !directed_run(world))) && pin.is_none() && lock_target.is_none() && !tank;
             world.my_strafe = if lock_target.is_some() && pin.is_none() {
                 lock_dir
             } else if held && stepping {

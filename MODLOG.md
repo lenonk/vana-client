@@ -22373,7 +22373,8 @@ From FFXiMain.dll (Steven's unpacked copy; 0x100c6b70 / 0x100c4390 are inside FU
 - FUN_100c63d0 (~0x100c69e9): our model with +0xfb set, not riding, eases toward the heading, not the step.
 - FUN_100a8000 (after FUN_100a80d0): back = speed x 1/3 (vt+0x1b0) / 60 (x2 riding); sideways a fixed 0.0625 a tick
   (0.125 riding), whatever the speed or the stick. Ours: the same under the strafe lock (update_movement's step);
-  the right drag (ours, not retail) keeps the normal speed.
+  the right drag (ours, not retail) takes the same speeds, so it matches B / Shift.
+
 - Ours: World::my_strafe (motion::strafe_dir) while the strafe lock is held, and also while the right drag holds the
   facing (ours, not retail), and motion::strafe over our walk / run. The FUN_10084400 == 2 case: see 2026-11-05-lock-on-strafe.
 
