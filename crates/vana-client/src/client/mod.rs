@@ -323,7 +323,8 @@ fn typing_elsewhere(w: &World) -> bool {
         // The modern Wide Scan name filter and the full log's find.
         || (w.modern && w.scan_typing)
         || (w.modern && w.full_log.is_some() && w.log_find.is_some())
-        // Ours: the Settings window's search.
+        // Ours: the GM window's fields and search, and the Settings window's search.
+        || modern::gm_takes_keys(w)
         || modern::config_finding(w)
 }
 

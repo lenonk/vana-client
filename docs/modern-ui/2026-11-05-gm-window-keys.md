@@ -1,0 +1,1 @@
+- Typing in the GM window's fields or search no longer triggers game hotkeys (ours).

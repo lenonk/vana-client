@@ -35,10 +35,15 @@ pub fn shown(w: &World) -> bool {
     w.modern && w.gm.open && w.gm.level > 0
 }
 
+/// The window takes the typed text (no other window, dialog or event over it): its keys are no game keys.
+pub fn takes_keys(w: &World) -> bool {
+    // Another window or dialog over it (opened later, or an event) keeps its own keys.
+    shown(w) && !super::super::window_over_actions(w) && w.prompt.is_none() && !super::super::event::active(w)
+}
+
 /// Typed text, Backspace, Tab, Enter and Escape while the window is open. True when it took them.
 pub fn events(w: &mut World, events: &[egui::Event]) -> bool {
-    // Another window or dialog over it (opened later, or an event) keeps its own keys.
-    if !shown(w) || w.typing || super::super::window_over_actions(w) || w.prompt.is_some() || super::super::event::active(w) {
+    if w.typing || !takes_keys(w) {
         return false;
     }
     let mut run = false;
@@ -134,7 +139,7 @@ fn rail(ui: &mut Ui, m: &super::Modern, g: &gm::Gm, click: &mut Option<Click>) {
             ui.add_space(2.0);
         }
         ui.add_space(10.0);
-        ui.label(egui::RichText::new(format!("Ours: not in the retail client. Shown to GMs only; level {} sees {} commands.", g.level, g.commands.len())).size(m.theme.small).color(m.theme.color("muted")));
+        ui.label(egui::RichText::new(format!("Vana Client only: not in the retail client. Shown to GMs only; level {} sees {} commands.", g.level, g.commands.len())).size(m.theme.small).color(m.theme.color("muted")));
     });
 }
 

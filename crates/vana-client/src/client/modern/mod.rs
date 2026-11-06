@@ -54,7 +54,7 @@ use super::World;
 use super::game_ui::GameUi;
 use egui::{Color32, Context, FontFamily, FontId, Id, LayerId, Order, Pos2, Rect, Sense, Shape, Ui, Vec2, pos2, vec2};
 pub use command::{BarFocus, CmdMenu, bar_focus, key as command_key};
-pub use gmwin::events as gm_events;
+pub use gmwin::{events as gm_events, takes_keys as gm_takes_keys};
 pub use config::{key as config_key, find_events as config_find_events, finding as config_finding, open_mod_settings, lobby_key as lobby_config_key, lobby_settings as lobby_config_settings};
 pub use journal::key as journal_key;
 pub use config::find_open as config_find_open;
