@@ -126,6 +126,22 @@ pub fn strafe_dir(f: glam::Vec3, step: glam::Vec3) -> u8 {
     }
 }
 
+/// FUN_100a7b80's guard (0x100a7ef6..0x100a7f2d): a locked-on quarter that flips straight from 2 to 4 or back (`old`
+/// is last frame's, after any forcing) sets the signed byte +0x5b1 to 2; while it is above 0 it drops by one a call and
+/// the quarter is 1 (forward), so retail holds forward for two frames, then the real quarter goes on. Ours counts those
+/// frames as 4 ticks *(inf: retail frames of 2 ticks)*. Only the lock-on path has it, not the strafe lock.
+pub fn lock_flip_guard(old: u8, new: u8, left: &mut f32, ticks: f32) -> u8 {
+    if matches!((old, new), (2, 4) | (4, 2)) {
+        *left = 4.0;
+    }
+    if *left > 0.0 {
+        *left -= ticks;
+        1
+    } else {
+        new
+    }
+}
+
 /// FUN_100c8bb0's override of the walk / run while the heading is held (actor +0xfb), by the direction above: on foot
 /// 'mvr' / 'mvb' / 'mvl', riding (status 5 / 0x55) 'mvb' backing and 'wlk' sideways; forward keeps the walk / run.
 /// No fallback: a model without it keeps its last motion (FUN_100c83c0).
@@ -170,6 +186,23 @@ mod tests {
         // Wrapped to +-pi.
         let w = super::tank_turn(std::f32::consts::PI - 0.01, 1.0, 1.0, 1.0, 1.0);
         assert!(w < 0.0 && w > -std::f32::consts::PI);
+    }
+
+    #[test]
+    fn lock_flip_holds_forward_briefly() {
+        let mut left = 0.0;
+        assert_eq!(super::lock_flip_guard(2, 2, &mut left, 1.0), 2);
+        // 2 -> 4 at 60 fps: forward for 4 ticks, then the real quarter; the forced 1 can't re-trigger it.
+        let mut got = vec![super::lock_flip_guard(2, 4, &mut left, 1.0)];
+        for _ in 0..5 {
+            got.push(super::lock_flip_guard(1, 4, &mut left, 1.0));
+        }
+        assert_eq!(got, [1, 1, 1, 1, 4, 4]);
+        // Other changes never hold.
+        let mut left = 0.0;
+        for (a, b) in [(1, 2), (2, 3), (3, 4), (1, 3), (0, 4)] {
+            assert_eq!(super::lock_flip_guard(a, b, &mut left, 1.0), b);
+        }
     }
 
     #[test]

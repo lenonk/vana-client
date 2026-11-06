@@ -6006,6 +6006,8 @@ struct World {
     /// Our step against the heading while it is held (actor +0x598, FUN_100a80d0): 0 none, 1 forward, 2 right, 3 back,
     /// 4 left; picks the strafe motions (motion::strafe).
     my_strafe: u8,
+    /// FUN_100a7b80's +0x5b1: ticks left of the forced forward quarter after a locked-on left / right flip.
+    lock_flip: f32,
     entities: HashMap<u32, Entity>,
     /// Actors drawn on screen this frame (actor +0xb2 bit 0 clear, FUN_100c63d0 / FUN_100cbde0): the target keys
     /// only take these.
@@ -8235,6 +8237,7 @@ impl App {
                             yaw: 0.0,
                             my_draw_yaw: None,
                             my_strafe: 0,
+                            lock_flip: 0.0,
                             entities: HashMap::new(),
                             visible: HashSet::new(),
                             zone_lines: Vec::new(),
@@ -11274,10 +11277,18 @@ impl App {
         // locked step moves in (forward toward the target, side about it, target::locked_step). Measured against this
         // frame's way to the target instead, a target whose position jumps (a monster in melee range, worse up close)
         // swung the quarter between sideways and forward every frame: mvr / mvl cut to the run and back.
+        // Retail's +0x5b1 is reset only by a new actor (0x100a8ba6); ours clears it whenever the lock is off, so a guard
+        // from before a zone change or an unlock never carries into the next lock.
+        if lock_target.is_none() {
+            world.lock_flip = 0.0;
+        }
         let lock_dir = if !stepping {
             0
         } else if lock_target.is_some() {
-            crate::motion::strafe_dir(forward, step)
+            // FUN_100a7b80 (0x100a7ef6..0x100a7f2d): a 2 <-> 4 flip against last frame's quarter holds forward (motion,
+            // facing and FUN_100a8000's speed) for a short while.
+            let d = crate::motion::strafe_dir(forward, step);
+            crate::motion::lock_flip_guard(world.my_strafe, d, &mut world.lock_flip, dt * 60.0)
         } else if face_cam {
             // The same facing as my_strafe below: the float one while the byte is still ours.
             let dir = world.net.me.lock().map_or(0, |m| m.dir);

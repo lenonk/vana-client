@@ -9,8 +9,8 @@ From FFXiMain.dll (Steven's unpacked copy).
 - Locked on (+0xf9 = 0, set by the lock callbacks 0x100c5440 / 0x100c5410), FUN_100a7b80 moves relative to the target
   (forward / back the distance, X orbits) facing it, in every control type: +0x598 from FUN_100a80d0 against the way
   to the target (0x100a7ef9), FUN_100a8000's speeds (back a third, sideways 0.0625 / 0.125 riding), and since vt+0x330
-  is false FUN_100c8bb0 plays mvr / mvb / mvl. A sudden 2 <-> 4 flip forces 1 for +0x5b1 frames (0x100a7f23) *(not
-  done in ours)*.
+  is false FUN_100c8bb0 plays mvr / mvb / mvl. A sudden 2 <-> 4 flip forces 1 for +0x5b1 frames (0x100a7f23); see
+  "Lock-on flip guard" (2026-11-06).
 - Ours: update_movement's lock_dir and World::my_strafe now also run locked on. The quarter is read from the stick in
   the locked step's own frame (forward toward the target, target::locked_step), not against each frame's way to the
   target: a monster's position jumping in melee range swung that between sideways and forward every frame, cutting
