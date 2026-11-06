@@ -48,6 +48,8 @@ pub struct Settings {
     pub mic_gain: u32,
     pub volume: u32,
     pub mic_muted: bool,
+    /// RNNoise on the microphone before the gain (voice/mic.rs Denoise).
+    pub noise_suppression: bool,
     pub deafened: bool,
     /// cpal input id; empty = the default.
     pub input: String,
@@ -62,7 +64,7 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { enabled: false, talk: Talk::Voice, ptt_key: "mouse4".into(), threshold_db: -45, mic_gain: 100, volume: 100, mic_muted: false, deafened: false, input: String::new(), channel: String::new(), peers: Vec::new(), muted: Vec::new(), show_talking: true }
+        Self { enabled: false, talk: Talk::Voice, ptt_key: "mouse4".into(), threshold_db: -45, mic_gain: 100, volume: 100, mic_muted: false, noise_suppression: true, deafened: false, input: String::new(), channel: String::new(), peers: Vec::new(), muted: Vec::new(), show_talking: true }
     }
 }
 

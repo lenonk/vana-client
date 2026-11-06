@@ -20763,6 +20763,12 @@ From the 30261006_0 decompile; ours in client/swkbd.rs (classic) and modern/keyb
 - Microphone: cpal input (any rate, linear to 48 kHz), the gain, then voice activity (opens at the threshold, held
   400 ms, the 30 ms before the first loud frame sent too) or push-to-talk (mouse 4 / 5, right Ctrl / Alt / Shift,
   backquote, Caps Lock; raw winit input, never taken from the game).
+- Noise Suppression (2026-11-06, on by default; voice `noise_suppression`): RNNoise (the nnnoiseless crate) on each
+  10 ms frame before the gain, then a fade to -25 dB while its voice probability stays under 0.6 (open at once, held
+  200 ms, falling over about 150 ms). PipeWire hands over the microphone raw: the user's idle mics read about -40 dB
+  at 150% (hiss and the room, jittering 2 dB a frame), enough to open voice activity at -34; Windows' capture reads
+  lower. Steady hiss comes out more than 25 dB down; synthetic speech with the same hiss keeps its level (-25.0 to
+  -25.2 dB). Test voice::mic::denoise_takes_out_hiss.
 - The microphone is open while voice chat is on and not muted, and closes 10 s after a mute (2026-11-04). User
   report: voice on dropped a Bluetooth headset from A2DP to HSP/HFP (low quality, a buzz): WirePlumber's
   bluetooth.autoswitch-to-headset-profile switches when any recording opens, so it is unavoidable on the headset's own

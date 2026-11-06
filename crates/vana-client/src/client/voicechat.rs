@@ -105,6 +105,7 @@ impl VoiceChat {
         };
         v.push((Elem::Gauge { id: "level".into(), label: "Microphone Level".into(), value: ((level - DB_LOW as f32) / -DB_LOW as f32).clamp(0.0, 1.0), text: shown, kind: if self.status.talking { "tp".into() } else { "mp".into() } }, ""));
         v.push((Elem::Slider { id: "gain".into(), label: "Microphone Volume".into(), n: 21, at: (c.mic_gain / 10).min(20) as usize, shown: format!("{}%", c.mic_gain) }, "Your voice before it is sent."));
+        v.push((onoff("noise", "Noise Suppression", ["On", "Off"], c.noise_suppression), "Takes the hiss and background noise out of your microphone before it is sent."));
         v.push((Elem::Slider { id: "volume".into(), label: "Voice Volume".into(), n: 21, at: (c.volume / 10).min(20) as usize, shown: format!("{}%", c.volume) }, "Everyone you hear."));
         let mut names = vec!["Default".to_string()];
         let mut at = 0;
@@ -218,6 +219,7 @@ impl VoiceChat {
                     match id.as_str() {
                         "on" => c.enabled = index == 0,
                         "mic" => c.mic_muted = index == 1,
+                        "noise" => c.noise_suppression = index == 0,
                         "sound" => c.deafened = index == 1,
                         "talk" => c.talk = if index == 0 { Talk::Voice } else { Talk::Push },
                         "show" => c.show_talking = index == 0,

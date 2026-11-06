@@ -181,6 +181,51 @@ impl Resample {
     }
 }
 
+/// RNNoise (nnnoiseless) on each 10 ms frame, in place, before the gain: the room's hiss and steady noise taken out,
+/// and between words (its voice probability low) the rest faded to FLOOR, so the level reads the voice and the gate
+/// opens on it rather than on noise.
+struct Denoise {
+    state: Box<nnnoiseless::DenoiseState<'static>>,
+    buf: [f32; FRAME],
+    out: [f32; FRAME],
+    started: bool,
+    /// The fade's level now (FLOOR .. 1) and the frames it stays open after the last speech-like one.
+    gain: f32,
+    hold: u32,
+}
+
+const _: () = assert!(FRAME == nnnoiseless::FRAME_SIZE);
+/// Speech opens the fade at once; it holds 200 ms past the last speech-like frame, then falls to -25 dB over about
+/// 150 ms (x0.68 a frame).
+const VAD_OPEN: f32 = 0.6;
+const VAD_HOLD: u32 = 20;
+const FLOOR: f32 = 0.056;
+const FALL: f32 = 0.68;
+
+impl Denoise {
+    fn new() -> Self {
+        Self { state: nnnoiseless::DenoiseState::new(), buf: [0.0; FRAME], out: [0.0; FRAME], started: false, gain: FLOOR, hold: 0 }
+    }
+
+    fn frame(&mut self, f: &mut [f32]) {
+        // It takes 16-bit sample values; its first frame fades in, so it is not used.
+        for (b, x) in self.buf.iter_mut().zip(f.iter()) {
+            *b = x * 32768.0;
+        }
+        let vad = self.state.process_frame(&mut self.out, &self.buf);
+        self.hold = if vad >= VAD_OPEN { VAD_HOLD } else { self.hold.saturating_sub(1) };
+        let from = self.gain;
+        self.gain = if self.hold > 0 { 1.0 } else { (self.gain * FALL).max(FLOOR) };
+        let started = std::mem::replace(&mut self.started, true);
+        // The fade moves across the frame, so a change makes no click.
+        let n = f.len().max(1) as f32;
+        for (k, (x, o)) in f.iter_mut().zip(self.out.iter()).enumerate() {
+            let g = from + (self.gain - from) * (k as f32 + 1.0) / n;
+            *x = if started { o / 32768.0 * g } else { 0.0 };
+        }
+    }
+}
+
 /// The gate's state between frames.
 #[derive(Default)]
 pub struct Gate {
@@ -232,6 +277,7 @@ impl Gate {
 fn run(shared: Arc<Shared>, stop: Arc<AtomicBool>, rx: Receiver<Vec<f32>>, rate: u32) {
     let mut rs = Resample::new(rate);
     let mut gate = Gate::default();
+    let mut denoise = Denoise::new();
     let (mut at48, mut frame) = (Vec::new(), Vec::with_capacity(FRAME));
     while !shared.stop.load(Ordering::Relaxed) && !stop.load(Ordering::Relaxed) {
         let chunk = match rx.recv_timeout(Duration::from_millis(200)) {
@@ -246,10 +292,13 @@ fn run(shared: Arc<Shared>, stop: Arc<AtomicBool>, rx: Receiver<Vec<f32>>, rate:
             if frame.len() < FRAME {
                 continue;
             }
-            let (talk, threshold, gain, muted) = {
+            let (talk, threshold, gain, muted, quiet) = {
                 let c = shared.cfg.lock().unwrap();
-                (c.talk, c.threshold_db as f32, c.mic_gain as f32 / 100.0, c.mic_muted)
+                (c.talk, c.threshold_db as f32, c.mic_gain as f32 / 100.0, c.mic_muted, c.noise_suppression)
             };
+            if quiet {
+                denoise.frame(&mut frame);
+            }
             for x in &mut frame {
                 *x *= gain;
             }
@@ -273,6 +322,32 @@ mod tests {
         assert_eq!(tidy("Anker PowerConf C200 Analog Stereo via USB"), "Anker PowerConf C200 Analog Stereo");
         assert_eq!(tidy("Ryzen HD Audio Controller Stereo Microphone [Microphone] via PCI"), "Ryzen HD Audio Controller Stereo Microphone");
         assert_eq!(tidy("WH-1000XM6"), "WH-1000XM6");
+    }
+
+    /// Steady hiss at about -40 dBFS (an idle microphone) comes out well under it.
+    #[test]
+    fn denoise_takes_out_hiss() {
+        let mut d = Denoise::new();
+        let mut seed = 0x2545_f491_u32;
+        let mut noise = || {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (seed >> 8) as f32 / (1u32 << 24) as f32 * 2.0 - 1.0
+        };
+        let db = |f: &[f32]| 20.0 * ((f.iter().map(|x| x * x).sum::<f32>() / f.len() as f32).sqrt() + 1e-9).log10();
+        let (mut before, mut after) = (Vec::new(), Vec::new());
+        for k in 0..300 {
+            let mut f: Vec<f32> = (0..FRAME).map(|_| noise() * 0.017).collect();
+            if k >= 200 {
+                before.extend_from_slice(&f);
+            }
+            d.frame(&mut f);
+            if k >= 200 {
+                after.extend_from_slice(&f);
+            }
+        }
+        let (b, a) = (db(&before), db(&after));
+        assert!(b > -46.0 && b < -40.0, "{b}");
+        assert!(a < b - 25.0, "{b} -> {a}");
     }
 
     #[test]
