@@ -5436,6 +5436,15 @@ fn actor_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
     Some(p)
 }
 
+/// FUN_100964f0's effect checks: sleep (2), petrification (7), stun (10) or terror (28) (FUN_10096270), charm (14) or
+/// effect 633 among our effects, or the server's freeze flag (0x037 flags1 bit 13). The move input returns before
+/// reading the keys while any holds. FUN_10096270 also checks K.O. (0); ours leaves it to `dead()`, since some of our
+/// effect lists carry 0 for an empty slot. Sleep's other ids (19, lullaby 193) are not checked: retail leaves them to
+/// the server.
+fn effect_held(w: &World) -> bool {
+    w.my_plate.frozen || w.buffs.iter().any(|&b| matches!(b, 2 | 7 | 10 | 14 | 28 | 633))
+}
+
 /// Our run speed in units per second (FUN_100a48d0): Speed x0.1, doubled while riding (status 5 / 0x55), at most 30.
 fn own_speed(w: &World) -> f32 {
     let s = if w.my_motion.speed > 0 { w.my_motion.speed as f32 * 0.1 } else { RUN_SPEED };
@@ -6025,6 +6034,11 @@ struct World {
     yaw: f32,
     /// Our model's drawn facing (dir angle, radians; actor +0x61c), eased toward the heading (FUN_100c4390).
     my_draw_yaw: Option<f32>,
+    /// Our step against the heading while it is held (actor +0x598, FUN_100a80d0): 0 none, 1 forward, 2 right, 3 back,
+    /// 4 left; picks the strafe motions (motion::strafe).
+    my_strafe: u8,
+    /// FUN_100a7b80's +0x5b1: ticks left of the forced forward quarter after a locked-on left / right flip.
+    lock_flip: f32,
     entities: HashMap<u32, Entity>,
     /// Actors drawn on screen this frame (actor +0xb2 bit 0 clear, FUN_100c63d0 / FUN_100cbde0): the target keys
     /// only take these.
@@ -7282,6 +7296,11 @@ fn dir_from_forward(f: Vec3) -> u8 {
     ((theta / std::f32::consts::TAU * 256.0).rem_euclid(256.0)) as u8
 }
 
+/// A fixed-model actor (FUN_10084400 2 / 7: one model id, not race + gear), which has no mv? motions.
+fn fixed_model(a: &Actor) -> bool {
+    matches!(a.source, Some(Source::Npc(crate::dat::npc::NpcLook::Model(_))))
+}
+
 fn forward_from_dir(dir: u8) -> Vec3 {
     let theta = dir as f32 / 256.0 * std::f32::consts::TAU;
     Vec3::new(theta.cos(), 0.0, -theta.sin())
@@ -8248,6 +8267,8 @@ impl App {
                             pos: Vec3::ZERO,
                             yaw: 0.0,
                             my_draw_yaw: None,
+                            my_strafe: 0,
+                            lock_flip: 0.0,
                             entities: HashMap::new(),
                             visible: HashSet::new(),
                             zone_lines: Vec::new(),
@@ -11033,10 +11054,30 @@ impl App {
             }
             (ax, ay, cx, cy, px, py) = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         }
-        // Keyboard type 2, free camera: Shift held faces the camera (0x9c, player +0xfb; camera keys and Q / E off),
-        // and Q / E turn the player (0xaa / 0xa9, FUN_10253a60 / FUN_102539f0) while the camera axes are idle.
+        // Control type 2 (config 0x42, the default), free camera: Shift / B held is a strafe lock (0x9c, player +0xfb):
+        // the camera keeps its offset, its keys and Q / E are off and the heading stays. Q / E turn the player (0xaa /
+        // 0xa9, FUN_10253a60 / FUN_102539f0) while the camera axes are idle.
         let type2 = world.game.get(0x42) == 2 && !world.locked;
-        let face_cam = type2 && self.input.test(0x9c, input::mode::HELD);
+        let face_cam = type2 && !world.camst.first && self.input.test(0x9c, input::mode::HELD);
+        // First person, free (FUN_100a6240 from 0x100a70ae, every control type): tank controls. Stick X turns the
+        // heading 2 degrees a tick at full tilt, Y moves along it (back is the same speed, still facing forward); 0x9c
+        // held with |X| > 0.01 (vt+0x344(1)) moves X sideways instead and the heading stays. Not with /follow, which
+        // steers the heading itself. Ours: a mouse drag's look stands for the heading.
+        let tank = world.camst.first && !world.locked && world.follow.is_none();
+        let fp_side = tank && self.input.test(0x9c, input::mode::HELD) && ax.abs() > 0.01;
+        let mut heading = if tank {
+            camera::fp_mouse_yaw(world).unwrap_or_else(|| {
+                let dir = world.net.me.lock().map_or(0, |m| m.dir);
+                let f = world.my_face.filter(|f| f.0 == dir).map_or_else(|| forward_from_dir(dir), |f| f.1);
+                f.x.atan2(f.z)
+            })
+        } else {
+            0.0
+        };
+        let tank_step = |h: f32, ax: f32, ay: f32| {
+            let f = Vec3::new(h.sin(), 0.0, h.cos());
+            -f * ay + if fp_side { f.cross(Vec3::NEG_Y) * ax } else { Vec3::ZERO }
+        };
         let turn = if type2 && !face_cam && cx == 0.0 && cy == 0.0 && px == 0.0 && py == 0.0 && ax == 0.0 {
             self.input.test(0xaa, input::mode::HELD) as i32 as f32 - self.input.test(0xa9, input::mode::HELD) as i32 as f32
         } else {
@@ -11055,7 +11096,7 @@ impl App {
         if world.autorun && turn != 0.0 && !move_locked {
             (ax, ay) = (turn, -1.0);
         }
-        let mut step = right * ax - forward * ay;
+        let mut step = if tank { tank_step(heading, ax, ay) } else { right * ax - forward * ay };
         // Autorun: the first move becomes the vector; X input steers it 2 degrees a tick (ticks x 0.01745 x 2); no
         // input and no vector ends it. Forced off while dead, resting or seated and in events. Locked on, the
         // keys move as usual *(inf)*.
@@ -11079,6 +11120,7 @@ impl App {
                 _ => world.autorun = false,
             }
         }
+        let held = effect_held(world);
         // A mod's run to a point: steered as /follow, ended there.
         if let Some((x, z, within)) = world.run_to {
             let d = Vec3::new(x - world.pos.x, 0.0, z - world.pos.z);
@@ -11117,8 +11159,13 @@ impl App {
             } else {
                 if ax != 0.0 {
                     let d = world.autorun_dir;
-                    let a = d.x.atan2(d.z) + 2.0 * ax * ticks * 0.017452778;
+                    let delta = 2.0 * ax * ticks * 0.017452778;
+                    let a = d.x.atan2(d.z) + delta;
                     world.autorun_dir = Vec3::new(a.sin(), 0.0, a.cos());
+                    // First person (0x100a764c / 0x100a7381): the heading turns with it; a dragged look follows.
+                    if tank && world.follow.is_none() && world.run_to.is_none() {
+                        camera::fp_turn(world, delta);
+                    }
                 }
                 step = if touching { Vec3::ZERO } else { world.autorun_dir };
             }
@@ -11137,8 +11184,9 @@ impl App {
         if world.walk {
             tier = f32::min(tier, 1.0 / 3.0);
         }
-        // FUN_100964f0: no movement during a synthesis (status 0x2c), fishing or its request, or a dig.
-        if world.my_motion.status == 0x2c || fishing::locked(world) || ride::digging(world) {
+        // FUN_100964f0: no movement during a synthesis (status 0x2c), fishing or its request, or a dig; nor while an
+        // effect holds us (FUN_10096270 and the two checks after it) or the server freezes us (+0x128 bit 15).
+        if world.my_motion.status == 0x2c || fishing::locked(world) || ride::digging(world) || held {
             tier = 0.0;
         }
         if tier == 0.0 {
@@ -11146,8 +11194,29 @@ impl App {
         }
         world.move_tier = tier;
         // Q / E: player yaw += ticks x 0.01745 x 1.57075; the camera follows the turn (FUN_1001d4c0).
-        let turn_delta = if turn != 0.0 && !world.autorun && !in_event && world.unlock_ticks <= 0.0 { turn * ticks * 0.017452778 * 1.57075 } else { 0.0 };
+        let turn_delta = if turn != 0.0 && !world.autorun && !in_event && !held && world.unlock_ticks <= 0.0 { turn * ticks * 0.017452778 * 1.57075 } else { 0.0 };
         world.yaw += turn_delta;
+        // The turn (0x100a7381): heading += 2 x X x ticks x 0.01745, X normalised and tiered (FUN_100a78d0), wrapped;
+        // the step goes along the new heading this frame. Autorun steers itself (the same 2 degrees a tick).
+        let mut tank_face = None;
+        let mut tank_turn = 0.0;
+        if tank && !world.autorun {
+            if !fp_side && mag > 0.0 && !in_event && !world.dead() && world.my_motion.status != 33 {
+                let h = crate::motion::tank_turn(heading, ax, mag, tier, ticks);
+                tank_turn = 2.0 * (ax / mag * tier) * ticks * 0.017452778;
+                heading = h;
+                camera::fp_turn(world, tank_turn);
+            }
+            // Q / E (ours: as in third person) turn the heading too.
+            if turn_delta != 0.0 {
+                heading += turn_delta;
+                camera::fp_turn(world, turn_delta);
+            }
+            if tier != 0.0 {
+                step = tank_step(heading, ax, ay);
+            }
+            tank_face = (!in_event).then(|| Vec3::new(heading.sin(), 0.0, heading.cos()));
+        }
         // Mouse/Cam.: 0x8b / 0x8c invert the camera axes, 0x8d / 0x8e in first person (FUN_1001ee60: the keys' and
         // the stick's axes 6 / 7 alike).
         let first = world.camst.first;
@@ -11210,7 +11279,7 @@ impl App {
             let sp = camera::speed(&world.camst);
             lock_cam = Some((ticks, dx - turn_keys * camera::YAW_RATE * sp * ticks, dy + v7 * camera::RISE_RATE * sp * ticks));
             let to = tp - world.pos;
-            if to.x.abs() + to.z.abs() > 1e-3 {
+            if !held && to.x.abs() + to.z.abs() > 1e-3 {
                 world.yaw = to.x.atan2(to.z);
             }
         } else {
@@ -11230,6 +11299,33 @@ impl App {
         }
         world.step_ticks += dt * 60.0;
         let speed = own_speed(world);
+        // FUN_100a8000, under the strafe lock or locked on (ours: not the right drag): backing up goes at a third of the
+        // speed (vt+0x1b0), sideways at a fixed 0.0625 a tick (0.125 riding), whatever the speed or the stick.
+        let riding = matches!(world.my_motion.status, 5 | 0x55);
+        // Locked on (FUN_100a7b80), every control type: the same quarters and speeds, the stick read in the frame the
+        // locked step moves in (forward toward the target, side about it, target::locked_step). Measured against this
+        // frame's way to the target instead, a target whose position jumps (a monster in melee range, worse up close)
+        // swung the quarter between sideways and forward every frame: mvr / mvl cut to the run and back.
+        // Retail's +0x5b1 is reset only by a new actor (0x100a8ba6); ours clears it whenever the lock is off, so a guard
+        // from before a zone change or an unlock never carries into the next lock.
+        if lock_target.is_none() {
+            world.lock_flip = 0.0;
+        }
+        let lock_dir = if !stepping {
+            0
+        } else if lock_target.is_some() {
+            // FUN_100a7b80 (0x100a7ef6..0x100a7f2d): a 2 <-> 4 flip against last frame's quarter holds forward (motion,
+            // facing and FUN_100a8000's speed) for a short while.
+            let d = crate::motion::strafe_dir(forward, step);
+            crate::motion::lock_flip_guard(world.my_strafe, d, &mut world.lock_flip, dt * 60.0)
+        } else if face_cam {
+            // The same facing as my_strafe below: the float one while the byte is still ours.
+            let dir = world.net.me.lock().map_or(0, |m| m.dir);
+            let f = world.my_face.filter(|f| f.0 == dir).map_or_else(|| forward_from_dir(dir), |f| f.1);
+            crate::motion::strafe_dir(f, step)
+        } else {
+            0
+        };
         let falls = !in_event && !world.unsettled && world.in_scene();
         let shafts = world.lifts.shafts();
         let ride = |a: Vec3, b: Vec3| lifts::ride_in(&shafts, a, b);
@@ -11246,7 +11342,11 @@ impl App {
             let mut next = from;
             if stepping {
                 let s = step.normalize();
-                let d = speed * tier * ground::STEP_TICKS / 60.0;
+                let d = match lock_dir {
+                    3 => speed / 3.0 * ground::STEP_TICKS / 60.0,
+                    2 | 4 => (if riding { 0.125 } else { 0.0625 }) * ground::STEP_TICKS,
+                    _ => speed * tier * ground::STEP_TICKS / 60.0,
+                };
                 next = match lock_target {
                     Some(tp) => target::locked_step(from, tp, s.dot(forward), s.dot(right), d),
                     None => from + s * d,
@@ -11326,7 +11426,16 @@ impl App {
             // Standing still keeps the facing; only the camera turns. Locked, we face the target.
             let to = if let Some((_, Some(y))) = pin {
                 Some(Vec3::new(y.cos(), 0.0, -y.sin()))
-            } else if lock_target.is_some() || face_cam || world.mouse_look || (turn != 0.0 && !stepping) {
+            } else if held {
+                // FUN_100a6210 returns before any turn while an effect holds us: the camera moves, the facing stays.
+                None
+            } else if let Some(f) = tank_face {
+                Some(f)
+            } else if face_cam {
+                // 0x9c held (B / Shift, control type 2): a strafe lock. Retail's FUN_100a6240 returns before the turn
+                // to the move direction while actor +0xfb is set, so the heading stays and the stick strafes.
+                None
+            } else if lock_target.is_some() || world.mouse_look || (turn != 0.0 && !stepping) {
                 Some(face)
             } else if stepping {
                 Some(step.normalize())
@@ -11337,6 +11446,18 @@ impl App {
                 me.dir = dir_from_forward(f);
                 world.my_face = Some((me.dir, f));
             }
+            // FUN_100a80d0: with the heading held (the strafe lock; ours also the right drag's facing), the step's
+            // quarter about it, the sectors 90 degrees wide and centred on the axes.
+            // First person never writes +0x598 (walk / run forward, back and sideways alike).
+            let held = (face_cam || world.mouse_look) && pin.is_none() && lock_target.is_none() && !tank;
+            world.my_strafe = if lock_target.is_some() && pin.is_none() {
+                lock_dir
+            } else if held && stepping {
+                let f = world.my_face.filter(|f| f.0 == me.dir).map_or_else(|| forward_from_dir(me.dir), |f| f.1);
+                crate::motion::strafe_dir(f, step)
+            } else {
+                0
+            };
             me.moving = moving;
             // FUN_10096c00: moving, the ticks add up; the frame after a stop sends the total, then it starts over.
             // Retail counts a tick a frame or more; ours counts 60 Hz time at any frame rate.
@@ -11354,7 +11475,8 @@ impl App {
             }
             me.move_time = (flame.round() as u32 & 0xffff) as u16;
         }
-        world.moving = moving;
+        // FUN_100c8930 takes the tier, not the step: turning on the spot in first person walks or runs in place.
+        world.moving = moving || tank_turn != 0.0;
         // FUN_100c4390 (free camera): the heading turns at once, the model eases its drawn rotation (+0x61c) 0.125 a
         // tick toward it (the step's direction while moving). Snapped at zone-in, in events and when pinned.
         // Toward the float facing while the byte is still ours (a stick's slow turn would step on the byte), else
@@ -14363,6 +14485,7 @@ impl App {
                 let frame_of = |a: &Actor| Some(a.ticks * actmotion::find(&a.extra, a.character.as_ref()?, &a.motion).first()?.speed * 0.5);
                 let leads: HashMap<u32, f32> = w.actors.iter().filter_map(|(id, a)| Some((*id, frame_of(w.actors.get(&a.motion_link?)?)?))).collect();
                 let me = w.my_id;
+                let my_strafe = w.my_strafe;
                 let mut far_out: HashSet<u32> = HashSet::new();
                 // The event's actors log their motion changes as ours do (cutscene reports).
                 let event_ids: HashSet<u32> = w.event.as_ref().map(|l| l.st.bound.clone()).unwrap_or_default();
@@ -14406,7 +14529,8 @@ impl App {
                         // otherwise; ours takes the prefix).
                         (None, None) if a.jump >= 0.0 && matches!(status, 0 | 1) => ("jmp".to_string(), 1.0, false, crate::motion::BLEND_TICKS),
                         (None, None) => {
-                            let (n, r) = crate::motion::choose(&a.motion_names.unwrap_or(ch.motions), status, ratio);
+                            // FUN_100c8bb0: our strafe / backpedal motions over the walk / run, at its rate.
+                            let (n, r) = crate::motion::choose_strafed(&a.motion_names.unwrap_or(ch.motions), status, ratio, if *id == me { my_strafe } else { 0 }, fixed_model(a));
                             // FUN_100c6380: a status motion the model lacks is not queued (FUN_100cb8e0 fails, +0x1f6
                             // stays), so what plays goes on: the walk of an NPC without a run.
                             if !has(n) && !a.motion.is_empty() && has(&a.motion) {
@@ -14510,7 +14634,7 @@ impl App {
                     let (base, base_rate) = match a.play.as_ref().filter(|_| held) {
                         Some(p) => (p.base.clone(), a.base_rate_now),
                         None => {
-                            let (b, r) = crate::motion::choose(&a.motion_names.unwrap_or(ch.motions), status, ratio);
+                            let (b, r) = crate::motion::choose_strafed(&a.motion_names.unwrap_or(ch.motions), status, ratio, if *id == me { my_strafe } else { 0 }, fixed_model(a));
                             (b.to_string(), r)
                         }
                     };

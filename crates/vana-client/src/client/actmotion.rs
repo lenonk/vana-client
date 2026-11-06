@@ -518,7 +518,10 @@ fn status_motion_posed(w: &World, id: u32, ch: &Character, posed: Option<f32>) -
         w.entities.get(&id).map_or((0, 0.0), |e| (e.motion.status, e.ratio))
     };
     let names = w.actors.get(&id).and_then(|a| a.motion_names).unwrap_or(ch.motions);
-    crate::motion::choose(&names, status, ratio).0.to_string()
+    // Our strafe / backpedal motions (FUN_100c8bb0) when not posed by an event.
+    let dir = if id == w.my_id && posed.is_none() { w.my_strafe } else { 0 };
+    let fixed = w.actors.get(&id).is_some_and(super::fixed_model);
+    crate::motion::choose_strafed(&names, status, ratio, dir, fixed).0.to_string()
 }
 
 fn status(w: &World, id: u32) -> u8 {

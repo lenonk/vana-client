@@ -46,7 +46,7 @@ pub struct State {
     zoomed: bool,
     /// The focal length as retail keeps it (FUN_100152c0, a float); config 0x49 holds it truncated.
     focal: Option<f32>,
-    /// Face-camera (keyboard type 2, Shift): the eye offset stored when Shift went down.
+    /// Strafe lock (0x9c, control type 2, Shift / B held): the eye offset stored when it went down.
     face: Option<Vec3>,
     /// First person (DAT_10475578) and its eased look offsets (pitch, yaw).
     pub first: bool,
@@ -160,6 +160,18 @@ pub fn first_look(w: &mut World, dyaw: f32, dpitch: f32) {
         (0.0, f.x.atan2(f.z))
     });
     st.fp_mouse = Some(((p + dpitch).clamp(-1.4, 1.4), y + dyaw));
+}
+
+/// The mouse's first-person look yaw (ours), which stands for the heading once dragged.
+pub fn fp_mouse_yaw(w: &World) -> Option<f32> {
+    w.camst.fp_mouse.map(|(_, y)| y)
+}
+
+/// First person's tank turn carries a dragged look along, so the view keeps turning with the heading.
+pub fn fp_turn(w: &mut World, d: f32) {
+    if let Some((_, y)) = w.camst.fp_mouse.as_mut() {
+        *y += d;
+    }
 }
 
 /// The view shake (camera +0x7c offset, +0x80 speed, +0x84 scale; effect op 0x5f's kicks), stepped in retail frames

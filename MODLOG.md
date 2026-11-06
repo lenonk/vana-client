@@ -1868,7 +1868,7 @@ From the research notes:
 - Ids by default key ([C|A] = Ctrl or Alt + key):
   - Movement and camera: axes 4 / 5 (Num4 / 6, Num8 / 2 raw; compact A / D, W / S), axes 6 / 7 (arrows raw; compact J
     / L, I / K); 0x10 Num5 / V [C|A] first person; 0x1c Num7 autorun; 0x45 Num/ / Z [C|A] walk; 0x4f / 0x50 PageUp /
-    PageDown, Num9 / Num3, . / , [C|A] zoom; 0x51 Home recentre; 0x9c LShift held, face-camera strafe (type 2); 0xa9 /
+    PageDown, Num9 / Num3, . / , [C|A] zoom; 0x51 Home recentre; 0x9c LShift held, strafe lock (type 2); 0xa9 /
     0xaa Q / E turn (type 2); 0xa4 / 0xa5 the zoom axis (map zoom); 0x35 LShift, a list's Shift selection
     (FUN_10188060, FUN_101a70d0) *(inf)*; 0x83 the lobby free camera *(inf: debug)*; 0xa0..0xa3 fallback move axes,
     never bound.
@@ -1916,7 +1916,8 @@ From the research notes:
   target there is no direction and the follow ends (retail's |vector| <= 0.001 test).
 - Q / E (0xaa / 0xa9, keyboard type 2, free camera, X input 0, camera axes idle): player yaw += ticks x 0.0174528 x
   1.57075 x (E - Q) (_DAT_10322260 = 1.57075; 94 degrees a second); the camera turns with it (FUN_1001d4c0).
-- Face-camera 0x9c (LShift held, type 2, free): the player faces the camera yaw, so A / D strafe; camera axes and Q / E off.
+- Strafe lock 0x9c (LShift / pad B held, control type 2, free): the camera keeps its offset and the heading stays, so the
+  stick strafes; camera axes and Q / E off (docs/modlog 2026-11-04-strafe-lock-b).
 - The heading (actor +0xe4 rotation, vt+0x1c0 FUN_100a3350) is set at once to the move vector's direction (FUN_100a48d0
   end, -atan2), the move vector being the input turned by the camera's forward (camera +0x24 / +0x2c, FUN_100a6030).
   What is drawn eases: FUN_100c4390 (vt+0x330, player +0xf9 set) takes the step's direction when the actor moved 0.01
@@ -1981,7 +1982,7 @@ From the research notes:
   max 1.413675 rad pitch / 1.8849 yaw off the body; look = eye + R(yaw, pitch)(5, 0.25, 0); eye and look ease 0.125 a
   tick; focal 280; hold 8. Our own model fades out at 0.0625 a tick (actor +0x167 -= ticks x _DAT_1031f860, FUN at
   all.c ~146770) *(inf: back in at the same rate)*.
-- Face-camera: the eye = look + the offset stored when Shift went down; no axes or spring.
+- Strafe lock (0x9c): the eye = look + the offset stored when Shift / B went down (FUN_100a5e10); no axes or spring.
 - Ours, not retail: face() (zone-in, event end, drives) puts the eye 5 back and 1 up, in front of what the look -> eye
   ray hits *(inf)*; the sweep is skipped when the look cannot see the start eye. Without both an eye placed inside the
   hill behind a zone-in point stayed underground for good (the sweep undid every move out).
@@ -22534,3 +22535,107 @@ a private server whose GM tools speak these packets; without them nothing is sen
 - The party and zone pickers are rebuilt twice a second, and a field's suggestions and exact match only when its
   text or list changes (`Gm::lookup`; the item list holds every item).
 - `vana-client modern-shot --gm` draws a level 5 sample.
+
+## Gamepad: B / Shift held is a strafe lock, not a turn to the camera (2026-11-04)
+
+From FFXiMain.dll (Steven's unpacked copy, all_decomp.c / full_text.asm).
+
+- Key function 0x9c (LShift, or the pad's cancel slot 3 = B) is read only by FUN_100a6240 as a held test
+  (0x100a66fb, 0x100a70d9), gated by FUN_1025e070 (config 0x42 == 2: the control type, set by the controls menu
+  FUN_1019b200 items 5 / 6 / 0xb = 0 / 1 / 2; default 2, FUN_10195460(0x42, 2, ...)) and the player's vt+0x330 (free).
+  In types 0 / 1 it sets the flag only while the stick's X is past the dead zone, and saves no offset.
+- Held: FUN_1025e090 saves the camera's offset (FUN_10015250 = the camera, DAT_104568fc +0x50; +0x44 eye minus +0x50
+  look) at 0x1067a288 (a fresh press saves it as is, later frames keep its direction at the current length), and
+  vt+0x344(1) (0x100a46a0) sets actor +0xfb. FUN_100a5e10 (every frame) then puts the eye at look + offset, so the
+  camera keeps its world angle; FUN_1001ee60 turns off the stick / 0xa9 / 0xaa camera turns and the collision check
+  while +0xfb is set; FUN_100a6240 returns before the turn to the move direction (heading param_1[0x3a] kept) and picks
+  a direction-relative motion (FUN_100a80d0, param_1[0x166]). So holding B strafes / backpedals; it neither turns the
+  player to the camera nor re-centres the camera. A tap does nothing visible. FUN_101252f0(1) only marks the mouse
+  pointer active.
+- No window check on this path (0x9c's context mask is 0xffff), so retail does the same with a window up.
+- Ours: the heading no longer turns to the camera while 0x9c is held (mod.rs update_movement). The strafe / backpedal
+  motions (FUN_100a80d0) follow in the next change.
+
+## First-person tank controls (2026-11-05)
+
+From FFXiMain.dll (Steven's unpacked copy), full_text.asm: FUN_100a6240's first-person branch (DAT_10487f80 set,
+0x100a70ae..0x100a778c).
+
+- Shared with third person: FUN_100a78d0 normalises the stick (axes 4, -5) and tiers it (> 0.9 full, > 0.05 a third,
+  walk caps at a third; +0x594). Speed vt+0x1a0 (x2 riding, cap 30) / 60 x tier x the tick factor
+  ([DAT_104568fc+0x2c], 60 Hz ticks over 4 frames, cap 20).
+- Free (vt+0x330 true), in a moving status ({0, 1, 4, 0x1c, 0x1f} or riding, 0x100a7324) and without a /follow
+  target: heading +0xe8 += 2 x X x ticks x 0.017452778 (0x100a7381; X normalised and tiered, stick right turns
+  right), wrapped to +-pi, and the move goes along the new heading at once. Y forward and back at the same speed,
+  backing up still facing forward. The third-person turn to the move (0x100a6f49..) does not run.
+- 0x9c held (FUN_10123a70(0x3f, 0x9c, 4, -1)) with raw |axis 4| > 0.01: vt+0x344(1), X becomes the sideways move
+  (0x100a728f, stick right moves right) with no turn; Y still moves, the pair renormalised. Any control type: nothing
+  here reads config 0x42.
+- +0x598 is only cleared when idle (0x100a7319), so FUN_100c8bb0 plays walk / run for every direction (no mv?), and
+  the tier, not the step, picks the motion (FUN_100c8930): turning on the spot walks or runs in place.
+- Locked on (vt+0x330 false) FUN_100a7b80 wins (0x100a769f): no tank turn. Autorun (0x100a764c): X turns the autorun
+  vector and the heading by the same 2 degrees a tick.
+- FUN_10021110: axes 6 / 7 look around (yaw 1.8849, pitch 1.413675, 0.25 a call, inverted by 0x8d / 0x8e) and spring
+  back; eye and look ease 1 / 8 a tick. Never writes the heading. Ours already matched.
+- Ours: update_movement's `tank` branch. A mouse drag's first-person look (ours) stands for the heading, and the stick's
+  turn carries it along (camera::fp_turn).
+
+## Strafing while locked on; control types 0 / 1 (2026-11-05)
+
+From FFXiMain.dll (Steven's unpacked copy).
+
+- Control types 0 / 1 (config 0x42; FUN_101b7ee0: 1 and 2 turn on the compact keyboard table, so 0 full keyboard, 1
+  compact, 2 compact + the strafe lock) move the same in third person: FUN_100a6240 skips only the FUN_1025e070 block,
+  nothing else sets +0xfb, and free movement (+0xf9 = 1) is camera-relative (FUN_100a79a0) with the heading turned to
+  the move. So B does nothing for movement there. Ours already matches.
+- Locked on (+0xf9 = 0, set by the lock callbacks 0x100c5440 / 0x100c5410), FUN_100a7b80 moves relative to the target
+  (forward / back the distance, X orbits) facing it, in every control type: +0x598 from FUN_100a80d0 against the way
+  to the target (0x100a7ef9), FUN_100a8000's speeds (back a third, sideways 0.0625 / 0.125 riding), and since vt+0x330
+  is false FUN_100c8bb0 plays mvr / mvb / mvl. A sudden 2 <-> 4 flip forces 1 for +0x5b1 frames (0x100a7f23); see
+  "Lock-on flip guard" (2026-11-06).
+- Ours: update_movement's lock_dir and World::my_strafe now also run locked on. The quarter is read from the stick in
+  the locked step's own frame (forward toward the target, target::locked_step), not against each frame's way to the
+  target: a monster's position jumping in melee range swung that between sideways and forward every frame, cutting
+  mvr / mvl to the run and back (Steven's log, 2026-11-06).
+- FUN_10084400 is the actor's model kind ([+0x70]+0xee): 2 / 7 are fixed models without the mv? motions, so
+  FUN_100c8bb0 (0x100c8d5e) plays the move motion (+0x7cc) for 2..4 instead. Ours: an actor drawn from one model
+  id (Source::Npc(NpcLook::Model), mod.rs fixed_model) takes its walk.
+- Other actors: only local-player code writes +0x598 or +0xf9 / +0xfb (the base vtable 0x1032e3c8 returns 1 / 0), so
+  retail never plays mv? on other players or NPCs. (FUN_1004a980 writes +0xf9 / +0xfb on some script object at
+  0x1004bce3 / 0x1004bd7d, unconfirmed as an actor.)
+- First person (DAT_10487f80, key 0x10): tank controls, stick X turns (heading += 2 x X x speed x 0.0174528), Y moves
+  along the heading; 0x9c held with |X| > 0.01 zeroes the turn and X moves sideways (vt+0x344(1)), camera FUN_10021110;
+  +0x598 not updated. Done in ours: see "First-person tank controls".
+
+## Strafe and backpedal motions (2026-11-05)
+
+From FFXiMain.dll (Steven's unpacked copy; 0x100c6b70 / 0x100c4390 are inside FUN_100c63d0 / FUN_100c4380).
+
+- FUN_100a80d0(move, a point ahead on the heading), called by FUN_100a6240 only while vt+0x340 (actor +0xfb, the
+  strafe lock) is set, stores the step's quarter at +0x598 (0x100a6ee9): A / B = the heading turned +/- pi/4, the signs
+  of dot(A, move) and dot(B, move) give 1 forward, 2 right, 3 back, 4 left (90-degree sectors on the axes, no dead
+  zone; 0 under 0.001). It never writes +0x594 (the stick magnitude, FUN_100a78d0). Idle sets +0x598 = 0; normal
+  movement never computes it.
+- FUN_100c8bb0 (from FUN_100c83c0) picks the walk / run as usual, then while +0xfb is set: on foot 2 'mvr ', 3 'mvb ',
+  4 'mvl '; riding (status 5 or 0x55) 3 'mvb ', 2 / 4 'wlk '; FUN_10084400() == 2 takes the walk for 2..4 instead. The
+  rate is the walk / run's. No fallback: a model without the motion keeps its last one (only 'id1 ' and 'df1 ' retry).
+- FUN_100c63d0 (~0x100c69e9): our model with +0xfb set, not riding, eases toward the heading, not the step.
+- FUN_100a8000 (after FUN_100a80d0): back = speed x 1/3 (vt+0x1b0) / 60 (x2 riding); sideways a fixed 0.0625 a tick
+  (0.125 riding), whatever the speed or the stick. Ours: the same under the strafe lock (update_movement's step);
+  the right drag (ours, not retail) keeps the normal speed.
+- Ours: World::my_strafe (motion::strafe_dir) while the strafe lock is held, and also while the right drag holds the
+  facing (ours, not retail), and motion::strafe over our walk / run. The FUN_10084400 == 2 case: see 2026-11-05-lock-on-strafe.
+
+## Lock-on flip guard (2026-11-06)
+
+From FFXiMain.dll (Steven's unpacked copy), full_text.asm, FUN_100a7b80.
+
+- 0x100a7edf keeps the old +0x598 (last frame's, after any forcing; the idle paths in FUN_100a6240 at 0x100a65b3 /
+  0x100a6c05 / 0x100a7319 and the constructor write 0), FUN_100a80d0 gives the new quarter (0x100a7ef1), and only
+  2 -> 4 or 4 -> 2 sets the signed byte +0x5b1 to 2 (0x100a7f10).
+- While +0x5b1 > 0 it drops by one a call of FUN_100a7b80 and +0x598 is 1 (0x100a7f17..0x100a7f2d): forward for the
+  flip frame and the next, then the real quarter. No tick factor; nothing else touches +0x5b1 but the init (0x100a8ba6).
+- The facing (0x100a7f85) and FUN_100a8000 (0x100a7fd4, reads +0x598 at 0x100a801b) come after, so those two frames
+  run at the forward speed and face the target. The strafe lock's block (0x100a6ee4..0x100a6ef6) has no guard.
+- Ours: motion::lock_flip_guard in update_movement's lock_dir, 4 ticks for retail's two frames *(inf: 30 fps
+  frames)*.

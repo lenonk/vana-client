@@ -100,9 +100,131 @@ pub fn choose(names: &MotionNames, status: u8, ratio: f32) -> (&'static str, f32
     }
 }
 
+/// First person's tank turn (FUN_100a6240, 0x100a7381): heading (our yaw, forward = (sin, 0, cos)) += 2 x X x ticks x
+/// 0.01745, X the stick's normalised and tiered side (FUN_100a78d0), wrapped to +-pi. Stick right turns right.
+pub fn tank_turn(heading: f32, x: f32, mag: f32, tier: f32, ticks: f32) -> f32 {
+    let x = if mag > 0.0 { x / mag * tier } else { 0.0 };
+    let pi = std::f32::consts::PI;
+    (heading + 2.0 * x * ticks * 0.017452778 + pi).rem_euclid(std::f32::consts::TAU) - pi
+}
+
+/// FUN_100a80d0: the quarter of a step about the heading `f` (both level): 1 forward, 2 right, 3 back, 4 left, the
+/// sectors 90 degrees wide and centred on the axes; 0 under 0.001.
+pub fn strafe_dir(f: glam::Vec3, step: glam::Vec3) -> u8 {
+    if step.length() < 0.001 {
+        return 0;
+    }
+    // Right of the heading, as update_movement's camera right (forward x -Y).
+    let r = f.cross(glam::Vec3::NEG_Y);
+    let (ahead, side) = (step.dot(f), step.dot(r));
+    if ahead.abs() >= side.abs() {
+        if ahead >= 0.0 { 1 } else { 3 }
+    } else if side > 0.0 {
+        2
+    } else {
+        4
+    }
+}
+
+/// FUN_100a7b80's guard (0x100a7ef6..0x100a7f2d): a locked-on quarter that flips straight from 2 to 4 or back (`old`
+/// is last frame's, after any forcing) sets the signed byte +0x5b1 to 2; while it is above 0 it drops by one a call and
+/// the quarter is 1 (forward), so retail holds forward for two frames, then the real quarter goes on. Ours counts those
+/// frames as 4 ticks *(inf: retail frames of 2 ticks)*. Only the lock-on path has it, not the strafe lock.
+pub fn lock_flip_guard(old: u8, new: u8, left: &mut f32, ticks: f32) -> u8 {
+    if matches!((old, new), (2, 4) | (4, 2)) {
+        *left = 4.0;
+    }
+    if *left > 0.0 {
+        *left -= ticks;
+        1
+    } else {
+        new
+    }
+}
+
+/// FUN_100c8bb0's override of the walk / run while the heading is held (actor +0xfb), by the direction above: on foot
+/// 'mvr' / 'mvb' / 'mvl', riding (status 5 / 0x55) 'mvb' backing and 'wlk' sideways; forward keeps the walk / run.
+/// No fallback: a model without it keeps its last motion (FUN_100c83c0).
+pub fn strafe(dir: u8, riding: bool) -> Option<&'static str> {
+    match (dir, riding) {
+        (3, _) => Some("mvb"),
+        (2, false) => Some("mvr"),
+        (4, false) => Some("mvl"),
+        (2 | 4, true) => Some("wlk"),
+        _ => None,
+    }
+}
+
+/// `choose`, then `strafe` over it when it picked the walk or run (a status motion such as seated stays). `fixed`: a
+/// fixed-model actor (FUN_10084400 2 / 7, no mv? motions) takes its walk for 2..4 instead (0x100c8d5e).
+pub fn choose_strafed(names: &MotionNames, status: u8, ratio: f32, dir: u8, fixed: bool) -> (&'static str, f32) {
+    let (n, r) = choose(names, status, ratio);
+    if n != names.walk && n != names.run {
+        (n, r)
+    } else if fixed && matches!(dir, 2..=4) {
+        (names.walk, r)
+    } else {
+        (strafe(dir, matches!(status, 5 | 0x55)).unwrap_or(n), r)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tank_turns_right_two_degrees_a_tick() {
+        use glam::Vec3;
+        let h = super::tank_turn(0.0, 1.0, 1.0, 1.0, 1.0);
+        assert!((h.to_degrees() - 2.0).abs() < 1e-3);
+        // Toward the right vector (forward x -Y), as a step of +X goes.
+        let (f, nf) = (Vec3::Z, Vec3::new(h.sin(), 0.0, h.cos()));
+        assert!(nf.dot(f.cross(Vec3::NEG_Y)) > 0.0);
+        // A partial stick (tier a third) turns a third as fast; none, or a dead stick, not at all.
+        assert!((super::tank_turn(0.0, 0.5, 0.5, 1.0 / 3.0, 1.0).to_degrees() - 2.0 / 3.0).abs() < 1e-3);
+        assert!((super::tank_turn(0.3, 0.0, 0.0, 0.0, 1.0) - 0.3).abs() < 1e-5);
+        // Wrapped to +-pi.
+        let w = super::tank_turn(std::f32::consts::PI - 0.01, 1.0, 1.0, 1.0, 1.0);
+        assert!(w < 0.0 && w > -std::f32::consts::PI);
+    }
+
+    #[test]
+    fn lock_flip_holds_forward_briefly() {
+        let mut left = 0.0;
+        assert_eq!(super::lock_flip_guard(2, 2, &mut left, 1.0), 2);
+        // 2 -> 4 at 60 fps: forward for 4 ticks, then the real quarter; the forced 1 can't re-trigger it.
+        let mut got = vec![super::lock_flip_guard(2, 4, &mut left, 1.0)];
+        for _ in 0..5 {
+            got.push(super::lock_flip_guard(1, 4, &mut left, 1.0));
+        }
+        assert_eq!(got, [1, 1, 1, 1, 4, 4]);
+        // Other changes never hold.
+        let mut left = 0.0;
+        for (a, b) in [(1, 2), (2, 3), (3, 4), (1, 3), (0, 4)] {
+            assert_eq!(super::lock_flip_guard(a, b, &mut left, 1.0), b);
+        }
+    }
+
+    #[test]
+    fn strafe_quarters() {
+        use glam::Vec3;
+        let f = Vec3::Z;
+        let r = f.cross(Vec3::NEG_Y);
+        assert_eq!(strafe_dir(f, f), 1);
+        assert_eq!(strafe_dir(f, r), 2);
+        assert_eq!(strafe_dir(f, -f), 3);
+        assert_eq!(strafe_dir(f, -r), 4);
+        // Diagonals forward of 45 degrees stay forward.
+        assert_eq!(strafe_dir(f, f + r * 0.9), 1);
+        assert_eq!(strafe_dir(f, Vec3::ZERO), 0);
+        assert_eq!((strafe(2, false), strafe(3, true), strafe(4, true), strafe(1, false)), (Some("mvr"), Some("mvb"), Some("wlk"), None));
+        // Only over the walk / run: seated (47) keeps si1, standing keeps idl.
+        let n = MotionNames::default();
+        assert_eq!(choose_strafed(&n, 0, 0.5, 4, false).0, "mvl");
+        assert_eq!(choose_strafed(&n, 0, 0.9, 4, true).0, "wlk");
+        assert_eq!(choose_strafed(&n, 47, 0.5, 4, false).0, "si1");
+        assert_eq!(choose_strafed(&n, 0, 0.0, 4, false).0, "idl");
+    }
 
     #[test]
     fn thresholds() {
