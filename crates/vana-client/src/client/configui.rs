@@ -373,6 +373,8 @@ pub struct ConfigUi {
     pub cam_keys: [u8; 2],
     /// The modern Config page: the entry chosen, whether its page has the keys, and the row there.
     pub m_entry: usize,
+    /// The page opened from it (modern/config.rs SUBS), while one is.
+    pub m_sub: Option<usize>,
     pub m_open: bool,
     pub m_row: usize,
     /// The modern page's category (Log, Font Colors).

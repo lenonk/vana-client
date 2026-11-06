@@ -1002,6 +1002,10 @@ impl SettingsUi {
         let Some(r) = self.row.checked_sub(1).and_then(|i| self.rows().get(i).cloned()) else {
             return format!("Left / Right: another page of {}.", self.title().to_lowercase());
         };
+        self.row_help(&r)
+    }
+
+    fn row_help(&self, r: &Row) -> String {
         let when = match r.when {
             When::Now => "",
             When::NextZone => " Takes effect at the next zone load.",
@@ -1012,6 +1016,70 @@ impl SettingsUi {
 
     pub fn title(&self) -> &'static str {
         if self.kind == Kind::Extras { "Extras" } else { "Settings" }
+    }
+}
+
+/// The Settings window's pages (client/modern/config.rs): any row of ours, Settings' or Extras', by its label, whatever
+/// page this state is on. A row left out here (in game, or with the modern interface) is None.
+impl SettingsUi {
+    fn find(&self, label: &str) -> Option<Row> {
+        let pages = (0..TABS.len()).filter(|&t| t != MODS).map(|t| (Kind::Settings, t)).chain((0..EXTRA_TABS.len()).map(|t| (Kind::Extras, t)));
+        pages.flat_map(|(k, t)| rows(k, t, self.in_game, self.s.modern_ui).iter()).find(|r| r.label == label).map(Row::from)
+    }
+
+    fn vrow(&self, r: &Row) -> VRow {
+        let ctl = match Self::ctl(r) {
+            Ctl::Buttons(_) => VCtl::Buttons(r.choices.iter().map(|c| (c.1.to_string(), c.0 == self.get(r.val))).collect()),
+            Ctl::Slider => {
+                let (n, at) = self.stops(r);
+                VCtl::Slider { n, at, shown: self.shown(r) }
+            }
+        };
+        let label = if self.warns(r) { format!("{} \u{26a0}", r.label) } else { r.label.to_string() };
+        VRow { label, ctl }
+    }
+
+    /// The row named `label` as the modern layer draws it, and its help line.
+    pub fn item(&self, label: &str) -> Option<(VRow, String)> {
+        let r = self.find(label)?;
+        Some((self.vrow(&r), plain(&self.row_help(&r))))
+    }
+
+    /// The row named `label` set: its button `x` taken, or its slider to stop `x`.
+    pub fn item_set(&mut self, label: &str, x: usize, click: bool) {
+        let Some(r) = self.find(label) else { return };
+        self.sounds.clear();
+        match Self::ctl(&r) {
+            Ctl::Buttons(_) => {
+                let before = self.s.clone();
+                if let Some(c) = r.choices.get(x) {
+                    self.set(r.val, c.0);
+                }
+                self.dirty |= self.s != before;
+                self.sounds.push(Se::Select);
+            }
+            Ctl::Slider => {
+                if self.stops(&r).1 != x {
+                    self.set_stop(&r, x);
+                    if !click {
+                        self.sounds.push(Se::Cursor);
+                    }
+                }
+            }
+        }
+    }
+
+    /// The Mods page (Settings) or the Lua mods' pages (Extras, after our three) turned to.
+    pub fn goto_mods(&mut self) {
+        let tab = if self.kind == Kind::Extras { EXTRA_TABS.len() } else { MODS };
+        self.goto(tab, 0);
+    }
+
+    /// Every label of ours, for the Settings window's test that each row has a place.
+    #[cfg(test)]
+    pub fn all_labels(in_game: bool, modern: bool) -> Vec<&'static str> {
+        let pages = (0..TABS.len()).filter(|&t| t != MODS).map(|t| (Kind::Settings, t)).chain((0..EXTRA_TABS.len()).map(|t| (Kind::Extras, t)));
+        pages.flat_map(|(k, t)| rows(k, t, in_game, modern).iter()).map(|r| r.label).collect()
     }
 }
 
@@ -1072,16 +1140,7 @@ impl SettingsUi {
         } else {
             self.rows()
                 .iter()
-                .map(|r| {
-                    let ctl = match Self::ctl(r) {
-                        Ctl::Buttons(_) => VCtl::Buttons(r.choices.iter().map(|c| (c.1.to_string(), c.0 == self.get(r.val))).collect()),
-                        Ctl::Slider => {
-                            let (n, at) = self.stops(r);
-                            VCtl::Slider { n, at, shown: self.shown(r) }
-                        }
-                    };
-                    VRow { label: r.label.to_string(), ctl }
-                })
+                .map(|r| self.vrow(r))
                 .collect()
         };
         View { title: self.title(), tabs: self.tabs(), tab: self.tab, rows, row: self.row, col: self.col, edit: self.edit, help: plain(&self.help()) }

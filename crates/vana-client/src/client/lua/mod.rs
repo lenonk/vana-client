@@ -1144,17 +1144,31 @@ pub(super) fn frame(w: &mut World, gu: Option<&super::game_ui::GameUi>) {
         w.chat.filter = host.chat_filter();
         w.chat.mode_colours = w.battle.as_ref().map(|b| std::rc::Rc::new(b.code_tables(&w.game).1));
     }
-    // `/lua settings`: the modern UI shows Extras inside the Config window (its Extras entry, page open); the classic
+    // `/lua settings`: the modern UI shows the mods' pages in the Settings window (Mods, Mod Settings); the classic
     // page stands alone.
     host.packet_upkeep(w);
-    if host.open_page.is_some() && w.settings.is_none() {
+    // The modern Settings window keeps our state up on every page, so an open window is turned to the mod's page too:
+    // at once when its Extras state is up, else once the app has made it (it takes open_page then).
+    if host.open_page.is_some() {
+        let extras = w.settings.as_ref().is_some_and(|s| s.kind == super::settings::Kind::Extras);
         if w.modern {
-            let mut c = super::configui::ConfigUi::open("configwi");
-            (c.m_entry, c.m_open, c.m_row) = (super::modern::extras_entry(), true, 0);
-            w.config = Some(c);
-            w.menu = None;
+            match w.config.as_mut() {
+                Some(c) => super::modern::open_mod_settings(c),
+                None => {
+                    let mut c = super::configui::ConfigUi::open("configwi");
+                    super::modern::open_mod_settings(&mut c);
+                    w.config = Some(c);
+                    w.menu = None;
+                }
+            }
         }
-        w.want_settings = Some(super::settings::Kind::Extras);
+        if let Some(s) = w.settings.as_mut().filter(|_| extras) {
+            if let Some(id) = host.open_page.take() {
+                s.goto_mod(&id);
+            }
+        } else if w.settings.is_none() || w.modern {
+            w.want_settings = Some(super::settings::Kind::Extras);
+        }
     }
     w.lua = host;
     for (line, colour) in out {
