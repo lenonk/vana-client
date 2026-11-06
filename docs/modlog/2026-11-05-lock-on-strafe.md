@@ -11,7 +11,10 @@ From FFXiMain.dll (Steven's unpacked copy).
   to the target (0x100a7ef9), FUN_100a8000's speeds (back a third, sideways 0.0625 / 0.125 riding), and since vt+0x330
   is false FUN_100c8bb0 plays mvr / mvb / mvl. A sudden 2 <-> 4 flip forces 1 for +0x5b1 frames (0x100a7f23) *(not
   done in ours)*.
-- Ours: update_movement's lock_dir and World::my_strafe now also run locked on, against the way to the target.
+- Ours: update_movement's lock_dir and World::my_strafe now also run locked on. The quarter is read from the stick in
+  the locked step's own frame (forward toward the target, target::locked_step), not against each frame's way to the
+  target: a monster's position jumping in melee range swung that between sideways and forward every frame, cutting
+  mvr / mvl to the run and back (Steven's log, 2026-11-06).
 - FUN_10084400 is the actor's model kind ([+0x70]+0xee): 2 / 7 are fixed models without the mv? motions, so
   FUN_100c8bb0 (0x100c8d5e) plays the move motion (+0x7cc) for 2..4 instead. Ours: an actor drawn from one model
   id (Source::Npc(NpcLook::Model), mod.rs fixed_model) takes its walk.

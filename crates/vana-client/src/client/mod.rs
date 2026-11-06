@@ -11270,12 +11270,14 @@ impl App {
         // FUN_100a8000, under the strafe lock or locked on (ours: not the right drag): backing up goes at a third of the
         // speed (vt+0x1b0), sideways at a fixed 0.0625 a tick (0.125 riding), whatever the speed or the stick.
         let riding = matches!(world.my_motion.status, 5 | 0x55);
-        // Locked on (FUN_100a7b80), every control type: the same quarters and speeds against the way to the target.
-        let to_target = lock_target.map(|tp| Vec3::new(tp.x - world.pos.x, 0.0, tp.z - world.pos.z).normalize_or(Vec3::Z));
+        // Locked on (FUN_100a7b80), every control type: the same quarters and speeds, the stick read in the frame the
+        // locked step moves in (forward toward the target, side about it, target::locked_step). Measured against this
+        // frame's way to the target instead, a target whose position jumps (a monster in melee range, worse up close)
+        // swung the quarter between sideways and forward every frame: mvr / mvl cut to the run and back.
         let lock_dir = if !stepping {
             0
-        } else if let Some(f) = to_target {
-            crate::motion::strafe_dir(f, step)
+        } else if lock_target.is_some() {
+            crate::motion::strafe_dir(forward, step)
         } else if face_cam {
             // The same facing as my_strafe below: the float one while the byte is still ours.
             let dir = world.net.me.lock().map_or(0, |m| m.dir);
