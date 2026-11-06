@@ -13962,8 +13962,12 @@ impl App {
 
         let frame = match gfx.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
-            _ => {
+            other => {
+                // Outdated or lost (KWin's full-screen re-ask makes the swapchain stale): rebuilt, and the next frame
+                // asked for here, or the loop waits on events with nothing scheduled and the window stays frozen.
+                log::debug!("surface: no frame ({other:?}), configured again");
                 gfx.surface.configure(&gfx.gpu.device, &gfx.config);
+                self.next_frame = Some(Instant::now() + std::time::Duration::from_millis(16));
                 self.gfx = Some(gfx);
                 return;
             }
