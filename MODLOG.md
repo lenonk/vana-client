@@ -22572,3 +22572,32 @@ camera (client/gamepad.rs) does not read it.
   is nearer than it, with a range check so far edges do not halo; samples off the screen count as open. It fades out from 40 to 80 units from the eye.
 - Pass 2: a depth-aware 4 x 4 blur of that target, multiplying the frame by 1 - 0.55 x AO.
 - Test: render::ssao::flat_floor_and_sky_untouched (a flat floor and the sky come back unchanged).
+
+## The GM window's text fields keep their keys (2026-11-05, ours)
+
+- The GM window (modern/gmwin.rs) took the typed text from the egui events, but the key functions (input.rs, run first
+  in `key_functions`) only knew the fields listed in `typing_elsewhere`, so each letter typed there also fired its game
+  hotkey. It now counts as typing while it has the keys (`gmwin::takes_keys`: shown, nothing over it, no event). Key
+  functions with mask 0x41 then fail, as for the chat line. Its footer says "Vana Client only" instead of "Ours".
+
+## Game Master window (ours) (2026-11-05)
+
+Ours, not retail: the retail client has no GM menu. Needs a server with akreao/lsb #4's packets; other servers
+ignore the request and the window never shows.
+
+- At each zone-in the client sends c2s 0x1F0 {u8 Version = 1, padding}. The server answers with s2c 0x1F0 pages:
+  u8 Version @4, GmLevel @5 (the real `m_GMlevel`, not the 0x037 badge, which reads 0 while hidden and the same
+  for levels 4 and 5), u16 Total @6, First @8, u8 Count @0xA, Flags @0xB (bit 0 last page), then entries of
+  u8 Permission, NameLen, ParamsLen, the name and its cmdprops parameter string. Only commands at or below the
+  level come; the server sends a fresh list when the level changes. `client/gm.rs`.
+- The Command Menu gains a last row, Game Master, while that level is above 0 (`modern/command.rs`).
+- The window (`modern/gmwin.rs`): groups down the left with counts, the commands 9 to a page with a search, the
+  chosen command's fields at the right with its line, Run and Clear, and the server's replies. Fields, labels,
+  groups and the risky commands' second press come from `client/gm_fields.txt`, made from lsb's
+  `scripts/commands/*.lua` usage lines; a command the server lists but the file doesn't gets plain fields from
+  its type string. The line is checked as lsb's parser reads it: fields in order, split on spaces, `i` fields
+  numbers. Pickers so far: Use target (mob/NPC ids), Use my position (x/y/z), augments folded away.
+- Run sends c2s 0x1F1 {u16 RequestId, u8 Length, padding, the line without '!'}, not a chat line. s2c 0x1F1
+  {u16 RequestId, u8 Result (0 ran, 1 failed, 2 refused), Flags (bit 0 last, bit 1 cut short), Count, padding,
+  lines of u8 length + text} carries what the command printed, shown under Server replies.
+- `vana-client modern-shot --gm` draws a level 5 sample.
