@@ -122,6 +122,20 @@ fn same_server(a: &str, b: &str) -> bool {
     a.trim().eq_ignore_ascii_case(b.trim())
 }
 
+/// What a server's rest ticks look like, as learnt (client/resttick.rs keeps it moving).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RestModel {
+    /// From the rest's start to the first heal seen (seconds), a mean over rests.
+    pub first: f32,
+    /// The intervals after each heal, means over rests; the last stands for every later one.
+    pub gaps: Vec<f32>,
+    /// How many rests each value holds ([first, gaps...]), capped so later rests still move it.
+    pub seen: Vec<u32>,
+    /// The server's look period (its ticks land on the first look after their time); 0: on time.
+    pub period: f32,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -223,9 +237,8 @@ pub struct Config {
     pub minimap_dock: u32,
     pub minimap_size: u32,
     pub minimap_span: f32,
-    /// Ours: resting's ticks as timed on the first rest seen, [first heal, interval, the server's look period] in
-    /// seconds (client/resttick.rs).
-    pub rest_tick: Option<[f32; 3]>,
+    /// Ours: resting's ticks as learnt per server (by its search address, "ip-port"; client/resttick.rs).
+    pub rest_models: std::collections::BTreeMap<String, RestModel>,
     /// The drawn cursor's size (config 0021 off) in percent of retail's pixels on screen; 0 = auto (grows with the
     /// window height from 720). Not retail: it was sized for 640 x 480. The .ani cursors keep their own size.
     pub cursor_size: u32,
@@ -457,7 +470,7 @@ impl Default for Config {
             minimap_dock: 0,
             minimap_size: 1,
             minimap_span: 160.0,
-            rest_tick: None,
+            rest_models: Default::default(),
             cursor_size: 0,
             keys_hide_cursor: true,
             cam_keys_x: 0,

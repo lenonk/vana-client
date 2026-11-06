@@ -6789,7 +6789,7 @@ struct World {
     minimap_size: u32,
     minimap_span: f32,
     minimap_dirty: bool,
-    /// Resting's ticks: the rest watched and what was learnt (saved in config rest_tick).
+    /// Resting's ticks: the rest watched and what was learnt (saved in config rest_models for this server).
     rest: resttick::RestTick,
     /// Config auto_sort (items::auto_sort_tick): the containers kept sorted, changed since saved; those with a new item
     /// and the seconds until they sort.
@@ -8801,7 +8801,7 @@ impl App {
                             minimap_size: self.cfg.minimap_size,
                             minimap_span: self.cfg.minimap_span,
                             minimap_dirty: false,
-                            rest: resttick::RestTick::new(self.cfg.rest_tick),
+                            rest: resttick::RestTick::new(self.cfg.rest_models.get(&format!("{}-{}", login.search.0, login.search.1)).cloned()),
                             auto_sort: self.cfg.auto_sort,
                             auto_sort_dirty: false,
                             sort_due: (0, 0.0),
@@ -13436,7 +13436,8 @@ impl App {
                     }
                 }
                 if std::mem::take(&mut world.rest.dirty) {
-                    self.cfg.rest_tick = world.rest.learnt;
+                    let (ip, port) = world.search_addr;
+                    self.cfg.rest_models.insert(format!("{ip}-{port}"), world.rest.model.clone());
                     if let Err(e) = self.cfg.save() {
                         log::warn!("config: {e:#}");
                     }

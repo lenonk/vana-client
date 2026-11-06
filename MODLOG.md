@@ -16238,11 +16238,20 @@ From the research notes:
 - Rest ticks (ours, user 2026-10-27; client/resttick.rs): LSB's /heal (c2s 0x0E8) adds the Healing effect with a 10 s
   tick (map.HEALING_TICK_DELAY); healing.lua heals from the second tick, so the first heal is 20 s in. Effects are only
   looked at every 3 s (zone_entities.cpp charTick, m_EffectCheckTime + 3s; TickEffects runs the ticks whose time has
-  passed), so a tick lands on the first look after its time: gaps of 9, 9, 12 s. No packet says when: the first rest
-  with four rises in HP or MP is timed and kept in config rest_tick as [first heal, interval, look period] (live:
-  22.1 s, 9.9 s snapped to 10, 3.0 s); after that the party window's strip under its title counts to the next tick,
-  each on the first look at or after its time, the looks placed by any rise seen in the zone and the server's start
-  bounded by this rest's rises. Seen live (Lnxcsfix): the countdown reached 0 as HP rose 310 -> 346, then 12 s.
+  passed), so a tick lands on the first look after its time: gaps of 9, 9, 12 s. No packet says when: the client
+  learns it from the rises in HP or MP while resting (live on LSB: 22.1 s, 10 s, 3.0 s) and the party window's strip
+  under its title counts to the next tick, each on the first look at or after its time, the looks placed by any rise
+  seen in the zone. Seen live (Lnxcsfix): the countdown reached 0 as HP rose 310 -> 346, then 12 s.
+- Reworked 2026-11-06 (issue #75: other servers' ticks quicken the longer one rests, down to a floor, and the timer
+  never caught up when off). The model is per server (config rest_models, by search address "ip-port"; the old
+  global rest_tick is dropped) and keeps learning on every rest: the first heal and each interval after it, by its
+  place in the rest (the 24th and later are the floor, the last), each a mean over up to 6 rests. Intervals whose
+  spread is the looks' doing (within a period and a half, or a fifth of their mean) are one interval, their mean, as
+  LSB's; a look period is taken only from a rest's steady gaps (a quickening server's even gaps are no look grid).
+  A rest's rises learn only while they follow one on another: a gap the model can't place (a tick with HP and MP
+  full, a stray rise) stops it for that rest. Rises while Regen (42) or Refresh (43) is up neither learn nor anchor.
+  The server's start this rest is bounded by its rises, each at the tick it is nearest; a rise outside every bound
+  anchors alone, so the countdown recovers at the next tick. Shown from the second heal of the first rest.
 - Captions read by the letters' ink (render/ui.rs ink: the light pixels; "font    font" letters sit in fully opaque
   dark cells, menu2fon's in alpha-0x44 glows) and by both gaps (ink and cell; each misses gaps the other shows). Retail
   spaces its captions unevenly ("Set tings" and "Set as" have the same gaps), so a doubtful gap (1..3 px over the

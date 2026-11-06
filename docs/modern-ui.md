@@ -283,9 +283,10 @@ Milestone 1:
 - Macros (modern/macros.rs): the forty books in one list, the palettes as keycaps with the sets as tabs, the editor's
   lines clicked to edit; Edit Equip. Set's pages as tabs, its slot editor as a grid of tiles beside the storage as
   tabs and one list; the palette while Ctrl or Alt is held over the chat window. Seen live.
-- Rest ticks (ours, user 2026-10-27): resting, the party window shows a strip under its title: "Timing rest ticks..."
-  until the first clean rest has been timed (config `rest_tick`), then "Next tick", a bar and the seconds left, on the
-  server's clock as learnt (client/resttick.rs). Seen live.
+- Rest ticks (ours, user 2026-10-27; reworked 2026-11-06, issue #75): resting, the party window shows a strip under
+  its title: "Timing rest ticks..." until a rest has shown two heals, then "Next tick", a bar and the seconds left, on
+  the server's clock as learnt per server (config `rest_models`; client/resttick.rs, MODLOG "Rest ticks"): intervals
+  that quicken to a floor are followed, each rise re-anchors the countdown. Seen live.
 - Name plates (modern/plates.rs): the name in Inter Bold Italic with a dark outline, retail's size (capitals a little
   taller than retail's letters, set wide as retail's are; the user's pick, 2026-10-26), place, colours, target pulse and depth test (walls hide them; drawn in the same UI pass as
   quads). Each name is rasterized once per size bucket (16 / 28 / 48 / 80 px em) and uploaded as a UI image. Retail's
