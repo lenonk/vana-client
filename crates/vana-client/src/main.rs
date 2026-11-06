@@ -613,7 +613,7 @@ enum Cmd {
         /// A panel of the widget kit's controls (long and short values, a long label) in place of the frames.
         #[arg(long)]
         kit: bool,
-        /// The Settings window on its Display page (our settings; retail's need the game's layouts).
+        /// The Settings window searching "shadow" (our settings; retail's need the game's layouts).
         #[arg(long)]
         settings: bool,
     },

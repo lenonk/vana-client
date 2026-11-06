@@ -291,7 +291,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [SRow] 
         row("Background", "How sharp the 3D world is drawn. Set it higher than the window for a sharper picture at a cost in speed, or lower for speed.", Size("0003", "0004", Sizes::Background), &[], Now),
         row("Menu Size", "The size menus and text are drawn at before they are stretched to the window. Smaller numbers make menus bigger.", Size("0037", "0038", Sizes::Ui), &[], Now),
         row("3D Aspect", "Window keeps the 3D world in proportion to the window. Config uses the shape set in the game's config tool, as retail does.", RetailAspect, &[(0, "Window"), (1, "Config")], Now),
-        row("Draw Distance", "How far away scenery, characters and effects still appear. Retail is the game's own distance, the others reach farther (not retail).", DrawDistance, &[(100, "Retail"), (150, "1.5x"), (200, "2x"), (300, "3x"), (0, "Unlimited")], Now),
+        row("Draw Distance", "How far away scenery, characters and effects still appear. Retail is the game's distance, the others reach farther (not retail).", DrawDistance, &[(100, "Retail"), (150, "1.5x"), (200, "2x"), (300, "3x"), (0, "Unlimited")], Now),
     ];
     const TEXTURES: &[SRow] = &[
         row("Textures", "Texture quality. High and Low save video memory, Full is the sharpest.", Tool("0018"), &[(0, "High"), (1, "Low"), (2, "Full")], NextZone),
@@ -326,7 +326,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [SRow] 
         row("Frame Limit", "The most frames drawn each second. The game itself always runs at the same speed.", FrameLimit, &[], Now),
         row("Anisotropic Filtering", "Keeps ground and walls sharp when you look at them at a slant. Higher is sharper.", Aniso, &[(1, "Off"), (2, "2x"), (4, "4x"), (8, "8x"), (16, "16x")], NextZone),
         row("Party TP", "Shows each member's TP in the party window.", PartyTp, OFF_ON, Now),
-        row("Interface", "Classic uses the game's own windows. Modern uses the new windows where there is one (not retail).", ModernUi, &[(0, "Classic"), (1, "Modern")], Now),
+        row("Interface", "Classic uses the game's windows. Modern uses the new windows where there is one (not retail).", ModernUi, &[(0, "Classic"), (1, "Modern")], Now),
         row("Interface Size", "How big the modern windows are (not retail).", ModernScale, MODERN_SCALES, Now),
         row("Panel Opacity", "How see-through the modern windows' backgrounds are (not retail).", ModernOpacity, &[], Now),
         row("Panel Places", "Reset puts this character's modern windows back where they started (not retail).", ResetPlaces, &[(0, "As Moved"), (1, "Reset")], Now),
@@ -1042,8 +1042,12 @@ impl SettingsUi {
                 VCtl::Slider { n, at, shown: self.shown(r) }
             }
         };
-        let label = if self.warns(r) { format!("{} \u{26a0}", r.label) } else { r.label.to_string() };
-        VRow { label, ctl }
+        VRow { label: r.label.to_string(), ctl }
+    }
+
+    /// Whether the row named `label` holds a retail setting (a config-tool value, a size, Gamma Base, Party TP).
+    pub fn retail(&self, label: &str) -> bool {
+        self.find(label).is_some_and(|r| matches!(r.val, Val::Tool(_) | Val::Size(..) | Val::Gamma | Val::PartyTp))
     }
 
     /// The row named `label` as the modern layer draws it, and its help line.

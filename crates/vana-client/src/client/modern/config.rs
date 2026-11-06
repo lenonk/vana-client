@@ -1,12 +1,6 @@
-//! The modern Settings window (ours, not retail; it replaces retail's Config list in the modern interface), over
-//! client/configui.rs (retail's values, setters and windows) and client/settings.rs (ours): every setting of both on one
-//! of fourteen pages by topic (Gameplay, Interface, Chat & Log, ... Mods) in groups down the left, each page's settings
-//! under small headings, a row per setting with its options as buttons or a slider. Retail's settings keep the captions
-//! read from their Config page's layout (a few made clearer). Chat Filters, Effects, Font Colors, Mods and the Lua mods'
-//! settings are pages of their own opened from a button on their topic's page (Escape or Back returns), and key
-//! assignment is a list in the page. Left out as before: the Windows and Log pages (the log windows' frame, size and
-//! width mean nothing with the modern chat; user, 2026-10-26) and Mouse/Cam.'s mouse rows. Every page is the widget
-//! kit's (kit.rs): its controls and keys.
+//! The modern Settings window (ours; it replaces retail's Config list in the modern interface): every setting of
+//! client/configui.rs (retail's) and client/settings.rs (ours) on fourteen topic pages, in the widget kit (kit.rs).
+//! Left out as before: the Windows and Log pages (user, 2026-10-26) and Mouse/Cam.'s mouse rows.
 
 use super::super::World;
 use super::super::configui::{self, Act, ConfigUi, Ctl};
@@ -105,7 +99,7 @@ const PAGES: [(&str, &str, &[Item]); 14] = [
         Head("Output"), Ours("Sound"), Ours("Sound Effect Channels"), Ours("Sound in Background"),
     ]),
     ("Input", "Mouse, Camera & Keys", &[
-        Head("Mouse"), Ours("Hardware Mouse"), Ours("Cursor Size"),
+        Head("Mouse"), Ours("Hardware Mouse"), Ours("Cursor Size"), Ours("Keys Hide the Cursor"),
         Head("Camera"), Retail("conf7", 5), Retail("conf7", 7), Retail("conf7", 9), Retail("conf7", 11), Retail("conf7", 13),
         Retail("conf7", configui::CAM_KEYS), Retail("conf7", configui::CAM_KEYS + 3),
         Head("Keyboard"), Retail("conf6win", 5), Retail("conf6win", 8), Retail("conf6win", 9), Retail("conf6win", 10), Retail("conf13wi", 1),
@@ -126,7 +120,11 @@ fn current(c: &ConfigUi) -> Entry {
 
 /// Retail's setting `child` of Config page `menu` (its first control).
 fn shape_of(menu: &'static str, child: u16) -> Option<Shape> {
-    shapes(&[menu]).into_iter().find(|s| s.ctls[0].0 == child)
+    // The shapes are fixed tables: built once, not for every line each frame.
+    thread_local! {
+        static SHAPES: std::cell::RefCell<std::collections::HashMap<(&'static str, u16), Option<Shape>>> = Default::default();
+    }
+    SHAPES.with(|m| m.borrow_mut().entry((menu, child)).or_insert_with(|| shapes(&[menu]).into_iter().find(|s| s.ctls[0].0 == child)).clone())
 }
 
 /// A topic page's lines as they show: each with its retail shape (Retail) or our row and help (Ours); ours left out
@@ -135,6 +133,8 @@ struct Line {
     item: Item,
     shape: Option<Shape>,
     ours: Option<(settings::VRow, String)>,
+    /// A retail setting (retail's rows, our rows that hold one, retail's pages opened from here).
+    retail: bool,
 }
 
 #[cfg(test)]
@@ -147,14 +147,14 @@ fn lines_of(items: &[Item], s: Option<&SettingsUi>) -> Vec<Line> {
     for &item in items {
         let line = match item {
             Retail(menu, child) => match shape_of(menu, child) {
-                Some(sh) => Line { item, shape: Some(sh), ours: None },
+                Some(sh) => Line { item, shape: Some(sh), ours: None, retail: true },
                 None => continue,
             },
             Ours(label) => match s.and_then(|s| s.item(label)) {
-                Some(o) => Line { item, shape: None, ours: Some(o) },
+                Some(o) => Line { item, shape: None, ours: Some(o), retail: s.is_some_and(|s| s.retail(label)) },
                 None => continue,
             },
-            _ => Line { item, shape: None, ours: None },
+            _ => Line { item, shape: None, ours: None, retail: matches!(item, Open(sub) if sub < SUB_MODS) },
         };
         if matches!(item, Head(_)) && out.last().is_some_and(|l| matches!(l.item, Head(_))) {
             out.pop();
@@ -187,13 +187,18 @@ fn view_items(c: &ConfigUi) -> Vec<Item> {
         None => PAGES[c.m_entry.min(PAGES.len() - 1)].2.to_vec(),
     };
     if c.m_retail {
-        items.retain(|i| !matches!(i, Ours(_) | Open(SUB_MODS | SUB_MOD_PAGES)));
+        items.retain(|i| !matches!(i, Open(SUB_MODS | SUB_MOD_PAGES)));
     }
     items
 }
 
 fn view(c: &ConfigUi, s: Option<&SettingsUi>) -> Vec<Line> {
-    lines_of(&view_items(c), s)
+    let mut out = lines_of(&view_items(c), s);
+    // Retail only keeps our rows that hold a retail setting.
+    if c.m_retail {
+        out.retain(|l| l.retail || !matches!(l.item, Ours(_)));
+    }
+    out
 }
 
 /// Whether `text` matches the search: anywhere in a setting's name, or a word of its help starting with it (3
@@ -279,7 +284,7 @@ pub fn find_events(w: &mut World, events: &[egui::Event]) -> bool {
                 w.sounds.push(Se::Cancel as u32);
                 took = true;
             }
-            egui::Event::Key { key: egui::Key::R, pressed: true, modifiers, .. } if modifiers.ctrl || modifiers.command => {
+            egui::Event::Key { key: egui::Key::R, pressed: true, repeat: false, modifiers, .. } if modifiers.ctrl || modifiers.command => {
                 (c.m_retail, c.m_row) = (!c.m_retail, 0);
                 w.sounds.push(Se::Cursor as u32);
                 took = true;
@@ -494,11 +499,12 @@ fn topic_detail(gu: Option<&GameUi>, c: &ConfigUi, v: &Values, all: &[Line], k: 
         match l.item {
             Head(h) => page = h,
             _ if n == k => {
-                let (name, retail) = match (&l.shape, &l.ours, l.item) {
-                    (Some(sh), ..) => (gu.map(|gu| heading(gu, sh)).unwrap_or_default(), true),
-                    (_, Some((r, _)), _) => (r.label.clone(), false),
-                    (_, _, Open(sub)) => (SUBS[sub].0.to_string(), sub < SUB_MODS),
-                    _ => (String::new(), false),
+                let retail = l.retail;
+                let name = match (&l.shape, &l.ours, l.item) {
+                    (Some(sh), ..) => gu.map(|gu| heading(gu, sh)).unwrap_or_default(),
+                    (_, Some((r, _)), _) => r.label.clone(),
+                    (_, _, Open(sub)) => SUBS[sub].0.to_string(),
+                    _ => String::new(),
                 };
                 let text = match gu {
                     Some(gu) => topic_help(gu, c, v, all, k),
@@ -1012,7 +1018,7 @@ fn settings_follow(w: &mut World) {
     match w.settings.as_mut() {
         Some(s) if s.kind == kind => match page {
             Entry::Mods if !s.on_mods_page() => s.goto_mods(),
-            Entry::ModPages if !s.mod_pages.is_empty() && s.view().tab < 3 => s.goto_mods(),
+            Entry::ModPages if !s.mod_pages.is_empty() && s.view().tab < s.mods_tab() => s.goto_mods(),
             _ => {}
         },
         _ => w.want_settings = Some(kind),
@@ -2089,9 +2095,14 @@ mod tests {
         refresh_hits(None, &mut c, &v, Some(&s));
         c.m_entry = PAGES.iter().position(|p| p.1 == "Lighting & Shadows").unwrap();
         c.m_retail = true;
-        let items = view_items(&c);
-        assert!(items.contains(&Retail("conf3win", 6)));
-        assert!(items.iter().all(|i| !matches!(i, Ours(_))));
+        let lines = view(&c, Some(&s));
+        assert!(lines.iter().any(|l| l.item == Retail("conf3win", 6)));
+        // Of ours, only the rows that hold a retail setting stay (Lamp Lights does not).
+        assert!(lines.iter().all(|l| !matches!(l.item, Ours(_)) || l.retail));
+        assert!(!lines.iter().any(|l| l.item == Ours("Lamp Lights")));
+        c.m_entry = PAGES.iter().position(|p| p.1 == "Mouse, Camera & Keys").unwrap();
+        let lines = view(&c, Some(&s));
+        assert!(lines.iter().any(|l| l.item == Ours("Hardware Mouse")) && !lines.iter().any(|l| l.item == Ours("Cursor Size")));
         c.m_entry = PAGES.iter().position(|p| p.1 == "Mods").unwrap();
         assert!(view(&c, Some(&s)).is_empty());
     }
