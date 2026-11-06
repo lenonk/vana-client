@@ -2052,12 +2052,17 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if find_typing {
         keys.clear();
     }
+    // The modern Settings window's search takes the text, Backspace, Escape and Ctrl+R while a topic page shows.
+    let settings_typing = modern::config_find_events(world, &input.events);
+    if settings_typing {
+        keys.clear();
+    }
     // The modern magic and ability windows' search takes the keys and text while it runs.
     let list_typing = listsearch::events(world, gu, &input.events);
     if list_typing {
         keys.clear();
     }
-    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing || comment_typing || macro_typing || faq_typing || mail_typing || lua_typing || voice_typing || list_typing || scan_typing || find_typing;
+    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing || comment_typing || macro_typing || faq_typing || mail_typing || lua_typing || voice_typing || list_typing || scan_typing || find_typing || settings_typing;
     if post_typing {
         post::text_events(world, &input.events);
         keys.clear();

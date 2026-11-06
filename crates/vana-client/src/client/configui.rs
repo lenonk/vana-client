@@ -375,6 +375,11 @@ pub struct ConfigUi {
     pub m_entry: usize,
     /// The page opened from it (modern/config.rs SUBS), while one is.
     pub m_sub: Option<usize>,
+    /// The Settings window's search while one is typed, and its hits ((page, line) of modern/config.rs PAGES) for
+    /// the text they were found for; Retail only leaves ours out.
+    pub m_find: Option<String>,
+    pub m_hits: (String, Vec<(usize, usize)>),
+    pub m_retail: bool,
     pub m_open: bool,
     pub m_row: usize,
     /// The modern page's category (Log, Font Colors).

@@ -1071,8 +1071,12 @@ impl SettingsUi {
 
     /// The Mods page (Settings) or the Lua mods' pages (Extras, after our three) turned to.
     pub fn goto_mods(&mut self) {
-        let tab = if self.kind == Kind::Extras { EXTRA_TABS.len() } else { MODS };
-        self.goto(tab, 0);
+        self.goto(self.mods_tab(), 0);
+    }
+
+    /// The first mods tab: Mods (Settings), or the first Lua mod's page (Extras after its own).
+    pub fn mods_tab(&self) -> usize {
+        if self.kind == Kind::Extras { EXTRA_TABS.len() } else { MODS }
     }
 
     /// Every label of ours, for the Settings window's test that each row has a place.
