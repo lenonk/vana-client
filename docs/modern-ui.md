@@ -565,4 +565,7 @@ Milestone 1:
   mods' settings open as their own pages from a button on their topic's page. Search, a retail-only filter and a details
   pane, as in the mock-up, are still to come.
 - Typing in the Settings window's search no longer triggers game hotkeys (ours).
+- Mouse Camera Speed (ours, not retail): Settings' Mouse row (Input > Mouse, Camera & Keys, and the classic Settings
+  Misc. page) scales every mouse look drag, 25% to 200%, 100% the old speed. The controller's camera is not touched,
+  so it stays retail's.
 - Not yet: alliance rows live.
