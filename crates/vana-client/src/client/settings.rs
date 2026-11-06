@@ -16,6 +16,8 @@ pub struct Settings {
     pub tool: std::collections::BTreeMap<String, u32>,
     pub frame_limit: u32,
     pub anisotropy: u16,
+    pub antialias: u32,
+    pub grading: u32,
     pub draw_distance: u32,
     pub send_interval: u32,
     pub party_tp: bool,
@@ -27,6 +29,9 @@ pub struct Settings {
     pub target_hpp: bool,
     pub earth_clock: bool,
     pub lamp_lights: bool,
+    pub actor_shadows: u32,
+    pub shadow_map: u32,
+    pub ssao: bool,
     pub hide_trust_speech: bool,
     pub hide_ready_lines: bool,
     pub short_battle: bool,
@@ -67,6 +72,8 @@ impl Settings {
             tool: c.tool.clone(),
             frame_limit: c.frame_limit,
             anisotropy: c.anisotropy,
+            antialias: c.antialias,
+            grading: c.grading,
             draw_distance: c.draw_distance,
             send_interval: c.send_interval,
             party_tp: c.party_tp,
@@ -78,6 +85,9 @@ impl Settings {
             target_hpp: c.target_hpp,
             earth_clock: c.earth_clock,
             lamp_lights: c.lamp_lights,
+            actor_shadows: c.actor_shadows,
+            shadow_map: c.shadow_map,
+            ssao: c.ssao,
             hide_trust_speech: c.hide_trust_speech,
             hide_ready_lines: c.hide_ready_lines,
             short_battle: c.short_battle,
@@ -115,6 +125,8 @@ impl Settings {
         c.tool = self.tool.clone();
         c.frame_limit = self.frame_limit;
         c.anisotropy = self.anisotropy;
+        c.antialias = self.antialias;
+        c.grading = self.grading;
         c.draw_distance = self.draw_distance;
         c.send_interval = self.send_interval;
         c.party_tp = self.party_tp;
@@ -126,6 +138,9 @@ impl Settings {
         c.target_hpp = self.target_hpp;
         c.earth_clock = self.earth_clock;
         c.lamp_lights = self.lamp_lights;
+        c.actor_shadows = self.actor_shadows;
+        c.shadow_map = self.shadow_map;
+        c.ssao = self.ssao;
         c.hide_trust_speech = self.hide_trust_speech;
         c.hide_ready_lines = self.hide_ready_lines;
         c.short_battle = self.short_battle;
@@ -174,6 +189,8 @@ enum Val {
     Gamma,
     FrameLimit,
     Aniso,
+    Antialias,
+    Grading,
     DrawDistance,
     SendRate,
     PartyTp,
@@ -185,6 +202,9 @@ enum Val {
     TargetHpp,
     EarthClock,
     LampLights,
+    ActorShadows,
+    ShadowMap,
+    Ssao,
     TrustSpeech,
     ReadyLines,
     ShortBattle,
@@ -274,9 +294,9 @@ const fn row(label: &'static str, help: &'static str, val: Val, choices: &'stati
     SRow { label, help, val, choices, when }
 }
 
-const TABS: [&str; 9] = ["General", "Screen", "Textures", "Effects", "Sound", "Misc.", "Client", "Controls", "Mods"];
+const TABS: [&str; 10] = ["General", "Screen", "Textures", "Effects", "Sound", "Misc.", "Client", "Controls", "Graphics", "Mods"];
 /// The Mods page (client/modsui.rs): its rows come from the mods folder, not a table.
-const MODS: usize = 8;
+const MODS: usize = 9;
 const EXTRA_TABS: [&str; 4] = ["Maps", "Timers", "Battle", "Misc."];
 
 /// `in_game`: the volumes are the Gameplay page's there, so the Sound page leaves them out. `modern`: the minimap's and
@@ -336,6 +356,14 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [SRow] 
         row("Panel Opacity", "How see-through the modern windows' backgrounds are (not retail).", ModernOpacity, &[], Now),
         row("Panel Places", "Reset puts this character's modern windows back where they started (not retail).", ResetPlaces, &[(0, "As Moved"), (1, "Reset")], Now),
     ];
+    // Ours: the graphics options retail has no page for (a page holds 7 rows).
+    const GRAPHICS: &[SRow] = &[
+        row("Character Shadows", "Retail gives characters the game's simple shadows. Real makes characters cast proper shadows from the sun and moon, and from lamps when Lamp Lights is Real (not retail).", ActorShadows, &[(0, "Retail"), (1, "Real")], Now),
+        row("Shadow Quality", "How sharp Real shadows are. Higher is sharper and uses more video memory (not retail).", ShadowMap, &[(1024, "Low"), (2048, "Medium"), (4096, "High")], Now),
+        row("Ambient Occlusion", "Adds soft shade in corners and creases of the world, so buildings look more solid (not retail).", Ssao, OFF_ON, Now),
+        row("Colour Grading", "Gives the 3D world a colour tint. Menus and text keep their colours (not retail).", Grading, &[(0, "Off"), (1, "Vivid"), (2, "Warm"), (3, "Cool"), (4, "Film")], Now),
+        row("Anti-aliasing", "Smooths jagged edges in the 3D world. Menus and text are left alone (not retail). For even smoother edges, set Background higher than the window.", Antialias, &[(0, "Off"), (1, "SMAA")], Now),
+    ];
     // A page holds 7 rows; the controls' (the gamepad, mouse look) have their own.
     const GAMEPAD: &[SRow] = &[
         row("Gamepad", "Lets you play with a game controller. The button layout follows the game's pad config tool.", Gamepad, OFF_ON, Now),
@@ -381,7 +409,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [SRow] 
         Kind::Settings if tab == MODS => &[],
         // Panel Places (the last Linux row) is a character's: in game only.
         Kind::Settings if !in_game && tab == 6 => &CLIENT[..CLIENT.len() - 1],
-        Kind::Settings => [GENERAL, SCREEN, TEXTURES, EFFECTS, SOUND, MISC, CLIENT, GAMEPAD][tab.min(7)],
+        Kind::Settings => [GENERAL, SCREEN, TEXTURES, EFFECTS, SOUND, MISC, CLIENT, GAMEPAD, GRAPHICS][tab.min(8)],
     }
 }
 
@@ -392,6 +420,8 @@ const RESOLUTIONS: [[u32; 2]; 17] = [
 
 /// The Config pages' size (conf2win and its siblings, 366 x 296 at (16, 48)).
 const W: f32 = 366.0;
+/// The Background row's warning while real shadows are on (ours).
+const WARNING: &str = "Real shadows affected. Performance will be affected.";
 const H: f32 = 296.0;
 /// A row's pitch: its heading, then its buttons or slider under it.
 const PITCH: f32 = 34.0;
@@ -522,6 +552,8 @@ impl SettingsUi {
             Val::Size(..) | Val::Gamma | Val::Monitor | Val::Gpu => 0,
             Val::FrameLimit => self.s.frame_limit,
             Val::Aniso => self.s.anisotropy as u32,
+            Val::Antialias => self.s.antialias,
+            Val::Grading => self.s.grading,
             Val::DrawDistance => self.s.draw_distance,
             Val::SendRate => self.s.send_interval,
             Val::PartyTp => self.s.party_tp as u32,
@@ -540,6 +572,9 @@ impl SettingsUi {
             Val::TargetHpp => self.s.target_hpp as u32,
             Val::EarthClock => self.s.earth_clock as u32,
             Val::LampLights => self.s.lamp_lights as u32,
+            Val::ActorShadows => self.s.actor_shadows,
+            Val::ShadowMap => self.s.shadow_map,
+            Val::Ssao => self.s.ssao as u32,
             Val::TrustSpeech => self.s.hide_trust_speech as u32,
             Val::ReadyLines => self.s.hide_ready_lines as u32,
             Val::ShortBattle => self.s.short_battle as u32,
@@ -565,6 +600,8 @@ impl SettingsUi {
         match v {
             Val::Tool(n) => self.tool_set(n, x),
             Val::Aniso => self.s.anisotropy = x as u16,
+            Val::Antialias => self.s.antialias = x,
+            Val::Grading => self.s.grading = x,
             Val::DrawDistance => self.s.draw_distance = x,
             Val::SendRate => self.s.send_interval = x,
             Val::PartyTp => self.s.party_tp = x != 0,
@@ -582,6 +619,9 @@ impl SettingsUi {
             Val::TargetHpp => self.s.target_hpp = x != 0,
             Val::EarthClock => self.s.earth_clock = x != 0,
             Val::LampLights => self.s.lamp_lights = x != 0,
+            Val::ActorShadows => self.s.actor_shadows = x,
+            Val::ShadowMap => self.s.shadow_map = x,
+            Val::Ssao => self.s.ssao = x != 0,
             Val::TrustSpeech => self.s.hide_trust_speech = x != 0,
             Val::ReadyLines => self.s.hide_ready_lines = x != 0,
             Val::ShortBattle => self.s.short_battle = x != 0,
@@ -945,9 +985,10 @@ impl SettingsUi {
                 gu.sprite_cells("menu    windowps", 465, 2..3, x + 20.0 - b[0], hy + 2.0 - b[1], N);
             }
             gu.label(&r.label, x + 32.0, hy, N, false);
+            let icon = if self.warns(r) { gu.warning_icon(x + 32.0 + gu.label_width(&r.label) + 4.0, hy) + 4.0 } else { 0.0 };
             // A slider's value at the heading's end, right-aligned to the slider's (cut to the room left).
             if matches!(Self::ctl(r), Ctl::Slider) {
-                let room = SLIDER_X + SLIDER_W - 32.0 - gu.label_width(&r.label) - 16.0;
+                let room = SLIDER_X + SLIDER_W - 32.0 - gu.label_width(&r.label) - icon - 16.0;
                 let mut v = self.shown(r);
                 while gu.label_width(&v) > room && v.pop().is_some() {}
                 let vw = gu.label_width(&v);
@@ -1010,6 +1051,12 @@ impl SettingsUi {
     }
 
     /// The help bar's text for the cursor's row, with when a change shows.
+    /// Ours, not retail: the Background row carries a warning while real character shadows are on (their full-screen
+    /// receive pass runs at the Background size, so a larger one costs more).
+    fn warns(&self, r: &Row) -> bool {
+        matches!(r.val, Val::Size(_, _, Sizes::Background)) && self.s.actor_shadows != 0
+    }
+
     pub fn help(&self) -> String {
         if self.on_mods() {
             return if self.s.modern_ui { self.modern_mods_help() } else { self.mods_help() };
@@ -1026,7 +1073,8 @@ impl SettingsUi {
             When::NextZone => " Takes effect at the next zone load.",
             When::Restart => " Takes effect on restart.",
         };
-        format!("{}{when}", r.help)
+        let warn = if self.warns(r) { format!("{WARNING} ") } else { String::new() };
+        format!("{warn}{}{when}", r.help)
     }
 
     pub fn title(&self) -> &'static str {
@@ -1132,6 +1180,10 @@ pub struct View {
 
 /// A help line for the modern page: without the Config tool's value numbers ("0034: ") and our "(not retail)" notes.
 fn plain(help: &str) -> String {
+    // The Background row's warning goes first; the numbers come off the help behind it.
+    if let Some(rest) = help.strip_prefix(WARNING).map(str::trim_start) {
+        return format!("{WARNING} {}", plain(rest));
+    }
     let body = match help.split_once(": ") {
         Some((head, rest)) if head.starts_with(|c: char| c.is_ascii_digit()) && head.chars().all(|c| c.is_ascii_digit() || c == ' ' || c == '/') => rest,
         _ => help,
@@ -1578,6 +1630,32 @@ mod tests {
         assert_eq!(plain("0001 / 0002: the window's size."), "The window's size.");
         assert_eq!(plain("The monitor to use (not retail)."), "The monitor to use.");
         assert_eq!(plain("Window: the window's shape."), "Window: the window's shape.");
+    }
+
+    /// The Background row warns (help and modern label) only while real character shadows are on.
+    #[test]
+    fn background_warns_with_real_shadows() {
+        let mut c = Config::default();
+        for shadows in [0, 1] {
+            c.actor_shadows = shadows;
+            let mut ui = SettingsUi::open(&c, [1280, 800]);
+            let (tab, i) = (0..TABS.len())
+                .find_map(|t| {
+                    ui.tab = t;
+                    ui.rows().iter().position(|r| r.label == "Background").map(|i| (t, i))
+                })
+                .expect("a Background row");
+            ui.goto(tab, i + 1);
+            assert_eq!(ui.help().starts_with(WARNING), shadows != 0, "{}", ui.help());
+            // The modern help drops the Config numbers behind the warning too.
+            let help = ui.view().help;
+            assert!(!help.contains("0003"), "{help}");
+            assert_eq!(help.starts_with(WARNING), shadows != 0, "{help}");
+            let label = &ui.view().rows[i].label;
+            assert_eq!(label.contains('\u{26a0}'), shadows != 0, "{label}");
+            // Other rows never warn.
+            assert!(ui.rows().iter().filter(|r| r.label != "Background").all(|r| !ui.warns(r)));
+        }
     }
 
     #[test]

@@ -80,18 +80,18 @@ const PAGES: [(&str, &str, &[Item]); 14] = [
     ]),
     ("Graphics", "Image Quality", &[
         Head("Textures"), Ours("Textures"), Ours("2-D Mapping"), Ours("Fonts"), Ours("MIP Mapping"), Ours("Anisotropic Filtering"),
-        Head("Edges & Stability"), Ours("Graphics Stabilization"),
+        Head("Edges & Stability"), Ours("Anti-aliasing"), Ours("Graphics Stabilization"),
     ]),
     ("Graphics", "Lighting & Shadows", &[
         Head("Lights"), Ours("Lamp Lights"), Ours("Bump Mapping"),
-        Head("Shadows"), Retail("conf3win", 6),
+        Head("Shadows"), Ours("Character Shadows"), Retail("conf3win", 6), Ours("Shadow Quality"), Ours("Ambient Occlusion"),
     ]),
     ("Graphics", "Characters & World", &[
         Head("Characters"), Retail("conf3win", 11), Retail("conf3win", 14), Retail("conf6win", 4), Retail("conf6win", 2),
         Head("World"), Ours("Draw Distance"), Retail("conf6win", 1), Retail("conf3win", 9), Retail("conf12wi", 13),
     ]),
     ("Graphics", "Effects & Colour", &[
-        Head("World"), Ours("Environment Animation"),
+        Head("World"), Ours("Environment Animation"), Ours("Colour Grading"),
         Head("Effects"), Retail("conf12wi", 1), Open(SUB_EFFECTS),
     ]),
     ("Sound", "Sound", &[
@@ -2074,7 +2074,7 @@ mod tests {
         refresh_hits(None, &mut c, &v, Some(&s));
         let items = view_items(&c);
         assert_eq!(items[0], Head("Lighting & Shadows"));
-        for it in [Retail("conf3win", 6)] {
+        for it in [Ours("Character Shadows"), Ours("Shadow Quality"), Ours("Ambient Occlusion"), Retail("conf3win", 6)] {
             assert!(items.contains(&it), "{it:?}");
         }
         assert!(!items.contains(&Ours("Lamp Lights")));

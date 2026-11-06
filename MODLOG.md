@@ -22458,3 +22458,126 @@ Ours, not retail. Config `mouse_camera_speed` (%, default 100 = the speed drags 
 look drag (left, middle or right button) feeds `App::look`, before the Mouse/Cam. axis inversions and the per-mode
 factors (0.008 / 0.02 / 0.03 / 0.004). Shown as "Mouse Camera Speed" in Settings (25% to 200%). The controller's
 camera (client/gamepad.rs) does not read it.
+## Anti-aliasing option: FXAA on the 3D scene (2026-11-03, ours)
+
+- Not retail: a deviation, off by default. Retail has no anti-aliasing setting; its only way to smooth edges is a
+  Background resolution (Config 0003 / 0004) above the window size, which ours already supersamples (render/scale.rs
+  box-filters the downscale).
+- Settings > Client > Anti-aliasing (config `antialias`: 0 Off, 1 FXAA). FXAA (Lottes' FXAA 3 PC lite) runs in the
+  scene scaling pass, on the gamma-space scene after mod post passes and before the 2D layer, so menus, text and the
+  cursor are untouched. It is skipped while downscaling (already supersampled) and in 3D LCD Mode; when upscaling it
+  samples bilinearly instead of Catmull-Rom. Turning it on also sends the title and lobby scenes through the
+  offscreen pass (the world always draws offscreen).
+- Texture filtering needed nothing new: 16x anisotropic filtering was already the default (Settings > Client >
+  Anisotropic Filtering, config `anisotropy`).
+- Test: render::scale::fxaa_softens_edges (a flat colour is unchanged; a hard staircase edge gains in-between pixels).
+
+## Settings: Background warns while real shadows are on (2026-11-04, ours)
+
+- Not retail. While Settings > Effects > Character Shadows is Real (config `actor_shadows` 1), the Background row
+  (Config 0003 / 0004) shows a warning icon after its heading, and its help line starts with "Real shadows
+  affected. Performance will be affected." The real shadows' receive pass is full screen at the Background size,
+  so a larger Background makes them cost more.
+- The icon is the yes / no window's own warning sprite (menu ptc6yesn child 3, GameUi::warning_icon); the slider
+  value's room shrinks by its width. The modern settings view appends U+26A0 to the label instead.
+- Test: client::settings::background_warns_with_real_shadows.
+
+## Colour grading presets for the 3D scene (2026-11-04, ours)
+
+- Not retail: a deviation, off by default. Settings > Effects > Colour Grading (config `grading`: 0 Off, 1 Vivid,
+  2 Warm, 3 Cool, 4 Film).
+- render/scale.rs: applied in the scene scaling pass after FXAA (and in 3D LCD Mode), on the gamma-space scene before
+  the gamma ramp, so menus, text and the cursor are untouched. Each preset is (saturation, contrast about mid grey,
+  warmth: red up and blue down by the same amount, faded in over the darkest quarter of luminance so a faded
+  frame stays black): Vivid (1.2, 1.08, 0), Warm (1.05, 1.04, +0.035), Cool (1.0,
+  1.04, -0.035), Film (0.85, 1.12, +0.015). Turning it on sends the title and lobby scenes through the pass too.
+- Test: render::scale::grading_presets.
+
+## Real character shadows from the lamps (2026-11-04, ours)
+
+- Not retail. With Character Shadows on Real and Lamp Lights on Real (client/lamps.rs), the up to 4 lamps nearest
+  the camera that have a character within 16 yalms each get a 512x512 perspective depth map of the characters
+  (render/lampshadow.rs, the sun shadow's depth pipeline, one layer of a depth array each), aimed at those
+  characters' centre and widened to take them in (half-angle 5 to 60 degrees).
+- The zone shader's per-pixel point lights (zone.wgsl point_lights) look the light's slot up in those maps and scale
+  that lamp's term by its 3 x 3 PCF visibility (strength 0.85), so a character cuts only that lamp's own light out
+  of the scenery: ambient, sun, baked vertex colour and other lights are untouched, characters are not shaded by
+  it, and in Baked lamp mode (lamplight painted into the scenery) nothing is shadowed. Group 0 of the zone layout
+  gains bindings 5-7 (uniform, depth array, comparison sampler); they stay bound and empty when off.
+- Data lights (kind 0x47, fires and such that retail already lights scenery with) are not shadowed; only our lamps.
+- Tests: render::lampshadow (matrix framing, lamp choice), render::faded_tests::zone_renders_with_lamp_shadows
+  (globals and a frame with a lamp shadow validate). Not checked in game (no game data in the cloud).
+
+## Real character shadows from the sun (2026-11-04, ours)
+
+- Not retail: a deviation, off by default. Settings > Effects > Character Shadows (config `actor_shadows`: 0 Retail,
+  1 Real). Config 0x3a = 1 (shadows Off) turns these off as well.
+- render/sunshadow.rs: the drawn skinned actors (alpha 0.5 and up, not refracting) go into one 2048 x 2048 depth map
+  through an orthographic light matrix from the zone lighting's direction (`Lighting::dir`, the one the scenery is
+  lit by), 80 x 80 world units around the camera's target, its centre snapped to whole texels. Suns lower than 30
+  degrees cast at 30. The pass reuses the silhouette's vertex shader (vs_skinned_silhouette), so textures are ignored
+  and cut-out cards (hair, fringes) cast solid, the same as retail's silhouette.
+- ZoneRenderer::render splits the zone pass after the opaque and cut-out scenery. A full-screen pass rebuilds each
+  pixel's world position from the depth, takes a 3 x 3 PCF of the map, and multiplies the frame by 1 - k. k is at most
+  0.45, scaled by the sun colour's brightness (0 for a dim light), faded toward the map's edge and on surfaces turning
+  away from the sun (their baked lighting already darkens them). Blended scenery (water, glass) and every actor draw
+  after it, so characters never shadow themselves or each other and their painted light is untouched.
+- Only by day (the Vana'diel clock's sun up, `sun_moon(minute).0.y >= 0`): at night `Lighting` carries the moon, and
+  retail's shadows draw. When the pass runs (`ZoneRenderer::sun_shadow_light`), the actors whose box lies wholly
+  inside the map (`sunshadow::covers`) are dropped before retail's caster selection, so they take no retail shadow,
+  caster slot or silhouette layer; the others keep retail's. The real shadow fades from 0.8 of the map's half side,
+  so it is mostly gone before retail's returns at the edge.
+- Known limits: every drawn character casts, including ones whose retail shadow is latched off; area-lit interiors
+  still take the zone's direction.
+- Tests: render::sunshadow::light_matrix_frames_the_target, render::sunshadow::receive_darkens_shadowed_floor.
+
+## Real character shadows: moonlight, the dawn / dusk fade and Shadow Quality (2026-11-04, ours)
+
+- Not retail. Follows "Real character shadows from the sun": switching between those by day and retail's by night was
+  jarring, so the real shadows now carry on through the night.
+- By night `Lighting::dir` / `diffuse` are the moon's (dat/weather.rs), so the moon casts: fainter by its dimmer colour
+  (`sunshadow::strength`) and softer (the PCF taps spaced 2 texels instead of 1; `ZoneRenderer::shadow_soft`).
+- `sunshadow::twilight(minute)`: the shadows fade to nothing at 6:00 and 18:00, where the light switches between sun and
+  moon, over 45 Vana'diel minutes either side, so the direction change is never seen and retail's do not come back.
+  A light too dim to cast (strength 0) still falls back to retail's.
+- Settings > Effects > Shadow Quality (config `shadow_map`): Low 1024, Medium 2048 (the default), High 4096 texels over
+  the 80 x 80 world units around the camera (about 8, 4 and 2 cm a texel).
+- Test: render::sunshadow::light_matrix_frames_the_target (twilight's zeros and full strength).
+
+## Real character shadows fade with the caster's height (2026-11-04, ours)
+
+- Not retail. A character on high ground (atop a wall) cast a full shadow onto the ground far below. The receive pass
+  (render/sunshadow.rs) now reads the four map texels of each PCF tap, compares each one and fades it by its own caster's height, then blends them (a filtered comparison would leave a high caster's unfaded edge). Its shadow is full while the caster is
+  within 3 world units of the surface along the light, and fades out by 7 units, so feet and body shadows are unchanged.
+- Test: render::sunshadow::receive_darkens_shadowed_floor (a caster just above darkens, one 20 units above does not).
+
+## Anti-aliasing: SMAA replaces FXAA (2026-11-04, ours)
+
+- Not retail: a deviation, off by default (Settings > Client > Anti-aliasing, config `antialias`: 0 Off, 1 SMAA;
+  a saved 1 that meant FXAA now means SMAA). FXAA is removed.
+- render/smaa.rs: SMAA 1x, a WGSL port of the reference SMAA.hlsl (Jimenez et al. 2012) at its HIGH preset
+  (threshold 0.1, 16 search steps, 8 diagonal steps, corner rounding 25), luma edge detection, no predication or
+  reprojection. Three full-screen passes at the scene's size: edges (RG8, gamma-space luma), blend weights (RGBA8,
+  using the precomputed area 160x560 RG8 and search 64x16 R8 textures, MIT, in render/smaa/), and neighbourhood
+  blending into a second scene-sized texture (read and written through the scene format's own views). The scaling
+  pass (render/scale.rs) then reads that texture in place of the scene, so gamma, upscaling and the 2D layer are as
+  before. Skipped while downscaling (already supersampled) and in 3D LCD Mode, like FXAA was.
+- Checked against the reference: the same scene through the `smaa` crate 0.21 (fintelia/smaa-rs, which compiles
+  SMAA.hlsl as GLSL) and through this port on lavapipe gave identical pixels (2701 changed pixels each, max
+  difference 0).
+- Cost: three extra passes at the scene's size and two extra RG8/RGBA8 targets plus one scene-format target;
+  roughly 0.5-1 ms at 1080p on a mid-range GPU (estimate, not measured in game).
+- Test: render::scale::smaa_smooths_edges (flat colour unchanged; a hard staircase edge gains in-between pixels;
+  pixels away from the edge unchanged).
+
+## Ambient occlusion on the scenery (2026-11-04, ours)
+
+- Not retail: a deviation, off by default. Settings > Effects > Ambient Occlusion (config `ssao`).
+- render/ssao.rs: screen-space AO from the scene depth, run at the same split of the zone pass as the real character
+  shadows (after the opaque and cut-out scenery, before blended scenery and every actor), so it shades the world's
+  corners and creases but never the characters' painted light, and characters do not occlude the ground.
+- Pass 1, into a scene-size R8 target: the normal rebuilt from depth derivatives, 12 cosine-weighted hemisphere
+  samples within 1.5 world units, turned per pixel by interleaved gradient noise. A sample counts when the scene there
+  is nearer than it, with a range check so far edges do not halo; samples off the screen count as open. It fades out from 40 to 80 units from the eye.
+- Pass 2: a depth-aware 4 x 4 blur of that target, multiplying the frame by 1 - 0.55 x AO.
+- Test: render::ssao::flat_floor_and_sky_untouched (a flat floor and the sky come back unchanged).

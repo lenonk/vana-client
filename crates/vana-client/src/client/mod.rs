@@ -14050,7 +14050,8 @@ impl App {
         };
         // The world always draws offscreen: through the plain view, in gamma space.
         let world_phase = matches!(self.phase, Phase::World(_));
-        let scaled = bg != size || gamma.iter().any(|g| (g - 1.0).abs() > 1e-3) || world_phase || lcd;
+        // Anti-aliasing (not retail) runs in the scaling pass, so it sends the title and lobby scenes offscreen too.
+        let scaled = bg != size || gamma.iter().any(|g| (g - 1.0).abs() > 1e-3) || world_phase || lcd || self.cfg.antialias != 0 || self.cfg.grading != 0;
         let (scene_view, scene_depth, scene_tex) = if scaled {
             self.scene_scale.get_or_insert_with(|| crate::render::scale::SceneScale::new(&gfx.gpu, gfx.config.format)).target(&gfx.gpu, bg)
         } else {
@@ -14258,6 +14259,10 @@ impl App {
                         crate::dat::weather::Lighting::from_env_eased(e, minute, ease, crate::dat::weather::clipping(e.draw_dist, x, zone).1)
                     };
                     r.lighting = mix(&|t| zw.at(t, minute)).map(|e| step(&mut w.light_ease, &e));
+                    // Real character shadows (render/sunshadow.rs): cast by the sun, or by the moon at night (fainter by its
+                    // colour, softer), faded out around the change at 6:00 and 18:00.
+                    r.shadow_level = crate::render::sunshadow::twilight(minute);
+                    r.shadow_soft = if crate::dat::weather::sun_moon(minute).0.y >= 0.0 { 1.0 } else { 2.0 };
                     // FUN_1018b8f0: 100 before the env is up. Settings' Draw Distance scales it, or lifts it (0).
                     let (d, k) = crate::dat::weather::clipping(r.lighting.map_or(100.0, |l| l.draw_dist), x, zone);
                     let scale = self.cfg.draw_distance as f32 / 100.0;
@@ -14890,6 +14895,23 @@ impl App {
                 let culled = |id: &u32, a: &Actor| a.character.is_some() && *id != w.my_id && !w.visible.contains(id);
                 let has = |id: u32| w.actors.contains_key(&id);
                 let flags = |id: u32| w.actors.get(&id).map_or((false, false), |a| (a.shadow_off, a.noblob));
+                // Real character shadows (ours, render/sunshadow.rs), unless config 0x3a turns shadows off. The actors their
+                // map covers this frame take no retail shadow (nor its casters or layers).
+                r.prepare_sun_shadow(&gfx.gpu, self.cfg.actor_shadows != 0 && w.game.get(0x3a) != 1, self.cfg.shadow_map);
+                // Ambient occlusion on the scenery (ours, render/ssao.rs), at the scene's size.
+                r.prepare_ssao(&gfx.gpu, self.cfg.ssao, bg);
+                // Lamp shadows (ours, render/lampshadow.rs): with Real shadows and Real lamp lights, the nearest lamps'
+                // light is cut behind the characters near them.
+                r.lamp_shadows = if self.cfg.actor_shadows != 0 && self.cfg.lamp_lights && w.game.get(0x3a) != 1 {
+                    let feet: Vec<Vec3> = seen.values().map(|s| s.pos).collect();
+                    let lamps: Vec<(Vec3, u32)> = w.lamps.list.iter().map(|l| (l.pos, l.slot)).collect();
+                    crate::render::lampshadow::pick(&lamps, &feet, camera.target)
+                } else {
+                    Vec::new()
+                };
+                if let Some((m, _, _)) = r.sun_shadow_light(camera.target) {
+                    seen.retain(|_, s| !crate::render::sunshadow::covers(m, s.pos, s.corners.iter().map(|c| c.distance(s.pos)).fold(0.0, f32::max)));
+                }
                 let shadow_modes = match w.ground.as_ref() {
                     Some(g) => shadows::modes(&shadows::Ctx { ground: g, setting: w.game.get(0x3a), me: w.my_id, zone: w.pos_zone, has: &has, flags: &flags, layers: r.shadow_layers(bg) }, &seen, camera.eye),
                     None => Vec::new(),
@@ -15126,9 +15148,9 @@ impl App {
         }
         if drew_world
             && scaled
-            && let Some(sc) = &self.scene_scale
+            && let Some(sc) = &mut self.scene_scale
         {
-            sc.blit(&gfx.gpu, &mut encoder, &view, size, gamma, lcd.then_some((LCD_SHIFT, self.lcd_frame % 2 == 1)));
+            sc.blit(&gfx.gpu, &mut encoder, &view, size, gamma, lcd.then_some((LCD_SHIFT, self.lcd_frame % 2 == 1)), self.cfg.antialias != 0, self.cfg.grading);
         }
         self.window_size = size;
         self.mouse_kind(size);
