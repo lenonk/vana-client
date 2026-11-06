@@ -1,9 +1,5 @@
-//! Resting's sit-down and stand-up (FUN_1008b460 states 7 / 8, MODLOG "/heal: sitting down and standing up"). An
-//! actor whose applied status turns to healing (0x21, or 7) waits in state 7 until its files are in and no `waot`
-//! runs, then plays `res0` (rx0, then rx1) and sits in state 8; once its applied status leaves healing it plays `res2`
-//! (rx2) and the machine is idle again. In the game data (Hume M, 7072) `res2` holds the actor for 56 ticks: op 0x1f
-//! (status changes wait), op 0x2e (no walking) and op 0x07 (no reactions), so our own character stands up before it
-//! can move.
+//! Resting's sit-down and stand-up (FUN_1008b460 states 7 / 8; MODLOG "/heal: sitting down and standing up"):
+//! `res0` once the model is in, `res2` when the status leaves healing, its op 0x2e holding the walk.
 
 use std::time::{Duration, Instant};
 
@@ -15,12 +11,11 @@ const RISE: Duration = Duration::from_millis(56 * 1000 / 60);
 /// The machine's states for a resting actor.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Phase {
-    /// State 7: healing applied, `res0` not yet started.
+    /// State 7: healing applied, `res0` not yet started (it plays even if healing has ended since).
     Down,
     /// State 8: `res0` started; leaving healing plays `res2`.
     Resting,
-    /// `res2` playing, until its move lock ends (ours: the lock as a time, so no frame walks before the scheduler's op
-    /// 0x2e runs).
+    /// `res2` playing, until its move lock ends (ours: op 0x2e's lock as a time).
     Rising(Instant),
 }
 
@@ -61,10 +56,9 @@ enum Step {
     End,
 }
 
-/// FUN_1008b460's states 7 / 8 for an applied status `healing` or not.
+/// FUN_1008b460's states 7 / 8 for an applied status `healing` or not. State 7 does not test the status.
 fn transition(phase: Phase, healing: bool, now: Instant) -> Step {
     match phase {
-        Phase::Down if !healing => Step::End,
         Phase::Down => Step::Play("res0", Phase::Resting),
         Phase::Resting if !healing => Step::Play("res2", Phase::Rising(now + RISE)),
         Phase::Resting => Step::Stay(Phase::Resting),
@@ -92,11 +86,9 @@ pub fn update(w: &mut World) {
         let phase = w.rests[&id];
         let next = match transition(phase, healing(status), now) {
             _ if gone => None,
-            Step::Play(name, then) => {
-                // `res0` waits for the model and for `waot` (state 7 stays); `res2` goes at once, played or not.
-                let rise = name == "res2";
-                if (rise || ready(w, id)) && (play(w, id, name) || rise) { Some(then) } else { Some(phase) }
-            }
+            // `res2` goes at once and holds the walk only when it played; `res0` waits for the model and `waot`.
+            Step::Play("res2", then) => play(w, id, "res2").then_some(then),
+            Step::Play(name, then) => Some(if ready(w, id) && play(w, id, name) { then } else { phase }),
             Step::Stay(p) => Some(p),
             Step::End => None,
         };
@@ -120,7 +112,7 @@ mod tests {
     fn sit_rest_rise() {
         let now = Instant::now();
         assert_eq!(transition(Phase::Down, true, now), Step::Play("res0", Phase::Resting));
-        assert_eq!(transition(Phase::Down, false, now), Step::End);
+        assert_eq!(transition(Phase::Down, false, now), Step::Play("res0", Phase::Resting));
         assert_eq!(transition(Phase::Resting, true, now), Step::Stay(Phase::Resting));
         assert_eq!(transition(Phase::Resting, false, now), Step::Play("res2", Phase::Rising(now + RISE)));
         // The walk stays locked for res2's 56 ticks, then the machine is idle.

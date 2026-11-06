@@ -128,11 +128,8 @@ pub const PART_WORDS: usize = 9;
 pub mod ctl {
     /// The CPU set LIFE this frame (the expire stream restarted or held it): no decrement.
     pub const LIFE_SET: u32 = 1;
-    /// Spawned this frame: updated but not drawn. Retail counts the life down before sampling the keys, so a timed
-    /// element's first sample is t = dt / life, never 0; ours keeps the GPU's life in step with the CPU's (LIFE_SET)
-    /// and samples t = 0 that frame, which the data keeps as a placeholder (keys like the Heavens Tower waterfalls'
-    /// `tk01` hold the start colour at 0 and drop to 0 at 1e-7), so that sample is not shown. An element the next
-    /// decrement ends (life - dt < 1) still shows it, being its only frame.
+    /// Spawned this frame: updated, not drawn, so the t = 0 key sample (a placeholder, as the Heavens Tower waterfalls'
+    /// `tk01`) never shows. Inferred: FUN_10043ca0 counts the life down before sampling (MODLOG "Effect elements").
     pub const BORN: u32 = 2;
 }
 

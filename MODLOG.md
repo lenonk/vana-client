@@ -22349,8 +22349,9 @@ From FFXiMain.dll (Steven's unpacked copy, all_decomp.c) and the Hume M skeleton
 
 - FUN_1008b460 (the entity's transition machine, run from FUN_1008e9a0 before and after the applied status +0x170
   takes the server's +0x16c): state 0 with an applied status of 0x21 or 7 goes to state 7. State 7 waits for
-  FUN_100d12d0 (the model ready) and for no `waot` on the actor (vt+0x2a0), then starts scheduler `res0` (vt+0x298)
-  and goes to state 8. State 8 starts `res2` once the applied status is no longer 0x21 / 7 and goes back to state 0.
+  FUN_100d12d0 (the model ready) and for no `waot` on the actor (vt+0x2a0), then drops the actor's kind-1 files
+  (FUN_100d44b0(1); not ported), starts scheduler `res0` (vt+0x298) and goes to state 8. It does not test the
+  status, so `res0` plays even when healing ended while it waited (`res2` follows from state 8). State 8 starts `res2` once the applied status is no longer 0x21 / 7 and goes back to state 0.
 - FUN_1008b3a0 (read by FUN_100964f0, the local walk's gate in FUN_100a6240) refuses movement in states 7 and 8, and
   FUN_100a5ec0 skips the walk while op 0x2e holds the actor (vt+0x310).
 - The schedulers (7072): `res0` 145 ticks: op 0x1f 145, op 0x07 145, op 0x2e 145, `rx0` for 52 ticks, then `rx1` 93.
@@ -22361,7 +22362,7 @@ From FFXiMain.dll (Steven's unpacked copy, all_decomp.c) and the Hume M skeleton
   frame (`res0` once its model is in, `res2` on leaving healing) through actmotion::start plus the scheduler's holds in
   fx, as synth.rs does for `res0` / `res2`. Our own walk (keys, pad, autorun, follow, click-to-move) stays held for
   `res2`'s 56 ticks from the frame it starts, under the same `move_lock` rule as op 0x2e (the scheduler's own op 0x2e
-  starts a frame later).
+  starts a frame later); only when `res2` played (a body without it, a Monstrosity monster, has no hold).
 
 ## The key that opens the list search is no hotkey (2026-11-05)
 
@@ -22375,10 +22376,11 @@ From FFXiMain.dll (Steven's unpacked copy, all_decomp.c) and the Hume M skeleton
 
 From FFXiMain.dll (Steven's unpacked copy, full_text.asm / all_decomp.c).
 
-- FUN_1012b4b0 picks the layout (table 0x1036f390, 13 bytes each): engaged 6; else a target FUN_101cc220 calls
-  hostile takes 2 (layouts 4 / 5); an NPC (+0x1d0 bit 1) that FUN_1008e150 does not call an ally takes layout 7 when
-  +0x1d0 bit 8 is set (FUN_1008e290: +0x12c bit 13, 0x00E @0x27 bit 3, a player owns it), else 0; anything else
-  (players, us, allies) 1. Riding (status 5 / 0x55) doubles plus one and passes flag 1; layout 7 has no riding form.
+- FUN_1012b4b0 picks the layout (table 0x1036f390, 13 bytes each): a target FUN_101cc220 calls hostile takes 2
+  (layouts 4 / 5); an NPC (+0x1d0 bit 1) that FUN_1008e150 does not call an ally takes layout 7 when +0x1d0 bit 8 is
+  set (FUN_1008e290: +0x12c bit 13, 0x00E @0x27 bit 3, a player owns it), else 0; anything else (players, us, allies)
+  1. Layout 7 jumps past the rest (LAB_1012b5fd), so it shows engaged too; otherwise engaged takes 6, and riding
+  (status 5 / 0x55) doubles plus one and passes flag 1.
 - FUN_1012af30 (jump index 0x1012b2a8, table 0x1012b26c, command - 3) per command: 3 Disengage (Call for help while
   DAT_10578174); 4 Chat, none on an NPC (UniqueNo high byte 1), Tell on any other target; 6 Talk / 0x11 Disband /
   0x14 NPC Trade only on FUN_101cc550 (our +0x2a0: the adventuring fellow, 0x037 @0x48) while its +0x170 is not 1;

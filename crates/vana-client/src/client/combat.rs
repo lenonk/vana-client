@@ -1653,16 +1653,10 @@ pub(super) fn right(w: &mut World) -> bool {
     }
 }
 
-/// The layout (FUN_1012b4b0): engaged 6, else by the target's kind, riding the odd one.
+/// The layout (FUN_1012b4b0): by the target's kind, a player-owned NPC's 7 even engaged; else engaged 6, riding the
+/// odd one. Hostile (FUN_101cc220) 4, a non-ally NPC (+0x1d0 bit 1, FUN_1008e150) 0 or owned (+0x1d0 bit 8) 7, else 2.
 fn layout(w: &World) -> usize {
-    if w.my_motion.status == 1 {
-        return 6;
-    }
     let riding = matches!(w.my_motion.status, 5 | 0x55);
-    // FUN_1012b4b0: a hostile target (FUN_101cc220) takes the battle layouts; an NPC (+0x1d0 bit 1) that is not an
-    // ally (FUN_1008e150) the NPC one when a player owns it (+0x1d0 bit 8: trusts, fellows, pets), else none's; a
-    // player, us or an ally the player ones. Riding (status 5 chocobo, 0x55 mount) takes the odd layout, but the
-    // NPC one.
     let base = match w.target {
         None => 0,
         Some(t) if t == w.my_id => 2,
@@ -1678,6 +1672,10 @@ fn layout(w: &World) -> usize {
             Some(_) => 2,
         },
     };
+    // Layout 7 jumps past this test (LAB_1012b5fd).
+    if w.my_motion.status == 1 {
+        return 6;
+    }
     if riding { base + 1 } else { base }
 }
 
@@ -1996,7 +1994,8 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
         (0x11, Some(_)) => w.confirm = Some((super::Confirm::Disband, false)),
         // Case 0x1a: "/partyrequestcmd add <name>".
         (0x1b, Some((t, _))) => {
-            let name = w.entities.get(&t).map(|e| e.name.clone()).unwrap_or_default();
+            // The shown name: a Monstrosity player's +0x214 when +0x210 is set.
+            let name = w.entities.get(&t).map(|e| super::monstrosity::name(e).to_string()).unwrap_or_default();
             if !name.is_empty() {
                 super::textcmd::run(w, &format!("/partyrequestcmd add {name}"), super::textcmd::Mode::Internal);
             }

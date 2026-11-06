@@ -502,8 +502,7 @@ impl Track {
 /// i32 bone, then rot xyzw, trans xyz, scale xyz as (i32 index, f32 value) blocks. A nonzero
 /// index points at `keys` floats at 10 + 4 * index. Rot index bit 31 (FUN_10019b30): in a region 1..6 chunk no track
 /// (the bone is left for another region or layer); in a region 0 chunk the flag is masked off and the track still
-/// writes the bone, its constants (identity, zero) included. So a gesture's legs chunk resets bone 2, which the idle
-/// under it keys: without that the idle's hip sway showed through and the feet slid.
+/// writes the bone, its constants (identity, zero) included.
 /// FUN_10018900 turns the key count into the frame count (one less) while the converted byte is 0 (every file).
 pub fn parse_animation(name: String, d: &[u8]) -> Result<Animation> {
     if d.len() < 10 {
