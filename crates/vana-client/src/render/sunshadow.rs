@@ -10,10 +10,11 @@ use super::Gpu;
 use glam::{Mat4, Vec3, Vec4};
 
 /// The map's size in texels by default (config `shadow_map`: 1024, 2048 or 4096), and half the side of the square it
-/// covers, in world units.
+/// covers, in world units: 32 x 32 around the camera's target (1.6 cm a texel at 2048), sharp enough for a tail or an
+/// ear; characters beyond it keep retail's shadows.
 pub const MAP_SIZE: u32 = 2048;
 pub const MAP_SIZES: [u32; 3] = [1024, 2048, 4096];
-pub const HALF_EXTENT: f32 = 40.0;
+pub const HALF_EXTENT: f32 = 16.0;
 /// How far the light's eye sits back from the target, and the depth range it covers.
 const BACK: f32 = 150.0;
 const DEPTH: f32 = 300.0;

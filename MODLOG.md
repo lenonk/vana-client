@@ -22475,8 +22475,9 @@ Character Shadows (config `actor_shadows`: 0 Retail, 1 Real), Shadow Quality (`s
   1.08, 0), Warm (1.05, 1.04, +0.035), Cool (1.0, 1.04, -0.035), Film (0.85, 1.12, +0.015). Test
   render::scale::grading_presets.
 - Real character shadows (render/sunshadow.rs): the zone lighting's light (`Lighting::dir` / `diffuse`: the sun by day,
-  the moon by night) casts through one depth map of the characters over 80 x 80 world units around the camera's
-  target (Shadow Quality: 1024, 2048 the default, 4096 texels), its centre snapped to whole texels; a light under 60
+  the moon by night) casts through one depth map of the characters over 32 x 32 world units around the camera's
+  target (Shadow Quality: 1024, 2048 the default, 4096 texels: 3.1, 1.6, 0.8 cm a texel, sharp enough for a tail),
+  its centre snapped to whole texels; characters beyond it keep retail's shadows; a light under 60
   degrees is held at 40.9, retail's silhouette rule (FUN_10033080), so shadows keep the game's length. The zone pass splits after the opaque and cut-out scenery (mode 4); a full-screen pass rebuilds
   each pixel's position from depth, takes a 3 x 3 PCF (taps 2 texels apart under the moon) and multiplies the frame by
   1 - k, k at most `STRENGTH` (retail's silhouette: MODULATE2X of 0x40, about 0.5) scaled by the light's brightness, faded toward the map's edge (from 0.8 of its
@@ -22503,7 +22504,8 @@ Character Shadows (config `actor_shadows`: 0 Retail, 1 Real), Shadow Quality (`s
   client::settings::background_warns_with_real_shadows.
 - Tests: render::sunshadow::light_matrix_frames_the_target, render::sunshadow::receive_darkens_shadowed_floor,
   render::lampshadow (framing, lamp choice), render::faded_tests::zone_renders_with_lamp_shadows (an empty zone: its
-  depth pass never runs). The lamp depth pass is not seen live yet (Southern San d'Oria's lamps are all data lights).
+  depth pass never runs). Seen live: West Ronfaure's gate lamps (two shadowed), no validation error; the Real shadows
+  in Southern San d'Oria by day keep the body, ears and tail, as dark as retail's silhouette beside them.
 
 ## Game Master window (ours) (2026-11-06)
 
