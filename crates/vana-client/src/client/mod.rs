@@ -12841,11 +12841,22 @@ impl App {
                                         outs.push(n.key(*key));
                                     }
                                 }
-                                if input.wheel != 0 {
-                                    n.wheel(input.wheel);
+                                // The wheel straight from egui (the title screen sends it to no list).
+                                let lines: f32 = input
+                                    .events
+                                    .iter()
+                                    .map(|e| match e {
+                                        egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta, .. } => delta.y,
+                                        egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta, .. } => delta.y / 40.0,
+                                        egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Page, delta, .. } => delta.y * 5.0,
+                                        _ => 0.0,
+                                    })
+                                    .sum();
+                                if lines != 0.0 {
+                                    n.wheel(lines);
                                 }
                                 if let Some(p) = input.pointer {
-                                    outs.push(n.pointer(p, input.clicked, sw, sh));
+                                    outs.push(n.pointer(p, input.pressed, input.down, input.clicked, sw, sh));
                                     if outs.last().is_some_and(|o| o.hover) {
                                         lu.hover.set(true);
                                     }
@@ -14181,8 +14192,9 @@ impl App {
             }
             // act:wheel:N turns the wheel N notches (up positive): the focused list's, else the camera's.
             if let Some(n) = action.as_deref().and_then(|a| a.strip_prefix("wheel:")).and_then(|n| n.parse::<f32>().ok()) {
-                // Over a modern panel it is egui's, as egui-winit consumes the window's.
-                if consumed && matches!(&self.phase, Phase::World(w) if w.modern) {
+                // Over a modern panel it is egui's, as egui-winit consumes the window's; off the world (the lobby's
+                // windows read it from egui) too.
+                if (consumed && matches!(&self.phase, Phase::World(w) if w.modern)) || !matches!(&self.phase, Phase::World(_)) {
                     let (unit, delta, phase, source) = (egui::MouseWheelUnit::Line, egui::vec2(0.0, n), egui::TouchPhase::Move, egui::MouseWheelSource::Unknown);
                     raw.events.push(egui::Event::MouseWheel { unit, delta, phase, source, modifiers: Default::default() });
                 } else if self.game_ui.as_ref().is_some_and(|g| g.wants_wheel()) {

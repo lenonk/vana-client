@@ -305,6 +305,8 @@ pub struct Metrics {
     pub step: f32,
     pub page: f32,
     pub max: f32,
+    /// What the text's area shows at once.
+    pub view: f32,
 }
 
 pub struct NotesUi {
@@ -317,6 +319,8 @@ pub struct NotesUi {
     pub zoom: f32,
     /// The classic layout for a width.
     classic: RefCell<Option<(f32, Vec<Line>)>>,
+    /// The scroll bar's thumb held: the pointer's height in it (UI pixels).
+    grab: Option<f32>,
 }
 
 const W: f32 = 600.0;
@@ -325,7 +329,7 @@ const H: f32 = 440.0;
 impl NotesUi {
     pub fn open(saved: Saved) -> Self {
         let blocks = blocks(&saved.notes);
-        Self { saved, blocks, scroll: 0.0, metrics: Cell::new(Metrics::default()), zoom: 1.0, classic: RefCell::new(None) }
+        Self { saved, blocks, scroll: 0.0, metrics: Cell::new(Metrics::default()), zoom: 1.0, classic: RefCell::new(None), grab: None }
     }
 
     pub fn title(&self) -> String {
@@ -368,16 +372,51 @@ impl NotesUi {
         out
     }
 
-    /// Wheel notches (up positive): three lines each.
-    pub fn wheel(&mut self, notches: i32) {
+    /// The wheel (lines, up positive): three lines a notch.
+    pub fn wheel(&mut self, lines: f32) {
         let step = self.metrics.get().step;
-        self.scroll_by(-(notches as f32) * 3.0 * step);
+        self.scroll_by(-lines * 3.0 * step);
     }
 
-    /// The pointer: OK takes a click.
-    pub fn pointer(&mut self, p: (f32, f32), clicked: bool, sw: f32, sh: f32) -> Out {
-        let r = self.view(sw, sh).ok;
-        if p.0 >= r[0] && p.1 >= r[1] && p.0 < r[0] + r[2] && p.1 < r[1] + r[3] {
+    /// The scroll bar's thumb in `bar` (UI pixels): its share of the track as the view's of the text, placed by the
+    /// scroll. None when it all fits.
+    pub fn thumb(&self, bar: [f32; 4]) -> Option<[f32; 4]> {
+        let m = self.metrics.get();
+        (m.max > 0.0).then(|| {
+            let h = (bar[3] * m.view / (m.view + m.max)).max(bar[2] * 2.0).min(bar[3]);
+            [bar[0], bar[1] + (bar[3] - h) * (self.scroll / m.max).clamp(0.0, 1.0), bar[2], h]
+        })
+    }
+
+    /// The pointer (`pressed`, `down`, `clicked` the left button's): OK takes a click; the scroll bar's thumb is
+    /// dragged, a press on its track pages toward it.
+    pub fn pointer(&mut self, p: (f32, f32), pressed: bool, down: bool, clicked: bool, sw: f32, sh: f32) -> Out {
+        let inside = |r: [f32; 4]| p.0 >= r[0] && p.1 >= r[1] && p.0 < r[0] + r[2] && p.1 < r[1] + r[3];
+        let v = self.view(sw, sh);
+        if !down {
+            self.grab = None;
+        }
+        if let (Some(g), Some(t)) = (self.grab, self.thumb(v.bar)) {
+            let room = (v.bar[3] - t[3]).max(1.0);
+            self.scroll = ((p.1 - g - v.bar[1]) / room).clamp(0.0, 1.0) * self.metrics.get().max;
+            return Out { hover: true, ..Out::default() };
+        }
+        // The bar a little wider than drawn, for the hand.
+        let bar = [v.bar[0] - 4.0, v.bar[1], v.bar[2] + 8.0, v.bar[3]];
+        if inside(bar)
+            && let Some(t) = self.thumb(v.bar)
+        {
+            if pressed {
+                if p.1 >= t[1] && p.1 < t[1] + t[3] {
+                    self.grab = Some(p.1 - t[1]);
+                } else {
+                    let page = self.metrics.get().page;
+                    self.scroll_by(if p.1 < t[1] { -page } else { page });
+                }
+            }
+            return Out { hover: true, ..Out::default() };
+        }
+        if inside(v.ok) {
             if clicked {
                 return self.key(egui::Key::Enter);
             }
@@ -420,7 +459,7 @@ impl NotesUi {
         }
         let lines = &cache.as_ref().unwrap().1;
         let page = (th / 16.0).floor().max(1.0) as usize;
-        self.metrics.set(Metrics { step: 1.0, page: page.saturating_sub(1).max(1) as f32, max: lines.len().saturating_sub(page) as f32 });
+        self.metrics.set(Metrics { step: 1.0, page: page.saturating_sub(1).max(1) as f32, max: lines.len().saturating_sub(page) as f32, view: page as f32 });
         let top = (self.scroll as usize).min(lines.len().saturating_sub(page));
         for (k, l) in lines.iter().skip(top).take(page).enumerate() {
             let ly = ty + 16.0 * k as f32;

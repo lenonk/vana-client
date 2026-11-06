@@ -261,7 +261,7 @@ impl Modern {
         let area = pt(v.text);
         let (items, total) = notes_layout(self, &p, &n.blocks, area.width(), size);
         let max = (total - area.height()).max(0.0);
-        n.metrics.set(super::super::notes::Metrics { step: size * 1.4, page: (area.height() - size * 1.4).max(size), max });
+        n.metrics.set(super::super::notes::Metrics { step: size * 1.4, page: (area.height() - size * 1.4).max(size), max, view: area.height() });
         let off = n.scroll.min(max);
         let clip = p.with_clip_rect(area);
         for it in items {
@@ -278,12 +278,12 @@ impl Modern {
                 }
             }
         }
-        if max > 0.0 {
+        if let Some(t) = n.thumb(v.bar) {
             let track = pt(v.bar);
             p.rect_filled(track, track.width() / 2.0, self.theme.color("charcoal"));
-            let h = (track.height() * area.height() / total).max(track.width() * 2.0);
-            let y = track.min.y + (track.height() - h) * (off / max);
-            p.rect_filled(egui::Rect::from_min_size(pos2(track.min.x, y), vec2(track.width(), h)), track.width() / 2.0, self.theme.color("bronze"));
+            let thumb = pt(t);
+            let hot = ctx.input(|i| i.pointer.hover_pos()).is_some_and(|h| track.expand2(vec2(4.0, 0.0)).contains(h));
+            p.rect_filled(thumb, track.width() / 2.0, self.theme.color(if hot { "gold" } else { "bronze" }));
         }
         let hover = ctx.input(|i| i.pointer.hover_pos());
         self.lobby_button(&p, pt(v.ok).expand2(vec2(4.0, 3.0)), "OK", true, true, hover, size);
