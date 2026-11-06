@@ -11001,8 +11001,9 @@ impl App {
             }
             (ax, ay, cx, cy, px, py) = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         }
-        // Keyboard type 2, free camera: Shift held faces the camera (0x9c, player +0xfb; camera keys and Q / E off),
-        // and Q / E turn the player (0xaa / 0xa9, FUN_10253a60 / FUN_102539f0) while the camera axes are idle.
+        // Control type 2 (config 0x42, the default), free camera: Shift / B held is a strafe lock (0x9c, player +0xfb):
+        // the camera keeps its offset, its keys and Q / E are off and the heading stays. Q / E turn the player (0xaa /
+        // 0xa9, FUN_10253a60 / FUN_102539f0) while the camera axes are idle.
         let type2 = world.game.get(0x42) == 2 && !world.locked;
         let face_cam = type2 && self.input.test(0x9c, input::mode::HELD);
         let turn = if type2 && !face_cam && cx == 0.0 && cy == 0.0 && px == 0.0 && py == 0.0 && ax == 0.0 {
@@ -11308,7 +11309,11 @@ impl App {
             // Standing still keeps the facing; only the camera turns. Locked, we face the target.
             let to = if let Some((_, Some(y))) = pin {
                 Some(Vec3::new(y.cos(), 0.0, -y.sin()))
-            } else if lock_target.is_some() || face_cam || (world.mouse_look && !directed_run(world)) || (turn != 0.0 && !stepping) {
+            } else if face_cam {
+                // 0x9c held (B / Shift, control type 2): a strafe lock. Retail's FUN_100a6240 returns before the turn
+                // to the move direction while actor +0xfb is set, so the heading stays and the stick strafes.
+                None
+            } else if lock_target.is_some() || (world.mouse_look && !directed_run(world)) || (turn != 0.0 && !stepping) {
                 Some(face)
             } else if stepping {
                 Some(step.normalize())

@@ -46,7 +46,7 @@ pub struct State {
     zoomed: bool,
     /// The focal length as retail keeps it (FUN_100152c0, a float); config 0x49 holds it truncated.
     focal: Option<f32>,
-    /// Face-camera (keyboard type 2, Shift): the eye offset stored when Shift went down.
+    /// Strafe lock (0x9c, control type 2, Shift / B held): the eye offset stored when it went down.
     face: Option<Vec3>,
     /// First person (DAT_10475578) and its eased look offsets (pitch, yaw).
     pub first: bool,
