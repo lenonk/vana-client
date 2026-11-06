@@ -11340,6 +11340,8 @@ impl App {
     /// The frame's key state, then the key functions that run outside any window.
     fn key_functions(&mut self, dt: f32) {
         let mut f = input::Frame { ticks: dt * 60.0, ..Default::default() };
+        // The frame's typed text, not yet handed to egui: a letter that opens the list search is typing already.
+        let starts_search = self.gfx.as_ref().is_some_and(|g| g.egui_state.egui_input().events.iter().any(|e| matches!(e, egui::Event::Text(t) if t.chars().next().is_some_and(|c| c.is_alphanumeric()))));
         if let Phase::World(w) = &self.phase {
             self.input.assign(&w.game);
             self.input.context = if w.map.is_some() || w.cnq.is_some() {
@@ -11351,7 +11353,8 @@ impl App {
             } else {
                 0xffff
             };
-            f.typing = text_field_open(w);
+            // Not with the UI hidden: the search gets no events then.
+            f.typing = text_field_open(w) || (!w.ui_hidden && starts_search && listsearch::can_run(w));
             f.keyboard = w.game.get(0x42);
             // A window has the keys: arrows go to it, not to the camera (the window-active state, MODLOG "Input
             // layer"). The log counts only while focused: Escape or another window unfocuses it and leaves the 0x78
