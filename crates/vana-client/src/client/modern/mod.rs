@@ -325,6 +325,7 @@ impl Modern {
             *p.changed = true;
         }
         ctxmenu::draw(self, ctx, w);
+        w.ctx_menu_open = self.ctx_menu.borrow().is_some() || self.chat_menu.borrow().is_some();
         keyboard::draw(&mut p, w);
         let this = std::mem::take(&mut p.this);
         *self.rects.borrow_mut() = this;

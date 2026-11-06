@@ -658,7 +658,7 @@ pub(super) fn run_unfiltered(w: &mut World, line: &str, mode: Mode) {
         return;
     }
     // Ours (not retail; modern favourites): /favs [on | off] shows or hides the favourites strip.
-    if first.eq_ignore_ascii_case("/favs") {
+    if first.eq_ignore_ascii_case("/favs") && w.modern {
         super::favs::command(w, line.split_whitespace().nth(1));
         return;
     }

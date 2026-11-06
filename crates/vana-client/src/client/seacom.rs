@@ -88,7 +88,15 @@ fn bytes(line: &str) -> usize {
 /// bytes, typing closes it. True when the list took the event.
 fn complete(w: &mut World, e: Editor, ev: &egui::Event) -> bool {
     use super::fep::{self, FieldPick};
+    // The modern UI's (the classic comment box keeps retail's keys).
+    if !w.modern {
+        return false;
+    }
     let egui::Event::Key { key, pressed: true, modifiers, .. } = ev else {
+        // The space winit sends after the Space key belongs to that key, which moved the open list.
+        if matches!(ev, egui::Event::Text(t) if t == " ") && w.field_fep.is_some() {
+            return true;
+        }
         if matches!(ev, egui::Event::Text(_) | egui::Event::Paste(_)) {
             w.field_fep = None;
         }

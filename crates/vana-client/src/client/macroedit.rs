@@ -243,11 +243,19 @@ fn edited(w: &World) -> Option<(usize, Vec<u8>, usize)> {
 fn complete(w: &mut World, ev: &egui::Event) -> bool {
     use crate::dat::font::{decode_sjis, encode_sjis};
     use super::fep::{self, FieldPick};
+    // The modern UI's (the classic macro box keeps retail's keys).
+    if !w.modern {
+        return false;
+    }
     let Some((f, buf, caret)) = edited(w) else {
         w.field_fep = None;
         return false;
     };
     let egui::Event::Key { key, pressed: true, modifiers, .. } = ev else {
+        // The space winit sends after the Space key belongs to that key, which moved the open list.
+        if matches!(ev, egui::Event::Text(t) if t == " ") && w.field_fep.is_some() {
+            return true;
+        }
         if matches!(ev, egui::Event::Text(_) | egui::Event::Paste(_)) {
             w.field_fep = None;
         }

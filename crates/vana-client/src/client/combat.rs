@@ -1804,7 +1804,7 @@ fn facts(w: &World, l: usize) -> Facts {
 }
 
 /// The rows now (FUN_1012b2d0 over FUN_1012af30): engaged, Disengage becomes Call for help while toggled.
-fn current_items(w: &World, call_help: bool) -> Vec<u8> {
+pub(super) fn current_items(w: &World, call_help: bool) -> Vec<u8> {
     // In Monstrosity the engage broadcast and every opener reach mp_pmode instead (registry flag 0x4000000).
     if super::monstrosity::active(w) {
         return mon_items(w);

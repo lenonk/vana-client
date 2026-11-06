@@ -60,9 +60,28 @@ enum Act {
 type Row = (String, Act, bool);
 
 /// The open popup: an optional heading (a name), its rows in the pack's frame by `at`. Returns the row picked and
-/// whether it should close (a pick, a press outside it, Escape).
+/// whether it should close (a pick, a press outside it, Escape). The keys: Up / Down move the highlight over the usable
+/// rows (the first to start), Enter picks it, Escape closes; while a menu is open they reach no game key
+/// (World::ctx_menu_open in typing_elsewhere).
 pub fn popup(ctx: &egui::Context, m: &Modern, at: Pos2, title: Option<&str>, rows: &[(&str, bool)]) -> (Option<usize>, bool) {
     let mut picked = None;
+    let sel_id = Id::new("modern context menu sel").with((title, at.x as i32, at.y as i32));
+    let usable: Vec<usize> = rows.iter().enumerate().filter(|(_, r)| r.1).map(|(k, _)| k).collect();
+    let mut sel = ctx.data(|d| d.get_temp::<usize>(sel_id)).filter(|k| usable.contains(k)).or(usable.first().copied());
+    let (down, up, enter) = ctx.input(|i| (i.key_pressed(egui::Key::ArrowDown), i.key_pressed(egui::Key::ArrowUp), i.key_pressed(egui::Key::Enter)));
+    if let Some(at) = sel.and_then(|s| usable.iter().position(|&k| k == s)) {
+        if down {
+            sel = Some(usable[(at + 1) % usable.len()]);
+        } else if up {
+            sel = Some(usable[(at + usable.len() - 1) % usable.len()]);
+        }
+    }
+    if let Some(s) = sel {
+        ctx.data_mut(|d| d.insert_temp(sel_id, s));
+    }
+    if enter {
+        picked = sel;
+    }
     let font = FontId::proportional(m.theme.ui);
     let head = FontId::new(m.theme.small, FontFamily::Name(super::STRONG.into()));
     let width = |s: &str, f: &FontId| ctx.fonts_mut(|fo| fo.layout_no_wrap(s.to_string(), f.clone(), Color32::WHITE).size().x);
@@ -79,12 +98,13 @@ pub fn popup(ctx: &egui::Context, m: &Modern, at: Pos2, title: Option<&str>, row
             }
             for (k, (label, usable)) in rows.iter().enumerate() {
                 let (r, resp) = ui.allocate_exact_size(vec2(wide, m.theme.ui + 12.0), if *usable { Sense::click() } else { Sense::hover() });
-                if *usable && resp.hovered() {
+                let lit = *usable && (resp.hovered() || sel == Some(k));
+                if lit {
                     ui.painter().rect_filled(r.expand2(vec2(4.0, 0.0)), 4.0, m.theme.color("focus").gamma_multiply(0.35));
                 }
                 let colour = if !*usable {
                     m.theme.color("muted")
-                } else if resp.hovered() {
+                } else if lit {
                     m.theme.color("gold")
                 } else {
                     m.theme.color("text")

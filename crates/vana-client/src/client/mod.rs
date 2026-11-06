@@ -311,6 +311,7 @@ fn text_field_open(w: &World) -> bool {
 /// A text field other than the list search's takes the typing.
 fn typing_elsewhere(w: &World) -> bool {
     w.typing
+        || w.ctx_menu_open
         || event::input(w).is_some()
         || w.map.as_ref().is_some_and(|m| m.typing())
         || post::typing(w)
@@ -6220,6 +6221,8 @@ struct World {
     pos_zone: u16,
     unsettled: bool,
     actors: HashMap<u32, Actor>,
+    /// A modern right-click menu is open (modern/ctxmenu.rs, chatsel.rs): its keys are no game keys.
+    ctx_menu_open: bool,
     moving: bool,
     /// First person's turn on the spot this frame: the walk or run motion plays in place (FUN_100c8930 takes the
     /// tier), though we do not move (combat and the effects read `moving`).
@@ -7106,6 +7109,9 @@ pub struct App {
     /// When the left button went down, and the right one (where and when): the drag rule (FUN_10125040).
     press_time: Option<Instant>,
     right_press: Option<((f64, f64), Instant)>,
+    /// How far mouse look has turned since the last button went down (pixels, either axis): the held pointer stays
+    /// put during a look, so its travel is what makes the release a drag.
+    look_travel: f64,
     /// Ours (modern UI): the actor the last plain left click picked and when, for the double click.
     last_pick: Option<(u32, Instant)>,
     /// Ours (modern MMOs): a look drag holds the pointer, hidden, where it began. Some(true) locked (raw motion turns
@@ -7393,6 +7399,7 @@ impl App {
             press_at: None,
             press_time: None,
             right_press: None,
+            look_travel: 0.0,
             last_pick: None,
             look_grab: None,
             grab_at: None,
@@ -8421,6 +8428,7 @@ impl App {
                             inv_loaded: 0,
                             actors: HashMap::new(),
                             moving: false,
+                            ctx_menu_open: false,
                             turn_in_place: false,
                             move_acc: 0.0,
                             walk: false,
@@ -11923,6 +11931,7 @@ impl App {
     /// inverts its axes); with the right button the character faces where it looks (modern MMOs); in first person it
     /// turns the look itself.
     fn look(&mut self, dx: f64, dy: f64) {
+        self.look_travel += dx.abs() + dy.abs();
         let right = self.dragging;
         // Settings' Mouse Camera Speed (ours): scales the drag only; the controller's camera is not touched.
         let k = self.cfg.mouse_camera_speed.clamp(10, 400) as f64 / 100.0;
@@ -11988,10 +11997,17 @@ impl App {
         if pressed && button == MouseButton::Right {
             self.drag_from = self.last_cursor;
         }
+        if pressed {
+            self.look_travel = 0.0;
+        }
+        // A release is a drag past 65 square UI pixels or 25 ticks held, or when mouse look turned the camera more than
+        // 4 pixels meanwhile (the look holds the pointer, so it barely moves): a camera drag that starts on an actor
+        // opens no menu and makes no double click.
+        let looked = self.look_travel > 4.0;
         let release = |from: Option<((f64, f64), Instant)>, at: Option<(f64, f64)>, k: (f32, f32)| -> Option<((f64, f64), bool)> {
             let ((a, t), b) = (from?, at?);
             let (dx, dy) = ((b.0 - a.0) as f32 * k.0, (b.1 - a.1) as f32 * k.1);
-            Some((b, dx * dx + dy * dy >= 65.0 || t.elapsed().as_secs_f32() * 60.0 >= 25.0))
+            Some((b, looked || dx * dx + dy * dy >= 65.0 || t.elapsed().as_secs_f32() * 60.0 >= 25.0))
         };
         let size = self.window_size;
         let (k, retail_aspect) = (self.ui_k, self.cfg.retail_aspect);
@@ -12000,11 +12016,18 @@ impl App {
         let mut world_click = |phase: &mut Phase, b: (f64, f64), left: bool, drag: bool| -> bool {
             let on_hud = hud.iter().any(|r| inside(r, (b.0 as f32 * k.0, b.1 as f32 * k.1)));
             let Phase::World(world) = phase else { return false };
-            let gated = consumed || event::active(world) || world.typing || world.ui_hidden || (world_window_open(world) && world.prompt.is_none());
+            let aspect = cfgapply::aspect(size, retail_aspect, world.game.get(0x43));
+            let picked = if left { Self::under_pointer(world, b, size, aspect).0 } else { None };
+            // Ours (the modern UI's mouse contract): a second plain left click on the same actor within the
+            // double-click time runs the safe default (talk to an NPC, check anyone else). It gets past the action menu
+            // the first click opened, so it does the same whether or not the actor was the target already.
+            let double = left && !drag && world.modern && picked.is_some_and(|p| last_pick.is_some_and(|(q, at)| q == p && at.elapsed() < DOUBLE_CLICK));
+            let menu_only = world.action_menu.is_some() && !window_over_actions(world);
+            let gated = consumed || event::active(world) || world.typing || world.ui_hidden || (world_window_open(world) && world.prompt.is_none() && !(double && menu_only));
             if on_hud || gated {
+                *last_pick = None;
                 return false;
             }
-            let aspect = cfgapply::aspect(size, retail_aspect, world.game.get(0x43));
             if !drag {
                 fishing::click(world);
             }
@@ -12019,11 +12042,9 @@ impl App {
                 world.actor_menu = Some(id);
                 return false;
             }
-            let picked = if left { Self::under_pointer(world, b, size, aspect).0 } else { None };
-            // Ours (the modern UI's mouse contract): a second plain left click on the same actor within the
-            // double-click time runs the safe default (talk to an NPC, check anyone else) instead of the action menu.
-            let double = left && !drag && world.modern && picked.is_some_and(|p| last_pick.is_some_and(|(q, at)| q == p && at.elapsed() < DOUBLE_CLICK));
-            *last_pick = if left && !drag && !double { picked.map(|p| (p, Instant::now())) } else { None };
+            // A click answering the sub-target prompt is no first click.
+            let first = left && !drag && !double && !target::sub_up(world);
+            *last_pick = if first { picked.map(|p| (p, Instant::now())) } else { None };
             target::click(world, picked, left, drag, double)
         };
         match button {
@@ -15777,6 +15798,10 @@ impl ApplicationHandler for App {
                     // Other key functions hide the cursor (FUN_10125f70(0)), except during a drag; Keys Hide the Cursor
                     // off keeps it shown (ours).
                     let modifier = matches!(code, KeyCode::ShiftLeft | KeyCode::ShiftRight | KeyCode::ControlLeft | KeyCode::ControlRight | KeyCode::AltLeft | KeyCode::AltRight | KeyCode::SuperLeft | KeyCode::SuperRight);
+                    // A key between two clicks makes them no double click (click, Escape, click).
+                    if event.state == ElementState::Pressed && !modifier {
+                        self.last_pick = None;
+                    }
                     if event.state == ElementState::Pressed && !modifier && self.cfg.keys_hide_cursor && !self.dragging && !self.left_down {
                         self.mouse.visible = false;
                     }
