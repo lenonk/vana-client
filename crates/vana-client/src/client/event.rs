@@ -3079,6 +3079,11 @@ pub fn click(w: &mut World, row: Option<usize>) {
 
 /// FUN_1007aac0: Talk (c2s 0x01A action 0) after the client's checks. Returns whether it was sent.
 pub fn talk(w: &mut World, target: u32) -> bool {
+    talk_with(w, target, 0)
+}
+
+/// FUN_1007bf30 with its parameter (c2s 0x01A @0x0C): 0 Talk, 1 Release (a trust of ours).
+pub fn talk_with(w: &mut World, target: u32, param: u32) -> bool {
     if active(w) || w.control_lock.is_some() || w.zone.is_none() {
         return false;
     }
@@ -3116,14 +3121,16 @@ pub fn talk(w: &mut World, target: u32) -> bool {
         return false;
     }
     let index = e.index;
-    let _ = w.net.commands.send(NetCommand::Act { target, index, action: 0 });
+    let mut body = super::net::action_body(target, index, 0);
+    body[8..12].copy_from_slice(&param.to_le_bytes());
+    let _ = w.net.commands.send(NetCommand::Packet { id: 0x01A, body });
     // FUN_1007bf30 (0x1007c189): the sent target's index into S+0x40daa, so a `17 n` motion goes to the NPC we spoke
     // to. Not while dead.
     if !matches!(w.my_motion.status, 2 | 3) {
         w.talked_index = index;
     }
     w.control_lock = Some((Instant::now(), target));
-    log::info!("talk to {target:#x} ({index})");
+    log::info!("talk to {target:#x} ({index}), parameter {param}");
     true
 }
 

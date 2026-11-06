@@ -524,7 +524,7 @@ struct Entity {
     server_y: f32,
     raw_y: f32,
     floor_noted: bool,
-    /// +0x2a0: the master's ActIndex (s2c 0x067 kind 3 @0x0C; LSB sends it for our trusts), 0 none.
+    /// +0x2a4: the master's ActIndex (s2c 0x067 kind 3 @0x0C; LSB sends it for our trusts), 0 none.
     master: u16,
     /// +0x128 bit 29: the model's "init" ran (FUN_1008c480).
     init_done: bool,
@@ -4176,6 +4176,13 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             world.confirm = None;
             textcmd::run(world, "/dismount", textcmd::Mode::Internal);
         }
+        (Some(true), Some((Confirm::Disband, _))) => {
+            world.confirm = None;
+            if let Some(t) = world.target {
+                event::talk_with(world, t, 1);
+            }
+            world.action_menu = None;
+        }
         // LAB_101f7d40: c2s 0x0F6, the ring goes, scanlist opens.
         (Some(true), Some((Confirm::StopTracking, _))) => {
             world.confirm = None;
@@ -4475,6 +4482,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::Tractor, _) => gu.menu_msg(0x60, "Accept Tractor?"),
         (Confirm::StopTracking, _) => gu.menu_msg(0x45, "Stop tracking current target\nand proceed with wide area scan?"),
         (Confirm::Dismount, _) => gu.menu_msg(0x4d, "Dismount?"),
+        (Confirm::Disband, _) => gu.lobby_msg(0x0b, 0xb8, "Disband?"),
         (Confirm::Post(ctx), _) => post::confirm_text(gu, ctx),
         (Confirm::CancelTrade, _) => gu.lobby_msg(0x0c, 0x2d, "Cancel trade transaction?"),
         (Confirm::Ls(a), _) => linkshell::ask_text(gu, a),
@@ -6803,6 +6811,9 @@ enum Confirm {
     Drop { c: u8, index: u8, id: u16, stage: u8 },
     /// The action menu's Dismount (FUN_10210e30): group 0xe 0x4d "Dismount?"; Yes runs /dismount.
     Dismount,
+    /// The action menu's Disband on our adventuring fellow (FUN_1012b880 case 0x10): group 0xb 0xb8; Yes (LAB_1012bcc0)
+    /// talks to the target with parameter 1 and closes the menu.
+    Disband,
     /// post2's Dispose (2) / Return (3): group 9 0x34 / 0x35, default No.
     Post(u8),
     /// Trade again on the player we asked (FUN_10151e40): group 0xc 0x2d "Cancel trade transaction?".

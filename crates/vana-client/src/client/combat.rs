@@ -1610,6 +1610,7 @@ pub mod cmd {
     pub const TREASURE: u8 = 0xc;
     pub const TRADE_NPC: u8 = 0x14;
     pub const TRADE: u8 = 0x13;
+    pub const RELEASE: u8 = 0x1a;
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1652,91 +1653,157 @@ pub(super) fn right(w: &mut World) -> bool {
     }
 }
 
-/// Layout choice (FUN_10127790) by the target's +0x1cc kind: an attackable one 2, a PC or a player-allied NPC
-/// (FUN_1008ca40: a trust) 1, any other NPC 0, each doubled; engaged 6, riding the odd one. An NPC with the 0x100 bit
-/// (charmed, the fellow) takes 7 as it is.
+/// The layout (FUN_1012b4b0): engaged 6, else by the target's kind, riding the odd one.
 fn layout(w: &World) -> usize {
-    let base = match w.target.and_then(|t| w.entities.get(&t).map(|e| (t, e))) {
-        None => 0,
-        Some((_, e)) if e.mob && !matches!(e.motion.status, 2 | 3) => 2,
-        Some((t, e)) => {
-            let k = super::radar::kind_bits(w, t, e);
-            if k & 2 == 0 || super::target::allied(w, t, e) {
-                1
-            } else if k & 0x100 == 0 {
-                0
-            } else {
-                return 7;
-            }
-        }
-    };
-    // FUN_1012b4b0: riding (status 5 chocobo, 0x55 mount) takes the odd layout (Dig, Dismount).
     if w.my_motion.status == 1 {
-        6
-    } else if matches!(w.my_motion.status, 5 | 0x55) {
-        base * 2 + 1
-    } else {
-        base * 2
+        return 6;
     }
+    let riding = matches!(w.my_motion.status, 5 | 0x55);
+    // FUN_1012b4b0: a hostile target (FUN_101cc220) takes the battle layouts; an NPC (+0x1d0 bit 1) that is not an
+    // ally (FUN_1008e150) the NPC one when a player owns it (+0x1d0 bit 8: trusts, fellows, pets), else none's; a
+    // player, us or an ally the player ones. Riding (status 5 chocobo, 0x55 mount) takes the odd layout, but the
+    // NPC one.
+    let base = match w.target {
+        None => 0,
+        Some(t) if t == w.my_id => 2,
+        Some(t) => match w.entities.get(&t) {
+            None => 0,
+            Some(e) if super::target::hostile(w, t, e) => 4,
+            Some(e) if t >> 24 != 0 && !e.mob && !ally(t, e) => {
+                if e.marks.charm {
+                    return 7;
+                }
+                0
+            }
+            Some(_) => 2,
+        },
+    };
+    if riding { base + 1 } else { base }
 }
 
-/// FUN_10127230's filters, as far as they apply to us (no party). `fellow`: the target is our fellow (player +0x29c),
-/// not engaged.
-fn shown(target: Option<u32>, c: u8, treasure: bool, fellow: bool) -> Option<u8> {
-    let npc = target.is_some_and(|t| t >= 0x0100_0000);
+/// FUN_1008e150: not a player, not owned by one (+0x1d0 bit 8, 0x00E @0x27 bit 3) and on team 1.
+fn ally(id: u32, e: &super::Entity) -> bool {
+    id >> 24 != 0 && !e.marks.charm && e.marks.alleg == 1
+}
+
+/// What FUN_1012af30's tests read about the target and us.
+#[derive(Default)]
+struct Facts {
+    target: Option<u32>,
+    /// The target is us.
+    me: bool,
+    /// The riding layouts' flag (FUN_1012b4b0 passes it to FUN_1012b2d0).
+    riding: bool,
+    /// FUN_1008e150 on the target.
+    ally: bool,
+    /// +0x1d0 bit 8: a player owns the target (pet, trust, fellow).
+    owned: bool,
+    /// FUN_101cc550: the target is our adventuring fellow (our +0x2a0), and it is not engaged (+0x170).
+    fellow: bool,
+    /// +0x124 bits 20 / 21 (0x00D flags1 bit 11 seeking party, flags2 bit 31 auto-party).
+    invitable: bool,
+    /// +0x140 bit 3 (0x00D flags3 bit 1): recruiting party members.
+    recruiting: bool,
+    /// FUN_1012aed0: one of our own trusts.
+    our_trust: bool,
+    /// FUN_1013eff0: the treasure pool holds items.
+    treasure: bool,
+    /// Our team byte (+0x1ff).
+    team: u8,
+    /// FUN_10177730 (water ahead) outside zone 0xd3 (FUN_101cc320).
+    water: bool,
+    /// We are mounted (FUN_100956a0: status 0x55).
+    mounted: bool,
+    /// FUN_10201f00: our party is us and trusts only.
+    trusts_only: bool,
+}
+
+/// FUN_101cc350(conflict, ballista): we are on a team (+0x1d0 bit 10: 2..99), Belligerency's 8 / 9 only with
+/// `conflict` off, the Ballista sides 0x28..0x2b only with `ballista` off.
+fn on_team(team: u8, conflict: bool, ballista: bool) -> bool {
+    (2..=99).contains(&team) && !(conflict && matches!(team, 8 | 9)) && !(ballista && matches!(team, 0x28..=0x2b))
+}
+
+/// FUN_1012af30: whether command `c` shows, and as which command.
+fn shown(f: &Facts, c: u8) -> Option<u8> {
+    let npc = f.target.is_some_and(|t| t >> 24 == 1);
     match c {
-        // FUN_1012af30 case 0xc: every layout while the pool holds items, not in Conflict.
-        cmd::TREASURE if treasure => Some(c),
-        // Chat becomes Tell on a player, and is dropped on an NPC.
+        // Case 0: Disengage (Call for help while toggled: current_items).
+        // Case 1: Chat; Tell on a target that is not an NPC; none on an NPC.
         cmd::CHAT if npc => None,
-        cmd::CHAT if target.is_some() => Some(cmd::TELL),
-        cmd::CHECK if target.is_none() => None,
-        // Talk and NPC Trade: only on our fellow, not engaged (FUN_10127230 cases 6 / 0x14).
-        cmd::TALK | cmd::TRADE_NPC if fellow => Some(c),
-        cmd::TALK | cmd::TRADE_NPC => None,
-        // Player Trade (layout 2): a player target (the costume bit +0x1d0 & 0x400 not checked).
-        cmd::TRADE if target.is_some() && !npc => Some(c),
-        0xa if target.is_none() || npc => None,
-        0xc | 0xd | 0x10 | 0x11 | 0x13 | 0x1a | 0x1b => None,
-        _ if LABELS[c as usize].1 != 0 => None,
+        cmd::CHAT if f.target.is_some() => Some(cmd::TELL),
+        // Case 2: Talk, Disband and NPC Trade on our adventuring fellow while it is not engaged.
+        cmd::TALK | 0x11 | cmd::TRADE_NPC => f.fellow.then_some(c),
+        // Case 3: the player layouts' Check; on us, none while riding and Fish where we could fish; not on an ally.
+        0xa => match f.target {
+            None => Some(c),
+            Some(_) if f.me && f.riding => None,
+            Some(_) if f.me && f.water => Some(0xd),
+            Some(_) => (!f.ally).then_some(c),
+        },
+        // Case 4: Check on a target that no player owns and is not an ally.
+        cmd::CHECK => (f.target.is_some() && !f.owned && !f.ally).then_some(c),
+        // Case 5: Treasure while the pool holds items, not on a team (Ballista's count).
+        cmd::TREASURE => (f.treasure && !on_team(f.team, true, false)).then_some(c),
+        // Case 6: Fish where we could fish, not on a team.
+        0xd => (f.water && !on_team(f.team, false, false)).then_some(c),
+        // Case 7: Dig, not mounted (its zone and ground tests are not done).
+        0xe => (!f.mounted).then_some(c),
+        // Case 8: Invite a player other than us who seeks a party, unless ours is us and trusts.
+        0x10 => (!f.trusts_only && f.target.is_some() && !f.me && f.invitable).then_some(c),
+        // Case 9: player Trade, not on a team.
+        cmd::TRADE => (f.target.is_some() && !npc && !on_team(f.team, false, false)).then_some(c),
+        // Cases 10 / 11: Quarry / Scout / Sprint on a Conflict team (Sprint becomes Scout with Petra: not parsed).
+        0x16..=0x18 => on_team(f.team, true, true).then_some(c),
+        // Case 12: Release on our own trust.
+        cmd::RELEASE => f.our_trust.then_some(c),
+        // Case 13: Request to join a target that is recruiting.
+        0x1b => (f.target.is_some() && f.recruiting).then_some(c),
         _ => Some(c),
     }
 }
 
-/// The commands of a layout (0..8) for a target id.
+/// The commands of a layout (0..8) for a target id, with nothing else known about it.
 pub fn menu_items(layout: usize, target: Option<u32>) -> Vec<u8> {
-    menu_rows(layout, target, false, false)
+    let f = Facts { target, riding: layout & 1 == 1 && layout != 7, ..Facts::default() };
+    menu_rows(layout, &f)
 }
 
-fn menu_rows(layout: usize, target: Option<u32>, treasure: bool, fellow: bool) -> Vec<u8> {
-    LAYOUTS[layout.min(7)].iter().filter_map(|&c| shown(target, c, treasure, fellow)).collect()
+fn menu_rows(layout: usize, f: &Facts) -> Vec<u8> {
+    LAYOUTS[layout.min(7)].iter().filter_map(|&c| shown(f, c)).collect()
 }
 
-/// The rows now (FUN_1012b2d0 over FUN_1012af30): engaged, Disengage becomes Call for help while toggled and
-/// Treasure shows while the pool holds items (Sprint's area rule is not done).
+fn facts(w: &World, l: usize) -> Facts {
+    let target = w.target.filter(|t| *t == w.my_id || w.entities.contains_key(t));
+    let e = target.and_then(|t| w.entities.get(&t));
+    let marks = if target == Some(w.my_id) { Some(&w.my_plate.marks) } else { e.map(|e| &e.marks) };
+    let ours = w.my_fellow != 0 && e.is_some_and(|e| e.index == w.my_fellow);
+    Facts {
+        target,
+        me: target == Some(w.my_id),
+        riding: l & 1 == 1 && l != 7,
+        ally: target.zip(e).is_some_and(|(t, e)| ally(t, e)),
+        owned: target.zip(e).is_some_and(|(t, e)| t >> 24 != 0 && e.marks.charm),
+        fellow: ours && e.is_some_and(|e| e.motion.status != 1),
+        invitable: marks.is_some_and(|m| m.lfg || m.auto),
+        recruiting: marks.is_some_and(|m| m.lfg_master),
+        our_trust: e.is_some_and(|e| e.marks.trust && e.master != 0 && e.master == w.my_index),
+        treasure: super::treasure::count(w) > 0,
+        team: w.my_team,
+        water: w.zone != Some(0xd3) && w.ground.as_ref().is_some_and(|g| g.water_ahead(w.pos, super::fishing::forward(w))),
+        mounted: w.my_motion.status == 0x55,
+        trusts_only: w.party.slots().trusts_only(),
+    }
+}
+
+/// The rows now (FUN_1012b2d0 over FUN_1012af30): engaged, Disengage becomes Call for help while toggled.
 fn current_items(w: &World, call_help: bool) -> Vec<u8> {
     // In Monstrosity the engage broadcast and every opener reach mp_pmode instead (registry flag 0x4000000).
     if super::monstrosity::active(w) {
         return mon_items(w);
     }
     let l = layout(w);
-    let treasure = super::treasure::count(w) > 0 && !conflict(w.my_team);
-    let fellow = w.target.and_then(|t| w.entities.get(&t)).is_some_and(|e| w.my_fellow != 0 && e.index == w.my_fellow && e.motion.status != 1);
-    let mut items = menu_rows(l, w.target.filter(|t| w.entities.contains_key(t)), treasure, fellow);
-    // FUN_1012af30 case 0xe: Dig only on a chocobo (not a mount); its further zone tests are not traced.
-    if w.my_motion.status == 0x55 {
-        items.retain(|&c| c != 0xe);
-    }
-    // FUN_1012af30 cases 0x16..0x18: Quarry / Scout / Sprint in Conflict only (Scout needs Petra, not parsed: Sprint).
-    if !conflict(w.my_team) {
-        items.retain(|c| !matches!(c, 0x16..=0x18));
-    }
-    // Check: not on a pet, trust or charmed monster (FUN_1008e150: not a PC, team byte 1).
-    if let Some(t) = w.target.filter(|t| *t >> 24 != 0)
-        && w.entities.get(&t).is_some_and(|e| e.marks.alleg == 1)
-    {
-        items.retain(|&c| c != cmd::CHECK);
-    }
+    let mut items = menu_rows(l, &facts(w, l));
     if l == 6
         && call_help
         && let Some(c) = items.iter_mut().find(|c| **c == cmd::DISENGAGE)
@@ -1837,11 +1904,12 @@ pub(super) fn battle_frame(w: &mut World) {
     refresh_menu(w);
 }
 
-/// FUN_1012b880: the commands that leave the menu up (Attack, Call for help, Disengage, Check, Switch Target); the
+/// FUN_1012b880: the commands that leave the menu up (Attack, Call for help, Disengage, Check, Switch Target, Fish,
+/// Invite, Disband (its Yes closes it), Release, Request: no playermo close); the
 /// lists (Magic, Abilities, Trust, Items) close it and, engaged, bring it back when they are done; Chat, Tell, Talk
 /// close it.
 pub(super) fn keeps_menu(c: u8) -> bool {
-    matches!(c, cmd::ATTACK | cmd::CALL_HELP | cmd::DISENGAGE | 0xa | cmd::CHECK | cmd::SWITCH_TARGET | cmd::TREASURE | 0x16..=0x18 | mon::ATTACK | mon::SWITCH | mon::DISENGAGE | mon::CHECK | mon::TREASURE)
+    matches!(c, cmd::ATTACK | cmd::CALL_HELP | cmd::DISENGAGE | 0xa | cmd::CHECK | cmd::SWITCH_TARGET | cmd::TREASURE | cmd::RELEASE | 0xd | 0x10 | 0x11 | 0x1b | 0x16..=0x18 | mon::ATTACK | mon::SWITCH | mon::DISENGAGE | mon::CHECK | mon::TREASURE)
 }
 
 /// Window name per row count (table 0x103636b0: actionm1 .. actiom10).
@@ -1881,11 +1949,12 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
             let (t, i) = target.unwrap_or((w.my_id, 0));
             send(w, NetCommand::Act { target: t, index: i, action: 4 });
         }
-        // FUN_1012b880 cases 9 / 0xa: engaged, the sub-target prompt over monsters first (LAB_1012bec0); else at once.
-        (cmd::CHECK, Some(_)) if w.my_motion.status == 1 => {
+        // FUN_1012b880 cases 9 / 0xa (the player layouts' Check and Check): engaged, the sub-target prompt over monsters
+        // first (LAB_1012bec0); else at once (us too).
+        (0xa | cmd::CHECK, _) if w.target.is_some() && w.my_motion.status == 1 => {
             super::target::open_sub(w, 0x20, super::target::SubThen::Check, None, String::new(), 0);
         }
-        (cmd::CHECK, Some(_)) => check(w, None, 0, false),
+        (0xa | cmd::CHECK, _) if w.target.is_some() => check(w, None, 0, false),
         (0x16..=0x18, _) => super::textcmd::run(w, ["/quarry", "/scout", "/sprint"][(c - 0x16) as usize], super::textcmd::Mode::Internal),
         // FUN_1012b880 cases 3 / 4: the chat line, "/tell <target> " on a target (string 0x1036f5c8).
         (cmd::CHAT | cmd::TELL, _) => {
@@ -1904,6 +1973,11 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
         (cmd::TALK, Some((t, _))) => {
             super::event::talk(w, t);
         }
+        // FUN_1012b880 case 0x19: FUN_1007bf30 as Talk, with 1 in the action's parameter (c2s 0x01A @0x0C); the
+        // menu stays (Talk closes playermo, Release does not).
+        (cmd::RELEASE, Some((t, _))) => {
+            super::event::talk_with(w, t, 1);
+        }
         // FUN_1012b880 case 0x13: the hand-over (FUN_1013fd30).
         (cmd::TRADE_NPC | cmd::TRADE, Some(_)) => {
             super::trade::start(w);
@@ -1914,6 +1988,19 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
         // FUN_1012b880 cases 0xd / 0xe: Dig runs /dig; Dismount asks first (group 0xe 0x4d "Dismount?").
         (0xe, _) => super::textcmd::run(w, "/dig", super::textcmd::Mode::Internal),
         (0xf, _) => w.confirm = Some((super::Confirm::Dismount, false)),
+        // FUN_1012b880 case 0xc: /fish (0xa on us becomes it too).
+        (0xd, _) => super::textcmd::run(w, "/fish", super::textcmd::Mode::Internal),
+        // Case 0xf: c2s 0x06E to the target (FUN_100e8fd0, kind 0).
+        (0x10, Some((t, i))) => send(w, NetCommand::Packet { id: 0x06E, body: super::party::invite_body(t, i, 0) }),
+        // Case 0x10: group 0xb 0xb8 first (FUN_10210e30).
+        (0x11, Some(_)) => w.confirm = Some((super::Confirm::Disband, false)),
+        // Case 0x1a: "/partyrequestcmd add <name>".
+        (0x1b, Some((t, _))) => {
+            let name = w.entities.get(&t).map(|e| e.name.clone()).unwrap_or_default();
+            if !name.is_empty() {
+                super::textcmd::run(w, &format!("/partyrequestcmd add {name}"), super::textcmd::Mode::Internal);
+            }
+        }
         // mp_pmode (FUN_101414b0 .. FUN_101416e0): Chat "/tell <shown name> " on any target, then closed; Magic in cast
         // mode with every type; Abilities mp_abisc; Check as playermo's; Treasure only with items.
         (mon::CHAT, _) => {
@@ -2146,6 +2233,25 @@ mod tests {
         assert_eq!(template_of(&bt, 1, rel(ME, RABBIT), &ctx([0, 12, 0, 0, 0]), 1, "something else", &cfg), None);
     }
 
+    /// FUN_1012af30's target rules: the NPC layout on our trust and our fellow, Invite / Request on a player.
+    #[test]
+    fn target_commands() {
+        let trust = Facts { target: Some(0x0100_0701), owned: true, our_trust: true, ..Facts::default() };
+        assert_eq!(menu_rows(7, &trust), [8, 7, 0x19, 9, cmd::RELEASE]);
+        let fellow = Facts { target: Some(0x0100_0702), owned: true, fellow: true, ..Facts::default() };
+        assert_eq!(menu_rows(7, &fellow), [cmd::TALK, 8, 7, 0x19, 9, cmd::TRADE_NPC, 0x11]);
+        let pc = Facts { target: Some(0x42), invitable: true, recruiting: true, ..Facts::default() };
+        assert_eq!(menu_rows(2, &pc), [cmd::TELL, 8, 7, 0x19, 9, cmd::TRADE, 0x10, 0x1b, 0xa]);
+        // On a team: no Trade or Treasure; Check not on an owned NPC.
+        let team = Facts { target: Some(0x42), team: 0x10, treasure: true, ..Facts::default() };
+        assert!(!menu_rows(2, &team).contains(&cmd::TRADE) && !menu_rows(2, &team).contains(&cmd::TREASURE));
+        let pet = Facts { target: Some(0x0100_0703), owned: true, ..Facts::default() };
+        assert!(!menu_rows(4, &pet).contains(&cmd::CHECK));
+        // On us: Check, or Fish with water ahead.
+        let me = Facts { target: Some(1), me: true, water: true, ..Facts::default() };
+        assert_eq!(menu_rows(2, &me).last(), Some(&0xd));
+    }
+
     /// FUN_101275b0 over the layouts, filtered as FUN_10127230 does for a solo player.
     #[test]
     fn action_menus() {
@@ -2159,7 +2265,8 @@ mod tests {
         assert_eq!(menu_items(2, Some(0x0100_0042))[0], 8);
         // Talk and NPC Trade only on our fellow (a trust's Talk would release it).
         assert!(!menu_items(7, Some(0x0100_0742)).iter().any(|&c| c == cmd::TALK || c == cmd::TRADE_NPC));
-        assert_eq!(menu_rows(7, Some(0x0100_0742), false, true)[..2], [cmd::TALK, 8]);
+        let fellow = Facts { target: Some(0x0100_0742), fellow: true, ..Facts::default() };
+        assert_eq!(menu_rows(7, &fellow)[..2], [cmd::TALK, 8]);
     }
 
     #[test]
