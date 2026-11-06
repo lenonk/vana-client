@@ -22451,3 +22451,10 @@ From FFXiMain.dll (Steven's unpacked copy, full_text.asm / all_decomp.c).
   (input.rs, run first in `key_functions`) only knew the fields listed in `typing_elsewhere`, so each letter typed there
   also fired its game hotkey. It now counts as typing while it has text (`config::finding`). Key functions with mask
   0x41 then fail, as for the chat line.
+
+## Mouse Camera Speed setting (2026-11-05)
+
+Ours, not retail. Config `mouse_camera_speed` (%, default 100 = the speed drags had before) scales the motion a mouse
+look drag (left, middle or right button) feeds `App::look`, before the Mouse/Cam. axis inversions and the per-mode
+factors (0.008 / 0.02 / 0.03 / 0.004). Shown as "Mouse Camera Speed" in Settings (25% to 200%). The controller's
+camera (client/gamepad.rs) does not read it.

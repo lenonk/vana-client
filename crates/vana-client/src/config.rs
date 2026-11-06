@@ -258,6 +258,8 @@ pub struct Config {
     pub modern_condense: bool,
     /// The list search's recent picks by character, newest first (listsearch.rs).
     pub modern_recent: std::collections::BTreeMap<String, Vec<String>>,
+    /// How fast a mouse drag turns the camera, in % of the old fixed speed (ours; the controller is not touched).
+    pub mouse_camera_speed: u32,
     /// Read a game controller (client/gamepad.rs; retail: padmode000's first flag).
     pub gamepad: bool,
     /// Stick travel ignored around the centre as a fraction of full: retail's 42 of 127 (ours round).
@@ -426,6 +428,7 @@ impl Default for Config {
             modern_battle_in_all: true,
             modern_condense: true,
             modern_recent: Default::default(),
+            mouse_camera_speed: 100,
             gamepad: true,
             gamepad_deadzone: 0.33,
             gamepad_background: false,

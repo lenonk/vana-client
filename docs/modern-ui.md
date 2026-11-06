@@ -566,4 +566,7 @@ Milestone 1:
   Sound, Input and System, each page in small headed groups. Chat Filters, Effects, Font Colors, Mods and the Lua
   mods' settings open as pages from a button on their topic's page.
 - Typing in the Settings window's search no longer triggers game hotkeys (ours).
+- Mouse Camera Speed (ours, not retail): Settings' Mouse row (Input > Mouse, Camera & Keys, and the classic Settings
+  Controls page) scales every mouse look drag, 25% to 200%, 100% the old speed. The controller's camera is not touched,
+  so it stays retail's.
 - Not yet: alliance rows live.
