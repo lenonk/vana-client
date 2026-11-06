@@ -12,8 +12,10 @@ The goal is a faithful clone of the retail client first. Its menus, sprites, fon
 from the game's files and from the behaviour of the original executable. Improvements come after that.
 Retail limits that only existed because of 2002 hardware, like the 30 fps cap, become settings.
 
-It runs on Linux and Windows (64-bit); builds of both are on the [releases page](https://github.com/lenonk/vana-client/releases).
-macOS is planned.
+It runs on Linux (x86-64 and ARM), Windows and macOS (Apple Silicon and Intel); builds of each are on the
+[releases page](https://github.com/lenonk/vana-client/releases).
+
+If you're having trouble or just want to chat, join us on [Discord](https://discord.gg/njx79Keq).
 
 ## Two interfaces
 
