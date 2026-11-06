@@ -65,7 +65,8 @@ impl Overlays {
             let m = std::fs::metadata(p).ok()?;
             (m.len(), m.modified().ok()).hash(&mut h);
         }
-        let out = self.cache.join(format!("{id}-{:016x}.DAT", h.finish()));
+        let stem = format!("{id}-{:016x}", h.finish());
+        let out = self.cache.join(format!("{stem}.DAT"));
         if out.is_file() {
             return Some(out);
         }
@@ -76,20 +77,43 @@ impl Overlays {
             return mods.first().cloned();
         };
         let _ = std::fs::create_dir_all(&self.cache);
-        // Older builds of this id go.
-        if let Ok(rd) = std::fs::read_dir(&self.cache) {
-            let prefix = format!("{id}-");
-            for e in rd.flatten() {
-                if e.file_name().to_string_lossy().starts_with(&prefix) {
-                    let _ = std::fs::remove_file(e.path());
-                }
-            }
-        }
-        let tmp = out.with_extension("tmp");
+        self.prune(id, &stem);
+        // A name of this writer's own: threads or clients building the same file never share one.
+        static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let tmp = self.cache.join(format!("{stem}.{}-{n}.tmp", std::process::id()));
         if std::fs::write(&tmp, &merged).and_then(|_| std::fs::rename(&tmp, &out)).is_err() {
-            return mods.first().cloned();
+            let _ = std::fs::remove_file(&tmp);
+            // Another writer may have put it in place first.
+            return if out.is_file() { Some(out) } else { mods.first().cloned() };
         }
         Some(out)
+    }
+
+    /// Older builds of `id` go but the newest other one (another config's, a client running beside this one, may still
+    /// read it), never this build's (`stem`; another thread may be writing it); a temporary file left 10 min goes.
+    fn prune(&self, id: u32, stem: &str) {
+        let Ok(rd) = std::fs::read_dir(&self.cache) else { return };
+        let prefix = format!("{id}-");
+        let mut builds = Vec::new();
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if !name.starts_with(&prefix) || (name.starts_with(stem) && name.ends_with(".DAT")) {
+                continue;
+            }
+            let age = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
+            if name.ends_with(".tmp") {
+                if age.is_some_and(|a| a.as_secs() > 600) {
+                    let _ = std::fs::remove_file(e.path());
+                }
+            } else {
+                builds.push((age.unwrap_or_default(), e.path()));
+            }
+        }
+        builds.sort();
+        for (_, p) in builds.into_iter().skip(1) {
+            let _ = std::fs::remove_file(p);
+        }
     }
 }
 
@@ -177,7 +201,7 @@ pub fn slim(stock: &[u8], full: &[u8]) -> Option<(Vec<u8>, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{merge, slim};
+    use super::{Overlays, merge, slim};
 
     fn chunk(name: &[u8; 4], kind: u8, data: &[u8]) -> Vec<u8> {
         let size = (16 + data.len()).div_ceil(16) * 16;
@@ -225,6 +249,44 @@ mod tests {
         let high = [chunk(b"img1", 0x20, &tex(3, 2048, 4096, 80))].concat();
         assert_eq!(merge(&stock, &[high.clone(), low.clone()]).unwrap(), low);
         assert_eq!(merge(&stock, &[high]).unwrap(), stock);
+    }
+
+    /// Two configs (other mods) and several threads resolving one id over one cache each read their own build whole.
+    #[test]
+    fn shared_cache_builds_stay_readable() {
+        let dir = std::env::temp_dir().join(format!("vana-overlay-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let tex = |n: u8| {
+            let mut d = vec![0u8; 4096];
+            d[1..5].copy_from_slice(b"tex1");
+            d[21..25].copy_from_slice(&1u32.to_le_bytes());
+            d[25..29].copy_from_slice(&1u32.to_le_bytes());
+            d[30] = n;
+            d
+        };
+        let file = |name: &str, n: u8| {
+            let p = dir.join(name);
+            std::fs::write(&p, [chunk(b"img1", 0x20, &tex(n)), chunk(b"end\0", 0, &[])].concat()).unwrap();
+            p
+        };
+        let (stock, a, b) = (file("stock.DAT", 1), file("a.DAT", 2), file("b.DAT", 3));
+        let cache = dir.join("cache");
+        let config = |m: &std::path::Path| Overlays { by_id: [(7, vec![m.to_path_buf()])].into(), dirs: Vec::new(), cache: cache.clone() };
+        let want = |m: &std::path::Path| merge(&std::fs::read(&stock).unwrap(), &[std::fs::read(m).unwrap()]).unwrap();
+        std::thread::scope(|s| {
+            for k in 0..8 {
+                let m = if k % 2 == 0 { &a } else { &b };
+                let (o, want, stock) = (config(m), want(m), &stock);
+                s.spawn(move || {
+                    for _ in 0..40 {
+                        let p = o.resolve(7, stock).unwrap();
+                        assert_eq!(std::fs::read(&p).unwrap(), want);
+                    }
+                });
+            }
+        });
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A slim copy drops the stock chunks and the unchanged images, and merges to the same bytes as the full one.

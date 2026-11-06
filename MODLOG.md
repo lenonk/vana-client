@@ -22933,3 +22933,13 @@ From FFXiMain.dll (Steven's unpacked copy), full_text.asm, FUN_100a7b80.
   Band, warp rings, experience rings) can be used from the menu; the ready /
   not-ready colour reads the row's own bag's extdata, and Enter sends c2s 0x037 with that bag (LSB accepts
   wardrobes 1..8). The Modern UI list and its right-click Use take the same rows.
+
+## Mod overlays: the merged cache shared by threads and clients (ours, 2026-11-06)
+
+- dat/overlay.rs resolve keeps a merged DAT per id and sources (`<id>-<hash>.DAT` in ~/.cache/vana-client/merged).
+  Threads, and clients with other mod lists (a test config, a second client), share the cache: each writer builds
+  under its own temporary name (pid and a counter) and renames it into place; a failed rename takes the build another
+  writer put there. The build being made is never removed, the newest other build of the id stays (another config's),
+  older ones go, and a temporary file left 10 min goes.
+- Test overlay::tests::shared_cache_builds_stay_readable: two configs, eight threads, every read whole. *(inf: the
+  parallel test run's rare ground test miss on zone 230 came from a build removed under its reader.)*
