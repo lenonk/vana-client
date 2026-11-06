@@ -246,13 +246,10 @@ fn refresh_hits(gu: Option<&GameUi>, c: &mut ConfigUi, v: &Values, s: Option<&Se
 /// The search's typed text, Backspace, Escape and Ctrl+R (Retail only) while the Settings window shows a topic page.
 /// True when it took them (the game then sees none).
 pub fn find_events(w: &mut World, events: &[egui::Event]) -> bool {
-    if !w.modern || !shown(w) || w.typing {
+    if !find_open(w) {
         return false;
     }
     let Some(c) = w.config.as_mut() else { return false };
-    if c.m_sub.is_some() || c.m_keys.is_some() || c.extra.ask_keys.is_some() {
-        return false;
-    }
     let mut took = false;
     for e in events {
         match e {
@@ -652,6 +649,11 @@ fn holds(c: &ConfigUi, v: &Values, ctl: Ctl) -> bool {
 /// The page shows (the list's window, configwi, on top).
 fn shown(w: &World) -> bool {
     w.config.as_ref().is_some_and(|c| c.top().is_some_and(|t| t.name == "configwi") && !c.covered)
+}
+
+/// The search takes a typed letter or digit now (see `find_events`).
+pub fn find_open(w: &World) -> bool {
+    w.modern && shown(w) && !w.typing && w.config.as_ref().is_some_and(|c| c.m_sub.is_none() && c.m_keys.is_none() && c.extra.ask_keys.is_none())
 }
 
 /// A click on what the mouse took (the cursor goes there too).

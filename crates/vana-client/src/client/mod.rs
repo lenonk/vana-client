@@ -11369,8 +11369,8 @@ impl App {
             } else {
                 0xffff
             };
-            // Not with the UI hidden: the search gets no events then.
-            f.typing = text_field_open(w) || (!w.ui_hidden && starts_search && listsearch::can_run(w));
+            // Not with the UI hidden: the search gets no events then. Ours: the Settings window's search opens the same way.
+            f.typing = text_field_open(w) || (!w.ui_hidden && starts_search && (listsearch::can_run(w) || modern::config_find_open(w)));
             f.keyboard = w.game.get(0x42);
             // A window has the keys: arrows go to it, not to the camera (the window-active state, MODLOG "Input
             // layer"). The log counts only while focused: Escape or another window unfocuses it and leaves the 0x78
