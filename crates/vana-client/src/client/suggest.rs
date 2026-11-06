@@ -13,7 +13,7 @@ pub enum Action {
     Ability(u16),
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Suggestion {
     pub action: Action,
     /// Who it is for (a name), when not ourselves or the target.
@@ -25,11 +25,21 @@ pub struct Suggestion {
     pub group: Vec<u16>,
     #[serde(default)]
     pub label: Option<String>,
+    /// The family the row was made from, kept while it has no label (one castable spell) so a held row regroups.
+    /// Bookkeeping, not part of the suggestion: not saved in a case, not compared.
+    #[serde(skip)]
+    family: Option<String>,
+}
+
+impl PartialEq for Suggestion {
+    fn eq(&self, o: &Self) -> bool {
+        (self.action, &self.target, &self.reason, &self.group, &self.label) == (o.action, &o.target, &o.reason, &o.group, &o.label)
+    }
 }
 
 impl Suggestion {
     fn new(action: Action, target: Option<String>, reason: String) -> Self {
-        Self { action, target, reason, group: Vec::new(), label: None }
+        Self { action, target, reason, group: Vec::new(), label: None, family: None }
     }
 }
 
@@ -322,7 +332,7 @@ fn add_groups(f: &Facts, out: &mut [Suggestion]) {
 fn regroup(f: &Facts, out: &mut [Suggestion]) {
     for s in out.iter_mut() {
         let Action::Spell(id) = s.action else { continue };
-        if let Some(fam) = s.label.clone().or_else(|| f.spell(id).map(family)).filter(|n| !n.is_empty()) {
+        if let Some(fam) = s.family.clone().or_else(|| f.spell(id).map(family)).filter(|n| !n.is_empty()) {
             set_group(f, s, fam);
         }
     }
@@ -337,10 +347,15 @@ fn set_group(f: &Facts, s: &mut Suggestion, fam: String) {
             s.action = Action::Spell(group[0].id);
         }
         s.group = group.iter().map(|x| x.id).collect();
-        s.label = Some(fam);
+        s.label = Some(fam.clone());
     } else {
+        // One spell left castable: the row casts it (a held row's own may have gone on recast).
+        if let [one] = group[..] {
+            s.action = Action::Spell(one.id);
+        }
         (s.group, s.label) = (Vec::new(), None);
     }
+    s.family = Some(fam);
 }
 
 /// Job abilities worth using while fighting when their effect is not up: the name, its status (0: none to check), and
@@ -986,8 +1001,13 @@ mod tests {
         let mut s = suggest(&f);
         let k = s.iter().position(|x| x.label.as_deref() == Some("Ice")).expect("an ice family");
         assert_eq!((s[k].action, s[k].group.as_slice()), (Action::Spell(149), &[149, 179][..]));
-        regroup(&Facts { spells: all, ..f }, &mut s);
+        regroup(&Facts { spells: all.clone(), ..f.clone() }, &mut s);
         assert_eq!((s[k].action, s[k].group.as_slice()), (Action::Spell(150), &[150, 149, 180, 179][..]));
+        // Down to Blizzard alone (Blizzard II and both -ga recasting): the row casts it, and the family comes back.
+        regroup(&Facts { spells: vec![all[1].clone()], ..f.clone() }, &mut s);
+        assert_eq!((s[k].action, s[k].group.as_slice(), s[k].label.as_deref()), (Action::Spell(149), &[][..], None));
+        regroup(&Facts { spells: all, ..f }, &mut s);
+        assert_eq!((s[k].action, s[k].group.as_slice(), s[k].label.as_deref()), (Action::Spell(150), &[150, 149, 180, 179][..], Some("Ice")));
     }
 
     /// Protect's family takes Protectra; the weather breaks a tie between elements.
