@@ -569,4 +569,12 @@ Milestone 1:
 - Mouse Camera Speed (ours, not retail): Settings' Mouse row (Input > Mouse, Camera & Keys, and the classic Settings
   Controls page) scales every mouse look drag, 25% to 200%, 100% the old speed. The controller's camera is not touched,
   so it stays retail's.
+- Typing in the GM window's fields or search no longer triggers game hotkeys (ours).
+- Ours: a Game Master window (Command Menu > Game Master, only while the server reports a GM level above 0 through
+  akreao/lsb's 0x1F0 packets). Groups, search, 9 commands a page, a form per command, runs over 0x1F1 with the
+  server's printed reply in the window. Not retail (retail has no GM menu); whether upstream wants it is still open.
+- Pickers: while a field is being typed in, up to 6 matches show under it (id or name, names starting with the text
+  first); a click fills the id. Zones, items, spells, key items and titles come from the game's name tables; jobs,
+  weather, skills, logs, nations and true/false are fixed lists; player fields offer you and your party; entity
+  fields offer the named things in the zone. A typed id shows its name under the field.
 - Not yet: alliance rows live.
