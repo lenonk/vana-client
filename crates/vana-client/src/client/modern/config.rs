@@ -105,7 +105,7 @@ const PAGES: [(&str, &str, &[Item]); 14] = [
         Head("Output"), Ours("Sound"), Ours("Sound Effect Channels"), Ours("Sound in Background"),
     ]),
     ("Input", "Mouse, Camera & Keys", &[
-        Head("Mouse"), Ours("Hardware Mouse"), Ours("Cursor Size"),
+        Head("Mouse"), Ours("Hardware Mouse"), Ours("Cursor Size"), Ours("Mouse Camera Speed"),
         Head("Camera"), Retail("conf7", 5), Retail("conf7", 7), Retail("conf7", 9), Retail("conf7", 11), Retail("conf7", 13),
         Retail("conf7", configui::CAM_KEYS), Retail("conf7", configui::CAM_KEYS + 3),
         Head("Keyboard"), Retail("conf6win", 5), Retail("conf6win", 8), Retail("conf6win", 9), Retail("conf6win", 10), Retail("conf13wi", 1),

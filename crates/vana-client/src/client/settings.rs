@@ -55,6 +55,8 @@ pub struct Settings {
     /// A game controller read (config gamepad), and its sticks' dead zone in % of full (gamepad_deadzone).
     pub gamepad: bool,
     pub gamepad_dead: u32,
+    /// Mouse drag camera speed in % (config mouse_camera_speed).
+    pub mouse_camera_speed: u32,
 }
 
 impl Settings {
@@ -101,6 +103,7 @@ impl Settings {
             reset_places: false,
             gamepad: c.gamepad,
             gamepad_dead: (c.gamepad_deadzone * 100.0).round() as u32,
+            mouse_camera_speed: c.mouse_camera_speed,
         }
     }
 
@@ -141,6 +144,7 @@ impl Settings {
         c.mods = self.mods.clone();
         c.gamepad = self.gamepad;
         c.gamepad_deadzone = self.gamepad_dead as f32 / 100.0;
+        c.mouse_camera_speed = self.mouse_camera_speed;
     }
 }
 
@@ -204,6 +208,7 @@ enum Val {
     ResetPlaces,
     Gamepad,
     PadDeadZone,
+    MouseCamSpeed,
     /// A Lua mod's declared setting: its row on the mod's page (docs/lua-mods.md 4.12).
     Mod(usize),
 }
@@ -311,6 +316,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [SRow] 
     ];
     const MISC: &[SRow] = &[
         row("Hardware Mouse", "Uses your system's mouse pointer with the game's cursor images, instead of a cursor the game draws.", Tool("0021"), OFF_ON, Now),
+        row("Mouse Camera Speed", "How fast the camera turns when you hold a mouse button and move the mouse. Lower it if the camera spins too fast. Controllers are not affected (not retail).", MouseCamSpeed, &[(25, "25%"), (50, "50%"), (75, "75%"), (100, "100%"), (150, "150%"), (200, "200%")], Now),
         row("Cursor Size", "How big the game's own cursor is, when Hardware Mouse is Off. Auto makes it bigger in bigger windows (not retail).", CursorSize, &[(0, "Auto"), (100, "1x"), (150, "1.5x"), (200, "2x"), (300, "3x"), (400, "4x")], Now),
         row("Opening Movie", "Plays the opening movie before the title screen. Any key skips it.", Tool("0022"), OFF_ON, Restart),
         row("Simple Character Creation", "Shows flat pictures instead of 3D models during character creation.", Tool("0023"), OFF_ON, Now),
@@ -520,6 +526,7 @@ impl SettingsUi {
             Val::ResetPlaces => self.s.reset_places as u32,
             Val::Gamepad => self.s.gamepad as u32,
             Val::PadDeadZone => self.s.gamepad_dead,
+            Val::MouseCamSpeed => self.s.mouse_camera_speed,
             Val::MapOverlay => self.s.map_overlay as u32,
             Val::MapOpacity => self.s.map_opacity,
             Val::SynthAmount => self.s.synth_amount as u32,
@@ -561,6 +568,7 @@ impl SettingsUi {
             Val::ResetPlaces => self.s.reset_places = x != 0,
             Val::Gamepad => self.s.gamepad = x != 0,
             Val::PadDeadZone => self.s.gamepad_dead = x,
+            Val::MouseCamSpeed => self.s.mouse_camera_speed = x,
             Val::MapOverlay => self.s.map_overlay = x != 0,
             Val::SynthAmount => self.s.synth_amount = x != 0,
             Val::StampAll => self.s.stamp_all_lines = x != 0,
