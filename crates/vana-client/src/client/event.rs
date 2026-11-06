@@ -498,6 +498,9 @@ pub struct State {
     /// Actors the script faded (op 0x6c); made opaque again when the event ends (inferred).
     faded: HashSet<u32>,
     pub idle: HashMap<u32, String>,
+    /// The scheduler a motion op (0x5b / 0x66, 0x5f 3..6; FUN_100b5210) last started on an actor, and its second
+    /// actor (+0x1ec / +0x1f4): ops 0x5e / 0x6b stop it before they set the idle motion (FUN_10087d40).
+    event_sched: HashMap<u32, (String, u32)>,
     /// World ids of the bound actors (+0x120 bit 7) and how each is drawn.
     pub bound: HashSet<u32>,
     /// Op 0x92 (+0x12c bit 16): a bound actor's name is not drawn while the event runs (FUN_10096000); unbinding
@@ -592,6 +595,7 @@ impl State {
             hidden: HashSet::new(),
             faded: HashSet::new(),
             idle: HashMap::new(),
+            event_sched: HashMap::new(),
             bound: HashSet::new(),
             no_name: HashSet::new(),
             no_turn_steps: HashSet::new(),
@@ -800,6 +804,26 @@ impl LiveHost<'_> {
     }
 
     /// FUN_100b6980: `who` looks at `target`'s attach point `point` (look mode 1).
+    /// Model vtable +0x29c (FUN_10084cc0 -> FUN_10056ef0) with both actors' models: an event start that has not
+    /// begun loses its name, a running one stops where it is, and its effects side stops.
+    fn stop_scheduler(&mut self, id: u32, target: u32, name: &str) {
+        let model = |w: &World, id: u32| w.actors.get(&id).is_some_and(|a| a.character.is_some());
+        if !model(self.w, id) || !model(self.w, target) {
+            return;
+        }
+        if let Some(a) = self.w.actors.get_mut(&id) {
+            if let Some(p) = a.pending.as_mut().filter(|p| p.kind == super::actmotion::Kind::Event && p.name == name) {
+                p.name.clear();
+            }
+            if let Some(p) = a.play.as_mut().filter(|p| p.name == name) {
+                p.stop();
+            }
+        }
+        if let Ok(n) = <[u8; 4]>::try_from(name.as_bytes()) {
+            self.w.effects.stop_actor_scheduler(id, u32::from_le_bytes(n));
+        }
+    }
+
     fn look_at(&mut self, who: u32, target: u32, point: u16) {
         if !self.w.actors.get(&target).is_some_and(|a| a.character.is_some()) {
             return;
@@ -919,6 +943,9 @@ impl Host for LiveHost<'_> {
                 let name = if name == "xxxx" || name.trim_matches('\0').is_empty() { String::new() } else { name };
                 // FUN_100b2f80 (op 0x2c): vtable +0x298(4cc, actor@5's model), so the scheduler's second actor is the
                 // target: the home point crystal (model 51) runs its 'bind' on the player when a home point is set.
+                if op != 0x2c && !name.is_empty() {
+                    self.st.event_sched.insert(id, (name.clone(), self.wid(target)));
+                }
                 let target = (op == 0x2c).then(|| self.wid(target)).filter(|t| *t != id && self.w.actors.contains_key(t));
                 if let Some(a) = self.w.actors.get_mut(&id) {
                     let files = motion_files(op, file, id, a);
@@ -936,26 +963,11 @@ impl Host for LiveHost<'_> {
             }
             // FUN_100b4d10: both actors in the zone with a model, then actor@1's model vtable +0x29c(4cc@9, actor@5's
             // model) (FUN_10084cc0: the type-7 resource of that name, its files first, then FUN_10056ef0 deletes
-            // the scheduler tasks of it on that pair). Ours: the 0x2c start that has not begun loses its name, a
-            // running one stops where it is, and its effects side stops.
+            // the scheduler tasks of it on that pair): `stop_scheduler`.
             Effect::Op { op: 0x50, args, .. } => {
                 let (Some(Arg::Actor(a1)), Some(Arg::Actor(a2)), Some(Arg::Name(name))) = (args.first(), args.get(1), args.get(2)) else { return };
                 let (id, target) = (self.wid(*a1), self.wid(*a2));
-                let model = |w: &World, id: u32| w.actors.get(&id).is_some_and(|a| a.character.is_some());
-                if !model(self.w, id) || !model(self.w, target) {
-                    return;
-                }
-                if let Some(a) = self.w.actors.get_mut(&id) {
-                    if let Some(p) = a.pending.as_mut().filter(|p| p.kind == super::actmotion::Kind::Event && p.name == *name) {
-                        p.name.clear();
-                    }
-                    if let Some(p) = a.play.as_mut().filter(|p| p.name == *name) {
-                        p.stop();
-                    }
-                }
-                if let Ok(n) = <[u8; 4]>::try_from(name.as_bytes()) {
-                    self.w.effects.stop_actor_scheduler(id, u32::from_le_bytes(n));
-                }
+                self.stop_scheduler(id, target, name);
             }
             // FUN_100b7140: on a skeleton actor with a model (+0x120 bit 9), FUN_100ce070 gives every layer of its two
             // motion lists (+0x674 -> +0x44, lists +0x60 / +0x9c) FUN_1001b520(8.0): each plays on for 8 frames, then
@@ -989,8 +1001,14 @@ impl Host for LiveHost<'_> {
                 }
             }
             // FUN_100b53b0 also clears the model's default name (+0x7d8), so the default comes back now.
+            // Both first stop the scheduler the last motion op started on the actor (FUN_10087d40: vtable +0x29c on
+            // +0x1ec / +0x1f4, as op 0x50), so its later motions never start: the memorandoll's 'bru0' (Sparks
+            // intro) would go on to its looping 'br10' shake after op 0x6b set 'idl0'.
             Effect::IdleMotion { actor, name } => {
                 let id = self.wid(actor);
+                if let Some((sched, target)) = self.st.event_sched.get(&id).cloned() {
+                    self.stop_scheduler(id, target, &sched);
+                }
                 self.st.idle.insert(id, name);
                 if let Some(p) = self.w.actors.get_mut(&id).and_then(|a| a.play.as_mut()) {
                     p.cut();

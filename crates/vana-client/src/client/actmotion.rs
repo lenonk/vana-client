@@ -834,6 +834,30 @@ mod tests {
         assert!(p.over("run"));
     }
 
+    /// Event ops 0x5e / 0x6b on a scheduler started by a motion op: stopped, then cut, so its later looping motion
+    /// never starts (the memorandoll's 'bru0': once, then 'br10' looping from tick 480) and the idle shows.
+    #[test]
+    fn idle_motion_stops_event_scheduler() {
+        let m = |name: &str, at: u32, count: u8| sched::Motion { name: name.into(), at, speed: 1.0, ticks: 480, count, blend: 0 };
+        let mut p = Play {
+            name: "bru0".into(),
+            motions: vec![m("bru", 0, 1), m("br1", 480, 0)],
+            length: 592.0,
+            ticks: 120.0,
+            base: "idl".into(),
+            cut: -1.0,
+            stance_at: None,
+            end: None,
+        };
+        p.stop();
+        p.cut();
+        for t in [120.0, 480.0, 2000.0] {
+            p.ticks = t;
+            assert!(p.current().is_none());
+            assert!(p.over("idl"));
+        }
+    }
+
     /// Event op 0xd3: the looping motion plays 8 more ticks, then none; the scheduler stays busy as it was.
     #[test]
     fn motion_end_after_8() {
