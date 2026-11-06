@@ -12,6 +12,7 @@ pub mod cloth;
 mod battlemod;
 pub mod opening;
 mod flyover;
+mod rest;
 mod resttick;
 mod creator;
 mod netwait;
@@ -523,7 +524,7 @@ struct Entity {
     server_y: f32,
     raw_y: f32,
     floor_noted: bool,
-    /// +0x2a0: the master's ActIndex (s2c 0x067 kind 3 @0x0C; LSB sends it for our trusts), 0 none.
+    /// +0x2a4: the master's ActIndex (s2c 0x067 kind 3 @0x0C; LSB sends it for our trusts), 0 none.
     master: u16,
     /// +0x128 bit 29: the model's "init" ran (FUN_1008c480).
     init_done: bool,
@@ -4175,6 +4176,13 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             world.confirm = None;
             textcmd::run(world, "/dismount", textcmd::Mode::Internal);
         }
+        (Some(true), Some((Confirm::Disband, _))) => {
+            world.confirm = None;
+            if let Some(t) = world.target {
+                event::talk_with(world, t, 1);
+            }
+            world.action_menu = None;
+        }
         // LAB_101f7d40: c2s 0x0F6, the ring goes, scanlist opens.
         (Some(true), Some((Confirm::StopTracking, _))) => {
             world.confirm = None;
@@ -4474,6 +4482,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::Tractor, _) => gu.menu_msg(0x60, "Accept Tractor?"),
         (Confirm::StopTracking, _) => gu.menu_msg(0x45, "Stop tracking current target\nand proceed with wide area scan?"),
         (Confirm::Dismount, _) => gu.menu_msg(0x4d, "Dismount?"),
+        (Confirm::Disband, _) => gu.lobby_msg(0x0b, 0xb8, "Disband?"),
         (Confirm::Post(ctx), _) => post::confirm_text(gu, ctx),
         (Confirm::CancelTrade, _) => gu.lobby_msg(0x0c, 0x2d, "Cancel trade transaction?"),
         (Confirm::Ls(a), _) => linkshell::ask_text(gu, a),
@@ -5967,6 +5976,8 @@ struct World {
     anglers: HashMap<u32, fishrod::Angler>,
     /// /sitchair sitters' chairs (client/chair.rs).
     seats: HashMap<u32, chair::Seat>,
+    /// Resting actors' sit-down and stand-up (client/rest.rs).
+    rests: HashMap<u32, rest::Phase>,
     /// Event music fades (ops 0x5d, 0x5c 0xa0 / 0xa1): volume, ticks.
     music_fades: Vec<(i32, i32)>,
     /// The audio still changing music (event op 0x9a waits), as of the last frame.
@@ -6800,6 +6811,9 @@ enum Confirm {
     Drop { c: u8, index: u8, id: u16, stage: u8 },
     /// The action menu's Dismount (FUN_10210e30): group 0xe 0x4d "Dismount?"; Yes runs /dismount.
     Dismount,
+    /// The action menu's Disband on our adventuring fellow (FUN_1012b880 case 0x10): group 0xb 0xb8; Yes (LAB_1012bcc0)
+    /// talks to the target with parameter 1 and closes the menu.
+    Disband,
     /// post2's Dispose (2) / Return (3): group 9 0x34 / 0x35, default No.
     Post(u8),
     /// Trade again on the player we asked (FUN_10151e40): group 0xc 0x2d "Cancel trade transaction?".
@@ -8491,6 +8505,7 @@ impl App {
                             rides: HashMap::new(),
                             anglers: HashMap::new(),
                             seats: HashMap::new(),
+                            rests: HashMap::new(),
                             music_fades: Vec::new(),
                             music_changing: false,
                             music_state: -1,
@@ -9425,6 +9440,8 @@ impl App {
                     world.noreact.clear();
                     world.loads.clear();
                     world.knocks.clear();
+                    // A rest machine starts afresh in the new zone (rest.rs).
+                    world.rests.clear();
                     let current = world.zone == Some(zone) && world.scene == Some(scene);
                     let pending = world.loading == Some(zone) && world.loading_scene == scene;
                     if !current && !pending {
@@ -9470,6 +9487,7 @@ impl App {
                         if !event::holds(world, e.id) {
                             world.entities.remove(&e.id);
                             world.actors.remove(&e.id);
+                            world.rests.remove(&e.id);
                             world.effects.forget_actor(e.id);
                             timers::on_gone(world, e.id, false);
                         }
@@ -10739,6 +10757,7 @@ impl App {
         ride::update(world, dt);
         fishrod::update(world, dt);
         chair::update(world);
+        rest::update(world);
         indi::update(world, dt);
         border::update(world);
         racing::step(world, dt * 60.0);
@@ -10967,7 +10986,8 @@ impl App {
             self.stand_sent = false;
         }
         // Scheduler op 0x2e: the effect of our own action holds the walk input (FUN_100a5ec0 skips FUN_100a6240).
-        let move_locked = world.opts.move_lock && world.effects.rooted.contains(&world.my_id);
+        // `res2` (rest.rs) holds the walk the same way, from the frame it starts.
+        let move_locked = world.opts.move_lock && (world.effects.rooted.contains(&world.my_id) || rest::rising(world));
         if resting || move_locked {
             (ax, ay) = (0.0, 0.0);
         }
@@ -11008,8 +11028,9 @@ impl App {
             world.autorun = !world.autorun;
             world.autorun_dir = Vec3::ZERO;
         }
-        // Turning while autorunning steers it: the move goes forward and the turn counts as X input.
-        if world.autorun && turn != 0.0 {
+        // Turning while autorunning steers it: the move goes forward and the turn counts as X input. Not while a move
+        // lock (op 0x2e, our stand-up) holds the walk.
+        if world.autorun && turn != 0.0 && !move_locked {
             (ax, ay) = (turn, -1.0);
         }
         let mut step = right * ax - forward * ay;
@@ -11330,6 +11351,8 @@ impl App {
     /// The frame's key state, then the key functions that run outside any window.
     fn key_functions(&mut self, dt: f32) {
         let mut f = input::Frame { ticks: dt * 60.0, ..Default::default() };
+        // The frame's typed text, not yet handed to egui: a letter that opens the list search is typing already.
+        let starts_search = self.gfx.as_ref().is_some_and(|g| g.egui_state.egui_input().events.iter().any(|e| matches!(e, egui::Event::Text(t) if t.chars().next().is_some_and(|c| c.is_alphanumeric()))));
         if let Phase::World(w) = &self.phase {
             self.input.assign(&w.game);
             self.input.context = if w.map.is_some() || w.cnq.is_some() {
@@ -11341,7 +11364,8 @@ impl App {
             } else {
                 0xffff
             };
-            f.typing = text_field_open(w);
+            // Not with the UI hidden: the search gets no events then.
+            f.typing = text_field_open(w) || (!w.ui_hidden && starts_search && listsearch::can_run(w));
             f.keyboard = w.game.get(0x42);
             // A window has the keys: arrows go to it, not to the camera (the window-active state, MODLOG "Input
             // layer"). The log counts only while focused: Escape or another window unfocuses it and leaves the 0x78
@@ -13962,8 +13986,12 @@ impl App {
 
         let frame = match gfx.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
-            _ => {
+            other => {
+                // Outdated or lost (KWin's full-screen re-ask makes the swapchain stale): rebuilt, and the next frame
+                // asked for here, or the loop waits on events with nothing scheduled and the window stays frozen.
+                log::debug!("surface: no frame ({other:?}), configured again");
                 gfx.surface.configure(&gfx.gpu.device, &gfx.config);
+                self.next_frame = Some(Instant::now() + std::time::Duration::from_millis(16));
                 self.gfx = Some(gfx);
                 return;
             }

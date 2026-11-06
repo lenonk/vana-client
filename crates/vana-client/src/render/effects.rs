@@ -595,7 +595,7 @@ impl EffectsGpu {
             .create_view(&Default::default());
         let flare_u = buf("effects flare", std::mem::size_of::<FlareU>() as u64, U::UNIFORM | U::COPY_DST);
         let elems = buf("effects elements", n * w::WORDS as u64 * 4, U::STORAGE | U::COPY_DST | U::COPY_SRC);
-        let outs = buf("effects outs", n * OUT_WORDS as u64 * 4, U::STORAGE);
+        let outs = buf("effects outs", n * OUT_WORDS as u64 * 4, U::STORAGE | U::COPY_SRC);
         let back = buf("effects back", n * BACK_WORDS as u64 * 4, U::STORAGE | U::COPY_SRC);
         let parts = buf("effects particles", MAX_PARTS as u64 * PART_WORDS as u64 * 4, U::STORAGE | U::COPY_DST);
         let staging = (0..STAGES).map(|_| Staging { buf: buf("effects readback", n * BACK_WORDS as u64 * 4, U::MAP_READ | U::COPY_DST), state: 0, ready: Arc::new(AtomicBool::new(false)), words: 0 }).collect();
@@ -1517,6 +1517,61 @@ mod tests {
             let v = bytemuck::cast_slice(&rb.slice(..).get_mapped_range().unwrap()).to_vec();
             v
         }
+    }
+
+    impl EffectsGpu {
+        fn read_outs(&self, gpu: &Gpu, n: usize) -> Vec<f32> {
+            let size = (n * OUT_WORDS * 4) as u64;
+            let rb = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size, usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+            let mut enc = gpu.device.create_command_encoder(&Default::default());
+            enc.copy_buffer_to_buffer(&self.outs, 0, &rb, 0, size);
+            gpu.queue.submit([enc.finish()]);
+            rb.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+            gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
+            let v = bytemuck::cast_slice(&rb.slice(..).get_mapped_range().unwrap()).to_vec();
+            v
+        }
+    }
+
+    /// A timed element spawned this frame (ctl::BORN) is updated but not drawn: its t = 0 sample is the key's
+    /// placeholder (Heavens Tower's waterfall sheets flashed at full strength each respawn). It shows from the next
+    /// frame; an element without a life (t stays 0) shows at once, and so does a one-tick element (its only frame).
+    #[test]
+    fn gpu_born_hidden_one_frame() {
+        let Ok(gpu) = Gpu::headless() else { return };
+        let eye = glam::Vec3::new(0.0, 0.0, -10.0);
+        let view = glam::camera::rh::view::look_at_mat4(eye, glam::Vec3::ZERO, glam::Vec3::NEG_Y);
+        let mut view_rot = view;
+        view_rot.w_axis = glam::Vec4::W;
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view, view_rot, eye, draw_distance: 2000.0, area_light: glam::Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        let mut fx = Effects::new();
+        fx.reg.ops = vec![0];
+        fx.reg.ops_dirty = true;
+        for (k, life) in [60.0f32, 0.0, 1.0].into_iter().enumerate() {
+            let mut el = Elem::default();
+            el.0[w::STATE] = crate::fx::elem::st::ALIVE;
+            el.0[w::COLOR] = 0x8080_8080;
+            el.0[w::STREAM] = 0;
+            el.0[w::SERIAL] = 1 + k as u32;
+            el.0[w::PARENT] = crate::fx::elem::NONE;
+            el.set(w::LIFE, life);
+            el.set(w::MAX_LIFE, life);
+            el.0[w::CTRL] = crate::fx::elem::ctl::LIFE_SET | crate::fx::elem::ctl::BORN;
+            fx.writes.push(Write::Full(k as u32, Box::new(el)));
+            fx.elems.push(None);
+        }
+        let mut eg = EffectsGpu::new(&gpu, wgpu::TextureFormat::Rgba8UnormSrgb);
+        let mut shown = Vec::new();
+        for _ in 0..2 {
+            let mut enc = gpu.device.create_command_encoder(&Default::default());
+            eg.update(&gpu, &mut enc, &mut fx, &f);
+            gpu.queue.submit([enc.finish()]);
+            gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
+            let o = eg.read_outs(&gpu, 3);
+            shown.push((o[23], o[OUT_WORDS + 23], o[2 * OUT_WORDS + 23]));
+        }
+        // The one-tick element expires on the GPU's second update (life 0).
+        assert_eq!(shown, vec![(0.0, 1.0, 1.0), (1.0, 1.0, 0.0)]);
     }
 
     /// Update ops 0x53 and 0x60 as Tavnazian Safehold's thunder flash (t_ta/weat/thdr/wez4/frsh) carries them: an element 10 in

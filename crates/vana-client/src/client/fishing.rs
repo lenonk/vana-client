@@ -133,7 +133,7 @@ pub fn command(w: &mut World) {
     w.fish_pending = true;
 }
 
-fn forward(w: &World) -> glam::Vec3 {
+pub(super) fn forward(w: &World) -> glam::Vec3 {
     glam::Vec3::new(w.yaw.sin(), 0.0, w.yaw.cos())
 }
 

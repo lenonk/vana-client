@@ -556,4 +556,5 @@ Milestone 1:
   party's claim red, another's magenta).
 - Cursor on movement (ours, not retail): Settings > Misc. > Keys Hide the Cursor, off, keeps the mouse cursor shown
   while you walk with the keys. On, the default, hides it as retail does.
+- The first letter typed into a list's hidden search no longer also triggers its game hotkey.
 - Not yet: alliance rows live.
