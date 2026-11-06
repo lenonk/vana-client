@@ -114,6 +114,7 @@ const PAGES: [(&str, &str, &[Item]); 14] = [
     ("System", "Startup & Account", &[
         Head("Startup"), Ours("Opening Movie"), Ours("Simple Character Creation"), Ours("Screenshot Size"),
         Head("Account"), Retail("conf4", 3),
+        Head("Network"), Ours("Send Rate"),
     ]),
     ("System", "Mods", &[Head("Mods"), Open(SUB_MODS), Open(SUB_MOD_PAGES)]),
 ];
@@ -249,7 +250,6 @@ pub fn finding(w: &World) -> bool {
 }
 
 /// The search's typed text, Backspace, Escape and Ctrl+R (Retail only) while the Settings window shows a topic page.
-
 /// True when it took them (the game then sees none).
 pub fn find_events(w: &mut World, events: &[egui::Event]) -> bool {
     if !find_open(w) {
