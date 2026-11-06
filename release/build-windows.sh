@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 mkdir -p target/winstatic
 cp "$(x86_64-w64-mingw32-gcc -print-file-name=libwinpthread.a)" target/winstatic/libpthread.a
 RUSTFLAGS="-C target-cpu=x86-64-v2 -C target-feature=+crt-static -C link-arg=-static -L native=$PWD/target/winstatic" \
-    nice -n 19 taskset -c 0-11 cargo build --profile dist --target x86_64-pc-windows-gnu
+    nice -n 19 taskset -c "0-$(($(nproc) - 9))" cargo build --profile dist --target x86_64-pc-windows-gnu
 if x86_64-w64-mingw32-objdump -p target/x86_64-pc-windows-gnu/dist/vana-client.exe | grep -qi "DLL Name: libwinpthread"; then
     echo "the exe still imports libwinpthread-1.dll" >&2
     exit 1

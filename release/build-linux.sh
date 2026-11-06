@@ -4,7 +4,8 @@
 # target/steamrt/dist/vana-client, copied to target/assets/vana-client-linux-ARCH (the asset name the in-app Update
 # looks for). The SDK has no Rust: the host's stable rustup toolchain (its binaries need only glibc 2.17) and cargo
 # registry are mounted in and called directly (not through a rustup proxy, which may need the host's glibc).
-# VANA_CPUSET: the cores the build may use (default 0-11, leaving 12..15 to the LSB map server's watchdog; empty: all).
+# VANA_CPUSET: the cores the build may use (default all but the last 8, left to the LSB map server and its bots;
+# empty: all).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 arch=$(uname -m)
@@ -23,7 +24,7 @@ case "$arch" in
         ;;
 esac
 toolchain=/rustup/toolchains/stable-$arch-unknown-linux-gnu
-cpuset="${VANA_CPUSET-0-11}"
+cpuset="${VANA_CPUSET-0-$(($(nproc) - 9))}"
 cpus=()
 [ -n "$cpuset" ] && cpus=(--cpuset-cpus "$cpuset")
 mkdir -p "$HOME/.cargo"
