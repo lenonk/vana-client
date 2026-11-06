@@ -554,4 +554,11 @@ Milestone 1:
   names (a status id) rather than prints is kept as it is. Live: Warcry with a bot in the party.
 - The target panel's name in retail's name colour (FUN_1008db40 as the plates: unclaimed monster pale yellow, our
   party's claim red, another's magenta).
+- Right drag and autorun (ours, a deviation from retail): while the right drag turns the character to face where it
+  looks, autorun steers with it (the camera's forward), and X input strafes off the run (forward + sideways) instead
+  of turning it; a /follow or a mod's run (actions.run / run_to) keeps its own steering and facing.
+- Right click and autorun (ours, a deviation): a right click never stops autorun, a drag or not, in the field or on
+  the engaged action menu (retail's right release with no target, and its engaged right click, stop it; retail has
+  no right-drag camera). It still cancels a sub-target prompt and clears an unlocked target; Escape, Num7 and the
+  movement keys still stop autorun.
 - Not yet: alliance rows live.

@@ -290,11 +290,13 @@ pub(super) fn apply(w: &mut World, gu: Option<&GameUi>, a: Action) {
         Action::Run(heading) => {
             let h = heading.unwrap_or_else(|| super::super::event::rad_of(w.net.me.lock().map_or(0, |m| m.dir)));
             (w.autorun, w.autorun_dir, w.follow, w.run_to) = (true, Vec3::new(h.cos(), 0.0, -h.sin()), None, None);
+            w.mod_run = true;
         }
         Action::RunTo(x, z, within) => {
             let d = Vec3::new(x - w.pos.x, 0.0, z - w.pos.z);
             if d.length() > within.max(0.1) {
                 (w.autorun, w.autorun_dir, w.follow, w.run_to) = (true, d.normalize(), None, Some((x, z, within)));
+                w.mod_run = false;
             }
         }
         Action::Follow(id) => textcmd::run_unfiltered(w, &format!("/follow {id}"), textcmd::Mode::Internal),

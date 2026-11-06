@@ -3033,13 +3033,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if held && !monstrosity::active(world) {
         combat::right(world);
     }
-    if right_click {
-        if world.my_motion.status == 1 {
-            world.autorun = false;
-        } else {
-            world.action_menu = None;
-            world.sounds.push(crate::audio::Ui::Cancel as u32);
-        }
+    // Engaged, retail's right click (Escape) stops autorun here; ours never stops it with the mouse, since the right
+    // button also turns the camera, so engaged it does nothing.
+    if right_click && world.my_motion.status != 1 {
+        world.action_menu = None;
+        world.sounds.push(crate::audio::Ui::Cancel as u32);
     }
     if let Some(c) = act {
         // The generic window handler's Enter (FUN_10118260): 0002.
@@ -5412,6 +5410,12 @@ fn actor_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
     Some(p)
 }
 
+/// An autorun steered to somewhere (/follow, a mod's run or run_to): mouse look neither steers it nor turns the
+/// character off its path.
+fn directed_run(w: &World) -> bool {
+    w.autorun && (w.follow.is_some() || w.run_to.is_some() || w.mod_run)
+}
+
 /// Our run speed in units per second (FUN_100a48d0): Speed x0.1, doubled while riding (status 5 / 0x55), at most 30.
 fn own_speed(w: &World) -> f32 {
     let s = if w.my_motion.speed > 0 { w.my_motion.speed as f32 * 0.1 } else { RUN_SPEED };
@@ -6174,6 +6178,8 @@ struct World {
     autorun: bool,
     /// Ours (modern MMOs): a right drag turns the camera and the character faces where it looks.
     mouse_look: bool,
+    /// A mod's actions.run(heading) drives this autorun: mouse look leaves its heading alone.
+    mod_run: bool,
     /// The modern Journal's Records of Eminence tab and its entry (Current objectives, Objective List, Vana'Bout).
     journal_roe: Option<usize>,
     /// The modern Journal's rows have the keys (else its logs, areas or categories on the left).
@@ -7027,6 +7033,8 @@ pub struct App {
     /// When the left button went down, and the right one (where and when): the drag rule (FUN_10125040).
     press_time: Option<Instant>,
     right_press: Option<((f64, f64), Instant)>,
+    /// The camera turned during this right press: its release is a drag even with the pointer held still (locked).
+    right_looked: bool,
     /// Ours (modern MMOs): a look drag holds the pointer, hidden, where it began. Some(true) locked (raw motion turns
     /// the camera), Some(false) only confined (X11: warped back after each move).
     look_grab: Option<bool>,
@@ -7306,6 +7314,7 @@ impl App {
             press_at: None,
             press_time: None,
             right_press: None,
+            right_looked: false,
             look_grab: None,
             grab_at: None,
             swallow_click: false,
@@ -8333,6 +8342,7 @@ impl App {
                             walk: false,
                             autorun: false,
                             mouse_look: false,
+                            mod_run: false,
                             journal_roe: None,
                             journal_on_list: false,
                             equip_claims: Vec::new(),
@@ -11007,6 +11017,7 @@ impl App {
         if !in_event && self.input.test(0x1c, input::mode::PRESS) {
             world.autorun = !world.autorun;
             world.autorun_dir = Vec3::ZERO;
+            world.mod_run = false;
         }
         // Turning while autorunning steers it: the move goes forward and the turn counts as X input.
         if world.autorun && turn != 0.0 {
@@ -11066,23 +11077,37 @@ impl App {
             }
         }
         if world.autorun && !world.locked && !move_locked {
+            // Ours (modern MMOs, with the right drag's facing): mouse look steers autorun to the camera's forward, so the
+            // run goes where the character faces, and X input strafes off it (forward + sideways) instead of turning
+            // it. A follow or a mod's run keeps its own steering.
+            let look_steer = world.mouse_look && !directed_run(world);
+            if look_steer {
+                world.autorun_dir = forward;
+            }
             if world.autorun_dir == Vec3::ZERO && step != Vec3::ZERO {
                 world.autorun_dir = step.normalize();
             }
             if world.autorun_dir == Vec3::ZERO {
                 world.autorun = false;
             } else {
-                if ax != 0.0 {
+                if ax != 0.0 && !look_steer {
                     let d = world.autorun_dir;
                     let a = d.x.atan2(d.z) + 2.0 * ax * ticks * 0.017452778;
                     world.autorun_dir = Vec3::new(a.sin(), 0.0, a.cos());
                 }
-                step = if touching { Vec3::ZERO } else { world.autorun_dir };
+                step = if touching {
+                    Vec3::ZERO
+                } else if look_steer && ax != 0.0 {
+                    (world.autorun_dir + right * ax).normalize()
+                } else {
+                    world.autorun_dir
+                };
             }
         }
         if !world.autorun {
             world.autorun_dir = Vec3::ZERO;
             world.run_to = None;
+            world.mod_run = false;
             // Autorun ending for any reason ends the follow: group 9 0x41 "Follow canceled.".
             if world.follow.take().is_some() {
                 textcmd::log9(world, 0x41);
@@ -11283,7 +11308,7 @@ impl App {
             // Standing still keeps the facing; only the camera turns. Locked, we face the target.
             let to = if let Some((_, Some(y))) = pin {
                 Some(Vec3::new(y.cos(), 0.0, -y.sin()))
-            } else if lock_target.is_some() || face_cam || world.mouse_look || (turn != 0.0 && !stepping) {
+            } else if lock_target.is_some() || face_cam || (world.mouse_look && !directed_run(world)) || (turn != 0.0 && !stepping) {
                 Some(face)
             } else if stepping {
                 Some(step.normalize())
@@ -11694,6 +11719,9 @@ impl App {
     /// inverts its axes); with the right button the character faces where it looks (modern MMOs); in first person it
     /// turns the look itself.
     fn look(&mut self, dx: f64, dy: f64) {
+        if self.dragging && (dx != 0.0 || dy != 0.0) {
+            self.right_looked = true;
+        }
         let right = self.dragging;
         let Phase::World(world) = &mut self.phase else { return };
         let inv = |w: &World, id: u16| if w.game.get(id) == 1 { -1.0 } else { 1.0 };
@@ -11791,8 +11819,10 @@ impl App {
             MouseButton::Right => {
                 if pressed {
                     self.right_press = self.last_cursor.map(|c| (c, Instant::now()));
+                    self.right_looked = false;
                 } else if let Some((b, drag)) = release(self.right_press.take(), self.last_cursor, self.ui_k) {
-                    self.swallow_click |= world_click(&mut self.phase, b, false, drag);
+                    let looked = std::mem::take(&mut self.right_looked);
+                    self.swallow_click |= world_click(&mut self.phase, b, false, drag || looked);
                 }
                 self.dragging = pressed;
             }
@@ -13812,6 +13842,7 @@ impl App {
                 let d = world.cam.look - world.cam.eye;
                 world.autorun = !world.autorun;
                 world.autorun_dir = Vec3::new(d.x, 0.0, d.z).normalize_or_zero();
+                world.mod_run = false;
             }
             // act:fxdump logs every live effect element and the player's position.
             if let (Some("fxdump"), Phase::World(world)) = (action.as_deref(), &self.phase) {

@@ -780,7 +780,7 @@ pub fn confirm_target(w: &mut World) {
 /// FUN_101585f0 for a mouse release (results 0x16 left / 0x17 right). Left: locked (no prompt) confirms without a
 /// pick; else the actor under the pointer becomes the target / the prompt's pick, and a click that leaves it as it
 /// was confirms (the prompt, the target, or with none the action menu). After a drag only the pick runs. Right:
-/// cancels the prompt, clears an unlocked target, or with none stops autorun. True when it confirmed.
+/// cancels the prompt or clears an unlocked target (retail's stop of autorun with none is left out, ours). True when it confirmed.
 pub fn click(w: &mut World, picked: Option<u32>, left: bool, drag: bool) -> bool {
     log::debug!("world click left {left} drag {drag} picked {picked:?} target {:?}", w.target);
     if !left {
@@ -790,9 +790,9 @@ pub fn click(w: &mut World, picked: Option<u32>, left: bool, drag: bool) -> bool
             if picks_allowed(w) {
                 set(w, None);
             }
-        } else if w.autorun {
-            w.autorun = false;
         }
+        // Ours: retail's right release with no target stops autorun; ours never does (the right button also turns the
+        // camera). Escape, Num7 and the movement keys still stop it.
         return false;
     }
     if w.locked && !sub_up(w) {
