@@ -2079,7 +2079,12 @@ mod tests {
         // Two letters only match names.
         c.m_find = Some("zo".into());
         refresh_hits(None, &mut c, &v, Some(&s));
-        assert!(view_items(&c).iter().all(|i| matches!(i, Head(_))) || view_items(&c).is_empty());
+        // Stick Dead Zone has it in its name; none comes from its help.
+        assert!(view_items(&c).iter().all(|i| match i {
+            Head(_) => true,
+            Ours(l) => l.to_lowercase().contains("zo"),
+            _ => false,
+        }), "{:?}", view_items(&c));
         c.m_find = None;
         refresh_hits(None, &mut c, &v, Some(&s));
         c.m_entry = PAGES.iter().position(|p| p.1 == "Lighting & Shadows").unwrap();
