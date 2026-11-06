@@ -22192,6 +22192,11 @@ Checked in Steven's unpacked FFXiMain.dll (sha256 8097dbf8..., 2026-11-03).
   actmotion::Pending now carries op 0x2c's target (when it is another actor in the zone) and the scheduler's effect
   side runs with it as actor2 (fx `on_scheduler_quiet_on`). Ops 0x5b / 0x66 are unchanged.
 - Not yet seen live in game.
+- 2026-11-05: still nothing in game (Windurst Woods event 0x21fd). The 'bind' op is the event's last op before
+  `event_end`, and ours only queued op 0x2c in the actor's pending slot for the next frame's actmotion update; the
+  event ended in the same VM tick and finish() dropped the pending motion, so neither the motion nor its effect side
+  ever started. FUN_100b2f80 calls vtable +0x298 at once (op 0x2c plays only from files the actor already has), so
+  the Motion handler now starts op 0x2c right away (actmotion::start_pending). The fx task outlives the event end.
 
 ## Send Rate and zone preloading (2026-11-04, ours, not retail)
 

@@ -924,6 +924,15 @@ impl Host for LiveHost<'_> {
                     let files = motion_files(op, file, id, a);
                     a.pending = Some(super::actmotion::Pending { files, name, kind: super::actmotion::Kind::Event, target });
                 }
+                // FUN_100b2f80 calls +0x298 at once: op 0x2c plays from files the actor already has, so it starts now.
+                // The home point's 'bind' is the event's last op before event_end, and finish() drops a motion still
+                // waiting in the pending slot, so a start left to the next frame never ran.
+                if op == 0x2c
+                    && let Some(index) = self.w.index.clone()
+                {
+                    let posed = self.st.poses.get(&id).map(|p| p.drawn(p.since).ratio);
+                    super::actmotion::start_pending(self.w, id, &index, posed);
+                }
             }
             // FUN_100b4d10: both actors in the zone with a model, then actor@1's model vtable +0x29c(4cc@9, actor@5's
             // model) (FUN_10084cc0: the type-7 resource of that name, its files first, then FUN_10056ef0 deletes
