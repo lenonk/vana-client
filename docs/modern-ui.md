@@ -554,4 +554,6 @@ Milestone 1:
   names (a status id) rather than prints is kept as it is. Live: Warcry with a bot in the party.
 - The target panel's name in retail's name colour (FUN_1008db40 as the plates: unclaimed monster pale yellow, our
   party's claim red, another's magenta).
+- Cursor on movement (ours, not retail): in the Modern UI a key press (walking included) no longer hides the
+  mouse cursor; the classic UI still hides it as retail does.
 - Not yet: alliance rows live.
