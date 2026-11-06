@@ -191,6 +191,9 @@ pub struct Config {
     pub ssao: bool,
     /// Extra (the clock add-ons): Earth time, the moon and the next day beside the Vana'diel clock (client/clock.rs).
     pub earth_clock: bool,
+    /// The Game Master window (ours, client/gm.rs): its request (c2s 0x1F0) goes out at a zone-in only while this is
+    /// on and only to a private server; off sends nothing for it.
+    pub gm_window: bool,
     /// Extra (the trust chatter filters): trusts' party lines (battle message 711) are not printed.
     pub hide_trust_speech: bool,
     /// Extra (Battlemod's filters): "readies" / "starts casting" lines only for us and monsters.
@@ -408,6 +411,7 @@ impl Default for Config {
             target_distance: false,
             target_hpp: false,
             earth_clock: false,
+            gm_window: false,
             lamp_lights: true,
             actor_shadows: 0,
             shadow_map: 2048,

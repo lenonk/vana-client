@@ -808,6 +808,8 @@ pub struct NetStats {
     pub send_ms: std::sync::atomic::AtomicU32,
     /// Settings' Send Rate in ms, used on a private server when no mod sets one (0 before the first frame sets it).
     pub rate_ms: std::sync::atomic::AtomicU32,
+    /// Settings' GM Window: the zone-in asks a private server for the GM list (c2s 0x1F0).
+    pub gm_window: std::sync::atomic::AtomicBool,
     /// The last sub-packet of each id each way (packets.last), kept while HOOK_LAST is set.
     pub last_in: Mutex<std::collections::HashMap<u16, Vec<u8>>>,
     pub last_out: Mutex<std::collections::HashMap<u16, Vec<u8>>>,
@@ -1261,8 +1263,11 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         my_index = p.u16(8);
                         queue.push(build(0x00C, &[0u8; 8]));
                         queue.push(build(0x011, &[2, 0, 0, 0]));
-                        // Ours: ask for the GM level and command list (c2s 0x1F0, akreao/lsb); other servers ignore it.
-                        queue.push(build(0x1F0, &super::gm::CATALOG_REQUEST));
+                        // Ours: the GM level and command list (c2s 0x1F0), only to a private server and only with GM
+                        // Window on (a server without the extension logs an unknown packet).
+                        if login.lsb.is_some() && stats.gm_window.load(Relaxed) {
+                            queue.push(build(0x1F0, &super::gm::CATALOG_REQUEST));
+                        }
                         // EventNum @0x62, EventPara @0x64, EventMode @0x66, EventNo @0x40: the client starts
                         // the login event itself, on the player (FUN_10094ea0).
                         let (event_num, event_para) = (p.u16(0x62), p.u16(0x64));

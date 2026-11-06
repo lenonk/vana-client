@@ -1,5 +1,5 @@
-//! Ours (not retail): the GM window's data. With a server that speaks our packets (akreao/lsb #4), the client asks
-//! for its GM level and command list at each zone-in (c2s 0x1F0), and the server answers with the real level
+//! Ours (not retail): the GM window's data. With Settings' GM Window on and a private server whose GM tools speak these
+//! packets, the client asks for its GM level and command list at each zone-in (c2s 0x1F0); the server answers with the real level
 //! (`m_GMlevel`, not the name badge) and the commands that level may use, in pages (s2c 0x1F0). A command runs
 //! through c2s 0x1F1, not the chat line; s2c 0x1F1 says whether it ran and carries what it printed.
 //! gm_fields.txt adds what the server doesn't send: each command's group, a warning for the risky ones, and a
@@ -111,7 +111,6 @@ pub struct Command {
     pub types: String,
     pub group: &'static str,
     pub danger: bool,
-    pub desc: String,
     pub fields: Vec<Field>,
 }
 
@@ -163,7 +162,6 @@ pub const MAX_LINE: usize = 248;
 struct Extra {
     group: &'static str,
     danger: bool,
-    desc: &'static str,
     fields: Vec<Field>,
 }
 
@@ -171,7 +169,7 @@ fn extras() -> HashMap<&'static str, Extra> {
     let mut out = HashMap::new();
     for line in include_str!("gm_fields.txt").lines().filter(|l| !l.starts_with('#') && !l.is_empty()) {
         let col: Vec<&'static str> = line.split('\t').collect();
-        let [name, group, danger, desc, fields] = col[..] else { continue };
+        let [name, group, danger, _, fields] = col[..] else { continue };
         let group = GROUPS.iter().find(|g| g.0 == group).map_or("debug", |g| g.0);
         // A label can hold '|' (alternatives such as "mobId|npcId"): a piece without '~' joins the next one.
         let mut list: Vec<Field> = Vec::new();
@@ -192,7 +190,7 @@ fn extras() -> HashMap<&'static str, Extra> {
             list[..l].iter_mut().for_each(|f| f.optional = false);
         }
         let fields = list;
-        out.insert(name, Extra { group, danger: danger == "1", desc, fields });
+        out.insert(name, Extra { group, danger: danger == "1", fields });
     }
     out
 }
@@ -209,14 +207,14 @@ fn command(extra: &HashMap<&'static str, Extra>, name: String, level: u8, types:
                     fields.push(Field { label: format!("field {}", i + 1), pick: if t == b'i' { Pick::Number } else { Pick::Text }, optional: true });
                 }
             }
-            Command { name, level, types, group: e.group, danger: e.danger, desc: e.desc.to_string(), fields }
+            Command { name, level, types, group: e.group, danger: e.danger, fields }
         }
         None => {
             let fields = match types.as_str() {
                 "b" | "s" => vec![Field { label: "arguments".into(), pick: Pick::Text, optional: true }],
                 _ => types.bytes().enumerate().map(|(i, t)| Field { label: format!("field {}", i + 1), pick: if t == b'i' { Pick::Number } else { Pick::Text }, optional: true }).collect(),
             };
-            Command { name, level, types, group: "debug", danger: false, desc: String::new(), fields }
+            Command { name, level, types, group: "debug", danger: false, fields }
         }
     }
 }
@@ -268,6 +266,10 @@ pub struct Gm {
     pub augments: bool,
     /// Each picker's choices once built (the item list takes a moment, so only when first needed).
     pub lists: HashMap<Pick, Choices>,
+    /// When the party and zone lists were last rebuilt (at most twice a second, not every frame).
+    pub lists_at: Option<std::time::Instant>,
+    /// The last field lookup (pick, list size, typed text) and its suggestions and exact match, kept while the text is.
+    found: std::cell::RefCell<Option<((Pick, usize, String), Found)>>,
     loading: Vec<(Pick, std::sync::mpsc::Receiver<Choices>)>,
     next_id: u16,
     /// Replies by request id, newest last; a few kept.
@@ -336,6 +338,13 @@ pub fn suggest<'a>(choices: &'a [(String, String)], typed: &str, max: usize) -> 
     hits.into_iter().take(max).map(|h| h.1).collect()
 }
 
+/// A field's lookup: up to a few suggestions, and the choice the text names exactly (its id or its name).
+#[derive(Clone, Default)]
+pub struct Found {
+    pub hits: Vec<(String, String)>,
+    pub known: Option<(String, String)>,
+}
+
 /// Rows per page in the list.
 pub const PER_PAGE: usize = 9;
 
@@ -388,14 +397,31 @@ impl Gm {
         }
     }
 
-    /// The commands the rail's group and the search show.
+    /// The commands the rail's group and the search (by name) show.
     pub fn shown(&self) -> Vec<&Command> {
         let q = self.find.trim().to_lowercase();
         self.commands
             .iter()
             .filter(|c| self.group.is_none_or(|g| GROUPS.get(g).is_some_and(|k| k.0 == c.group)))
-            .filter(|c| q.is_empty() || c.name.contains(&q) || c.desc.to_lowercase().contains(&q))
+            .filter(|c| q.is_empty() || c.name.contains(&q))
             .collect()
+    }
+
+    /// `pick`'s suggestions for `typed` and the choice it names exactly, worked out again only when the text or the
+    /// list changes (a list can hold every item).
+    pub fn lookup(&self, pick: Pick, typed: &str, max: usize) -> Found {
+        let Some(list) = self.lists.get(&pick) else { return Found::default() };
+        let key = (pick, list.len(), typed.to_string());
+        if let Some((k, f)) = self.found.borrow().as_ref()
+            && *k == key
+        {
+            return f.clone();
+        }
+        let t = typed.trim();
+        let known = (!t.is_empty()).then(|| list.iter().find(|(id, n)| id == t || n.eq_ignore_ascii_case(t)).cloned()).flatten();
+        let f = Found { hits: suggest(list, typed, max).into_iter().cloned().collect(), known };
+        *self.found.borrow_mut() = Some((key, f.clone()));
+        f
     }
 
     /// Builds the choices the chosen command's pickers need: fixed lists, the name tables, the party and the

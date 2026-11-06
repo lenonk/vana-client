@@ -28,6 +28,7 @@ pub struct Settings {
     pub target_distance: bool,
     pub target_hpp: bool,
     pub earth_clock: bool,
+    pub gm_window: bool,
     pub lamp_lights: bool,
     pub actor_shadows: u32,
     pub shadow_map: u32,
@@ -84,6 +85,7 @@ impl Settings {
             target_distance: c.target_distance,
             target_hpp: c.target_hpp,
             earth_clock: c.earth_clock,
+            gm_window: c.gm_window,
             lamp_lights: c.lamp_lights,
             actor_shadows: c.actor_shadows,
             shadow_map: c.shadow_map,
@@ -137,6 +139,7 @@ impl Settings {
         c.target_distance = self.target_distance;
         c.target_hpp = self.target_hpp;
         c.earth_clock = self.earth_clock;
+        c.gm_window = self.gm_window;
         c.lamp_lights = self.lamp_lights;
         c.actor_shadows = self.actor_shadows;
         c.shadow_map = self.shadow_map;
@@ -201,6 +204,7 @@ enum Val {
     TargetDistance,
     TargetHpp,
     EarthClock,
+    GmWindow,
     LampLights,
     ActorShadows,
     ShadowMap,
@@ -400,6 +404,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [SRow] 
         row("Synthesis Amount", "After you press Synthesize, asks how many to make and crafts them one after another.", SynthAmount, OFF_ON, Now),
         row("Timestamps on All Lines", "Puts the time on every chat log line, not only chat.", StampAll, OFF_ON, Now),
         row("Clock", "Shows Earth time, the moon phase and the next Vana'diel day next to the game's clock.", EarthClock, OFF_ON, Now),
+        row("GM Window", "On a private server whose GM tools offer it, a Game Master window in the Command Menu for a GM. Off, the client never asks for it. Takes effect at the next zone (not retail).", GmWindow, OFF_ON, NextZone),
         row("Text Auto-Advance", "Event messages that wait for a key move on by themselves after this many seconds.", AutoAdvance, &[(0, "OFF"), (3, "3 s"), (5, "5 s"), (8, "8 s")], Now),
     ];
     match kind {
@@ -571,6 +576,7 @@ impl SettingsUi {
             Val::TargetDistance => self.s.target_distance as u32,
             Val::TargetHpp => self.s.target_hpp as u32,
             Val::EarthClock => self.s.earth_clock as u32,
+            Val::GmWindow => self.s.gm_window as u32,
             Val::LampLights => self.s.lamp_lights as u32,
             Val::ActorShadows => self.s.actor_shadows,
             Val::ShadowMap => self.s.shadow_map,
@@ -618,6 +624,7 @@ impl SettingsUi {
             Val::TargetDistance => self.s.target_distance = x != 0,
             Val::TargetHpp => self.s.target_hpp = x != 0,
             Val::EarthClock => self.s.earth_clock = x != 0,
+            Val::GmWindow => self.s.gm_window = x != 0,
             Val::LampLights => self.s.lamp_lights = x != 0,
             Val::ActorShadows => self.s.actor_shadows = x,
             Val::ShadowMap => self.s.shadow_map = x,

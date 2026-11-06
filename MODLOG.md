@@ -22505,19 +22505,13 @@ Character Shadows (config `actor_shadows`: 0 Retail, 1 Real), Shadow Quality (`s
   render::lampshadow (framing, lamp choice), render::faded_tests::zone_renders_with_lamp_shadows (an empty zone: its
   depth pass never runs). The lamp depth pass is not seen live yet (Southern San d'Oria's lamps are all data lights).
 
-## The GM window's text fields keep their keys (2026-11-05, ours)
+## Game Master window (ours) (2026-11-06)
 
-- The GM window (modern/gmwin.rs) took the typed text from the egui events, but the key functions (input.rs, run first
-  in `key_functions`) only knew the fields listed in `typing_elsewhere`, so each letter typed there also fired its game
-  hotkey. It now counts as typing while it has the keys (`gmwin::takes_keys`: shown, nothing over it, no event). Key
-  functions with mask 0x41 then fail, as for the chat line. Its footer says "Vana Client only" instead of "Ours".
+Ours, not retail: the retail client has no GM menu. Needs Settings' GM Window (config `gm_window`, off by default) and
+a private server whose GM tools speak these packets; without them nothing is sent and the window never shows.
 
-## Game Master window (ours) (2026-11-05)
-
-Ours, not retail: the retail client has no GM menu. Needs a server with akreao/lsb #4's packets; other servers
-ignore the request and the window never shows.
-
-- At each zone-in the client sends c2s 0x1F0 {u8 Version = 1, padding}. The server answers with s2c 0x1F0 pages:
+- At each zone-in, on a private server (never a PlayOnline session) with GM Window on, the client sends c2s 0x1F0
+  {u8 Version = 1, padding}; a server without the extension logs it as an unknown packet, hence the setting. The server answers with s2c 0x1F0 pages:
   u8 Version @4, GmLevel @5 (the real `m_GMlevel`, not the 0x037 badge, which reads 0 while hidden and the same
   for levels 4 and 5), u16 Total @6, First @8, u8 Count @0xA, Flags @0xB (bit 0 last page), then entries of
   u8 Permission, NameLen, ParamsLen, the name and its cmdprops parameter string. Only commands at or below the
@@ -22525,11 +22519,16 @@ ignore the request and the window never shows.
 - The Command Menu gains a last row, Game Master, while that level is above 0 (`modern/command.rs`).
 - The window (`modern/gmwin.rs`): groups down the left with counts, the commands 9 to a page with a search, the
   chosen command's fields at the right with its line, Run and Clear, and the server's replies. Fields, labels,
-  groups and the risky commands' second press come from `client/gm_fields.txt`, made from lsb's
-  `scripts/commands/*.lua` usage lines; a command the server lists but the file doesn't gets plain fields from
-  its type string. The line is checked as lsb's parser reads it: fields in order, split on spaces, `i` fields
+  groups and the risky commands' second press come from `client/gm_fields.txt`, from each command's usage line
+  (no description text: a row shows its fields); a command the server lists but the file doesn't gets plain fields
+  from its type string. The line is checked as lsb's parser reads it: fields in order, split on spaces, `i` fields
   numbers. Pickers so far: Use target (mob/NPC ids), Use my position (x/y/z), augments folded away.
 - Run sends c2s 0x1F1 {u16 RequestId, u8 Length, padding, the line without '!'}, not a chat line. s2c 0x1F1
   {u16 RequestId, u8 Result (0 ran, 1 failed, 2 refused), Flags (bit 0 last, bit 1 cut short), Count, padding,
   lines of u8 length + text} carries what the command printed, shown under Server replies.
+- Keys: the fields and the search are typing (`gmwin::takes_keys`), so key functions with mask 0x41 fail for them.
+  Enter runs on its press, not its repeat (in the search it ends the search); a risky command's second press is
+  taken back by any change of its fields or focus; Up / Down pick a command, Left / Right turn the page.
+- The party and zone pickers are rebuilt twice a second, and a field's suggestions and exact match only when its
+  text or list changes (`Gm::lookup`; the item list holds every item).
 - `vana-client modern-shot --gm` draws a level 5 sample.

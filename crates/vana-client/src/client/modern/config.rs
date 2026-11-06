@@ -108,7 +108,7 @@ const PAGES: [(&str, &str, &[Item]); 14] = [
     ("System", "Startup & Account", &[
         Head("Startup"), Ours("Opening Movie"), Ours("Simple Character Creation"), Ours("Screenshot Size"),
         Head("Account"), Retail("conf4", 3),
-        Head("Network"), Ours("Send Rate"),
+        Head("Network"), Ours("Send Rate"), Ours("GM Window"),
     ]),
     ("System", "Mods", &[Head("Mods"), Open(SUB_MODS), Open(SUB_MOD_PAGES)]),
 ];

@@ -2,7 +2,8 @@
 //! (shown only while the server gives a GM level above 0, client/gm.rs). Built like the Settings window: the groups
 //! down the left, the level's commands in pages in the middle, the chosen command's fields and the server's replies
 //! at the right. Runs go out as c2s 0x1F1, not as a chat line. The mouse picks; typed text goes to the search or the
-//! field last clicked, Tab moves to the next field, Enter runs, Escape leaves the field, then the window.
+//! field last clicked, Tab moves to the next field, Up / Down pick a command and Left / Right turn the page, Enter
+//! runs (in the search it ends the search), Escape leaves the field, then the window.
 
 use super::super::World;
 use super::super::gm::{self, Command, Pick};
@@ -37,7 +38,7 @@ pub fn shown(w: &World) -> bool {
 
 /// The window takes the typed text (no other window, dialog or event over it): its keys are no game keys.
 pub fn takes_keys(w: &World) -> bool {
-    // Another window or dialog over it (opened later, or an event) keeps its own keys.
+    // Another window or dialog over it (opened later, or an event) keeps the keys.
     shown(w) && !super::super::window_over_actions(w) && w.prompt.is_none() && !super::super::event::active(w)
 }
 
@@ -88,7 +89,28 @@ pub fn events(w: &mut World, events: &[egui::Event]) -> bool {
                 });
                 g.find_typing = false;
             }
-            egui::Event::Key { key: egui::Key::Enter, pressed: true, .. } if sel.is_some() => run = true,
+            // A held Enter repeats: only its press runs (and arms a risky command's second press).
+            egui::Event::Key { key: egui::Key::Enter, pressed: true, repeat: false, .. } if g.find_typing => g.find_typing = false,
+            egui::Event::Key { key: egui::Key::Enter, pressed: true, repeat: false, .. } if sel.is_some() => run = true,
+            egui::Event::Key { key: k @ (egui::Key::ArrowUp | egui::Key::ArrowDown), pressed: true, .. } if g.typing.is_none() => {
+                let names: Vec<String> = g.shown().iter().map(|c| c.name.clone()).collect();
+                if !names.is_empty() {
+                    let at = sel.as_ref().and_then(|s| names.iter().position(|n| n == s));
+                    let next = match (at, *k == egui::Key::ArrowDown) {
+                        (None, _) => 0,
+                        (Some(i), true) => (i + 1).min(names.len() - 1),
+                        (Some(i), false) => i.saturating_sub(1),
+                    };
+                    (g.selected, g.page, g.armed, g.find_typing) = (Some(names[next].clone()), next / gm::PER_PAGE, false, false);
+                    w.sounds.push(Se::Cursor as u32);
+                }
+            }
+            egui::Event::Key { key: k @ (egui::Key::ArrowLeft | egui::Key::ArrowRight), pressed: true, .. } if g.typing.is_none() && !g.find_typing => {
+                let pages = g.shown().len().div_ceil(gm::PER_PAGE).max(1);
+                let page = g.page.min(pages - 1);
+                g.page = if *k == egui::Key::ArrowRight { (page + 1).min(pages - 1) } else { page.saturating_sub(1) };
+                w.sounds.push(Se::Cursor as u32);
+            }
             egui::Event::Key { key: egui::Key::Escape, pressed: true, .. } => {
                 if g.typing.is_some() || g.find_typing {
                     (g.typing, g.find_typing) = (None, false);
@@ -164,8 +186,9 @@ fn list(ui: &mut Ui, m: &super::Modern, g: &gm::Gm, click: &mut Option<Click>) {
             let face = if on { "controls/list_row_selected" } else if resp.hovered() { "controls/list_row_hover" } else { "controls/list_row_normal" };
             super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
             ui.painter().text(pos2(r.min.x + 12.0, r.min.y + 14.0), Align2::LEFT_CENTER, format!("!{}", c.name), FontId::monospace(m.theme.small), if on { m.theme.color("gold") } else { m.theme.color("text") });
-            let desc = if c.desc.is_empty() { "No description in the script." } else { &c.desc };
-            let desc = kit::elide(ui, desc, &FontId::proportional(m.theme.small), LIST_W - 110.0);
+            // Its fields, as a summary (the scripts' descriptions are the server's to send).
+            let desc = if c.fields.is_empty() { "No fields".to_string() } else { c.fields.iter().map(|f| if f.optional { format!("[{}]", f.label) } else { f.label.clone() }).collect::<Vec<_>>().join(", ") };
+            let desc = kit::elide(ui, &desc, &FontId::proportional(m.theme.small), LIST_W - 110.0);
             text(ui, pos2(r.min.x + 12.0, r.max.y - 12.0), Align2::LEFT_CENTER, &desc, m.theme.small, m.theme.color("muted"));
             let tag = if c.danger { format!("Danger · GM {}", c.level) } else { format!("GM {}", c.level) };
             text(ui, pos2(r.max.x - 10.0, r.min.y + 14.0), Align2::RIGHT_CENTER, &tag, m.theme.small, if c.danger { m.theme.color("hp") } else { m.theme.color("bronze") });
@@ -200,9 +223,6 @@ fn detail(ui: &mut Ui, m: &super::Modern, g: &gm::Gm, target: Option<u32>, click
             return;
         };
         heading(ui, m, &format!("!{} · needs GM {}", c.name, c.level));
-        if !c.desc.is_empty() {
-            ui.label(egui::RichText::new(&c.desc).size(m.theme.small).color(m.theme.color("text")));
-        }
         if c.danger {
             ui.label(egui::RichText::new("This command can delete data, disrupt the server or affect other players. Run asks twice.").size(m.theme.small).color(m.theme.color("hp")));
         }
@@ -213,13 +233,16 @@ fn detail(ui: &mut Ui, m: &super::Modern, g: &gm::Gm, target: Option<u32>, click
         }
         let mut coords = false;
         let augs = c.fields.iter().filter(|f| f.pick == Pick::Augment).count();
-        for (i, f) in c.fields.iter().enumerate() {
-            if f.pick == Pick::Augment && !g.augments && !result.as_ref().err().is_some_and(|e| e.0 == i) && values[i].is_empty() {
-                continue;
+        // A long form (!additem's augments) scrolls rather than running off the screen.
+        kit::scroll(ui, "gm fields", 430.0, |ui| {
+            for (i, f) in c.fields.iter().enumerate() {
+                if f.pick == Pick::Augment && !g.augments && !result.as_ref().err().is_some_and(|e| e.0 == i) && values[i].is_empty() {
+                    continue;
+                }
+                field(ui, m, g, c, f, i, &values[i], result.as_ref().err().is_some_and(|e| e.0 == i), target, click);
+                coords |= f.pick == Pick::Coord;
             }
-            field(ui, m, g, c, f, i, &values[i], result.as_ref().err().is_some_and(|e| e.0 == i), target, click);
-            coords |= f.pick == Pick::Coord;
-        }
+        });
         if augs > 0 {
             let b = Btn { lit: g.augments, ..Default::default() };
             let label = if g.augments { "Hide augments".to_string() } else { format!("Augments ({} pairs)", augs / 2) };
@@ -258,6 +281,7 @@ fn detail(ui: &mut Ui, m: &super::Modern, g: &gm::Gm, target: Option<u32>, click
 fn field(ui: &mut Ui, m: &super::Modern, g: &gm::Gm, c: &Command, f: &gm::Field, i: usize, value: &str, bad: bool, target: Option<u32>, click: &mut Option<Click>) {
     let typing = g.typing == Some(i);
     let list = g.lists.get(&f.pick);
+    let found = if list.is_some() { g.lookup(f.pick, value, SUGGEST) } else { gm::Found::default() };
     let label = if f.optional { format!("{} (optional)", f.label) } else { f.label.clone() };
     ui.label(egui::RichText::new(label).size(m.theme.small).color(if bad { m.theme.color("hp") } else { m.theme.color("text") }));
     ui.horizontal(|ui| {
@@ -274,22 +298,19 @@ fn field(ui: &mut Ui, m: &super::Modern, g: &gm::Gm, c: &Command, f: &gm::Field,
             }
         }
     });
-    // The name behind a typed id (or the id behind a typed name), so a number reads as what it is.
-    let known = list.and_then(|l| {
-        let t = value.trim();
-        l.iter().find(|(id, n)| !t.is_empty() && (id == t || n.eq_ignore_ascii_case(t)))
-    });
+    // The name behind a typed id, or the id behind a typed name (the line sends what was typed).
+    let known = found.known.as_ref();
     let hint = match known {
         Some((id, n)) if id == value.trim() => n.clone(),
-        Some((id, _)) => format!("Sends {id}."),
+        Some((id, n)) => format!("{n}: id {id}."),
         None => f.pick.hint().to_string(),
     };
     if !hint.is_empty() {
         ui.label(egui::RichText::new(hint).size(m.theme.small * 0.9).color(m.theme.color(if known.is_some() { "gold" } else { "muted" })));
     }
-    if let (true, Some(l)) = (typing, list) {
-        let hits = gm::suggest(l, value, SUGGEST);
-        if !hits.is_empty() && known.is_none_or(|k| hits.len() > 1 || hits[0] != k) {
+    if let (true, Some(_)) = (typing, list) {
+        let hits = &found.hits;
+        if !hits.is_empty() && known.is_none_or(|k| hits.len() > 1 || hits[0] != *k) {
             ui.horizontal_wrapped(|ui| {
                 for (id, n) in hits {
                     let b = Btn::default();
@@ -337,17 +358,20 @@ fn apply(w: &mut World, click: Click) {
         Click::Group(k) => (g.group, g.page) = (k, 0),
         Click::Page(p) => g.page = p,
         Click::Select(n) => {
-            (g.selected, g.typing, g.find_typing, g.armed) = (Some(n), None, false, false);
+            (g.selected, g.typing, g.find_typing, g.armed, g.lists_at) = (Some(n), None, false, false, None);
         }
-        Click::Focus(i) => (g.typing, g.find_typing) = (i, i.is_none()),
+        // Anything that changes what Run would send takes back a risky command's first press.
+        Click::Focus(i) => (g.typing, g.find_typing, g.armed) = (i, i.is_none(), false),
         Click::Fill(i, v) => {
             if let Some(n) = g.selected.clone() {
                 g.values.insert((n, i), v);
             }
+            g.armed = false;
         }
         Click::Position => {
             let pos = [w.pos.x, w.pos.y, w.pos.z];
             let g = &mut w.gm;
+            g.armed = false;
             if let Some(c) = g.selected().cloned() {
                 for (k, (i, _)) in c.fields.iter().enumerate().filter(|(_, f)| f.pick == Pick::Coord).enumerate().take(3) {
                     g.values.insert((c.name.clone(), i), format!("{:.3}", pos[k]));
@@ -360,7 +384,7 @@ fn apply(w: &mut World, click: Click) {
             }
             g.armed = false;
         }
-        Click::Close => g.open = false,
+        Click::Close => (g.open, g.armed) = (false, false),
         Click::Augments => g.augments = !g.augments,
         Click::Run => {
             let Some(c) = g.selected().cloned() else { return };
@@ -385,7 +409,9 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     if !shown(w) {
         return;
     }
-    if w.gm.selected.is_some() {
+    // The party and the zone's names, rebuilt twice a second rather than every frame.
+    if w.gm.selected.is_some() && w.gm.lists_at.is_none_or(|t| t.elapsed().as_secs_f32() >= 0.5) {
+        w.gm.lists_at = Some(std::time::Instant::now());
         let mut people: gm::Choices = std::iter::once(w.name.clone()).chain(w.party.members().filter(|r| r.id != w.my_id).map(|r| r.name.clone())).filter(|n| !n.is_empty()).map(|n| (n.clone(), n)).collect();
         people.dedup();
         let mut around: gm::Choices = w.entities.iter().filter(|(_, e)| !e.name.trim().is_empty()).map(|(id, e)| (id.to_string(), e.name.trim().to_string())).collect();
