@@ -1,0 +1,99 @@
+{
+  "rule": "curaga",
+  "note": "Three members under 75% HP: Curaga by the average missing.",
+  "facts": {
+    "party": [
+      {
+        "name": "Lenon",
+        "me": true,
+        "here": true,
+        "hp": 500,
+        "hp_max": 1000,
+        "job": 3,
+        "effects": []
+      },
+      {
+        "name": "A",
+        "me": false,
+        "here": true,
+        "hp": 600,
+        "hp_max": 1000,
+        "job": 0,
+        "effects": []
+      },
+      {
+        "name": "B",
+        "me": false,
+        "here": true,
+        "hp": 400,
+        "hp_max": 1000,
+        "job": 0,
+        "effects": []
+      }
+    ],
+    "own": [],
+    "tp": 0,
+    "engaged": false,
+    "spells": [
+      {
+        "id": 1,
+        "name": "Cure",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      },
+      {
+        "id": 7,
+        "name": "Curaga",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      },
+      {
+        "id": 8,
+        "name": "Curaga II",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      },
+      {
+        "id": 9,
+        "name": "Curaga III",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      }
+    ],
+    "abilities": [],
+    "weapon_skills": [],
+    "target": null,
+    "resonance": null,
+    "partners": [],
+    "weather_element": null,
+    "day_element": null
+  },
+  "expect": [
+    {
+      "action": {
+        "Spell": 9
+      },
+      "target": null,
+      "reason": "3 members are below 75% HP.",
+      "group": [
+        1,
+        7,
+        8,
+        9
+      ],
+      "label": "Cure"
+    }
+  ]
+}

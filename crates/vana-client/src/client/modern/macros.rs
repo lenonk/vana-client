@@ -390,7 +390,11 @@ fn editor(ui: &mut Ui, m: &super::Modern, gu: &GameUi, e: &macroedit::EditorView
         ui.painter().text(pos2(r.min.x + 50.0, r.center().y), Align2::RIGHT_CENTER, label, FontId::proportional(m.theme.small), m.theme.color("muted"));
         let (at, font) = (pos2(r.min.x + 60.0, r.center().y), FontId::monospace(m.theme.small));
         if e.editing == Some(f) {
-            kit::caret_text(ui, m, at, text, Some(e.caret), font, r.max.x - 8.0);
+            kit::caret_text(ui, m, at, text, Some(e.caret), font.clone(), r.max.x - 8.0);
+            if let Some((cands, sel)) = &e.fep {
+                let dx = ui.painter().layout_no_wrap(text.chars().take(e.caret).collect(), font, Color32::WHITE).size().x;
+                super::chat::candidates(ui, m, cands, *sel, pos2((at.x + dx - 8.0).min(r.max.x - 160.0), r.min.y));
+            }
         } else {
             let clip = Rect::from_min_max(r.min, pos2(r.max.x - 8.0, r.max.y));
             ui.painter().with_clip_rect(clip).text(at, Align2::LEFT_CENTER, text, font, m.theme.color("text"));

@@ -1,0 +1,70 @@
+{
+  "rule": "raise",
+  "note": "A WHM out of combat, Raven KO'd in the zone, Raise and Raise II known.",
+  "facts": {
+    "party": [
+      {
+        "name": "Lenon",
+        "me": true,
+        "here": true,
+        "hp": 800,
+        "hp_max": 800,
+        "job": 3,
+        "effects": []
+      },
+      {
+        "name": "Raven",
+        "me": false,
+        "here": true,
+        "hp": 0,
+        "hp_max": 950,
+        "job": 1,
+        "effects": []
+      }
+    ],
+    "own": [],
+    "tp": 0,
+    "engaged": false,
+    "spells": [
+      {
+        "id": 12,
+        "name": "Raise",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      },
+      {
+        "id": 13,
+        "name": "Raise II",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      }
+    ],
+    "abilities": [],
+    "weapon_skills": [],
+    "target": null,
+    "resonance": null,
+    "partners": [],
+    "weather_element": null,
+    "day_element": null
+  },
+  "expect": [
+    {
+      "action": {
+        "Spell": 13
+      },
+      "target": "Raven",
+      "reason": "Raven is KO'd.",
+      "group": [
+        12,
+        13
+      ],
+      "label": "Raise"
+    }
+  ]
+}

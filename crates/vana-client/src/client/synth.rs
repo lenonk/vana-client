@@ -786,7 +786,7 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
 /// right click.
 #[allow(clippy::too_many_arguments)]
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
-    use super::winhits::{generic, over};
+    use super::winhits::generic;
     if w.modern {
         return;
     }
@@ -821,11 +821,7 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
                 }
             });
         }
-        Some((Focus::Qty | Focus::Amount(..), ..)) => {
-            if right && over(w, ITEMCTRL, p) {
-                key(w, gu, egui::Key::Escape);
-            }
-        }
+        Some((Focus::Qty | Focus::Amount(..), ..)) => super::winhits::ctr(w, gu, ITEMCTRL, p, clicked, right, key),
         Some((Focus::Away, ..)) | None => {
             let Some(m) = w.synth.menu.as_ref() else { return };
             let n = w.synth.history.len() as u16;

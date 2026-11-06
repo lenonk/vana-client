@@ -1,0 +1,74 @@
+{
+  "rule": "close",
+  "note": "Liquefaction open 4 s ago, 1100 TP: an Impaction weapon skill closes it into Fusion.",
+  "facts": {
+    "party": [
+      {
+        "name": "Lenon",
+        "me": true,
+        "here": true,
+        "hp": 1000,
+        "hp_max": 1000,
+        "job": 2,
+        "effects": []
+      }
+    ],
+    "own": [],
+    "tp": 1100,
+    "engaged": true,
+    "spells": [],
+    "abilities": [],
+    "weapon_skills": [
+      {
+        "index": 1,
+        "name": "Shoulder Tackle",
+        "props": [
+          5,
+          8,
+          0
+        ],
+        "power": 40
+      },
+      {
+        "index": 2,
+        "name": "Combo",
+        "props": [
+          8,
+          0,
+          0
+        ],
+        "power": 5
+      }
+    ],
+    "target": {
+      "name": "Goblin Thug",
+      "hpp": 90,
+      "ours": [],
+      "hitting": null,
+      "hitting_me": false,
+      "ranks": null
+    },
+    "resonance": {
+      "against": [
+        3
+      ],
+      "chain": null,
+      "age": 4.0,
+      "left": 6.0
+    },
+    "partners": [],
+    "weather_element": null,
+    "day_element": null
+  },
+  "expect": [
+    {
+      "action": {
+        "Ability": 1
+      },
+      "target": null,
+      "reason": "Closes the open chain: Fusion (Light, Fire).",
+      "group": [],
+      "label": null
+    }
+  ]
+}

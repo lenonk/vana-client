@@ -1,0 +1,100 @@
+{
+  "rule": "cure",
+  "note": "Raven at 30%: the highest Cure not past the HP missing.",
+  "facts": {
+    "party": [
+      {
+        "name": "Lenon",
+        "me": true,
+        "here": true,
+        "hp": 800,
+        "hp_max": 800,
+        "job": 3,
+        "effects": []
+      },
+      {
+        "name": "Raven",
+        "me": false,
+        "here": true,
+        "hp": 300,
+        "hp_max": 1000,
+        "job": 1,
+        "effects": []
+      }
+    ],
+    "own": [],
+    "tp": 0,
+    "engaged": false,
+    "spells": [
+      {
+        "id": 1,
+        "name": "Cure",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      },
+      {
+        "id": 2,
+        "name": "Cure II",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      },
+      {
+        "id": 3,
+        "name": "Cure III",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      },
+      {
+        "id": 4,
+        "name": "Cure IV",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      },
+      {
+        "id": 5,
+        "name": "Cure V",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      }
+    ],
+    "abilities": [],
+    "weapon_skills": [],
+    "target": null,
+    "resonance": null,
+    "partners": [],
+    "weather_element": null,
+    "day_element": null
+  },
+  "expect": [
+    {
+      "action": {
+        "Spell": 5
+      },
+      "target": "Raven",
+      "reason": "Raven is at 30% HP (700 missing).",
+      "group": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "label": "Cure"
+    }
+  ]
+}

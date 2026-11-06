@@ -85,6 +85,10 @@ pub struct Friends {
     pub hidden: [bool; 5],
     /// One PlayOnline message operation at a time (DAT_10663ac8).
     pub busy: bool,
+    /// The help bar's busy strip bit 0x10: set with the message jobs msgline's commits start (FUN_101ff3e0,
+    /// FUN_101ffc20, FUN_101ffdb0, FUN_101fff30, FUN_10200080), cleared by their answers (FUN_101ff8a0 /
+    /// FUN_101ff920). Not by /befriend's search (FUN_101ffa20) or Ignore (FUN_10200280), which hold only `busy`.
+    pub strip: bool,
     /// The local messages, oldest first; messages that came since the count was last seen (netstat).
     pub mail: Vec<Mail>,
     pub mail_new: u32,
@@ -429,7 +433,7 @@ fn title(w: &World, kind: u8, reply: bool) -> String {
 /// failure (10 0x2d, reply / accept 10 0x6f).
 pub fn send(w: &mut World, op: Op, text: Vec<u8>) {
     let Some(me) = w.friends.cred.as_ref().map(|c| c.account as u64) else { return };
-    w.friends.busy = true;
+    (w.friends.busy, w.friends.strip) = (true, true);
     let (to, kind) = match &op {
         Op::Plain { to } | Op::Reply { to } => (*to, profile::PLAIN),
         Op::Request { to, .. } => (*to, profile::FRIEND_REQUEST),
@@ -465,7 +469,7 @@ pub fn send(w: &mut World, op: Op, text: Vec<u8>) {
             Ok::<_, anyhow::Error>(stored)
         })();
         Done::Then(Box::new(move |w: &mut World| {
-            w.friends.busy = false;
+            (w.friends.busy, w.friends.strip) = (false, false);
             match r {
                 Ok(stored) => {
                     if let Some(l) = stored {

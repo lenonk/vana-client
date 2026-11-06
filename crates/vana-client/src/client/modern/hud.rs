@@ -5,7 +5,7 @@
 //! draw them too.
 
 use super::super::resttick::Shown;
-use super::super::{App, World, buffs, hudtop, items::JOBS, monstrosity, objective, radar, self_entity, target, vana_now};
+use super::super::{App, World, buffs, event, hudtop, items::JOBS, monstrosity, objective, radar, self_entity, target, vana_now};
 use super::{Look, Modern, Panels, Title, chat, paint};
 use egui::{Align2, Color32, FontFamily, FontId, Painter, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
 use std::f32::consts::PI;
@@ -374,6 +374,7 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
                 if resp.clicked() {
                     clicked = Some(row.slot);
                 }
+                row_menu(m, &resp, row.slot);
                 continue;
             };
             // Room inside the row's frame lines: the labels start well under its top, the MP line ends well over its
@@ -416,9 +417,19 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
             if resp.clicked() {
                 clicked = Some(row.slot);
             }
+            row_menu(m, &resp, row.slot);
         }
     });
     clicked
+}
+
+/// A right click on a party row opens its menu (ctxmenu.rs).
+fn row_menu(m: &Modern, resp: &egui::Response, slot: usize) {
+    if resp.secondary_clicked()
+        && let Some(at) = resp.interact_pointer_pos()
+    {
+        super::ctxmenu::open(m, super::ctxmenu::Menu::Party { at, slot });
+    }
 }
 
 pub fn target_panel(p: &mut Panels, v: &TargetView) {
@@ -447,6 +458,53 @@ pub fn target_panel(p: &mut Panels, v: &TargetView) {
             m.tip_at(p.ctx, at, "Locked on", "You keep facing the target. Lock on again to let go.");
         }
     }
+}
+
+/// A row of the focus panel: the focus target or the last one.
+pub struct OtherRow {
+    pub label: &'static str,
+    pub tag: &'static str,
+    pub id: u32,
+    pub name: String,
+    pub hpp: Option<u8>,
+    pub colour: Option<Color32>,
+    /// It is the current target too.
+    pub current: bool,
+}
+
+/// Ours (modern): the focus target (/focustarget, a member of our six) and the last target (the one before the
+/// current), each a row with its HP; a click targets it. On the target panel; none when neither is set.
+pub fn others_panel(p: &mut Panels, rows: &[OtherRow]) -> Option<u32> {
+    if rows.is_empty() {
+        return None;
+    }
+    let m = p.m;
+    let mut picked = None;
+    p.panel("focus", None, 340.0, |ui| {
+        for row in rows {
+            let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::click());
+            let face = if row.current { "controls/list_row_selected" } else if resp.hovered() { "controls/list_row_hover" } else { "controls/list_row_normal" };
+            super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
+            let label = ui.painter().text(pos2(r.min.x + 8.0, r.center().y), Align2::LEFT_CENTER, row.label, FontId::proportional(m.theme.small), m.theme.color("muted"));
+            let name_x = (r.min.x + 52.0).max(label.max.x + 8.0);
+            let bar_w = 70.0;
+            let room = r.max.x - 12.0 - bar_w - 8.0 - name_x;
+            let g = super::one_line(ui.painter(), &row.name, FontId::proportional(m.theme.ui), row.colour.unwrap_or(m.theme.color("text")), room);
+            ui.painter().galley(pos2(name_x, r.center().y - g.size().y / 2.0), g, Color32::WHITE);
+            if let Some(hpp) = row.hpp {
+                let bar = Rect::from_min_size(pos2(r.max.x - 12.0 - bar_w, r.center().y - 3.0), vec2(bar_w, 6.0));
+                ui.painter().rect_filled(bar, 3.0, m.theme.color("charcoal"));
+                ui.painter().rect_filled(Rect::from_min_size(bar.min, vec2(bar_w * hpp.min(100) as f32 / 100.0, 6.0)), 3.0, m.theme.color("hp"));
+            }
+            if resp.clicked() {
+                picked = Some(row.id);
+            }
+            let hp = row.hpp.map(|h| format!(" HP {h}%.")).unwrap_or_default();
+            m.tip(ui, r, &row.name, &format!("{} target.{hp} Click to target it; {} names it in commands.", row.label, row.tag));
+            ui.add_space(2.0);
+        }
+    });
+    picked
 }
 
 /// Retail's lock-on mark (windowps 212) over the target panel: red arrowheads glowing out of its left and right borders,
@@ -643,8 +701,9 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     if let Some(v) = status_view(p.look(), w) {
         status_panel(p, &v, small);
     }
-    // Ours (user, 2026-11-01): the location panel is hidden while engaged; what rides on it drops to the chat window.
-    if let Some(v) = where_view(p.look(), w).filter(|_| w.my_motion.status != 1) {
+    // Hidden while engaged (user, 2026-11-01) by the Combat mode's default (modes.rs); what rides on it drops to the
+    // chat window. In an event too, as retail's compass it stands for (hudtop.rs).
+    if let Some(v) = where_view(p.look(), w).filter(|_| !event::active(w)) {
         where_panel(p, &v);
     }
     let (party, allies) = party_rows(p.look(), w);
@@ -676,8 +735,15 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         let t = target::slot_target(w, k);
         target::pick(w, t);
     }
-    if let Some(v) = target_view(w, p.gu) {
+    // An event takes the target window down unless it keeps it (EventPara2 bit 1, FUN_10085a00), as the retail HUD
+    // does (client/mod.rs world_hud); the focus panel goes with it.
+    let keeps_target = event::keeps_target(w);
+    if let Some(v) = target_view(w, p.gu).filter(|_| if w.target_event.is_some() { !w.target_suspended } else { keeps_target }) {
         target_panel(p, &v);
+    }
+    let others = if keeps_target { others_view(w, p.gu) } else { Vec::new() };
+    if let Some(t) = others_panel(p, &others) {
+        target::pick(w, Some(t));
     }
     if let Some((total, left)) = w.cast_bar {
         let f = if total > 0.0 { ((total - left) / total).clamp(0.0, 1.0) } else { 1.0 };
@@ -842,6 +908,25 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
         })
     });
     (party, allies)
+}
+
+/// The focus panel's rows: the focus target (a member of our six), then the last target (still here).
+fn others_view(w: &World, gu: Option<&super::super::game_ui::GameUi>) -> Vec<OtherRow> {
+    let colour = |id: u32, e: &super::super::Entity| gu.map(|gu| super::chat::colour(super::super::name_colour(id, e, w, |i| gu.ncol(i)).to_le_bytes()));
+    let mut rows = Vec::new();
+    if let Some(id) = target::focus_member(w) {
+        let member = w.party.slots().slots.iter().flatten().find(|m| m.id == id).cloned();
+        let e = w.entities.get(&id);
+        let name = e.map(|e| monstrosity::name(e).to_string()).or_else(|| member.as_ref().map(|m| m.name.clone())).unwrap_or_default();
+        let hpp = member.as_ref().map(|m| m.hpp).or_else(|| e.map(|e| e.hpp));
+        rows.push(OtherRow { label: "Focus", tag: "<ft>", id, name, hpp, colour: e.and_then(|e| colour(id, e)), current: w.target == Some(id) });
+    }
+    if let Some((id, _)) = target::last_target(w)
+        && let Some(e) = w.entities.get(&id)
+    {
+        rows.push(OtherRow { label: "Last", tag: "<lt>", id, name: monstrosity::name(e).to_string(), hpp: (!e.no_gauge).then_some(e.hpp), colour: colour(id, e), current: false });
+    }
+    rows
 }
 
 fn target_view(w: &World, gu: Option<&super::super::game_ui::GameUi>) -> Option<TargetView> {

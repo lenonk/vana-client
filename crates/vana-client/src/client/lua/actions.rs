@@ -293,8 +293,11 @@ pub(super) fn apply(w: &mut World, gu: Option<&GameUi>, a: Action) {
         }
         Action::RunTo(x, z, within) => {
             let d = Vec3::new(x - w.pos.x, 0.0, z - w.pos.z);
+            // Already there: the run is done, so whatever moved us before (autorun, /follow) stops too.
             if d.length() > within.max(0.1) {
                 (w.autorun, w.autorun_dir, w.follow, w.run_to) = (true, d.normalize(), None, Some((x, z, within)));
+            } else {
+                (w.autorun, w.follow, w.run_to) = (false, None, None);
             }
         }
         Action::Follow(id) => textcmd::run_unfiltered(w, &format!("/follow {id}"), textcmd::Mode::Internal),

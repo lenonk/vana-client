@@ -310,7 +310,7 @@ fn equip_slot(child: u16) -> usize {
 }
 
 fn enter(w: &mut World) {
-    gitems::key(w, egui::Key::Enter, false, false);
+    gitems::key(w, egui::Key::Enter, false, false, false);
 }
 
 /// The mouse: a click on a slot lists its pieces; a click on a list row puts the piece on; drops equip, move or take

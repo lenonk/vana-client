@@ -274,6 +274,11 @@ pub struct Config {
     pub modern_condense: bool,
     /// The list search's recent picks by character, newest first (listsearch.rs).
     pub modern_recent: std::collections::BTreeMap<String, Vec<String>>,
+    /// The modern UI's mode presets (client/modern/modes.rs).
+    pub modern_modes: ModernModes,
+    /// Favourites by character, in the strip's order (client/favs.rs), and whether the strip shows (/favs).
+    pub modern_favourites: std::collections::BTreeMap<String, Vec<String>>,
+    pub modern_fav_strip: bool,
     /// How fast a mouse drag turns the camera, in % of the old fixed speed (ours; the controller is not touched).
     pub mouse_camera_speed: u32,
     /// Read a game controller (client/gamepad.rs; retail: padmode000's first flag).
@@ -292,6 +297,25 @@ pub struct Config {
     /// Fields a newer client wrote, kept and saved back as they are: an older client drops nothing it doesn't know.
     #[serde(flatten)]
     pub unknown: serde_json::Map<String, serde_json::Value>,
+}
+
+/// The modern UI's mode presets: per mode (Exploration, Combat, Management) the HUD panels it hides, the panels shown
+/// in every mode, and whether panels fade in and out.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ModernModes {
+    pub hidden: [Vec<String>; 3],
+    pub pinned: Vec<String>,
+    pub fades: bool,
+}
+
+impl Default for ModernModes {
+    fn default() -> Self {
+        // Combat hides the location panel (user, 2026-11-01) and the training regime; the skillchain helper only in
+        // combat.
+        let v = |ids: &[&str]| ids.iter().map(|s| s.to_string()).collect();
+        Self { hidden: [v(&["skillchains"]), v(&["where", "regime"]), v(&["skillchains"])], pinned: Vec::new(), fades: true }
+    }
 }
 
 /// A modern UI panel's place: its left and top (or, for the panels that grow upward, its bottom `b`) as fractions of the
@@ -450,6 +474,9 @@ impl Default for Config {
             modern_battle_in_all: true,
             modern_condense: true,
             modern_recent: Default::default(),
+            modern_modes: Default::default(),
+            modern_favourites: Default::default(),
+            modern_fav_strip: true,
             mouse_camera_speed: 100,
             gamepad: true,
             gamepad_deadzone: 0.33,

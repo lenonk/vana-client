@@ -8,6 +8,7 @@
 mod auction;
 mod bluset;
 mod pupset;
+mod regioninfo;
 mod maze;
 mod charlnk;
 mod borders;
@@ -18,8 +19,10 @@ mod command;
 mod config;
 mod gmwin;
 mod craft;
+mod ctxmenu;
 mod equip;
 mod extras;
+mod favs;
 mod gametext;
 mod hud;
 mod inspect;
@@ -34,6 +37,8 @@ mod macros;
 mod modwin;
 pub use modwin::Click as ModClick;
 mod minor;
+mod modes;
+mod pending;
 mod paint;
 pub mod plates;
 mod points;
@@ -144,10 +149,14 @@ pub struct Modern {
     pub ime_caret: std::cell::Cell<Option<egui::Rect>>,
     chat_menu: std::cell::RefCell<Option<chatsel::Menu>>,
     chat_act: std::cell::RefCell<Option<chatsel::Act>>,
+    /// The open right-click menu on an item, a party row or an actor (ctxmenu.rs).
+    ctx_menu: std::cell::RefCell<Option<ctxmenu::Menu>>,
     /// The retail windows drawn this frame: the edge windows give way to them (they draw under every panel).
     retail: std::cell::RefCell<Vec<Rect>>,
     /// A place changed during a drag: saved once the pointer is let go.
     dirty: bool,
+    /// When we were last engaged (modes.rs holds Combat a little after).
+    engaged_at: std::cell::Cell<Option<std::time::Instant>>,
 }
 
 impl Modern {
@@ -199,7 +208,9 @@ impl Modern {
             ime_caret: Default::default(),
             chat_menu: Default::default(),
             chat_act: Default::default(),
+            ctx_menu: Default::default(),
             dirty: false,
+            engaged_at: Default::default(),
         }
     }
 
@@ -251,14 +262,23 @@ impl Modern {
         *self.retail.borrow_mut() = w.retail_frames.iter().map(|r| Rect::from_min_size(pos2(r[0], r[1]), vec2(r[2], r[3]))).collect();
         topbar::draw(self, ctx, &w.hud_top.view);
         pointers(self, ctx, w);
-        let layout = cfg.modern_places.entry(w.name.clone()).or_default();
+        let focus = focus_panel(w);
+        let mode = modes::current(w, &self.engaged_at, focus);
+        let vis = modes::visibility(ctx, &cfg.modern_modes, mode);
+        // Places per display (plan B): this window size and UI scale's own layout, else the character's last one; a
+        // change saves both, so a new display starts from the latest arrangement and resizing the window through
+        // sizes nobody arranged for stores nothing.
+        let key = display_key(&w.name, window, cfg.modern_scale);
+        let mut layout = cfg.modern_places.get(&key).or_else(|| cfg.modern_places.get(&w.name)).cloned().unwrap_or_default();
         let mut changed = false;
-        let mut p = Panels { m: self, ctx, gu: Some(gu), layout, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, battle_in_all: &mut cfg.modern_battle_in_all, condense: &mut cfg.modern_condense, folded: &mut cfg.modern_folded, scan_kinds: &mut cfg.modern_scan_kinds, this: HashMap::new(), retail: HashMap::new(), focus: focus_panel(w), hidden: modern_hidden(w) };
+        let mut p = Panels { m: self, ctx, gu: Some(gu), layout: &mut layout, vis, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, battle_in_all: &mut cfg.modern_battle_in_all, condense: &mut cfg.modern_condense, folded: &mut cfg.modern_folded, scan_kinds: &mut cfg.modern_scan_kinds, this: HashMap::new(), retail: HashMap::new(), focus, hidden: modern_hidden(w) };
         // The chat window first: what sits on it places by this frame's height.
         self.chat_edge.set(None);
         chat::panel(&mut p, w);
         extras::draw(&mut p, w);
         hud::draw(&mut p, w);
+        favs::draw(&mut p, w);
+        pending::draw(&mut p, w);
         command::draw(&mut p, w);
         combat::draw(&mut p, w);
         lists::draw(&mut p, w);
@@ -271,6 +291,7 @@ impl Modern {
         points::draw(&mut p, w);
         journal::draw(&mut p, w);
         social::draw(&mut p, w);
+        regioninfo::draw(&mut p, w);
         craft::draw(&mut p, w);
         macros::draw(&mut p, w);
         storage::draw(&mut p, w);
@@ -300,9 +321,17 @@ impl Modern {
         charlnk::draw(&mut p, w);
         mogdoor(&mut p, w);
         event_input(&mut p, w);
+        if modes::editor(&mut p, &mut w.uimodes_open, &mut cfg.modern_modes, mode) {
+            *p.changed = true;
+        }
+        ctxmenu::draw(self, ctx, w);
         keyboard::draw(&mut p, w);
         let this = std::mem::take(&mut p.this);
         *self.rects.borrow_mut() = this;
+        if changed {
+            cfg.modern_places.insert(key, layout.clone());
+            cfg.modern_places.insert(w.name.clone(), layout);
+        }
         // The chat settings act at once (the world reads it as lines print).
         w.condense = cfg.modern_condense;
         w.chat.set_fold(cfg.modern_condense);
@@ -403,6 +432,17 @@ fn modern_hidden(w: &World) -> Vec<&'static str> {
 }
 
 /// What a frame's panels share.
+/// The config `modern_places` key of a character's layout for one display: the window's size in pixels and the UI
+/// scale (the plain name holds the character's latest layout, the template for a display not yet arranged).
+pub fn display_key(name: &str, window: [u32; 2], scale: u32) -> String {
+    format!("{name} @{}x{} {scale}%", window[0], window[1])
+}
+
+/// Whether config `modern_places` key `key` is one of `name`'s layouts (the plain one or a display's).
+pub fn layout_of(key: &str, name: &str) -> bool {
+    key == name || key.strip_prefix(name).is_some_and(|rest| rest.starts_with(" @"))
+}
+
 struct Panels<'a> {
     m: &'a Modern,
     ctx: &'a Context,
@@ -423,6 +463,8 @@ struct Panels<'a> {
     retail: HashMap<String, Place>,
     /// The panel with the keys (focus_panel): drawn in the focused frame.
     focus: Option<&'static str>,
+    /// The mode presets' panels' opacity this frame (modes.rs): 0 not drawn; others always drawn.
+    vis: HashMap<&'static str, f32>,
     /// Panels a Lua mod hid (ui.native.hide).
     hidden: Vec<&'static str>,
 }
@@ -504,6 +546,8 @@ fn default_place(id: &str) -> Place {
         "where" => Place { dock: Some(Dock { to: "chat".into(), gap: -0.5, dx: 1.25, right: false }), ..Default::default() },
         "combat" => on("where"),
         "target" => on("party"),
+        // Ours: the focus and last targets on the target panel.
+        "focus" => on("target"),
         // The magic and ability windows ride on the combat window (retail's sit on the log), the list on its categories.
         "cats" => on("combat"),
         "list" => on("cats"),
@@ -515,6 +559,8 @@ fn default_place(id: &str) -> Place {
         "alliance2" => at(0.87, 0.335),
         // The cast bar at retail's (16, 94); the Timers on the left edge, the minimap on the right one.
         "cast" => at(0.02, 0.21),
+        // The pending action's chip just over it (pending.rs).
+        "pending" => at(0.02, 0.16),
         // The 0x075 countdown under it, the objective's bars under that.
         "countdown" => at(0.02, 0.28),
         "objective" => at(0.02, 0.35),
@@ -532,11 +578,15 @@ fn default_place(id: &str) -> Place {
         "loot" => on("iteminfo"),
         // /check beside the command window's place.
         "check" => at(0.2, 0.0347),
+        // Ours: the command palette above the screen's middle.
+        "palette" => at(0.38, 0.22),
         "blklist" => at(0.2, 0.0347),
         // The chat mode window rides the action menu it is opened from.
         "chatctrl" => on("combat"),
         // The comment editor sits on the log as retail's (flag 0x1000).
         "comment" => on("combat"),
+        // The favourites strip over the chat window's right end.
+        "favourites" => at(0.42, 0.66),
         // The map's menu at the top right, as retail's map0; Markers and Change Map's list in its place.
         "map0" | "mapv3" | "maplist" | "mapscan" => at(-0.004, 0.1),
         // Wide Scan's list at retail's (16, 48).
@@ -779,6 +829,11 @@ impl<'a> Panels<'a> {
         Look { m: self.m, ctx: self.ctx, gu: self.gu }
     }
 
+    /// The mode's opacity for a panel (1 for every panel the modes don't list).
+    fn vis(&self, id: &str) -> f32 {
+        self.vis.get(id).copied().unwrap_or(1.0)
+    }
+
     /// A panel `width` points wide.
     fn panel(&mut self, id: &str, title: Option<Title>, width: f32, add: impl FnOnce(&mut Ui)) -> Option<Rect> {
         self.framed(id, title, width, "window_normal", add)
@@ -905,7 +960,10 @@ impl<'a> Panels<'a> {
     /// The panel itself: the pack's window frame behind its title row and contents, moved by a drag on its background
     /// unless placed beside another; a resizable one has the resize glyph in its corner. Returns its rect.
     fn show(&mut self, id: &str, o: Show, add: impl FnOnce(&mut Ui, Vec2)) -> Option<Rect> {
-        if self.hidden.contains(&id) {
+        // Hidden by the mode (modes.rs) or by a Lua mod (ui.native.hide): not drawn, so what docks on it falls to
+        // what it sits on.
+        let vis = self.vis(id);
+        if vis <= 0.01 || self.hidden.contains(&id) {
             return None;
         }
         let (m, ctx) = (self.m, self.ctx);
@@ -943,6 +1001,7 @@ impl<'a> Panels<'a> {
         let frame = if frame == "window_normal" && self.focus == Some(id) { "window_focused" } else { frame };
         // A panel at a fixed point may stand partly off screen (the Timers slid in).
         let shown = egui::Area::new(Id::unique(("modern panel", id))).order(Order::Middle).current_pos(pos).movable(o.at.is_none()).constrain(o.at.is_none() && !exact).show(ctx, |ui| {
+            ui.multiply_opacity(vis);
             // An area offers its contents only last frame's size: room to the screen's bottom, or a page grown taller
             // (a scroll area in it) stays clipped at its first height.
             // Not for the panels placed by their exact height (the chat window folding, the party window).
@@ -989,6 +1048,20 @@ impl<'a> Panels<'a> {
         if exact {
             // Dragged past the screen's edge, it is saved where it will show.
             r = Rect::from_min_size(on_screen(Rect::from_min_size(r.min, vec2(r.width(), h)), screen), r.size());
+        }
+        // A panel placed by its bottom (on another, on the screen's bottom, or risen to fit) is placed by last frame's
+        // height, so the frame its contents grow or shrink (the item info moving to a longer or shorter item) it stood
+        // that much too low or too high, then jumped. It moves now by the height it was drawn at.
+        if o.at.is_none() && !exact && m.dragging.borrow().as_deref() != Some(id) && (r.height() - h).abs() > 0.5 {
+            let top = |h: f32| {
+                let y = self.resolve(id, &place, h).y;
+                if o.height.is_none() && !BOTTOM.contains(&id) && h > 0.0 { y.min(screen.max.y - h).max(screen.min.y) } else { y }
+            };
+            let dy = top(r.height()) - top(h);
+            if dy.abs() > 0.01 {
+                ctx.transform_layer_shapes(shown.response.layer_id, egui::emath::TSTransform::from_translation(vec2(0.0, dy)));
+                r = r.translate(vec2(0.0, dy));
+            }
         }
         let showing = Rect::from_min_max(pos2(r.min.x, r.max.y - r.height() * fold), r.max);
         // Placement trace (debug), only when a panel moves.
@@ -1223,20 +1296,63 @@ fn title_row(ui: &mut Ui, m: &Modern, t: &Title) {
 }
 
 /// A title row in another colour (the target's name in its retail name colour).
+///
+/// Ours: the note keeps to the room the title leaves (a long target name over "Commands" ran under the title). A note
+/// too long for one line breaks in two as retail's target window breaks a name (FUN_101c9fa0, see `name_lines`), and
+/// the row grows to hold both lines. A title too long for the row leaves the note at least 40% of it.
 fn title_row_in(ui: &mut Ui, m: &Modern, t: &Title, colour: egui::Color32) {
-    let h = 28.0;
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), h), egui::Sense::hover());
-    let p = ui.painter();
-    let mut x = r.min.x;
-    if let Some(s) = t.icon.and_then(|i| m.art.sprite(i)) {
-        p.add(paint::image(&s, pos2(x, r.center().y - 13.0), 26.0, egui::Color32::WHITE));
-        x += 34.0;
-    }
+    const GAP: f32 = 12.0;
+    let width = ui.available_width();
+    let icon = t.icon.and_then(|i| m.art.sprite(i));
+    let lead = if icon.is_some() { 34.0 } else { 0.0 };
     let font = FontId::new(m.theme.title, FontFamily::Name(STRONG.into()));
-    p.text(pos2(x, r.center().y), egui::Align2::LEFT_CENTER, t.text, font, colour);
-    if let Some(n) = t.note {
-        p.text(pos2(r.max.x, r.center().y), egui::Align2::RIGHT_CENTER, n, FontId::proportional(m.theme.small), m.theme.color("muted"));
+    let small = FontId::proportional(m.theme.small);
+    let muted = m.theme.color("muted");
+    let painter = ui.painter().clone();
+    let measure = |s: &str| painter.layout_no_wrap(s.to_string(), small.clone(), muted).size().x;
+    let full = painter.layout_no_wrap(t.text.to_string(), font.clone(), colour).size().x;
+    let note_w = t.note.map(measure).unwrap_or(0.0);
+    let title_room = (if t.note.is_some() { width - lead - GAP - note_w.min(0.4 * width) } else { width - lead }).max(0.0);
+    let title = one_line(&painter, t.text, font, colour, title_room);
+    let room = (width - lead - full.min(title_room) - GAP).max(0.0);
+    let lines = t.note.map(|n| name_lines(n, room, &measure)).unwrap_or_default();
+    let line_h = painter.layout_no_wrap("Ag".into(), small.clone(), muted).size().y;
+    let h = 28.0f32.max(lines.len() as f32 * line_h + 2.0);
+    let (r, _) = ui.allocate_exact_size(vec2(width, h), egui::Sense::hover());
+    if let Some(s) = icon {
+        painter.add(paint::image(&s, pos2(r.min.x, r.center().y - 13.0), 26.0, egui::Color32::WHITE));
     }
+    painter.galley(pos2(r.min.x + lead, r.center().y - title.size().y / 2.0), title, colour);
+    let top = r.center().y - lines.len() as f32 * line_h / 2.0;
+    for (k, l) in lines.iter().enumerate() {
+        let g = one_line(&painter, l, small.clone(), muted, room);
+        painter.galley(pos2(r.max.x - g.size().x, top + k as f32 * line_h), g, muted);
+    }
+}
+
+/// A name in at most two lines of `room`, as retail's target window breaks one (FUN_101c9fa0): one line when it fits
+/// and has no ':'; else broken after the first ':' before the fit, else after the last ' ', '-', '@', ''' or ':' from
+/// the fit down to a quarter of it, else at the fit; when what is left still does not fit, cut at the fit, and the
+/// rest ends in an ellipsis (`one_line` when drawn). Ours: measured in chars by `measure`, not fontshp bytes, and the
+/// search starts at the fit, not retail's fit + 1 (which can leave the first line one char over).
+fn name_lines(s: &str, room: f32, measure: &dyn Fn(&str) -> f32) -> Vec<String> {
+    let c: Vec<char> = s.chars().collect();
+    let text = |a: usize, b: usize| c[a..b].iter().collect::<String>();
+    let fit = (0..=c.len()).take_while(|&n| measure(&text(0, n)) <= room).last().unwrap_or(0);
+    let colon = c.iter().position(|&ch| ch == ':');
+    if fit >= c.len() && colon.is_none() {
+        return vec![s.to_string()];
+    }
+    let brk = |ch: char| matches!(ch, ' ' | '-' | '@' | '\'' | ':');
+    let cut = match colon {
+        Some(i) if i < fit && i + 1 != fit => i + 1,
+        _ => (fit / 4..=fit.min(c.len().saturating_sub(1))).rev().find(|&i| brk(c[i])).map_or(fit, |i| i + 1),
+    };
+    let cut = cut.clamp(1, c.len().max(1));
+    let cut = if measure(text(cut, c.len()).trim_start()) <= room { cut } else { fit.max(1).min(c.len()) };
+    let first = text(0, cut).trim_end().to_string();
+    let rest = text(cut, c.len()).trim_start().to_string();
+    if rest.is_empty() { vec![first] } else { vec![first, rest] }
 }
 
 /// `text` on one line of at most `width`, cut with an ellipsis.
@@ -1244,4 +1360,73 @@ pub(super) fn one_line(painter: &egui::Painter, text: &str, font: egui::FontId, 
     let mut job = egui::text::LayoutJob::simple_singleline(text.to_string(), font, colour);
     job.wrap = egui::text::TextWrapping { max_width: width, max_rows: 1, break_anywhere: true, overflow_character: Some('\u{2026}') };
     painter.layout_job(job)
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::{display_key, layout_of, name_lines};
+
+    #[test]
+    fn long_names_break_like_the_target_window() {
+        // 10 px a char.
+        let w = |s: &str| 10.0 * s.chars().count() as f32;
+        assert_eq!(name_lines("Goblin", 100.0, &w), vec!["Goblin"]);
+        assert_eq!(name_lines("Ophiotaurus of the Western", 120.0, &w), vec!["Ophiotaurus", "of the Western"]);
+        assert_eq!(name_lines("Qu'Bia: Arena", 200.0, &w), vec!["Qu'Bia:", "Arena"]);
+        assert_eq!(name_lines("Abcdefghijklmnopqrstuvwxyz", 100.0, &w), vec!["Abcdefghij", "klmnopqrstuvwxyz"]);
+    }
+
+    #[test]
+    fn display_layouts_belong_to_their_character() {
+        let k = display_key("Naji", [2560, 1440], 60);
+        assert_eq!(k, "Naji @2560x1440 60%");
+        assert!(layout_of(&k, "Naji") && layout_of("Naji", "Naji"));
+        assert!(!layout_of(&k, "Naj") && !layout_of("Najim @1920x1080 60%", "Naji"));
+    }
+}
+
+#[cfg(test)]
+mod panel_tests {
+    use super::*;
+
+    /// A docked panel whose contents grow or shrink keeps its bottom on the panel it sits on the same frame (the item
+    /// info moving between a long and a short item stood a frame too high or too low).
+    #[test]
+    fn docked_panel_keeps_its_bottom_as_it_resizes() {
+        let ctx = egui::Context::default();
+        let side = Some(16384);
+        let mut o = ctx.run_ui(egui::RawInput { max_texture_side: side, ..Default::default() }, |_| {});
+        o.textures_delta.clear();
+        let m = Modern::new(&ctx);
+        let mut layout = Layout::new();
+        let mut bottoms = Vec::new();
+        for (f, n) in [12usize, 12, 12, 2, 2, 12, 12, 1, 7].into_iter().enumerate() {
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1280.0, 720.0))), time: Some(f as f64 * 0.1), max_texture_side: side, ..Default::default() };
+            let mut info = None;
+            let mut o = ctx.run_ui(raw, |ui| {
+                let ctx = ui.ctx();
+                let (mut changed, mut chat_font) = (false, 14.0);
+                let mut p = Panels { m: &m, ctx, gu: None, layout: &mut layout, vis: Default::default(), changed: &mut changed, chat_font: &mut chat_font, battle_in_all: &mut true, condense: &mut true, folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: None, hidden: Vec::new() };
+                let combat = p.panel("combat", None, 200.0, |ui| {
+                    ui.label("Attack");
+                });
+                info = p.panel("iteminfo", None, 420.0, |ui| {
+                    for k in 0..n {
+                        ui.label(format!("line {k}"));
+                    }
+                }).zip(combat);
+                *m.rects.borrow_mut() = std::mem::take(&mut p.this);
+            });
+            o.textures_delta.clear();
+            // Frame 0 has egui's default screen.
+            if f > 0 {
+                let (r, under) = info.unwrap();
+                bottoms.push((r.max.y, under.min.y));
+            }
+        }
+        let gap = default_place("iteminfo").dock.unwrap().gap;
+        for (bottom, under) in bottoms {
+            assert!((bottom - (under - gap)).abs() < 0.5, "bottom {bottom} on {under}");
+        }
+    }
 }

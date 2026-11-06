@@ -1,0 +1,72 @@
+{
+  "rule": "job_ability",
+  "note": "A WAR engaged without Berserk up.",
+  "facts": {
+    "party": [
+      {
+        "name": "Lenon",
+        "me": true,
+        "here": true,
+        "hp": 1200,
+        "hp_max": 1200,
+        "job": 1,
+        "effects": []
+      }
+    ],
+    "own": [
+      [
+        68,
+        90.0
+      ]
+    ],
+    "tp": 0,
+    "engaged": true,
+    "spells": [],
+    "abilities": [
+      {
+        "index": 1,
+        "name": "Berserk",
+        "props": [
+          0,
+          0,
+          0
+        ],
+        "power": 0
+      },
+      {
+        "index": 2,
+        "name": "Warcry",
+        "props": [
+          0,
+          0,
+          0
+        ],
+        "power": 0
+      }
+    ],
+    "weapon_skills": [],
+    "target": {
+      "name": "Goblin Thug",
+      "hpp": 90,
+      "ours": [],
+      "hitting": null,
+      "hitting_me": true,
+      "ranks": null
+    },
+    "resonance": null,
+    "partners": [],
+    "weather_element": null,
+    "day_element": null
+  },
+  "expect": [
+    {
+      "action": {
+        "Ability": 1
+      },
+      "target": null,
+      "reason": "Attack up.",
+      "group": [],
+      "label": null
+    }
+  ]
+}

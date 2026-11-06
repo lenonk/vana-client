@@ -1,0 +1,68 @@
+{
+  "rule": "shadows",
+  "note": "A NIN engaged with no Copy Image up: the strongest Utsusemi known.",
+  "facts": {
+    "party": [
+      {
+        "name": "Lenon",
+        "me": true,
+        "here": true,
+        "hp": 700,
+        "hp_max": 900,
+        "job": 13,
+        "effects": []
+      }
+    ],
+    "own": [],
+    "tp": 0,
+    "engaged": true,
+    "spells": [
+      {
+        "id": 338,
+        "name": "Utsusemi: Ichi",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      },
+      {
+        "id": 339,
+        "name": "Utsusemi: Ni",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      }
+    ],
+    "abilities": [],
+    "weapon_skills": [],
+    "target": {
+      "name": "Goblin Thug",
+      "hpp": 90,
+      "ours": [],
+      "hitting": null,
+      "hitting_me": false,
+      "ranks": null
+    },
+    "resonance": null,
+    "partners": [],
+    "weather_element": null,
+    "day_element": null
+  },
+  "expect": [
+    {
+      "action": {
+        "Spell": 339
+      },
+      "target": null,
+      "reason": "No shadows up.",
+      "group": [
+        338,
+        339
+      ],
+      "label": "Utsusemi"
+    }
+  ]
+}

@@ -587,7 +587,7 @@ fn fishing_ranking(p: &mut Panels, w: &mut World) {
 /// closes as Escape does (the text kept and sent).
 fn comment(p: &mut Panels, w: &mut World) {
     let Some(gu) = p.gu else { return };
-    let Some((mode, lines, line)) = seacom::view(w) else { return };
+    let Some((mode, lines, line, fep)) = seacom::view(w) else { return };
     let m = p.m;
     let blink = (p.ctx.input(|i| i.time) * 2.0) as i64 % 2 == 0;
     let title = if mode == 0 { gu.title_msg(0x0f).unwrap_or_else(|| "Set Bazaar".into()) } else { "Comment".to_string() };
@@ -603,7 +603,10 @@ fn comment(p: &mut Panels, w: &mut World) {
             let face = if k == line { "controls/list_row_selected" } else { "controls/list_row_normal" };
             super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
             let text = if k == line && blink { format!("{l}|") } else { l.clone() };
-            ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, text, FontId::monospace(m.theme.small), m.theme.color("text"));
+            let tr = ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, text, FontId::monospace(m.theme.small), m.theme.color("text"));
+            if let Some((cands, sel)) = fep.as_ref().filter(|_| k == line) {
+                super::chat::candidates(ui, m, cands, *sel, pos2(tr.max.x - 8.0, r.min.y));
+            }
             if resp.clicked() {
                 pick = Some(k);
             }

@@ -889,7 +889,8 @@ pub fn poll_image(gu: &mut GameUi, m: &mut CnqMap) {
 /// cursor (anc_regi at the point - 8), the info windows of the mode.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
     draw_map(gu, w);
-    if let Some(m) = w.cnq.as_ref() {
+    // The modern layer draws the info windows itself (modern/region.rs).
+    if let Some(m) = w.cnq.as_ref().filter(|_| !w.modern) {
         draw_windows(gu, w, m, sw, sh);
     }
 }
@@ -1109,6 +1110,87 @@ fn draw_windows(gu: &mut GameUi, w: &World, m: &CnqMap, sw: f32, sh: f32) {
         };
         number(gu, &format!("{v:10}"), x + 0x5f as f32, y + 0x16 as f32);
     }
+}
+
+/// The info windows' contents for the modern layer (modern/region.rs names retail's label sprites by their captions).
+pub struct InfoView {
+    pub mode: usize,
+    /// The windows go on the left half (the cursor is on the right).
+    pub left: bool,
+    /// conquer1: the owner (0..2 a nation, 3 beastmen, 4 none), the tally line, precise gauges or coarse levels.
+    pub region: Option<RegionView>,
+    /// conq6sta: (rank, nation) by rank, and the alliance mark.
+    pub ranking: Option<(Vec<(u8, usize)>, bool)>,
+    /// beseige1: Al Zahbi's orders and each army's (level, orders).
+    pub besieged: Option<(u32, [(u32, u32); 3])>,
+    /// beseige2: the stronghold k and its forces, army (level, orders), mirrors, prisoners.
+    pub stronghold: Option<(usize, u32, (u32, u32), u32, u32)>,
+    /// coloresu: the area's development rate, bivouacs and their max.
+    pub colony: Option<(u8, u8, u8)>,
+    /// colorank: the six coalition ranks.
+    pub coalitions: Option<[u8; 6]>,
+    /// The legend's value (conquest points, imperial standing, allied notes, bayld).
+    pub legend: Option<u32>,
+}
+
+pub struct RegionView {
+    pub owner: u8,
+    pub tally: String,
+    pub precise: bool,
+    pub beast_flag: bool,
+    pub top: u8,
+    pub levels: [f32; 3],
+    pub beast: f32,
+}
+
+/// The map's title (group 0xd by mode).
+pub fn map_title(gu: &GameUi, mode: usize) -> String {
+    TITLES.get(mode).and_then(|&t| gu.title_msg(t)).unwrap_or_default()
+}
+
+/// What draw_windows would draw, as data.
+pub fn info_view(w: &World) -> Option<InfoView> {
+    let m = w.cnq.as_ref()?;
+    let d = &w.conquest;
+    let region = m.conquer1.map(|c| RegionView {
+        owner: c.owner,
+        tally: if c.tally == 1 { line10(w, 0x56, 1) } else { line10(w, 0x57, c.tally as i32) },
+        precise: c.precise,
+        beast_flag: c.beast_flag,
+        top: c.top,
+        levels: c.levels,
+        beast: c.beast,
+    });
+    let ranking = (m.conq6sta && d.have).then(|| {
+        let mut out: Vec<(u8, usize)> = (0..3).map(|k| ((d.byte(0) >> (2 * k) & 3), k)).filter(|r| r.0 != 0).collect();
+        out.sort();
+        (out, d.byte(1) != 0)
+    });
+    let besieged = m.beseige1.then(|| {
+        let ov = d.word(0x9c);
+        (ov >> 2 & 3, [(ov >> 4 & 0xf, ov >> 16 & 7), (ov >> 8 & 0xf, ov >> 19 & 7), (ov >> 12 & 0xf, ov >> 22 & 7)])
+    });
+    let stronghold = m.beseige2.map(|k| {
+        let s = d.word(0xa0 + 4 * k);
+        (k, s >> 3 & 0xff, (s >> 11 & 0xf, s & 7), s >> 15 & 0xf, s >> 19 & 0xf)
+    });
+    let colony = m.coloresu.map(|id| {
+        let area = [(2, 0), (3, 1), (4, 2), (5, 4), (6, 3), (7, 5), (8, 6), (9, 7)].iter().find(|p| p.0 == id).map(|p| p.1);
+        area.map_or((0, 0, 0), |a| d.areas[a])
+    });
+    let shown = match m.mode {
+        0 => m.legend && d.have && d.byte(0x94) == 0,
+        1 => m.legend && d.have && d.word(0x98) != 0,
+        2 => m.legend,
+        _ => true,
+    };
+    let legend = shown.then(|| match m.mode {
+        0 => d.word(0x8c),
+        1 => d.word(0xac),
+        2 => d.campaign.as_ref().map_or(0, |c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])),
+        _ => d.bayld,
+    });
+    Some(InfoView { mode: m.mode, left: m.left, region, ranking, besieged, stronghold, colony, coalitions: m.colorank.then_some(d.ranks), legend })
 }
 
 /// FUN_101e97c0: the army (keytops3 367 + k), "Lv" (0xc 0x59) and its level, its orders (keytops3 377 + orders).

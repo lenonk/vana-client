@@ -1,0 +1,89 @@
+{
+  "rule": "ailment",
+  "note": "Koru paralyzed and Raven poisoned: the worse ailment first by the table's order.",
+  "facts": {
+    "party": [
+      {
+        "name": "Lenon",
+        "me": true,
+        "here": true,
+        "hp": 800,
+        "hp_max": 800,
+        "job": 3,
+        "effects": []
+      },
+      {
+        "name": "Raven",
+        "me": false,
+        "here": true,
+        "hp": 900,
+        "hp_max": 950,
+        "job": 1,
+        "effects": [
+          3
+        ]
+      },
+      {
+        "name": "Koru",
+        "me": false,
+        "here": true,
+        "hp": 700,
+        "hp_max": 700,
+        "job": 4,
+        "effects": [
+          4
+        ]
+      }
+    ],
+    "own": [],
+    "tp": 0,
+    "engaged": false,
+    "spells": [
+      {
+        "id": 14,
+        "name": "Poisona",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      },
+      {
+        "id": 15,
+        "name": "Paralyna",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      }
+    ],
+    "abilities": [],
+    "weapon_skills": [],
+    "target": null,
+    "resonance": null,
+    "partners": [],
+    "weather_element": null,
+    "day_element": null
+  },
+  "expect": [
+    {
+      "action": {
+        "Spell": 15
+      },
+      "target": "Koru",
+      "reason": "Koru is paralyzed.",
+      "group": [],
+      "label": null
+    },
+    {
+      "action": {
+        "Spell": 14
+      },
+      "target": "Raven",
+      "reason": "Raven is poisoned.",
+      "group": [],
+      "label": null
+    }
+  ]
+}

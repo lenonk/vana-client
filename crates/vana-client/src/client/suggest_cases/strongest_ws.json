@@ -1,0 +1,67 @@
+{
+  "rule": "strongest_ws",
+  "note": "1500 TP, nothing to close or open with: the strongest weapon skill.",
+  "facts": {
+    "party": [
+      {
+        "name": "Lenon",
+        "me": true,
+        "here": true,
+        "hp": 1000,
+        "hp_max": 1000,
+        "job": 1,
+        "effects": []
+      }
+    ],
+    "own": [],
+    "tp": 1500,
+    "engaged": true,
+    "spells": [],
+    "abilities": [],
+    "weapon_skills": [
+      {
+        "index": 20,
+        "name": "Raging Axe",
+        "props": [
+          4,
+          0,
+          0
+        ],
+        "power": 5
+      },
+      {
+        "index": 21,
+        "name": "Rampage",
+        "props": [
+          4,
+          0,
+          0
+        ],
+        "power": 175
+      }
+    ],
+    "target": {
+      "name": "Goblin Thug",
+      "hpp": 90,
+      "ours": [],
+      "hitting": null,
+      "hitting_me": false,
+      "ranks": null
+    },
+    "resonance": null,
+    "partners": [],
+    "weather_element": null,
+    "day_element": null
+  },
+  "expect": [
+    {
+      "action": {
+        "Ability": 21
+      },
+      "target": null,
+      "reason": "Your strongest weapon skill (TP 1500).",
+      "group": [],
+      "label": null
+    }
+  ]
+}

@@ -1355,7 +1355,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
 /// list's rows as the item list (hover moves the row, a click on it is Enter, a right click Escape); itemctrl and
 /// moneyctr take only the right click (Escape) *(their arrows by mouse not done)*.
 pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
-    use super::winhits::{child_under, generic, over};
+    use super::winhits::{child_under, generic};
     // The modern layer draws these and takes their mouse.
     if w.modern {
         return;
@@ -1370,9 +1370,8 @@ pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: 
             }
         }, keys);
     } else if s.qty.is_some() || s.money.is_some() {
-        if right && (over(w, ITEMCTRL, p) || over(w, MONEYCTR, p)) {
-            key(w, egui::Key::Escape);
-        }
+        let name = if s.qty.is_some() { ITEMCTRL } else { MONEYCTR };
+        super::winhits::ctr(w, gu, name, p, clicked, right, keys);
     } else if s.view.is_some() {
         let (scroll, cursor) = s.list;
         let (row, on) = child_under(w, SHOP, p, 1..=ROWS as u16);

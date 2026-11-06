@@ -1,0 +1,72 @@
+{
+  "rule": "ninja_stance",
+  "note": "A NIN holding the monster with no stance up: Yonin, not Innin.",
+  "facts": {
+    "party": [
+      {
+        "name": "Lenon",
+        "me": true,
+        "here": true,
+        "hp": 900,
+        "hp_max": 900,
+        "job": 13,
+        "effects": []
+      }
+    ],
+    "own": [
+      [
+        446,
+        null
+      ]
+    ],
+    "tp": 0,
+    "engaged": true,
+    "spells": [],
+    "abilities": [
+      {
+        "index": 700,
+        "name": "Innin",
+        "props": [
+          0,
+          0,
+          0
+        ],
+        "power": 0
+      },
+      {
+        "index": 701,
+        "name": "Yonin",
+        "props": [
+          0,
+          0,
+          0
+        ],
+        "power": 0
+      }
+    ],
+    "weapon_skills": [],
+    "target": {
+      "name": "Goblin Thug",
+      "hpp": 90,
+      "ours": [],
+      "hitting": null,
+      "hitting_me": true,
+      "ranks": null
+    },
+    "resonance": null,
+    "partners": [],
+    "weather_element": null,
+    "day_element": null
+  },
+  "expect": [
+    {
+      "action": {
+        "Ability": 701
+      },
+      "target": null,
+      "reason": "The monster is on you.",
+      "group": [],
+      "label": null
+    }
+  ]
+}

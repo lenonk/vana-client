@@ -1,0 +1,91 @@
+{
+  "rule": "open_chain",
+  "note": "1000 TP, no resonance, Raven has 1200 TP with an Impaction skill: open Liquefaction for Fusion.",
+  "facts": {
+    "party": [
+      {
+        "name": "Lenon",
+        "me": true,
+        "here": true,
+        "hp": 1000,
+        "hp_max": 1000,
+        "job": 1,
+        "effects": []
+      },
+      {
+        "name": "Raven",
+        "me": false,
+        "here": true,
+        "hp": 900,
+        "hp_max": 900,
+        "job": 2,
+        "effects": []
+      }
+    ],
+    "own": [],
+    "tp": 1000,
+    "engaged": true,
+    "spells": [],
+    "abilities": [],
+    "weapon_skills": [
+      {
+        "index": 10,
+        "name": "Burning Blade",
+        "props": [
+          3,
+          0,
+          0
+        ],
+        "power": 30
+      },
+      {
+        "index": 11,
+        "name": "Fast Blade",
+        "props": [
+          4,
+          0,
+          0
+        ],
+        "power": 5
+      }
+    ],
+    "target": {
+      "name": "Goblin Thug",
+      "hpp": 90,
+      "ours": [],
+      "hitting": null,
+      "hitting_me": false,
+      "ranks": null
+    },
+    "resonance": null,
+    "partners": [
+      {
+        "name": "Raven",
+        "tp": 1200,
+        "skills": [
+          [
+            "Shoulder Tackle",
+            [
+              5,
+              8,
+              0
+            ]
+          ]
+        ]
+      }
+    ],
+    "weather_element": null,
+    "day_element": null
+  },
+  "expect": [
+    {
+      "action": {
+        "Ability": 10
+      },
+      "target": null,
+      "reason": "Opens Fusion (Light, Fire) with Raven's Shoulder Tackle (TP 1200).",
+      "group": [],
+      "label": null
+    }
+  ]
+}
