@@ -14784,6 +14784,7 @@ impl App {
                     let k = (a.alpha / actmotion::OPAQUE).max(0.0) * cam_fade;
                     let k = if k >= 0.8 { 1.0 } else { k * 1.25 } * a.appear;
                     g.alpha = (k * if *id == w.my_id { w.camst.self_alpha } else { 1.0 }).min(1.0);
+                    g.shadow_off = a.shadow_off;
                     g.tint = a.rgb.map(|c| c.max(0.0) / actmotion::OPAQUE);
                     if let Some(l) = looks.get(id) {
                         g.alpha = g.alpha.min(l.alpha.unwrap_or(1.0));
@@ -14909,8 +14910,11 @@ impl App {
                 } else {
                     Vec::new()
                 };
+                // Only the actors drawn into the map lose retail's: the rest (fading, refracting, latched off) keep it.
                 if let Some((m, _, _)) = r.sun_shadow_light(camera.target) {
-                    seen.retain(|_, s| !crate::render::sunshadow::covers(m, s.pos, s.corners.iter().map(|c| c.distance(s.pos)).fold(0.0, f32::max)));
+                    let done = gfx.gpu.mips_done();
+                    let casts = |id: &u32| w.actors.get(id).and_then(|a| a.gpu.as_ref()).is_some_and(|g| g.casts_shadow(done));
+                    seen.retain(|id, s| !casts(id) || !crate::render::sunshadow::covers(m, s.pos, s.corners.iter().map(|c| c.distance(s.pos)).fold(0.0, f32::max)));
                 }
                 let shadow_modes = match w.ground.as_ref() {
                     Some(g) => shadows::modes(&shadows::Ctx { ground: g, setting: w.game.get(0x3a), me: w.my_id, zone: w.pos_zone, has: &has, flags: &flags, layers: r.shadow_layers(bg) }, &seen, camera.eye),

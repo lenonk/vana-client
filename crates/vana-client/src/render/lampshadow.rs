@@ -72,6 +72,8 @@ pub fn pick(lamps: &[(Vec3, u32)], feet: &[Vec3], target: Vec3) -> Vec<(u32, Mat
 pub struct LampShadows {
     pub layers: Vec<wgpu::TextureView>,
     pub array: wgpu::TextureView,
+    /// A 1x1 map for the depth passes' group 0: a pass may not sample the array it draws a layer of.
+    pub blank: wgpu::TextureView,
     pub cmp: wgpu::Sampler,
     pub uniform: wgpu::Buffer,
     pub matrices: wgpu::Buffer,
@@ -95,6 +97,18 @@ impl LampShadows {
             .map(|l| tex.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2), base_array_layer: l, array_layer_count: Some(1), ..Default::default() }))
             .collect();
         let array = tex.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() });
+        let blank = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("lamp shadow blank"),
+                size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: super::DEPTH_FORMAT,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            })
+            .create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() });
         let cmp = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("lamp shadow compare"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -112,7 +126,7 @@ impl LampShadows {
             layout: sil_layout,
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding { buffer: &matrices, offset: 0, size: wgpu::BufferSize::new(64) }) }],
         });
-        Self { layers, array, cmp, uniform, matrices, matrix_group }
+        Self { layers, array, blank, cmp, uniform, matrices, matrix_group }
     }
 
     /// Writes this frame's lamps (light slot, matrix) for the depth passes and the zone shader; none clears them.

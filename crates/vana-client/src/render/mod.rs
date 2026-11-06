@@ -373,6 +373,8 @@ pub struct ZoneRenderer {
     sampler: wgpu::Sampler,
     uniforms: wgpu::Buffer,
     globals: wgpu::BindGroup,
+    /// `globals` with a blank map for binding 6, for the lamp shadow depth passes.
+    globals_depth: wgpu::BindGroup,
     textures: Vec<wgpu::BindGroup>,
     instances: wgpu::Buffer,
     /// The animated meshes' sway (config 0011, render/sway.rs), run before the culling.
@@ -422,7 +424,6 @@ pub struct ZoneRenderer {
     sun_shadow: Option<sunshadow::SunShadow>,
     /// Ambient occlusion on the scenery (render/ssao.rs; prepare_ssao).
     ssao: Option<ssao::Ssao>,
-    pub sun_shadow_drawn: std::cell::Cell<bool>,
     /// Lamp shadows (render/lampshadow.rs): the maps (always made; bound in `globals`) and this frame's lamps (light
     /// slot, matrix; empty = none), which the client sets.
     lamp_shadow: lampshadow::LampShadows,
@@ -678,6 +679,8 @@ pub struct ActorGpu {
     skin: Option<Skinned>,
     /// Model colour alpha, 1 = opaque (actor fades); goes into the vertex alpha.
     pub alpha: f32,
+    /// Retail's no-shadow latch (+0x12c bits 10 / 11): no real shadow either.
+    pub shadow_off: bool,
     /// Model colour RGB, 1 = 0x80 (scheduler op 0x29): the material colour of the lit terms.
     pub tint: [f32; 3],
     /// Target flash (client/flash.rs): ambient lerp toward 220 / 255 and fog colour scale.
@@ -696,6 +699,14 @@ pub struct ActorGpu {
     /// Its box's screen rect this frame (NDC x0, y0, x1, y1; FUN_100c63d0's), so a faded actor's passes cover only
     /// it; none: the whole screen.
     pub screen: Option<[f32; 4]>,
+}
+
+impl ActorGpu {
+    /// Drawn into the real shadows' depth maps this frame (its mips in, opaque enough, skinned, no refraction, no
+    /// no-shadow latch); `done` the mips finished. The others keep retail's shadow.
+    pub fn casts_shadow(&self, done: u64) -> bool {
+        self.mips <= done && self.refract.is_none() && self.alpha >= 0.5 && !self.shadow_off && self.skin.is_some()
+    }
 }
 
 /// Bind-pose corners with up to two weighted influences, skinned in vs_skinned.
@@ -1826,20 +1837,25 @@ impl ZoneRenderer {
             gpu.queue.put(&deltas, 0, bytemuck::cast_slice(&geo.deltas));
         }
         let lamp_shadow = lampshadow::LampShadows::new(gpu, &p.sil_layout);
-        let globals = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("globals"),
-            layout: &p.globals_layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: uniforms.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: lights.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: areas.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: parts_gpu.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: deltas.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 5, resource: lamp_shadow.uniform.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::TextureView(&lamp_shadow.array) },
-                wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::Sampler(&lamp_shadow.cmp) },
-            ],
-        });
+        let globals_with = |label, maps: &wgpu::TextureView| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some(label),
+                layout: &p.globals_layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: uniforms.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 1, resource: lights.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 2, resource: areas.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 3, resource: parts_gpu.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 4, resource: deltas.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 5, resource: lamp_shadow.uniform.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::TextureView(maps) },
+                    wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::Sampler(&lamp_shadow.cmp) },
+                ],
+            })
+        };
+        let globals = globals_with("globals", &lamp_shadow.array);
+        // The lamp depth passes draw into the maps, so their group 0 binds the blank one instead.
+        let globals_depth = globals_with("globals (lamp depth)", &lamp_shadow.blank);
         let sampler = mip_sampler(device);
         // Slot 0 is plain white for models whose texture lives elsewhere; the others fill in as they go up.
         let white = texture_bind_group(gpu, &p.texture_layout, &sampler, 1, 1, &[255, 255, 255, 255]);
@@ -1900,6 +1916,7 @@ impl ZoneRenderer {
             sampler,
             uniforms,
             globals,
+            globals_depth,
             textures: vec![white; textures + 1],
             magenta,
             instances,
@@ -1933,7 +1950,6 @@ impl ZoneRenderer {
             lamp_depth_pipeline: p.lamp_depth_pipeline,
             sun_shadow: None,
             ssao: None,
-            sun_shadow_drawn: std::cell::Cell::new(false),
             lamp_shadow,
             lamp_shadows: Vec::new(),
             shadow_level: 1.0,
@@ -2580,6 +2596,7 @@ impl ZoneRenderer {
                 refract: None,
                 skin: Some(Skinned { vertices, shine: Default::default(), bones: mesh.bones, cloth: mesh.cloth, offset: 0, frame: u64::MAX }),
                 alpha: 1.0,
+                shadow_off: false,
                 tint: [1.0; 3],
                 flash: [0.0, 1.0],
                 lights: [0; 4],
@@ -2709,7 +2726,7 @@ impl ZoneRenderer {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        ActorGpu { textures, slot, vertices: None, draws: Vec::new(), instance, hidden_weps: 0, shine: None, refract: None, skin: None, alpha: 1.0, tint: [1.0; 3], flash: [0.0, 1.0], lights: [0; 4], area: 0, cloth: Vec::new(), mips, origin: Vec3::ZERO, screen: None }
+        ActorGpu { textures, slot, vertices: None, draws: Vec::new(), instance, hidden_weps: 0, shine: None, refract: None, skin: None, alpha: 1.0, shadow_off: false, tint: [1.0; 3], flash: [0.0, 1.0], lights: [0; 4], area: 0, cloth: Vec::new(), mips, origin: Vec3::ZERO, screen: None }
     }
 
     /// A shine image goes up once (effect file, IMG node).
@@ -2862,7 +2879,6 @@ impl ZoneRenderer {
             (Some(s), Some((m, d, st)), Some((_, group, _))) => Some((s, m, d, st, group)),
             _ => None,
         };
-        self.sun_shadow_drawn.set(sun.is_some());
         if let Some((s, m, _, _, group)) = &sun {
             s.set_light(gpu, *m);
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -2892,7 +2908,7 @@ impl ZoneRenderer {
                     multiview_mask: None,
                 });
                 pass.set_pipeline(&self.lamp_depth_pipeline);
-                pass.set_bind_group(0, &self.globals, &[]);
+                pass.set_bind_group(0, &self.globals_depth, &[]);
                 pass.set_bind_group(3, &self.lamp_shadow.matrix_group, &[256 * k as u32]);
                 self.draw_actor_depth(&mut pass, actors, group, done);
             }
@@ -3169,7 +3185,7 @@ impl ZoneRenderer {
 
     /// The skinned actors into a shadow depth pass (the sun's or a lamp's; its pipeline and groups 0 and 3 set).
     fn draw_actor_depth(&self, pass: &mut wgpu::RenderPass<'_>, actors: &[&ActorGpu], group: &wgpu::BindGroup, done: u64) {
-        for a in actors.iter().filter(|a| a.mips <= done && a.refract.is_none() && a.alpha >= 0.5) {
+        for a in actors.iter().filter(|a| a.casts_shadow(done)) {
             let Some(skin) = a.skin.as_ref().filter(|s| s.frame == self.pose_frame) else { continue };
             pass.set_bind_group(2, group, &[skin.offset]);
             pass.set_vertex_buffer(0, skin.vertices.slice(..));
@@ -3188,10 +3204,9 @@ impl ZoneRenderer {
     pub fn sun_shadow_light(&self, target: Vec3) -> Option<(Mat4, Vec3, f32)> {
         let s = self.sun_shadow.as_ref().filter(|_| self.pose_gpu.is_some())?;
         let l = self.lighting.as_ref()?;
-        // A light too dim to cast falls back to retail's; the dawn / dusk fade does not (it passes through zero).
-        let base = sunshadow::strength(l.diffuse);
-        (base > 0.0).then_some(())?;
-        let st = base * self.shadow_level.clamp(0.0, 1.0);
+        // A light too dim to cast, or the dawn / dusk fade near zero, falls back to retail's (sunshadow::HANDOFF).
+        let st = sunshadow::strength(l.diffuse) * self.shadow_level.clamp(0.0, 1.0);
+        (st >= sunshadow::HANDOFF).then_some(())?;
         Some((sunshadow::light_matrix(l.dir, target, s.size)?, sunshadow::sun_direction(l.dir)?, st))
     }
 
@@ -3211,7 +3226,6 @@ impl ZoneRenderer {
         let size = if sunshadow::MAP_SIZES.contains(&size) { size } else { sunshadow::MAP_SIZE };
         if !on {
             self.sun_shadow = None;
-            self.sun_shadow_drawn.set(false);
         } else if self.sun_shadow.as_ref().is_none_or(|s| s.size != size) {
             self.sun_shadow = Some(sunshadow::SunShadow::new(gpu, &self.sil_layout, self.color_format, size));
         }

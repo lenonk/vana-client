@@ -160,9 +160,6 @@ fn actor_lamp(packed: u32, pos: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     return col * max(dot(n, dir), 0.0);
 }
 
-// Retail's D3D8 POINT lights (C x I x max(N.L, 0) / d^2, cut at the range) ran per vertex, which draws triangles
-// of light on coarse walls. Ours, per pixel: the same term with the distance floored at 1 and a smooth window over
-// the range instead of the hard cut (not retail).
 // How much of light slot `s` (+1) reaches `p`: 1 unless a lamp shadow map has it, then 3 x 3 PCF from the point
 // pushed out along the normal, scaled by the strength. Outside the map's cone: lit.
 fn lamp_vis(s: u32, p: vec3<f32>, n: vec3<f32>) -> f32 {
@@ -184,6 +181,9 @@ fn lamp_vis(s: u32, p: vec3<f32>, n: vec3<f32>) -> f32 {
     return 1.0;
 }
 
+// Retail's D3D8 POINT lights (C x I x max(N.L, 0) / d^2, cut at the range) ran per vertex, which draws triangles
+// of light on coarse walls. Ours, per pixel: the same term with the distance floored at 1 and a smooth window over
+// the range instead of the hard cut (not retail).
 fn point_lights(lights: vec4<u32>, p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     var sum = vec3<f32>(0.0);
     for (var k = 0u; k < 4u; k = k + 1u) {

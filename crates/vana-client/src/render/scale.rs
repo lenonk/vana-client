@@ -217,6 +217,10 @@ impl SceneScale {
         let Some(t) = &self.target else { return };
         let dst_size = [dst_size[0].max(1), dst_size[1].max(1)];
         let smaa = smaa && lcd.is_none() && t.size[0] <= dst_size[0] && t.size[1] <= dst_size[1];
+        if !smaa {
+            // Off: its targets and the scene texture it holds go.
+            self.smaa = None;
+        }
         let (on, strip, extra) = lcd.map_or((0.0, 0.0, 0.0), |(e, s)| (1.0, s as u32 as f32, e));
         let mut u = [t.size[0] as f32, t.size[1] as f32, dst_size[0] as f32, dst_size[1] as f32, gamma[0], gamma[1], gamma[2], 1.0, on, strip, extra, 0.0, 0.0, 0.0, 0.0, 0.0];
         u[12..16].copy_from_slice(&grade(grading));

@@ -1098,7 +1098,8 @@ impl SettingsUi {
                 VCtl::Slider { n, at, shown: self.shown(r) }
             }
         };
-        VRow { label: r.label.to_string(), ctl }
+        let label = if self.warns(r) { format!("{} \u{26a0}", r.label) } else { r.label.to_string() };
+        VRow { label, ctl }
     }
 
     /// Whether the row named `label` holds a retail setting (a config-tool value, a size, Gamma Base, Party TP).

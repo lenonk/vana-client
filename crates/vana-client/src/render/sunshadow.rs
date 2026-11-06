@@ -17,11 +17,11 @@ pub const HALF_EXTENT: f32 = 40.0;
 /// How far the light's eye sits back from the target, and the depth range it covers.
 const BACK: f32 = 150.0;
 const DEPTH: f32 = 300.0;
-/// The most a shadow takes off a surface (multiplied by 1 - this), at full sun: a shadowed surface keeps 27.5% of its
-/// light, half of the 55% it kept at first (0.45), which Steven found too faint.
-pub const STRENGTH: f32 = 0.725;
-/// The lowest sun the shadows follow (above the horizon); lower suns cast at this angle.
-const MIN_ELEVATION: f32 = 30.0;
+/// The most a shadow takes off a surface (multiplied by 1 - this), at full sun: retail's silhouette's, MODULATE2X
+/// of diffuse 0x40 into ZERO / INVSRCCOLOR (render/shadow.rs vs_ground), so a shadowed surface keeps half its light.
+pub const STRENGTH: f32 = 2.0 * 64.0 / 255.0;
+/// Below this strength (dawn and dusk, a dim light) retail's shadows draw instead, so no character goes without one.
+pub const HANDOFF: f32 = 0.25 * STRENGTH;
 /// How far below its caster's feet (world units, straight down) a shadow stays full, and where it has faded out: a
 /// character atop a wall casts nothing onto the ground far below. Measured from the feet rather than along the light,
 /// so a low sun or a small step in the ground (a seam between terrain pieces) does not cut a shadow off.
@@ -135,17 +135,17 @@ pub fn covers(light_vp: Mat4, pos: Vec3, radius: f32) -> bool {
     p.x.abs() + r < 1.0 && p.y.abs() + r < 1.0 && p.z > 0.0 && p.z < 1.0
 }
 
-/// The sun's travel direction, held at least MIN_ELEVATION above the horizon. The world's y points down (a light
-/// toward -y is above; render/shadow.rs), so a sun shining down travels toward +y.
+/// The sun's travel direction with retail's silhouette rule (FUN_10033080, render/shadow.rs): a light under 60 degrees
+/// is held at 40.9 (y = sin(pi / 3) of the level length), so shadows keep the game's length. The world's y points
+/// down (a light toward -y is above), so a sun shining down travels toward +y.
 pub fn sun_direction(dir: Vec3) -> Option<Vec3> {
     let d = dir.try_normalize()?;
     let h = (d.x * d.x + d.z * d.z).sqrt();
     if h < 1e-4 {
         return Some(Vec3::Y);
     }
-    let min = MIN_ELEVATION.to_radians().tan() * h;
-    if d.y < min {
-        return Vec3::new(d.x, min, d.z).try_normalize();
+    if d.y <= 0.0 || d.y.atan2(h) < 60f32.to_radians() {
+        return Vec3::new(d.x, 0.866_025_4 * h, d.z).try_normalize();
     }
     Some(d)
 }
@@ -348,8 +348,11 @@ mod tests {
         // A point a step toward the light is nearer (smaller depth).
         let toward = m.project_point3(target - Vec3::new(0.3, 1.0, 0.2).normalize() * 5.0);
         assert!(toward.z < c.z);
+        // Under 60 degrees the light is held at 40.9 (retail's silhouette rule); above, it is left alone.
         let low = sun_direction(Vec3::new(1.0, 0.01, 0.0)).unwrap();
-        assert!((low.y / (low.x * low.x + low.z * low.z).sqrt() - 30f32.to_radians().tan()).abs() < 1e-4);
+        assert!((low.y / (low.x * low.x + low.z * low.z).sqrt() - 0.866_025_4).abs() < 1e-4);
+        let high = Vec3::new(0.2, 1.0, 0.0).normalize();
+        assert!((sun_direction(high).unwrap() - high).length() < 1e-6);
         assert!(sun_direction(Vec3::ZERO).is_none());
         assert_eq!((twilight(360.0), twilight(1080.0), twilight(720.0), twilight(0.0)), (0.0, 0.0, 1.0, 1.0));
         assert!(twilight(380.0) > 0.0 && twilight(380.0) < 1.0 && twilight(1060.0) < 1.0);
