@@ -320,20 +320,122 @@ pub(super) fn pieces(w: &World, line: &str) -> Vec<(String, bool)> {
     out
 }
 
+/// Tab completion in a text field other than the chat line (ours: retail's FEP there is the Japanese IME's; the
+/// macro editor's title and lines and the comment editor's lines are FUN_101c5be0 mode 8 / 9 boxes, which take phrase
+/// blocks): the same list, Tab / Space / arrows / Page keys to move, Enter to put the pick in place of the word before
+/// the caret, Escape / Backspace to back out of a category or close.
+#[derive(Debug)]
+pub struct FieldFep {
+    pub cands: Vec<Cand>,
+    pub sel: usize,
+    filter: Option<u8>,
+    root: (String, usize),
+    /// The word being completed (the chars after the last space before the caret).
+    pub word: String,
+}
+
+/// What a key did to a field's list.
+#[derive(Debug, PartialEq)]
+pub(super) enum FieldPick {
+    /// Not the list's key: the field takes it (the list stays).
+    Pass,
+    /// Taken; the list stays open.
+    Keep,
+    /// Taken; the list closes.
+    Close,
+    /// Put this text (a plain word or a phrase block) in place of the word.
+    Put(String),
+}
+
+/// Tab in a field: the list on the word before the caret (`before`, the field's text up to it); None when nothing
+/// matches.
+pub(super) fn field_open(w: &mut World, before: &str) -> Option<FieldFep> {
+    let wd = word(before).to_string();
+    let cands = query(w, &wd, None);
+    if cands.is_empty() {
+        w.sounds.push(Se::Error as u32);
+        return None;
+    }
+    w.sounds.push(Se::Select as u32);
+    Some(FieldFep { cands, sel: 0, filter: None, root: (wd.clone(), 0), word: wd })
+}
+
+/// A phrase id as the four private-use chars a line holds (font::PHRASE_BASE).
+pub(super) fn block(id: [u8; 4]) -> String {
+    id.iter().enumerate().map(|(k, &b)| char::from_u32(PHRASE_BASE + 0x100 * k as u32 + b as u32).unwrap()).collect()
+}
+
+/// A key while a field's list is open (as `key`'s list keys).
+pub(super) fn field_key(w: &mut World, f: &mut FieldFep, key: egui::Key, shift: bool) -> FieldPick {
+    let n = f.cands.len().max(1);
+    match key {
+        egui::Key::Tab | egui::Key::Space | egui::Key::ArrowDown if !(shift && key == egui::Key::Tab) => f.sel = (f.sel + 1) % n,
+        egui::Key::Tab | egui::Key::ArrowUp => f.sel = (f.sel + n - 1) % n,
+        egui::Key::PageDown => f.sel = (f.sel + ROWS).min(n - 1),
+        egui::Key::PageUp => f.sel = f.sel.saturating_sub(ROWS),
+        egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Home | egui::Key::End => return FieldPick::Keep,
+        egui::Key::Escape | egui::Key::Backspace | egui::Key::Delete => {
+            if f.filter.take().is_some() {
+                let (wd, sel) = f.root.clone();
+                f.cands = query(w, &wd, None);
+                f.sel = sel.min(f.cands.len().saturating_sub(1));
+            } else {
+                w.sounds.push(Se::Cancel as u32);
+                return FieldPick::Close;
+            }
+        }
+        egui::Key::Enter => {
+            let Some(c) = f.cands.get(f.sel).cloned() else { return FieldPick::Close };
+            return match c.id {
+                None => FieldPick::Put(c.text),
+                // A category: its phrases replace the list (the word stays until a phrase is put).
+                Some(id) if id[3] == 0 && id[0] < 7 => {
+                    if f.filter.is_none() {
+                        f.root.1 = f.sel;
+                    }
+                    f.filter = Some(id[2]);
+                    f.cands = query(w, "", f.filter);
+                    f.sel = 0;
+                    w.sounds.push(Se::Select as u32);
+                    FieldPick::Keep
+                }
+                Some(id) => FieldPick::Put(block(id)),
+            };
+        }
+        _ => return FieldPick::Pass,
+    }
+    w.sounds.push(Se::Cursor as u32);
+    FieldPick::Keep
+}
+
+/// `text` with `word` (ending at char `caret`) replaced by `put`; the new text and caret. None when `fits` refuses it.
+pub(super) fn field_put(text: &str, caret: usize, word: &str, put: &str, fits: impl Fn(&str) -> bool) -> Option<(String, usize)> {
+    let n = word.chars().count().min(caret);
+    let before: String = text.chars().take(caret - n).collect();
+    let after: String = text.chars().skip(caret).collect();
+    let next = format!("{before}{put}{after}");
+    fits(&next).then(|| (next, caret - n + put.chars().count()))
+}
+
 /// "menu    fep" (FUN_1018f550): above the chat line at the word's start (inf: where retail puts it); width the widest
 /// row, 90..200 + 12; the header "%d/%d" at (+0x23, 0) after the ▲ at (+5, 0); seven rows 16 px apart; a row too wide
 /// cut with "...".
 pub(super) fn draw(gu: &mut GameUi, f: &Fep, x: f32, line_y: f32) -> [f32; 4] {
-    let widest = f.cands.iter().map(|c| gu.text_width(&c.text)).fold(0.0, f32::max);
+    draw_list(gu, &f.cands, f.sel, x, line_y)
+}
+
+/// The list's draw for any field: above `line_y` from `x`.
+pub(super) fn draw_list(gu: &mut GameUi, cands: &[Cand], sel: usize, x: f32, line_y: f32) -> [f32; 4] {
+    let widest = cands.iter().map(|c| gu.text_width(&c.text)).fold(0.0, f32::max);
     let w = (widest.max(90.0) + 12.0).min(200.0);
     let h = 134.0;
     let y = line_y - h - 2.0;
     gu.frame(x, y, w, h);
     const C: [u8; 4] = [0x80; 4];
     gu.text("\u{25b2}", x + 5.0, y + 4.0, 0, C);
-    gu.text(&format!("{}/{}", if f.cands.is_empty() { 0 } else { f.sel + 1 }, f.cands.len()), x + 35.0, y + 4.0, 0, C);
-    let first = f.sel / ROWS * ROWS;
-    for (k, c) in f.cands.iter().enumerate().skip(first).take(ROWS) {
+    gu.text(&format!("{}/{}", if cands.is_empty() { 0 } else { sel + 1 }, cands.len()), x + 35.0, y + 4.0, 0, C);
+    let first = sel / ROWS * ROWS;
+    for (k, c) in cands.iter().enumerate().skip(first).take(ROWS) {
         let mut t = c.text.clone();
         // The text from x + 6 (inf: retail cuts at the width - 15 from its own start).
         if gu.text_width(&t) > w - 12.0 {
@@ -344,7 +446,7 @@ pub(super) fn draw(gu: &mut GameUi, f: &Fep, x: f32, line_y: f32) -> [f32; 4] {
         }
         let ry = y + 20.0 + 16.0 * (k - first) as f32;
         gu.text(&t, x + 6.0, ry, 0, C);
-        if k == f.sel {
+        if k == sel {
             gu.cursor(x + 3.0, ry);
         }
     }
@@ -362,5 +464,14 @@ mod tests {
         assert_eq!(bounds(&line), vec![0, 1, 5, 6]);
         assert_eq!(spliced("abcdef", 3, "X"), "abcXdef");
         assert_eq!(spliced("ab", 2, "c"), "abc");
+    }
+
+    #[test]
+    fn field_puts() {
+        assert_eq!(field_put("/p hel x", 6, "hel", "Hello!", |_| true), Some(("/p Hello! x".to_string(), 9)));
+        assert_eq!(field_put("hel", 3, "hel", "Hello!", |t| t.len() <= 4), None);
+        let b = block([2, 1, 3, 0]);
+        assert_eq!(b.chars().count(), 4);
+        assert_eq!(field_put("go", 2, "go", &b, |_| true).map(|r| r.1), Some(4));
     }
 }

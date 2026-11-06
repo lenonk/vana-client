@@ -758,6 +758,102 @@ pub(super) fn act(w: &mut World, gu: &GameUi, click: Option<u16>, set: impl Fn(&
     }
 }
 
+/// link11's state as the modern window draws it.
+pub(super) struct NameView<'a> {
+    pub name: &'a str,
+    pub rgb: [u8; 3],
+    pub sel: u16,
+    pub edit: u8,
+}
+
+pub(super) const NAME_W: f32 = 360.0;
+
+/// link11 (linkshell.rs keeps its rules and keys): the new shell's icon in the chosen colour, its name as a field (a
+/// click types in it; Enter or Escape ends typing), Red / Green / Blue as sliders 0..15, OK (off while the name is
+/// empty) and Cancel. The keyboard's cursor is ringed as retail's hand.
+fn naming(p: &mut Panels, w: &mut World, gu: &GameUi, nm: &linkshell::Naming) {
+    let m = p.m;
+    let focused = w.confirm.is_none();
+    let icon = w.item_info.as_ref().and_then(|i| m.item_icon(p.ctx, i, 0x201));
+    let v = NameView { name: &nm.name, rgb: nm.rgb, sel: nm.sel, edit: nm.edit };
+    let mut out = (None, None);
+    p.panel("window", Some(Title { icon: Some("icons/linkshell"), text: "New Linkshell", note: None }), NAME_W + 44.0, |ui| {
+        out = naming_body(ui, m, &v, icon, focused);
+    });
+    if !focused {
+        return;
+    }
+    let (pick, chan) = out;
+    if let Some((k, v)) = chan {
+        linkshell::naming_channel(w, k, v);
+    }
+    if let Some(sel) = pick {
+        linkshell::naming_pick(w, gu, sel);
+    }
+}
+
+/// The window's contents; the child clicked (1 name, 5 OK, 6 Cancel) and the channel a slider set.
+pub(super) fn naming_body(ui: &mut Ui, m: &super::Modern, nm: &NameView, icon: Option<egui::TextureId>, focused: bool) -> (Option<u16>, Option<(usize, u8)>) {
+    let t = linkshell::tint(nm.rgb[0], nm.rgb[1], nm.rgb[2]);
+    // The icon's tint is retail's (0x80 full); the swatch and the name show the colour itself.
+    let tint = super::chat::colour(t.to_le_bytes());
+    let swatch = Color32::from_rgb((t >> 16) as u8, (t >> 8) as u8, t as u8);
+    let on = |sel: u16| focused && nm.edit == 0 && nm.sel == sel;
+    let (mut pick, mut chan) = (None, None);
+    ui.set_width(NAME_W);
+    ui.horizontal(|ui| {
+        match icon {
+            Some(tex) => {
+                ui.add(egui::Image::new((tex, vec2(48.0, 48.0))).tint(tint));
+            }
+            None => {
+                let (r, _) = ui.allocate_exact_size(vec2(48.0, 48.0), Sense::hover());
+                ui.painter().circle_filled(r.center(), 18.0, swatch);
+            }
+        }
+        ui.add_space(6.0);
+        let (text, c) = if nm.name.is_empty() { ("No name yet", m.theme.color("muted")) } else { (nm.name, swatch) };
+        ui.label(egui::RichText::new(text).size(m.theme.title).family(FontFamily::Name(super::STRONG.into())).color(c));
+    });
+    ui.add_space(10.0);
+    let typing = nm.edit == 1;
+    let r = super::kit::field(ui, m, nm.name, typing.then(|| nm.name.chars().count()), NAME_W, FontId::proportional(m.theme.ui), None);
+    if ui.interact(r, egui::Id::unique("ls name"), Sense::click()).clicked() {
+        pick = Some(1);
+    }
+    if on(1) {
+        super::kit::ring(ui.painter(), m, r, 6.0);
+    }
+    let hint = match nm.edit {
+        1 => "Typing: Enter or Escape ends it (19 characters).",
+        2..=4 => "Left / Right change it, Enter keeps it, Escape puts it back.",
+        _ => "Click the name to type it; pick the shell's colour below.",
+    };
+    ui.label(egui::RichText::new(hint).size(m.theme.small).color(m.theme.color("muted")));
+    ui.add_space(8.0);
+    for (k, heading) in ["Red", "Green", "Blue"].into_iter().enumerate() {
+        let c = k as u8 + 2;
+        let focus = focused && (nm.edit == c || on(c as u16));
+        let (got, _) = super::kit::slider_setting(ui, m, heading, focus, false, 16, nm.rgb[k] as usize, &nm.rgb[k].to_string());
+        if let Some(v) = got {
+            chan = Some((k, v as u8));
+        }
+        ui.add_space(4.0);
+    }
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        let ok = super::kit::Btn { cursor: on(5), off: nm.name.is_empty(), lit: false };
+        if super::kit::clicked(&super::kit::button(ui, m, "OK", 110.0, ok), ok) {
+            pick = Some(5);
+        }
+        let cancel = super::kit::Btn { cursor: focused && nm.edit == 0 && nm.sel > 5, ..Default::default() };
+        if super::kit::button(ui, m, "Cancel", 110.0, cancel).clicked() {
+            pick = Some(6);
+        }
+    });
+    (pick, chan)
+}
+
 pub fn draw(p: &mut Panels, w: &mut World) {
     if !w.modern {
         return;
@@ -895,6 +991,11 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             _ => false,
         };
         act(w, gu, got, set, |w, gu| searchmenu::key(w, gu, egui::Key::Enter));
+        return;
+    }
+    // link11: naming a new shell takes the window.
+    if let Some(nm) = linkshell::naming_view(w) {
+        naming(p, w, gu, &nm);
         return;
     }
     // Linkshell: the shells in the bags, the cursor's shell, its submenu beside them.

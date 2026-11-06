@@ -118,6 +118,17 @@ fn help(m: &Modern, ctx: &Context, p: &Painter, r: Rect, v: &TopView) {
 
 /// netstat: the meter (four bars by level, the lit step walking as retail's frames do), the percentage, S / R.
 fn network(p: &Painter, m: &Modern, r: Rect, v: &TopView) {
+    // Retail's state 2 on the mail page: a Help Desk reply is waiting (/helpdesk shows it).
+    if v.gm_reply {
+        if let Some(s) = m.art.sprite("icons/help") {
+            p.add(super::paint::image(&s, pos2(r.min.x + 18.0, r.center().y - 10.0), 20.0, Color32::WHITE));
+        }
+        p.text(pos2(r.min.x + 44.0, r.center().y + 2.0), Align2::LEFT_CENTER, "Help Desk reply", FontId::proportional(SMALL), m.theme.color("gold"));
+        if let Some(s) = m.art.sprite("icons/notification") {
+            p.add(super::paint::image(&s, pos2(r.max.x - 32.0, r.center().y - 9.0), 18.0, Color32::WHITE));
+        }
+        return;
+    }
     // Retail's mail page (netstat page 0): an envelope (red with a system message) and the unread count.
     if let Some((n, sys)) = v.mail {
         let c = if sys { m.theme.color("hp") } else { m.theme.color("gold") };

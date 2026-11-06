@@ -1321,9 +1321,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
 }
 
 /// The mouse on the focused window (the generic window): post1 / post2, delivery, stringdl (not while typing); the
-/// inventory list's rows as the item list; itemctrl / moneyctr only the right click (Escape). Nothing while busy.
+/// inventory list's rows as the item list; itemctrl / moneyctr by winhits::ctr. Nothing while busy.
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
-    use super::winhits::{generic, over};
+    use super::winhits::generic;
     // The modern layer draws these and takes their mouse.
     if w.modern {
         return;
@@ -1383,11 +1383,8 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
                 key(w, gu, egui::Key::Enter);
             }
         }
-        SFocus::Qty | SFocus::Money => {
-            if right && (over(w, ITEMCTRL, p) || over(w, MONEYCTR, p)) {
-                key(w, gu, egui::Key::Escape);
-            }
-        }
+        SFocus::Qty => super::winhits::ctr(w, gu, ITEMCTRL, p, clicked, right, keys),
+        SFocus::Money => super::winhits::ctr(w, gu, MONEYCTR, p, clicked, right, keys),
     }
 }
 

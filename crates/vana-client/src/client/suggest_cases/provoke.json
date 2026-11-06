@@ -1,0 +1,66 @@
+{
+  "rule": "provoke",
+  "note": "The goblin hits Raven, a WHM: Provoke pulls it off.",
+  "facts": {
+    "party": [
+      {
+        "name": "Lenon",
+        "me": true,
+        "here": true,
+        "hp": 1500,
+        "hp_max": 1500,
+        "job": 1,
+        "effects": []
+      },
+      {
+        "name": "Raven",
+        "me": false,
+        "here": true,
+        "hp": 600,
+        "hp_max": 800,
+        "job": 3,
+        "effects": []
+      }
+    ],
+    "own": [],
+    "tp": 0,
+    "engaged": true,
+    "spells": [],
+    "abilities": [
+      {
+        "index": 5,
+        "name": "Provoke",
+        "props": [
+          0,
+          0,
+          0
+        ],
+        "power": 0
+      }
+    ],
+    "weapon_skills": [],
+    "target": {
+      "name": "Goblin Thug",
+      "hpp": 90,
+      "ours": [],
+      "hitting": "Raven",
+      "hitting_me": false,
+      "ranks": null
+    },
+    "resonance": null,
+    "partners": [],
+    "weather_element": null,
+    "day_element": null
+  },
+  "expect": [
+    {
+      "action": {
+        "Ability": 5
+      },
+      "target": null,
+      "reason": "The Goblin Thug is attacking Raven.",
+      "group": [],
+      "label": null
+    }
+  ]
+}

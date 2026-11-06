@@ -1,0 +1,79 @@
+{
+  "rule": "waltz",
+  "note": "A DNC with no cures and Raven at 40%: the strongest Curing Waltz.",
+  "facts": {
+    "party": [
+      {
+        "name": "Lenon",
+        "me": true,
+        "here": true,
+        "hp": 900,
+        "hp_max": 900,
+        "job": 19,
+        "effects": []
+      },
+      {
+        "name": "Raven",
+        "me": false,
+        "here": true,
+        "hp": 400,
+        "hp_max": 1000,
+        "job": 1,
+        "effects": []
+      }
+    ],
+    "own": [],
+    "tp": 0,
+    "engaged": false,
+    "spells": [],
+    "abilities": [
+      {
+        "index": 190,
+        "name": "Curing Waltz",
+        "props": [
+          0,
+          0,
+          0
+        ],
+        "power": 0
+      },
+      {
+        "index": 191,
+        "name": "Curing Waltz II",
+        "props": [
+          0,
+          0,
+          0
+        ],
+        "power": 0
+      },
+      {
+        "index": 192,
+        "name": "Curing Waltz III",
+        "props": [
+          0,
+          0,
+          0
+        ],
+        "power": 0
+      }
+    ],
+    "weapon_skills": [],
+    "target": null,
+    "resonance": null,
+    "partners": [],
+    "weather_element": null,
+    "day_element": null
+  },
+  "expect": [
+    {
+      "action": {
+        "Ability": 192
+      },
+      "target": "Raven",
+      "reason": "Raven is at 40% HP (600 missing).",
+      "group": [],
+      "label": null
+    }
+  ]
+}

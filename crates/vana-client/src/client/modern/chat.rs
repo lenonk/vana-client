@@ -418,7 +418,7 @@ fn input(ui: &mut Ui, m: &Modern, v: &InputView, t: f32, size: f32, r: Rect) {
 
 /// The auto-translate list over the chat line at the word (retail's "menu    fep"): "n/m", a page of seven, the
 /// cursor's row lit; its keys stay fep.rs's (Tab / arrows move, Enter takes, Escape closes).
-fn candidates(ui: &mut Ui, m: &Modern, cands: &[String], sel: usize, bottom_left: egui::Pos2) {
+pub(super) fn candidates(ui: &mut Ui, m: &Modern, cands: &[String], sel: usize, bottom_left: egui::Pos2) {
     let font = FontId::proportional(m.theme.small);
     let first = sel / fep::ROWS * fep::ROWS;
     egui::Area::new(egui::Id::unique("fep list")).order(egui::Order::Foreground).pivot(egui::Align2::LEFT_BOTTOM).fixed_pos(bottom_left).show(ui.ctx(), |ui| {

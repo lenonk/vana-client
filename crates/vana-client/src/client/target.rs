@@ -82,6 +82,13 @@ pub fn in_own_six(w: &World, id: u32) -> bool {
     w.party.slots().slots[..6].iter().flatten().any(|m| m.id == id && m.index < 0x700)
 }
 
+/// Ours (modern): the last target while it is still here and targetable, `<lt>`.
+pub fn last_target(w: &World) -> Option<(u32, u16)> {
+    let id = w.last_target.filter(|&id| Some(id) != w.target)?;
+    let e = w.entities.get(&id).filter(|e| e.targetable())?;
+    Some((id, e.index))
+}
+
 /// FUN_101593c0 on the focus target: someone other than us in our six slots.
 pub fn focus_member(w: &World) -> Option<u32> {
     w.focus.map(|f| f.0).filter(|&id| id != w.my_id && in_own_six(w, id))
@@ -358,6 +365,14 @@ impl Sub {
 /// Table 0x103720c0: a DAT valid-target flag's include / exclude kinds (FUN_10159170).
 const SUB_FLAGS: [(u32, u32, u32); 8] = [(1, 0x200, 0), (2, 0x100, 0), (4, 4, 0), (8, 8, 0), (0x10, 1, 0), (0x20, 0x10, 0), (0x40, 2, 0), (0x80, 2, 0x1800)];
 
+/// Ours (the action registry): whether DAT target `flags` may take actor `id`, by the prompt's include / exclude
+/// kinds (SUB_FLAGS, Sub::takes).
+pub(super) fn takes(w: &World, flags: u32, id: u32) -> bool {
+    let (inc, exc) = SUB_FLAGS.iter().filter(|f| flags & f.0 != 0).fold((0, 0), |(i, e), f| (i | f.1, e | f.2));
+    let kind = sub_kind(w, id);
+    inc & kind != 0 && exc & kind == 0
+}
+
 /// FUN_1008e290's kind bits: 0x200 self, 1 PC, 4 party, 8 alliance, 0x10 monster, 2 NPC, 0x800 our pet, 0x1000
 /// others' pets and trusts (0x700.., inf for +0x12c bit 22). Not done: 0x100 ally NPCs, 0x400 allegiance.
 fn sub_kind(w: &World, id: u32) -> u32 {
@@ -606,6 +621,9 @@ pub fn set(w: &mut World, t: Option<u32>) {
     }
     let e = t.and_then(|t| w.entities.get(&t));
     log::info!("target {:#x} {:?} at {:?} radius {:?} (ours {})", t.unwrap_or(0), e.map(|e| e.name.as_str()), e.map(|e| (e.pos.x, e.pos.z)), e.map(|e| e.hitbox), w.my_plate.hitbox);
+    if let Some(old) = w.target.filter(|&old| old != w.my_id) {
+        w.last_target = Some(old);
+    }
     w.target = t;
     w.target_since = std::time::Instant::now();
     if w.locked {
@@ -781,7 +799,9 @@ pub fn confirm_target(w: &mut World) {
 /// pick; else the actor under the pointer becomes the target / the prompt's pick, and a click that leaves it as it
 /// was confirms (the prompt, the target, or with none the action menu). After a drag only the pick runs. Right:
 /// cancels the prompt, clears an unlocked target, or with none stops autorun. True when it confirmed.
-pub fn click(w: &mut World, picked: Option<u32>, left: bool, drag: bool) -> bool {
+/// `double` (ours, the modern UI's double click on the target): instead of the action menu, the safe default runs as
+/// Ctrl+C does (talk to an NPC, check a player or a monster), closing the menu the first click opened.
+pub fn click(w: &mut World, picked: Option<u32>, left: bool, drag: bool, double: bool) -> bool {
     log::debug!("world click left {left} drag {drag} picked {picked:?} target {:?}", w.target);
     if !left {
         if sub_up(w) {
@@ -810,6 +830,9 @@ pub fn click(w: &mut World, picked: Option<u32>, left: bool, drag: bool) -> bool
     }
     if sub_up(w) {
         confirm_sub(w);
+    } else if double {
+        w.action_menu = None;
+        super::check_target(w);
     } else {
         confirm_target(w);
     }
@@ -966,25 +989,31 @@ pub fn slot_target(w: &World, slot: usize) -> Option<u32> {
 /// it lands on is not checked against the prompt's exclusions (FUN_10082fa0 reads only the id).
 pub fn party_pad_step(w: &World, down: bool) -> Option<u32> {
     let inc = w.prompt.as_ref().map_or(u32::MAX, |s| s.inc);
-    // Nothing without 4 or without a pick.
-    let pick = w.target.filter(|_| inc & 4 != 0)?;
+    let slots: Vec<Option<u32>> = (0..18).map(|s| slot_target(w, s)).collect();
+    pad_party_step(&slots, w.target, w.my_id, inc, down)
+}
+
+/// FUN_10158b60 over the 18 alliance slots (`slots`, slot 0 us): the step from `pick` under the prompt's `inc`.
+fn pad_party_step(slots: &[Option<u32>], pick: Option<u32>, me: u32, inc: u32, down: bool) -> Option<u32> {
     // Without 8 only our six count (FUN_10203500).
     let party_only = inc & 8 == 0;
-    let slots: Vec<Option<u32>> = (0..18).map(|s| slot_target(w, s)).collect();
+    let n = slots.len();
     let fits = |s: usize| slots[s].filter(|_| !(party_only && s > 5));
     // FUN_10203920 walks all 18 slots to the next occupied one, wrapping; a pick outside them (or outside our six
     // when party_only) gives nothing.
-    let next = |at: usize| (1..=18).map(|i| if down { (at + i) % 18 } else { (at + 18 - i) % 18 }).find(|&s| slots[s].is_some());
-    let at = slots.iter().position(|s| *s == Some(pick)).filter(|&at| fits(at).is_some());
+    let next = |at: usize| (1..=n).map(|i| if down { (at + i) % n } else { (at + n - i) % n }).find(|&s| slots[s].is_some());
+    // Only with 4 and a pick does it step at all (0x10158b7d..0x10158b83); either missing leaves the result 0, which
+    // the 0x200 rule below still turns into us, so with no target and no prompt up / down pick us.
+    let at = pick.filter(|_| inc & 4 != 0).and_then(|p| slots.iter().position(|s| *s == Some(p))).filter(|&at| fits(at).is_some());
     let mut to = at.and_then(next);
     let mut found = to.and_then(fits);
     // Without 0x200, landing on us steps once more; us again is nothing.
-    if inc & 0x200 == 0 && found == Some(w.my_id) {
+    if inc & 0x200 == 0 && found == Some(me) {
         to = to.and_then(next);
-        found = to.and_then(fits).filter(|&id| id != w.my_id);
+        found = to.and_then(fits).filter(|&id| id != me);
     }
-    // With 0x200, nothing becomes us.
-    found.or_else(|| (inc & 0x200 != 0).then_some(w.my_id))
+    // With 0x200, nothing becomes us (0x10158c20: ECX 0x1047d600, our actor).
+    found.or_else(|| (inc & 0x200 != 0).then_some(me))
 }
 
 /// FUN_101514a0: while engaged with no target, the first attackable actor we claimed that is alive.
@@ -1211,6 +1240,31 @@ mod tests {
         assert_eq!(drop_rule(0, true, 3, 10.0, false), None);
         assert_eq!(drop_rule(0, false, 0, 50.5, false), Some(false));
         assert_eq!(drop_rule(0, false, 0, 1.0, true), Some(false));
+    }
+
+    /// Field d-pad up / down (FUN_10158b60): with no target and no prompt they pick us, then step the party from
+    /// there, wrapping; a pick outside the party also goes to us; a prompt without 0x200 skips us.
+    #[test]
+    fn dpad_party_step() {
+        let me = 1;
+        let mut slots = vec![None; 18];
+        (slots[0], slots[1], slots[2]) = (Some(me), Some(2), Some(3));
+        let all = u32::MAX;
+        assert_eq!(pad_party_step(&slots, None, me, all, true), Some(me));
+        assert_eq!(pad_party_step(&slots, None, me, all, false), Some(me));
+        assert_eq!(pad_party_step(&slots, Some(me), me, all, true), Some(2));
+        assert_eq!(pad_party_step(&slots, Some(me), me, all, false), Some(3));
+        assert_eq!(pad_party_step(&slots, Some(3), me, all, true), Some(me));
+        assert_eq!(pad_party_step(&slots, Some(0x0106_5013), me, all, true), Some(me));
+        // A prompt without 4 steps nothing, but 0x200 still gives us.
+        assert_eq!(pad_party_step(&slots, Some(2), me, 0x200, true), Some(me));
+        // A party-only prompt that cannot take us: no pick is nothing, landing on us steps past it.
+        assert_eq!(pad_party_step(&slots, None, me, 4, true), None);
+        assert_eq!(pad_party_step(&slots, Some(3), me, 4, true), Some(2));
+        assert_eq!(pad_party_step(&slots, Some(2), me, 4, false), Some(3));
+        // Alone in such a prompt: us again is nothing.
+        let alone: Vec<Option<u32>> = (0..18).map(|s| (s == 0).then_some(me)).collect();
+        assert_eq!(pad_party_step(&alone, Some(me), me, 4, true), None);
     }
 
     /// Engaging with auto lock-on at its default (config 7 = 0) targets and locks a monster; config 7 = 1

@@ -5,7 +5,7 @@
 use super::super::{World, fep};
 use super::Modern;
 use egui::text::CCursor;
-use egui::{FontId, Galley, Id, Order, Pos2, Rect, Sense, Ui, pos2, vec2};
+use egui::{FontId, Galley, Pos2, Rect, Ui, pos2};
 use std::sync::Arc;
 
 /// A selection over the lines: from the press to the pointer, each end a line's log index and a char of its text as
@@ -128,6 +128,7 @@ pub fn log_mouse(m: &Modern, resp: &egui::Response, drawn: &Drawn) -> bool {
     if resp.secondary_clicked()
         && let Some(at) = resp.interact_pointer_pos()
     {
+        *m.ctx_menu.borrow_mut() = None;
         *m.chat_menu.borrow_mut() = Some(Menu::Log { at, line: line_at(drawn, at) });
     }
     if resp.clicked() {
@@ -191,43 +192,15 @@ pub fn line_mouse(m: &Modern, resp: &egui::Response, stops: &[(usize, f32)]) {
     if resp.secondary_clicked()
         && let Some(at) = resp.interact_pointer_pos()
     {
+        *m.ctx_menu.borrow_mut() = None;
         *m.chat_menu.borrow_mut() = Some(Menu::Line { at });
     }
 }
 
-/// The open right-click menu: its rows (label, usable) in the pack's frame by the pointer; the row picked. A pick or a
-/// press elsewhere closes it.
+/// The open right-click menu (ctxmenu.rs's look); a pick or a press elsewhere closes it.
 fn menu(ctx: &egui::Context, m: &Modern, at: Pos2, rows: &[(&str, bool)]) -> Option<usize> {
-    let mut picked = None;
-    let font = FontId::proportional(m.theme.ui);
-    let shown = egui::Area::new(Id::unique("modern chat menu")).order(Order::Foreground).fixed_pos(at + vec2(2.0, 2.0)).constrain(true).show(ctx, |ui| {
-        let bg = ui.painter().add(egui::Shape::Noop);
-        let inner = egui::Frame::NONE.inner_margin(egui::Margin::symmetric(10, 8)).show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            for (k, (label, usable)) in rows.iter().enumerate() {
-                let (r, resp) = ui.allocate_exact_size(vec2(130.0, m.theme.ui + 12.0), if *usable { Sense::click() } else { Sense::hover() });
-                if *usable && resp.hovered() {
-                    ui.painter().rect_filled(r.expand2(vec2(4.0, 0.0)), 4.0, m.theme.color("focus").gamma_multiply(0.35));
-                }
-                let colour = if !*usable {
-                    m.theme.color("muted")
-                } else if resp.hovered() {
-                    m.theme.color("gold")
-                } else {
-                    m.theme.color("text")
-                };
-                ui.painter().text(pos2(r.min.x + 4.0, r.center().y), egui::Align2::LEFT_CENTER, *label, font.clone(), colour);
-                if resp.clicked() {
-                    picked = Some(k);
-                }
-            }
-        });
-        let r = inner.response.rect;
-        ui.painter().set(bg, super::borders::window(m, "window_normal", r));
-        r
-    });
-    let away = ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !shown.inner.contains(p)));
-    if picked.is_some() || away {
+    let (picked, close) = super::ctxmenu::popup(ctx, m, at, None, rows);
+    if close {
         *m.chat_menu.borrow_mut() = None;
     }
     picked

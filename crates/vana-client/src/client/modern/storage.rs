@@ -1,11 +1,15 @@
 //! The modern storage view in the command window, over items.rs's storage state and rules: the bags as tabs with the
 //! numbered ones merged (Mog Safe and Safe 2 one Mog Safe, Mog Wardrobe 1..8 one Mog Wardrobe; user, 2026-10-26),
-//! the chosen bag's items beside the inventory's. A click moves a stack across, a right click one of it; into a
-//! merged bag it goes to the first part with room that takes it. Retail's colours say what may move (equipped pieces,
-//! the moogle's bags away from it, non-gear into a wardrobe, installed furniture ...).
+//! the chosen bag's items beside the inventory's. A click (or Ctrl-click) sends a stack to the other pane, a right
+//! click one of it, a Shift-click asks how many; a row dragged onto the other pane moves its stack (with Shift held,
+//! asks how many), the pane outlined teal where the drop is taken and red where it is not. Into a merged bag it goes to
+//! the first part with room that takes it. Retail's colours say what may move (equipped pieces, the moogle's bags away
+//! from it, non-gear into a wardrobe, installed furniture ...), and a refused row says why (ours). Nothing moves
+//! before the server does: a sent move shows as pending until the slot changes, and one the server ignores is
+//! explained after a while.
 
 use super::super::World;
-use super::super::items::{self as gitems, Storage, Win};
+use super::super::items::{self as gitems, Pending, Qty, Storage, Win};
 use super::{Panels, Title};
 use crate::audio::Ui as Se;
 use crate::inventory::{Slot, TINT_DIM, TINT_WHITE};
@@ -14,6 +18,8 @@ use egui::{Align2, Color32, FontId, Rect, Sense, pos2, vec2};
 const ROW: f32 = 30.0;
 const ICON: f32 = 24.0;
 const BIN: u8 = 17;
+/// How long a sent move may wait for the server before it counts as refused.
+const PATIENCE: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// The bags: name and containers (the merged ones in the order they fill).
 const BAGS: [(&str, &[u8]); 9] = [
@@ -83,7 +89,8 @@ fn places(w: &World) -> Vec<(Option<usize>, usize, u8, Slot)> {
 }
 
 pub(in crate::client) fn search_open(w: &World) -> bool {
-    w.modern && view(w).is_some()
+    // Not while the quantity strip asks how many: a pick would move the whole stack.
+    w.modern && view(w).is_some_and(|(b, ..)| b.qty.is_none())
 }
 
 /// Every place's item: its bag (and count) as the note, greyed when it can't move across.
@@ -112,31 +119,81 @@ pub(in crate::client) fn search_pick(w: &mut World, _: Option<&super::super::gam
         switch(w, g);
     }
     set_cursor(w, bag.is_some(), row);
-    take(w, bag.is_some(), row, false);
+    take(w, bag.is_some(), row, How::Stack);
+}
+
+/// Why row `s` of a side (in part `c` for the bag side) may not move, None when it may.
+fn refusal(w: &World, b: &Storage, g: usize, bank_side: bool, c: u8, s: &Slot) -> Option<&'static str> {
+    let Some(info) = w.item_info.as_ref() else { return Some("Item data is still loading.") };
+    if b.read_only {
+        return Some("Away from the moogle: this list is read only.");
+    }
+    if bank_side {
+        let (t, why) = gitems::judge(w, info, &Storage { bank: c, side: gitems::INVENTORY, ..*b }, true, s);
+        return (t == TINT_DIM || t == 0x8060_2020).then(|| why.unwrap_or("This can't move."));
+    }
+    if super::items::bazaar_price(w, gitems::INVENTORY, s.index).is_some() {
+        return Some(super::items::BAZAAR_NOTE);
+    }
+    if target(w, b, g, s).is_some() {
+        return None;
+    }
+    // No part takes it: the first part's reason other than room, else the bag is full.
+    let whys: Vec<_> = BAGS[g].1.iter().filter_map(|&c| gitems::judge(w, info, &Storage { bank: c, side: gitems::INVENTORY, ..*b }, false, s).1).collect();
+    Some(whys.iter().copied().find(|y| !y.starts_with("No room")).unwrap_or("No room in this bag."))
+}
+
+/// What a drag holds: the side and row it left.
+#[derive(Clone, Copy)]
+struct Held {
+    bank_side: bool,
+    k: usize,
+}
+
+/// How much of a stack a move takes.
+#[derive(Clone, Copy, PartialEq)]
+enum How {
+    Stack,
+    One,
+    /// Ask how many first.
+    Split,
+}
+
+/// The quantity strip's buttons.
+#[derive(Clone, Copy)]
+enum QtyAct {
+    Step(i64),
+    Move,
+    Cancel,
 }
 
 /// The view's mouse.
 #[derive(Default)]
 struct Mouse {
     bag: Option<usize>,
-    take: Option<(bool, usize, bool)>,
+    take: Option<(bool, usize, How)>,
+    qty: Option<QtyAct>,
 }
 
 pub fn draw(p: &mut Panels, w: &mut World) {
     if !w.modern {
         return;
     }
+    settle(w);
     let Some((b, iscroll, icursor)) = view(w) else { return };
     let Some(info) = w.item_info.clone() else { return };
     let m = p.m;
+    let ctx = p.ctx;
     let g = group(b.bank);
     let tabs = bags(w, &b);
     let bag = rows(w, g);
     let inv = gitems::store_rows(w, gitems::INVENTORY);
     let first = BAGS[g].1[0];
+    let why_bag: Vec<Option<&'static str>> = bag.iter().map(|(c, s)| refusal(w, &b, g, true, *c, s)).collect();
+    let why_inv: Vec<Option<&'static str>> = inv.iter().map(|s| refusal(w, &b, g, false, gitems::INVENTORY, s)).collect();
     let tints_bag: Vec<u32> = bag.iter().map(|(c, s)| if b.read_only { TINT_DIM } else { tint(w, &b, true, *c, gitems::INVENTORY, s) }).collect();
-    let tints_inv: Vec<u32> = inv.iter().map(|s| if b.read_only || b.bank == BIN && false { TINT_DIM } else if target(w, &b, g, s).is_some() { tint(w, &b, false, gitems::INVENTORY, target(w, &b, g, s).unwrap_or(first), s) } else { TINT_DIM }).collect();
-    let icon = |id: u16| m.item_icon(p.ctx, &info, id);
+    let tints_inv: Vec<u32> = inv.iter().zip(&why_inv).map(|(s, why)| if why.is_some() { TINT_DIM } else { tint(w, &b, false, gitems::INVENTORY, target(w, &b, g, s).unwrap_or(first), s) }).collect();
+    let icon = |id: u16| m.item_icon(ctx, &info, id);
     let bag_icons: Vec<_> = bag.iter().map(|(_, s)| icon(s.id)).collect();
     let inv_icons: Vec<_> = inv.iter().map(|s| icon(s.id)).collect();
     let names = |s: &Slot| info.item(s.id).map(|it| it.name.clone()).unwrap_or_default();
@@ -149,6 +206,13 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let inv_room = (w.inv.sizes[0] as usize).saturating_sub(1);
     let on_bank = b.on_bank;
     let (bcur, icur) = (b.scroll + b.cursor, iscroll + icursor);
+    // The stack being split, and the move in flight, by name.
+    let qty = b.qty.map(|q| (q, w.inv.slots.get(&(q.from, q.index)).map(|&(id, _)| info.item(id).map(|it| it.name.clone()).unwrap_or_default()).unwrap_or_default()));
+    let pending = b.pending.map(|pd| (pd.count, info.item(pd.id).map(|it| it.name.clone()).unwrap_or_default()));
+    let note = b.note;
+    let held = egui::DragAndDrop::payload::<Held>(ctx).map(|h| *h);
+    let held_icon = held.and_then(|h| if h.bank_side { bag_icons.get(h.k).copied().flatten() } else { inv_icons.get(h.k).copied().flatten() });
+    let shift = ctx.input(|i| i.modifiers.shift);
     let mut mouse = Mouse::default();
     let mut found = super::lists::found(p, w, "storage");
     p.panel("window", Some(Title { icon: Some("icons/mog_safe"), text: "Storage", note: b.read_only.then_some("Away from the moogle") }), 720.0, |ui| {
@@ -161,11 +225,11 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         ui.add_space(8.0);
         let tall = ui.ctx().content_rect().height() * 0.55;
         ui.horizontal_top(|ui| {
-            let lists = [(true, format!("{}  {used} / {room}", BAGS[g].0), &bag_names, &bag_icons, &tints_bag, bcur), (false, format!("Inventory  {} / {inv_room}", inv.len()), &inv_names, &inv_icons, &tints_inv, icur)];
-            for (bank_side, title, names, icons, tints, cur) in lists {
+            let lists = [(true, format!("{}  {used} / {room}", BAGS[g].0), &bag_names, &bag_icons, &tints_bag, &why_bag, bcur), (false, format!("Inventory  {} / {inv_room}", inv.len()), &inv_names, &inv_icons, &tints_inv, &why_inv, icur)];
+            for (bank_side, title, names, icons, tints, whys, cur) in lists {
                 // The cursor's row kept in view as the keys move it (bag and side in the key).
                 let follow = m.moved(if bank_side { "storage bag" } else { "storage inventory" }, cur + g * 100_000);
-                ui.vertical(|ui| {
+                let col = ui.vertical(|ui| {
                     ui.set_width(340.0);
                     ui.label(egui::RichText::new(title).size(m.theme.small).color(m.theme.color("gold")));
                     // A search runs over every bag in the side with the cursor.
@@ -174,7 +238,8 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                     }
                     egui::ScrollArea::vertical().id_salt(bank_side).max_height(tall).min_scrolled_height(tall).auto_shrink([false, true]).show(ui, |ui| {
                         for (k, name) in names.iter().enumerate() {
-                            let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
+                            let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click_and_drag());
+                            resp.dnd_set_drag_payload(Held { bank_side, k });
                             let focus = on_bank == bank_side && k == cur;
                             if k == cur && follow {
                                 ui.scroll_to_rect(r, None);
@@ -186,8 +251,10 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                             };
                             super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
                             let dim = tints[k] == TINT_DIM;
+                            let lifted = held.is_some_and(|h| h.bank_side == bank_side && h.k == k);
                             if let Some(t) = icons[k] {
-                                ui.painter().image(t, Rect::from_min_size(pos2(r.min.x + 10.0, r.center().y - ICON / 2.0), vec2(ICON, ICON)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), if dim { Color32::from_gray(110) } else { Color32::WHITE });
+                                let tint = if dim || lifted { Color32::from_gray(110) } else { Color32::WHITE };
+                                ui.painter().image(t, Rect::from_min_size(pos2(r.min.x + 10.0, r.center().y - ICON / 2.0), vec2(ICON, ICON)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), tint);
                             }
                             let c = if dim { m.theme.color("muted") } else if tints[k] == TINT_WHITE { m.theme.color("text") } else { super::chat::colour(tints[k].to_le_bytes()) };
                             ui.painter().text(pos2(r.min.x + 42.0, r.center().y), Align2::LEFT_CENTER, name, FontId::proportional(m.theme.ui), c);
@@ -200,10 +267,13 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                                 super::items::bazaar_tag(ui, m, right, r.center().y, price);
                             }
                             if resp.clicked() {
-                                mouse.take = Some((bank_side, k, false));
+                                mouse.take = Some((bank_side, k, if shift { How::Split } else { How::Stack }));
                             }
                             if resp.secondary_clicked() {
-                                mouse.take = Some((bank_side, k, true));
+                                mouse.take = Some((bank_side, k, How::One));
+                            }
+                            if let Some(why) = whys[k] {
+                                m.tip(ui, r, name, why);
                             }
                             ui.add_space(2.0);
                         }
@@ -212,25 +282,92 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                         }
                     });
                 });
+                // The pane takes a row dragged from the other one: outlined teal where the drop is taken, red where
+                // it is not (the dragged row's own pane takes nothing).
+                let pane = col.response.rect.expand(4.0);
+                let drop = ui.interact(pane, egui::Id::unique(("storage drop", bank_side)), Sense::hover());
+                if let Some(h) = held.filter(|h| h.bank_side != bank_side) {
+                    let ok = if h.bank_side { why_bag.get(h.k).copied().flatten().is_none() } else { why_inv.get(h.k).copied().flatten().is_none() };
+                    if drop.contains_pointer() {
+                        let face = if ok { "controls/drag_outline_drop_valid" } else { "controls/drag_outline_drop_invalid" };
+                        if let Some(s) = m.art.sprite(face) {
+                            ui.painter().add(super::paint::nine_slice(&s, pane, 0.5, Color32::WHITE));
+                        }
+                    }
+                    if drop.dnd_release_payload::<Held>().is_some() {
+                        mouse.take = Some((h.bank_side, h.k, if shift { How::Split } else { How::Stack }));
+                    }
+                }
                 ui.add_space(14.0);
             }
         });
         ui.add_space(4.0);
+        if let Some((q, name)) = &qty {
+            // How many of a stack: - / + by one, Move, Cancel (the keys: Up / Down one, Left / Right ten).
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(format!("Move how many {name}?")).size(m.theme.small).color(m.theme.color("gold")));
+                let off = super::kit::Btn { lit: false, cursor: false, off: false };
+                if super::kit::clicked(&super::kit::button(ui, m, "-", 32.0, off), off) {
+                    mouse.qty = Some(QtyAct::Step(-1));
+                }
+                ui.label(egui::RichText::new(format!("{} / {}", q.value, q.max)).size(m.theme.ui).color(m.theme.color("text")));
+                if super::kit::clicked(&super::kit::button(ui, m, "+", 32.0, off), off) {
+                    mouse.qty = Some(QtyAct::Step(1));
+                }
+                let lit = super::kit::Btn { lit: true, cursor: true, off: false };
+                if super::kit::clicked(&super::kit::button(ui, m, "Move", 0.0, lit), lit) {
+                    mouse.qty = Some(QtyAct::Move);
+                }
+                if super::kit::clicked(&super::kit::button(ui, m, "Cancel", 0.0, off), off) {
+                    mouse.qty = Some(QtyAct::Cancel);
+                }
+            });
+        }
+        if let Some((n, name)) = &pending {
+            ui.label(egui::RichText::new(format!("Moving {name}{}...", if *n > 1 { format!(" x{n}") } else { String::new() })).size(m.theme.small).color(m.theme.color("muted")));
+        } else if let Some(note) = note {
+            ui.label(egui::RichText::new(note).size(m.theme.small).color(m.theme.color("hp")));
+        }
         if bazaar_held {
             ui.label(egui::RichText::new(super::items::BAZAAR_NOTE).size(m.theme.small).color(m.theme.color("gold")));
         }
-        ui.label(egui::RichText::new("Click moves a stack across, right click one. Tab changes the bag. Type to search every bag.").size(m.theme.small).color(m.theme.color("muted")));
+        ui.label(egui::RichText::new("Click or drag moves a stack across, right click one; Shift (or Shift+Enter) asks how many. Tab changes the bag. Type to search every bag.").size(m.theme.small).color(m.theme.color("muted")));
     });
     if let Some(f) = found {
         f.pick(w, p.gu);
         return;
     }
+    // The row under the pointer while dragged.
+    if let (Some(t), Some(at)) = (held_icon, ctx.pointer_hover_pos()) {
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("storage drag")));
+        painter.image(t, Rect::from_center_size(at, vec2(32.0, 32.0)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::from_white_alpha(220));
+    }
     if let Some(k) = mouse.bag {
         switch(w, k);
     }
-    if let Some((bank_side, k, one)) = mouse.take {
+    if let Some(a) = mouse.qty {
+        qty_act(w, a);
+    }
+    if let Some((bank_side, k, how)) = mouse.take {
         set_cursor(w, bank_side, k);
-        take(w, bank_side, k, one);
+        take(w, bank_side, k, how);
+    }
+}
+
+/// The move in flight settles: done once its slot holds something else; after PATIENCE unchanged, the server refused it
+/// and the view says so (nothing was moved on our side, so nothing needs putting back).
+fn settle(w: &mut World) {
+    let Some(pd) = view(w).and_then(|(b, ..)| b.pending) else { return };
+    let now = w.inv.slots.get(&(pd.from, pd.index)).copied();
+    let (pending, note) = if now != Some((pd.id, pd.count)) {
+        (None, None)
+    } else if pd.sent.elapsed() > PATIENCE {
+        (None, Some("Not moved: the server refused it (see the log). Nothing changed."))
+    } else {
+        return;
+    };
+    if let Some(b) = store_mut(w) {
+        (b.pending, b.note) = (pending, note);
     }
 }
 
@@ -253,7 +390,7 @@ fn switch(w: &mut World, g: usize) {
     if let Some(b) = store_mut(w)
         && group(b.bank) != g
     {
-        (b.bank, b.scroll, b.cursor, b.on_bank) = (BAGS[g].1[0], 0, 0, true);
+        (b.bank, b.scroll, b.cursor, b.on_bank, b.qty, b.note) = (BAGS[g].1[0], 0, 0, true, None, None);
         w.sounds.push(Se::Cursor as u32);
     }
 }
@@ -273,42 +410,99 @@ fn set_cursor(w: &mut World, bank_side: bool, k: usize) {
     }
 }
 
-/// Row `k` of a side moves across (all of it, or one): c2s 0x029 to the other side's first free slot.
-fn take(w: &mut World, bank_side: bool, k: usize, one: bool) {
+/// Row `k` of a side moves across (all of it, one, or how many the quantity strip says): c2s 0x029 to the other side's
+/// first free slot, pending until the server moves it. A row that may not move says why.
+fn take(w: &mut World, bank_side: bool, k: usize, how: How) {
     let Some((b, ..)) = view(w) else { return };
-    if b.read_only {
-        w.sounds.push(Se::Error as u32);
+    let g = group(b.bank);
+    let found = if bank_side { rows(w, g).into_iter().nth(k) } else { gitems::store_rows(w, gitems::INVENTORY).into_iter().nth(k).map(|s| (gitems::INVENTORY, s)) };
+    let Some((c, s)) = found else { return };
+    if let Some(why) = refusal(w, &b, g, bank_side, c, &s) {
+        refuse(w, why);
         return;
     }
-    let g = group(b.bank);
-    let (from, to, s) = if bank_side {
-        let Some((c, s)) = rows(w, g).into_iter().nth(k) else { return };
-        if tint(w, &b, true, c, gitems::INVENTORY, &s) == TINT_DIM {
-            w.sounds.push(Se::Error as u32);
-            return;
+    let (from, to) = if bank_side { (c, gitems::INVENTORY) } else { (gitems::INVENTORY, target(w, &b, g, &s).unwrap_or(c)) };
+    if how == How::Split && s.count > 1 {
+        // Ours: the strip opens on half the stack (retail's itemctrl on 1).
+        if let Some(b) = store_mut(w) {
+            (b.qty, b.note) = (Some(Qty { index: s.index, value: s.count.div_ceil(2), max: s.count, from, to }), None);
         }
-        (c, gitems::INVENTORY, s)
-    } else {
-        let Some(s) = gitems::store_rows(w, gitems::INVENTORY).into_iter().nth(k) else { return };
-        let Some(c) = target(w, &b, g, &s) else {
-            w.sounds.push(Se::Error as u32);
-            return;
-        };
-        (gitems::INVENTORY, c, s)
-    };
-    let n = if one { 1 } else { s.count.max(1) };
+        w.sounds.push(Se::Select as u32);
+        return;
+    }
+    let n = if how == How::One { 1 } else { s.count.max(1) };
+    send(w, from, to, &s, n);
+}
+
+fn refuse(w: &mut World, why: &'static str) {
+    if let Some(b) = store_mut(w) {
+        b.note = Some(why);
+    }
+    w.sounds.push(Se::Error as u32);
+}
+
+/// c2s 0x029 for `n` of the stack in slot `s` of `from`, kept as the pending move.
+fn send(w: &mut World, from: u8, to: u8, s: &Slot, n: u32) {
     gitems::send_move(w, from, to, s.index, n);
+    if let Some(b) = store_mut(w) {
+        b.pending = Some(Pending { from, index: s.index, id: s.id, count: s.count, sent: std::time::Instant::now() });
+        (b.note, b.qty) = (None, None);
+    }
     w.sounds.push(Se::Select as u32);
 }
 
-/// The view's keys: Left / Right the side, Up / Down the row, Enter moves its stack across, Tab the next bag, Escape
-/// closes (retail's). True when taken.
-pub fn key(w: &mut World, key: egui::Key) -> bool {
+/// The quantity strip: a step, Move or Cancel.
+fn qty_act(w: &mut World, a: QtyAct) {
+    let Some(q) = view(w).and_then(|(b, ..)| b.qty) else { return };
+    match a {
+        QtyAct::Step(d) => {
+            if let Some(b) = store_mut(w) {
+                b.qty = Some(Qty { value: (q.value as i64 + d).clamp(1, q.max as i64) as u32, ..q });
+            }
+            w.sounds.push(Se::Cursor as u32);
+        }
+        QtyAct::Move => {
+            // The stack as it is now (it may have changed while the strip was up).
+            match w.inv.slots.get(&(q.from, q.index)).copied() {
+                Some((id, count)) if id != 0 && count >= q.value => send(w, q.from, q.to, &Slot { index: q.index, id, count, equipped: false, equipped_ex: false }, q.value),
+                _ => {
+                    if let Some(b) = store_mut(w) {
+                        b.qty = None;
+                    }
+                    refuse(w, "That stack changed: pick it again.");
+                }
+            }
+        }
+        QtyAct::Cancel => {
+            if let Some(b) = store_mut(w) {
+                b.qty = None;
+            }
+            w.sounds.push(Se::Cancel as u32);
+        }
+    }
+}
+
+/// The view's keys: Left / Right the side, Up / Down the row, Enter moves its stack across (Shift+Enter asks how many),
+/// Tab the next bag, Escape closes (retail's). With the quantity strip up: Up / Down one, Right / Left ten, Enter
+/// moves, Escape cancels. True when taken.
+pub fn key(w: &mut World, key: egui::Key, shift: bool) -> bool {
     if !w.modern {
         return false;
     }
     let Some((b, iscroll, icursor)) = view(w) else { return false };
     use egui::Key as K;
+    if b.qty.is_some() {
+        match key {
+            K::ArrowUp => qty_act(w, QtyAct::Step(1)),
+            K::ArrowDown => qty_act(w, QtyAct::Step(-1)),
+            K::ArrowRight => qty_act(w, QtyAct::Step(10)),
+            K::ArrowLeft => qty_act(w, QtyAct::Step(-10)),
+            K::Enter => qty_act(w, QtyAct::Move),
+            K::Escape => qty_act(w, QtyAct::Cancel),
+            _ => {}
+        }
+        return true;
+    }
     let g = group(b.bank);
     let (bn, inn) = (rows(w, g).len(), gitems::store_rows(w, gitems::INVENTORY).len());
     let (side, cur, n) = if b.on_bank { (true, b.scroll + b.cursor, bn) } else { (false, iscroll + icursor, inn) };
@@ -333,7 +527,7 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
                 switch(w, tabs[if w.key_shift { (i + n - 1) % n } else { (i + 1) % n }]);
             }
         }
-        K::Enter if n > 0 => take(w, side, cur.min(n - 1), false),
+        K::Enter if n > 0 => take(w, side, cur.min(n - 1), if shift { How::Split } else { How::Stack }),
         K::Escape => {
             w.win = None;
             // From View House its menu closes too (the view is the whole of it here).

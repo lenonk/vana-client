@@ -1,0 +1,86 @@
+{
+  "rule": "debuff",
+  "note": "Engaged on a crab at 80% that has nothing of ours on it: Dia first.",
+  "facts": {
+    "party": [
+      {
+        "name": "Lenon",
+        "me": true,
+        "here": true,
+        "hp": 800,
+        "hp_max": 800,
+        "job": 5,
+        "effects": []
+      }
+    ],
+    "own": [],
+    "tp": 0,
+    "engaged": true,
+    "spells": [
+      {
+        "id": 23,
+        "name": "Dia",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      },
+      {
+        "id": 24,
+        "name": "Dia II",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      },
+      {
+        "id": 56,
+        "name": "Slow",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      }
+    ],
+    "abilities": [],
+    "weapon_skills": [],
+    "target": {
+      "name": "Crab",
+      "hpp": 80,
+      "ours": [],
+      "hitting": null,
+      "hitting_me": false,
+      "ranks": null
+    },
+    "resonance": null,
+    "partners": [],
+    "weather_element": null,
+    "day_element": null
+  },
+  "expect": [
+    {
+      "action": {
+        "Spell": 24
+      },
+      "target": null,
+      "reason": "Dia is not on the Crab.",
+      "group": [
+        23,
+        24
+      ],
+      "label": "Dia"
+    },
+    {
+      "action": {
+        "Spell": 56
+      },
+      "target": null,
+      "reason": "The Crab is not slowed.",
+      "group": [],
+      "label": null
+    }
+  ]
+}

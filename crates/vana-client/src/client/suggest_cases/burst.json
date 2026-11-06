@@ -1,0 +1,102 @@
+{
+  "rule": "burst",
+  "note": "Fusion made on the target 1 s ago: the biggest Fire nuke known bursts it.",
+  "facts": {
+    "party": [
+      {
+        "name": "Lenon",
+        "me": true,
+        "here": true,
+        "hp": 800,
+        "hp_max": 800,
+        "job": 4,
+        "effects": []
+      }
+    ],
+    "own": [],
+    "tp": 0,
+    "engaged": true,
+    "spells": [
+      {
+        "id": 144,
+        "name": "Fire",
+        "skill": 36,
+        "element": 0,
+        "mp": 9,
+        "targets": 32,
+        "area": false
+      },
+      {
+        "id": 145,
+        "name": "Fire II",
+        "skill": 36,
+        "element": 0,
+        "mp": 22,
+        "targets": 32,
+        "area": false
+      },
+      {
+        "id": 149,
+        "name": "Blizzard",
+        "skill": 36,
+        "element": 1,
+        "mp": 8,
+        "targets": 32,
+        "area": false
+      },
+      {
+        "id": 230,
+        "name": "Bio",
+        "skill": 37,
+        "element": 7,
+        "mp": 15,
+        "targets": 32,
+        "area": false
+      }
+    ],
+    "abilities": [],
+    "weapon_skills": [],
+    "target": {
+      "name": "Goblin Thug",
+      "hpp": 90,
+      "ours": [],
+      "hitting": null,
+      "hitting_me": false,
+      "ranks": null
+    },
+    "resonance": {
+      "against": [
+        11
+      ],
+      "chain": 11,
+      "age": 1.0,
+      "left": 8.0
+    },
+    "partners": [],
+    "weather_element": null,
+    "day_element": null
+  },
+  "expect": [
+    {
+      "action": {
+        "Spell": 145
+      },
+      "target": null,
+      "reason": "Burst Fusion (Light, Fire): 8 s left.",
+      "group": [
+        145,
+        144
+      ],
+      "label": "Fire"
+    },
+    {
+      "action": {
+        "Spell": 230
+      },
+      "target": null,
+      "reason": "Bio is not on the Goblin Thug.",
+      "group": [],
+      "label": null
+    }
+  ]
+}

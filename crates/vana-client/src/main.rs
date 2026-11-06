@@ -613,12 +613,27 @@ enum Cmd {
         /// A panel of the widget kit's controls (long and short values, a long label) in place of the frames.
         #[arg(long)]
         kit: bool,
+        /// The UI Modes editor (the mode presets).
+        #[arg(long)]
+        modes: bool,
         /// The Settings window searching "shadow" (our settings; retail's need the game's layouts).
         #[arg(long)]
         settings: bool,
         /// Ours: the GM window with a level 5 GM's sample commands.
         #[arg(long)]
         gm: bool,
+        /// The favourites strip and starred list rows.
+        #[arg(long)]
+        favs: bool,
+        /// The right-click menus (an item's, a party row's, an actor's) beside the party window.
+        #[arg(long)]
+        menus: bool,
+        /// The two alliance windows with sample rows.
+        #[arg(long)]
+        alliance: bool,
+        /// Title rows with long notes: the Commands window on long target names, a target with a long name.
+        #[arg(long)]
+        titles: bool,
     },
     /// Disassemble a zone's event scripts (event DAT), with dialogue text inlined.
     EventDump {
@@ -1268,9 +1283,9 @@ fn main() -> Result<()> {
             println!("bounds {} .. {}; wrote {}", mesh.min, mesh.max, out.display());
             Ok(())
         }
-        Cmd::ModernShot { width, height, scale, backdrop, out, chat_font, font, font_strong, rows, borders, opacity, kit, settings, gm } => {
+        Cmd::ModernShot { width, height, scale, backdrop, out, chat_font, font, font_strong, rows, borders, opacity, kit, alliance, menus, favs, modes, titles, settings, gm } => {
             let list = font.is_some();
-            client::modern_shot(width, height, scale, backdrop.as_deref(), &out, &client::ModernShotOpts { chat_font, font: font.zip(font_strong), list, rows, borders, opacity, kit, settings, gm })
+            client::modern_shot(width, height, scale, backdrop.as_deref(), &out, &client::ModernShotOpts { chat_font, font: font.zip(font_strong), list, rows, borders, opacity, kit, alliance, menus, favs, modes, titles, settings, gm })
         }
         Cmd::CreatorShot { screen: true, race, face, hair, frame, view, width, height, step, size, job, nation, name, world, help_time, bench, out, .. } => {
             client::creator_screen_shot(&client::CreatorScreenShot { race, face, hair, size, job, nation, step, name, world, frame, view, help_time, width, height, bench }, &out)

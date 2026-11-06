@@ -1435,7 +1435,7 @@ pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
 /// only the right click.
 #[allow(clippy::too_many_arguments)]
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
-    use super::winhits::{generic, over};
+    use super::winhits::generic;
     // The modern layer draws these and takes their mouse.
     if w.modern {
         return;
@@ -1445,9 +1445,7 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
         key(w, k);
     };
     if a.money.is_some() {
-        if right && over(w, MONEYCTR, p) {
-            key(w, egui::Key::Escape);
-        }
+        super::winhits::ctr(w, gu, MONEYCTR, p, clicked, right, keys);
         return;
     }
     if let Some((sel, ..)) = a.shopsell {

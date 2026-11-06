@@ -372,6 +372,9 @@ fn tag(w: &World, tag: &str, target_cmd: bool) -> Option<String> {
         "<ht>" if !target_cmd => super::target::call_for_help(w).and_then(|id| w.entities.get(&id)).and_then(|e| w.npc_names.iter().find(|(n, _)| (*n & 0x3ff) as u16 == e.index & 0x3ff)).map(|(_, n)| n.clone()),
         // Type 0x1d, in target commands too.
         "<focust>" => focus_name(w),
+        // Ours, modern only: <ft> is <focust>; <lt> the last target's name (a target command resolves it itself).
+        "<ft>" if w.modern => focus_name(w),
+        "<lt>" if w.modern && !target_cmd => super::target::last_target(w).and_then(|t| name_of(w, t)),
         "<r>" => w.tells.first().cloned(),
         "<tp>" => vit.map(|v| v.2.to_string()),
         "<hp>" => Some(format!("{}/{}", vit?.0, stats?.hp_max)),
@@ -451,6 +454,7 @@ pub(super) fn resolve(w: &World, text: Option<&str>, fallback: bool, wide: bool,
             // FUN_1007a1c0: the tracked actor while tracking, when it is here.
             "<scan>" => w.scan.tracking().and_then(|t| w.entities.iter().find(|(_, e)| e.index == t.index).map(|(id, e)| (*id, e.index))),
             "<pet>" => pet(w),
+            "<lt>" if w.modern => super::target::last_target(w),
             "<ht>" => super::target::call_for_help(w).and_then(|id| w.entities.get(&id).map(|e| (id, e.index))),
             _ => None,
         };
@@ -646,6 +650,16 @@ pub(super) fn run_unfiltered(w: &mut World, line: &str, mode: Mode) {
     // Ours (not retail; the find-all add-ons): /find <words> lists the bags holding each item whose name has them.
     if first.eq_ignore_ascii_case("/find") {
         find(w, line[first.len()..].trim());
+        return;
+    }
+    // Ours (not retail; the modern UI's mode presets): /uimodes opens or closes their editor.
+    if first.eq_ignore_ascii_case("/uimodes") && w.modern {
+        w.uimodes_open = !w.uimodes_open;
+        return;
+    }
+    // Ours (not retail; modern favourites): /favs [on | off] shows or hides the favourites strip.
+    if first.eq_ignore_ascii_case("/favs") {
+        super::favs::command(w, line.split_whitespace().nth(1));
         return;
     }
     let first_flags = table().get(first).map_or(0, |e| e.1);
@@ -1432,6 +1446,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         id::AUTOMOVE => {
             w.autorun = true;
             w.autorun_dir = glam::Vec3::new(w.yaw.sin(), 0.0, w.yaw.cos());
+            w.run_to = None;
             Ok(())
         }
         // FUN_1007e190: a target that is not us (else the command fails); not followable (dead, no model) group 7
@@ -1445,6 +1460,8 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             w.follow = Some(t);
             w.autorun = true;
             w.autorun_dir = glam::Vec3::ZERO;
+            // Ours: following ends a mod's run_to, which would steer over it.
+            w.run_to = None;
             Ok(())
         }
         // FUN_1007bd80: nothing while engaged; "all" or a trust of ours by name: the talk action with param 1
@@ -2410,8 +2427,8 @@ fn atoi(s: &str) -> i64 {
     if neg { -n } else { n }
 }
 
-/// A container's name for /find (the wardrobes and safes numbered).
-fn bag_name(c: u8) -> String {
+/// A container's name for /find (the wardrobes and safes numbered) and the Modern UI's bag headers.
+pub(super) fn bag_name(c: u8) -> String {
     match c {
         0 => "Inventory".into(),
         1 => "Mog Safe".into(),
@@ -2455,16 +2472,25 @@ fn find(w: &mut World, what: &str) {
 
 /// FUN_1007cab0: PlayTime from the 0x00A plus the time since, group 10 0x2e (h, m, s) or 0x2f (with days), mode 0x8b.
 fn playtime(w: &mut World) -> Done {
-    use crate::dat::msgfmt;
-    let (Some(bt), Some((base, at))) = (w.battle.clone(), w.play_time) else { return Ok(()) };
-    let t = base as i64 + at.elapsed().as_secs() as i64;
-    let (d, h, m, s) = ((t / 86400) as i32, (t % 86400 / 3600) as i32, (t % 3600 / 60) as i32, (t % 60) as i32);
-    let (id, ints) = if d == 0 { (0x2e, vec![h, m, s]) } else { (0x2f, vec![d, h, m, s]) };
-    let Some(raw) = bt.group10_raw(id) else { return Ok(()) };
-    let text = crate::dat::font::decode_sjis(&msgfmt::format(&raw, &[], &ints, &|_, _, _| None));
+    let (Some(bt), Some(text)) = (w.battle.clone(), playtime_text(w)) else { return Ok(()) };
     let colour = bt.colour_in(0x8b, &w.game);
     w.chat.push_colour(text, colour);
     Ok(())
+}
+
+/// The seconds played: the 0x00A's PlayTime plus the time since it came.
+pub(super) fn played(w: &World) -> Option<i64> {
+    w.play_time.map(|(base, at)| base as i64 + at.elapsed().as_secs() as i64)
+}
+
+/// /playtime's line: group 10 0x2e (h, m, s) or 0x2f (with days).
+pub(super) fn playtime_text(w: &World) -> Option<String> {
+    use crate::dat::msgfmt;
+    let t = played(w)?;
+    let (d, h, m, s) = ((t / 86400) as i32, (t % 86400 / 3600) as i32, (t % 3600 / 60) as i32, (t % 60) as i32);
+    let (id, ints) = if d == 0 { (0x2e, vec![h, m, s]) } else { (0x2f, vec![d, h, m, s]) };
+    let raw = w.battle.as_ref()?.group10_raw(id)?;
+    Some(crate::dat::font::decode_sjis(&msgfmt::format(&raw, &[], &ints, &|_, _, _| None)))
 }
 
 /// FUN_10080830: no argument prints "(chatmode : prefix)" (mode 0x9d); else the mode by its word (table 0x10357ac8),
@@ -2825,6 +2851,7 @@ fn magic(w: &mut World, cid: u16, args: &[String], mode: Mode) -> Done {
     // FUN_10159cc0: the ground-position cursor less the target's position (0 with no cursor) rides in +0x10..+0x1b.
     let offset = super::target::ground_offset(w, t.0);
     act_at(w, t, cat::MAGIC, spell as u32, offset);
+    super::pending::start(w, super::pending::Ask::Spell(spell as u16), t.0);
     Ok(())
 }
 
@@ -2855,6 +2882,7 @@ fn weapon_skill(w: &mut World, args: &[String], mode: Mode) -> Done {
     let ws = ability_named(w, args.get(1).ok_or(())?, 0..0x200).ok_or(())?;
     let t = resolve(w, args.get(2).map(String::as_str), false, true, mode).ok_or(())?;
     act(w, t, cat::WS, ws as u32);
+    super::pending::start(w, super::pending::Ask::WeaponSkill(ws as u16), t.0);
     Ok(())
 }
 
@@ -2876,6 +2904,7 @@ fn ability(w: &mut World, _pet: bool, args: &[String], mode: Mode) -> Done {
     }
     let t = resolve(w, args.get(2).map(String::as_str), false, true, mode).ok_or(())?;
     act(w, t, cat::JA, (id - 0x200) as u32);
+    super::pending::start(w, super::pending::Ask::Ability(id as u16), t.0);
     Ok(())
 }
 
@@ -2964,6 +2993,7 @@ fn bstpet(w: &mut World, args: &[String], mode: Mode) -> Done {
     .ok_or(())?;
     let t = resolve(w, args.get(2).map(String::as_str), false, false, mode).ok_or(())?;
     act(w, t, cat::JA, (id - 0x200) as u32);
+    super::pending::start(w, super::pending::Ask::Ability(id as u16), t.0);
     Ok(())
 }
 

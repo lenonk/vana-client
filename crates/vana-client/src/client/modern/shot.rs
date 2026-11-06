@@ -40,6 +40,26 @@ fn list_sample(p: &mut Panels) {
     });
 }
 
+/// The favourites strip (no game art offscreen: the names' first letters) and list rows with their stars.
+fn favs_sample(p: &mut Panels) {
+    use super::super::favs::Fav;
+    let chip = |fav, name: &str, off, count| super::favs::Chip { fav, name: name.into(), icon: None, off, count };
+    let chips = [chip(Fav::Spell(1), "Cure", false, None), chip(Fav::Spell(4), "Cure IV", true, None), chip(Fav::Ability(0x210), "Provoke", false, None), chip(Fav::Ability(0x2a), "Savage Blade", false, None), chip(Fav::Item(4112), "Hi-Potion", false, Some(12)), chip(Fav::Item(4151), "Echo Drops", false, Some(4))];
+    super::favs::strip(p, &chips);
+    let m = p.m;
+    let at = p.ctx.content_rect().center() + vec2(-160.0, -240.0);
+    p.panel_at("items", Some(super::Title { icon: None, text: "White Magic", note: Some("4") }), 320.0, at, |ui| {
+        for (k, (name, on)) in [("Cure", true), ("Cure II", false), ("Cure IV", true), ("Protect", false)].into_iter().enumerate() {
+            let (r, resp) = ui.allocate_exact_size(vec2(296.0, 30.0), egui::Sense::hover());
+            let face = if k == 1 { "controls/list_row_selected" } else { "controls/list_row_normal" };
+            super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
+            ui.painter().text(pos2(r.min.x + 24.0, r.center().y), egui::Align2::LEFT_CENTER, name, egui::FontId::proportional(m.theme.ui), m.theme.color("text"));
+            super::favs::star(ui, m, r, on, k == 1 || resp.hovered());
+            ui.add_space(2.0);
+        }
+    });
+}
+
 /// The main menu as command.rs draws it, Journal open with its submenu: a hovered row, one disabled.
 /// The kit's controls as a Config page has them: sliders with a short and a long value, options, a long-labelled line.
 fn kit_sample(p: &mut Panels) {
@@ -53,6 +73,11 @@ fn kit_sample(p: &mut Panels) {
             kit::button(ui, m, "Uninstall", 0.0, kit::Btn::default());
             kit::button(ui, m, "ON", 64.0, kit::Btn { lit: true, ..Default::default() });
         });
+    });
+    // link11 as the modern window draws it (no item cache here: a disc stands in for the shell icon).
+    let v = super::social::NameView { name: "Sunset Watch", rgb: [15, 9, 3], sel: 3, edit: 0 };
+    p.panel_at("naming sample", Some(Title { icon: Some("icons/linkshell"), text: "New Linkshell", note: None }), super::social::NAME_W + 44.0, pos2(720.0, 40.0), |ui| {
+        super::social::naming_body(ui, m, &v, None, true);
     });
 }
 
@@ -192,6 +217,21 @@ fn timers_sample(m: &Modern, ctx: &egui::Context, x: f32, width: f32, side: supe
     });
 }
 
+/// Title rows whose notes are long: the Commands window on a target whose name takes two lines, on one with a ':',
+/// on a short one, and a target with a long name and a distance.
+fn titles_sample(p: &mut Panels) {
+    let m = p.m;
+    let rows = |ui: &mut egui::Ui, labels: &[&str]| {
+        for l in labels {
+            ui.label(egui::RichText::new(*l).size(m.theme.ui).color(m.theme.color("text")));
+        }
+    };
+    for (id, title, note) in [("combat", "Commands", "Ghillie Dhu of the Great Woods"), ("palette", "Battle", "Qu'Vho: Deathhurler"), ("list", "Commands", "Tonberry Creeper")] {
+        p.panel(id, Some(Title { icon: Some("icons/attack"), text: title, note: Some(note) }), 270.0, |ui| rows(ui, &["Attack", "Magic", "Abilities"]));
+    }
+    hud::target_panel(p, &TargetView { name: "Shadow Lord's Lieutenant of the North".into(), ring: "indicators/target_hostile", locked: false, hp: Some((100, 1.0)), colour: None, cast: None, distance: Some(4.2) });
+}
+
 fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     let top = crate::client::hudtop::TopView {
         title: "Status".into(),
@@ -206,10 +246,11 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
         recv: 276,
         meter: (1, 3),
         mail: None,
+        gm_reply: false,
     };
     super::topbar::draw(m, ctx, &top);
     let (mut changed, mut chat_font) = (false, opts.chat_font);
-    let mut p = Panels { m, ctx, gu: None, layout, changed: &mut changed, chat_font: &mut chat_font, battle_in_all: &mut true, condense: &mut true, folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: Some("target"), hidden: Vec::new() };
+    let mut p = Panels { m, ctx, gu: None, layout, vis: Default::default(), changed: &mut changed, chat_font: &mut chat_font, battle_in_all: &mut true, condense: &mut true, folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: Some("target"), hidden: Vec::new() };
     // The chat window first, as the layer draws it: the location panel sits on it.
     let wh = [0x80, 0x80, 0x80, 0x80];
     let lines = vec![
@@ -242,13 +283,44 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     let vit = |hp: u32, mp: u32, f: f32| hud::RowVitals { hp, hp_max: Some(1000), mp, tp: Some(if f > 0.9 { 1250 } else { 300 }), hpf: f, mpf: Some(f * 0.8), hp_colour: if f < 0.75 { egui::Color32::from_rgb(0xff, 0xd0, 0x40) } else { egui::Color32::WHITE } };
     let row = |slot, name: &str, job, here: bool, hp: f32, marked, effects: Vec<Effect>| PartyRow { slot, name: name.into(), icon: hud::job_icon(job), sub_icon: hud::job_icon(if job == 3 { 5 } else { 0 }), here: here.then(|| vit((hp * 1000.0) as u32, 420, hp)), zone: "Port Jeuno".into(), marked, hand: marked.then_some(0x8080_8080), marks: (slot == 0) as u8, effects, jobs: String::new() };
     hud::party_panel(&mut p, "party", "Party", &[row(0, "Lenon", 5, true, 0.98, false, vec![]), row(1, "Raven", 1, true, 0.88, false, theirs.clone()), row(2, "Koru", 3, true, 0.62, true, vec![]), row(3, "Shantotto", 4, true, 0.95, false, vec![]), row(4, "Prishe", 2, false, 1.0, false, vec![])], false, Some(super::super::resttick::Shown::Next(0.6, 4.0)));
+    // The two alliance parties as party_rows builds them: no MP bar, leader marks (bit 1 the alliance leader's), a
+    // member out of the zone, a trust's row without TP.
+    let ally = |slot, name: &str, job, here: bool, hp: f32, marks: u8, tp: bool| {
+        let mut r = row(slot, name, job, here, hp, false, vec![]);
+        if let Some(v) = r.here.as_mut() {
+            v.mpf = None;
+            v.tp = v.tp.filter(|_| tp);
+        }
+        PartyRow { marks, ..r }
+    };
+    if opts.alliance {
+        let a1 = [ally(6, "Ayame", 12, true, 1.0, 3, true), ally(7, "Naji", 1, true, 0.42, 0, true), ally(8, "Kupipi", 3, true, 0.9, 0, false), ally(9, "Mihli Aliapoh", 3, false, 1.0, 0, true), ally(10, "Excenmille", 7, true, 0.15, 0, true), ally(11, "Trion", 7, true, 0.77, 0, true)];
+        let a2 = [ally(12, "Zeid", 8, true, 0.66, 1, true), ally(13, "Lion", 6, true, 1.0, 0, true)];
+        hud::party_panel(&mut p, "alliance1", "Alliance", &a1, false, None);
+        hud::party_panel(&mut p, "alliance2", "Alliance", &a2, false, None);
+    }
     hud::cast_panel(&mut p, "cast", "Casting", 0.6, "60%");
-    hud::target_panel(&mut p, &TargetView { name: "Robber Crab".into(), ring: "indicators/target_hostile", locked: true, hp: Some((72, 0.72)), colour: Some(egui::Color32::from_rgb(255, 80, 80)), cast: Some(("Firaga".into(), Some(0.4))), distance: Some(12.4) });
+    // A refused action's chip over the cast bar (pending.rs).
+    super::pending::panel(&mut p, &super::pending::View { what: "Cure III".into(), on: Some("Raven".into()), state: super::super::pending::State::Refused("Raven is out of range.".into()), secs: 0.6 });
+if !opts.titles {
+        hud::target_panel(&mut p, &TargetView { name: "Robber Crab".into(), ring: "indicators/target_hostile", locked: true, hp: Some((72, 0.72)), colour: Some(egui::Color32::from_rgb(255, 80, 80)), cast: Some(("Firaga".into(), Some(0.4))), distance: Some(12.4) });
+    }
+    if opts.titles {
+        titles_sample(&mut p);
+    }
     if opts.list {
         list_sample(&mut p);
     }
     if opts.kit {
         kit_sample(&mut p);
+    }
+    if opts.modes {
+        let mut cfg = crate::config::ModernModes::default();
+        cfg.pinned.push("party".into());
+        super::modes::editor(&mut p, &mut true, &mut cfg, super::modes::Mode::Combat);
+    }
+    if opts.favs {
+        favs_sample(&mut p);
     }
     if opts.gm {
         super::gmwin::sample(&mut p);
@@ -256,6 +328,12 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     if opts.settings {
         let s = super::super::settings::SettingsUi::open(&crate::config::Config::default(), [1920, 1080]);
         super::config::sample(&mut p, &s);
+    }
+    if opts.menus {
+        let r = p.this.get("party").copied().unwrap_or(Rect::NOTHING);
+        super::ctxmenu::popup(ctx, m, pos2(r.min.x - 560.0, r.min.y - 40.0), None, &[("Use", true), ("Drop", true), ("Sort", true), ("Move to...", true)]);
+        super::ctxmenu::popup(ctx, m, pos2(r.min.x - 380.0, r.min.y - 40.0), Some("Raven"), &[("Target", true), ("Check", true), ("Tell", true), ("Focus Target", true)]);
+        super::ctxmenu::popup(ctx, m, pos2(r.min.x - 200.0, r.min.y - 40.0), Some("Robber Crab"), &[("Target", true), ("Attack", true), ("Check", true)]);
     }
     if opts.rows.is_some() || opts.borders.is_some() {
         menu_sample(&mut p);
@@ -268,7 +346,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
         timers_sample(m, ctx, screen.center().x - 190.0 - super::extras::WIDTH, super::extras::WIDTH, super::extras::Side::Left);
         timers_sample(m, ctx, screen.center().x - 180.0, 360.0, super::extras::Side::Left);
     }
-    if opts.list || opts.kit || opts.settings || opts.gm || opts.rows.is_some() || opts.borders.is_some() {
+    if opts.list || opts.kit || opts.favs || opts.modes || opts.settings || opts.gm || opts.rows.is_some() || opts.borders.is_some() {
         return;
     }
     // Every frame at a few sizes: nine-slice corners, tiled edges, the stretched gradient.
@@ -301,10 +379,20 @@ pub struct Opts {
     pub opacity: f32,
     /// A panel of the kit's controls.
     pub kit: bool,
+    /// The UI Modes editor.
+    pub modes: bool,
     /// The Settings window (config.rs).
     pub settings: bool,
     /// Ours: the GM window (gmwin.rs) with a level 5 sample.
     pub gm: bool,
+    /// The favourites strip and starred list rows.
+    pub favs: bool,
+    /// The right-click menus beside the party window.
+    pub menus: bool,
+    /// The alliance windows with sample rows.
+    pub alliance: bool,
+    /// Title rows with long notes.
+    pub titles: bool,
 }
 
 pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &Path, opts: &Opts) -> Result<()> {
@@ -322,6 +410,11 @@ pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &
     });
     let view = target.create_view(&Default::default());
     let ctx = egui::Context::default();
+    // The atlases load at once: the context learns the GPU's texture limit first (egui assumes 2048 until told).
+    let side = Some(gpu.device.limits().max_texture_dimension_2d as usize);
+    let mut warm = ctx.run_ui(egui::RawInput { max_texture_side: side, ..Default::default() }, |_| {});
+    let mut deltas: Vec<_> = warm.textures_delta.set.drain().collect();
+    warm.textures_delta.clear();
     let m = Modern::new(&ctx);
     m.set_opacity(opts.opacity);
     if let Some(name) = &opts.rows {
@@ -337,11 +430,10 @@ pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &
     ctx.set_zoom_factor(zoom);
     let bg = backdrop.map(load_png).transpose()?.map(|(size, rgba)| ctx.load_texture("backdrop", egui::ColorImage::from_rgba_unmultiplied(size, &rgba), egui::TextureOptions::LINEAR));
     let mut layout = Layout::new();
-    let mut deltas = Vec::new();
     let mut last = None;
     // Frame 0 only sets the screen (egui's first frame has its default one); the time steps finish the fades.
     for frame in 0..8 {
-        let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(width as f32, height as f32) / zoom)), time: Some(frame as f64 * 0.5), ..Default::default() };
+        let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(width as f32, height as f32) / zoom)), time: Some(frame as f64 * 0.5), max_texture_side: side, ..Default::default() };
         let mut output = ctx.run_ui(raw, |ui| {
             let ctx = ui.ctx();
             if frame == 0 {

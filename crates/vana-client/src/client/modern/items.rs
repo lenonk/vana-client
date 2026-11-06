@@ -63,6 +63,10 @@ struct Mouse {
     iuse: Option<u16>,
     drop: Option<bool>,
     wheel: f32,
+    /// A row's star clicked: the item.
+    star: Option<u16>,
+    /// A row right-clicked: its slot (index, id) and where.
+    menu: Option<(u8, u8, u16, egui::Pos2)>,
 }
 
 /// The Items list (or the action menu's direct-use list): the rows from the scroll with icons and quantities in the
@@ -88,6 +92,7 @@ fn list(p: &mut Panels, w: &mut World) {
         _ => false,
     };
     let held = manual.flatten();
+    let favs: Vec<bool> = shown.iter().skip(scroll).take(VISIBLE_ROWS).map(|s| super::super::favs::is(w, super::super::favs::Fav::Item(s.1.id))).collect();
     let msg = |g: u8, k: usize, or: &str| gu.map_or(or.to_string(), |gu| gu.lobby_msg(g, k, or));
     let mut mouse = Mouse::default();
     let search = lists::search_hits(p, w);
@@ -125,7 +130,13 @@ fn list(p: &mut Panels, w: &mut World) {
         if rows.is_empty() {
             ui.label(egui::RichText::new("No items.").size(m.theme.ui).color(m.theme.color("muted")));
         }
+        // Vana Client: the usable list names each bag above its rows (and the top row's bag), once it lists more than one.
+        let headed = direct && shown.windows(2).any(|p| p[0].0 != p[1].0);
         for (k, (row, (c, slot))) in rows.iter().zip(&shown).skip(scroll).take(VISIBLE_ROWS).enumerate() {
+            if headed && (k == 0 || shown[scroll + k - 1].0 != *c) {
+                ui.add_space(if k == 0 { 0.0 } else { 4.0 });
+                ui.label(egui::RichText::new(super::super::textcmd::bag_name(*c)).size(m.theme.small).color(m.theme.color("muted")));
+            }
             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
             let sprite = match () {
                 _ if k == cursor && sort.is_none() => "controls/list_row_selected",
@@ -140,15 +151,28 @@ fn list(p: &mut Panels, w: &mut World) {
                 painter.image(t, Rect::from_min_size(at, vec2(ICON, ICON)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
             }
             painter.text(pos2(r.min.x + 42.0, r.center().y), Align2::LEFT_CENTER, &row.name, FontId::proportional(m.theme.ui), tint(m, row.tint));
-            let mut right = r.max.x - 12.0;
+            let starred = !direct && super::favs::star(ui, m, r, favs.get(k).copied().unwrap_or(false), resp.hovered() && sub.is_none());
+            if starred {
+                mouse.star = Some(slot.id);
+            }
+            let painter = ui.painter();
+            let mut right = r.max.x - 12.0 - if direct { 0.0 } else { super::favs::STAR_W };
             if let Some(n) = &row.count {
                 right = painter.text(pos2(right, r.center().y), Align2::RIGHT_CENTER, n, FontId::proportional(m.theme.ui), m.theme.color("text")).min.x - 8.0;
             }
             if let Some(price) = bazaar.get(k).copied().flatten() {
                 bazaar_tag(ui, m, right, r.center().y, price);
             }
-            if resp.clicked() {
+            if resp.clicked() && !starred {
                 mouse.click = Some(k);
+            }
+            if resp.secondary_clicked()
+                && sub.is_none()
+                && sort.is_none()
+                && manual.is_none()
+                && let Some(at) = resp.interact_pointer_pos()
+            {
+                mouse.menu = Some((*c, slot.index, slot.id, at));
             }
             ui.add_space(2.0);
         }
@@ -207,11 +231,18 @@ fn list(p: &mut Panels, w: &mut World) {
         lists::search_mouse(w, p.gu, &found, hits);
         return;
     }
+    if let Some(id) = mouse.star.take() {
+        super::super::favs::toggle(w, super::super::favs::Fav::Item(id));
+        return;
+    }
+    if let Some((bag, index, id, at)) = mouse.menu.take() {
+        super::ctxmenu::open(m, super::ctxmenu::Menu::Item { at, bag, index, id, moving: false });
+    }
     apply(w, mouse, sort, sub);
 }
 
 fn enter(w: &mut World) {
-    gitems::key(w, egui::Key::Enter, false, false);
+    gitems::key(w, egui::Key::Enter, false, false, false);
 }
 
 fn win_mut(w: &mut World) -> Option<(&mut usize, &mut Option<Sub>, &mut Option<SortWin>)> {

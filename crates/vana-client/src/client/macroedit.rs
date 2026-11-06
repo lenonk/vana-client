@@ -172,8 +172,9 @@ fn field_max(rename: bool, field: usize) -> usize {
     if rename { 15 } else if field == 0 { 8 } else { 60 }
 }
 
-/// Text into the open field (printable ASCII; the Shift-JIS and auto-translate input are not done), Backspace; the
-/// field keys: the rename commits on Enter and Escape (FUN_101a6750(1)); the editor moves between its fields.
+/// Text into the open field (printable ASCII; Shift-JIS input is not done), Tab's auto-translate list (fep.rs
+/// FieldFep) in the editor's fields, Backspace; the field keys: the rename commits on Enter and Escape
+/// (FUN_101a6750(1)); the editor moves between its fields.
 pub fn text_events(w: &mut World, events: &[egui::Event]) {
     use egui::Key as K;
     if super::esmenu::typing(w) {
@@ -182,6 +183,9 @@ pub fn text_events(w: &mut World, events: &[egui::Event]) {
     }
     let page = w.mcr_page;
     for ev in events {
+        if complete(w, ev) {
+            continue;
+        }
         let Some(b) = w.macroedit.as_mut().and_then(|m| m.book.as_mut()) else { return };
         if let Some(name) = b.rename.as_mut() {
             if line_edit(name, &mut b.caret, field_max(true, 0), ev) {
@@ -222,6 +226,65 @@ pub fn text_events(w: &mut World, events: &[egui::Event]) {
                 w.sounds.push(Ui::Cancel as u32);
             }
             _ => {}
+        }
+    }
+}
+
+/// The editor's field being typed in: (field, its bytes, the caret byte).
+fn edited(w: &World) -> Option<(usize, Vec<u8>, usize)> {
+    let d = w.macroedit.as_ref()?.book.as_ref()?.edit.as_ref()?.editor.as_ref()?;
+    let f = d.editing.filter(|_| d.lopt.is_none())?;
+    Some((f, d.fields[f].clone(), d.caret.min(d.fields[f].len())))
+}
+
+/// Tab completion in the editor's field (ours, fep.rs FieldFep): Tab opens the list on the word before the caret;
+/// while it is open its keys are the list's and Enter puts the pick in place of the word (a phrase as its 6-byte
+/// block), refused past the field's bytes; typing closes it. True when the list took the event.
+fn complete(w: &mut World, ev: &egui::Event) -> bool {
+    use crate::dat::font::{decode_sjis, encode_sjis};
+    use super::fep::{self, FieldPick};
+    let Some((f, buf, caret)) = edited(w) else {
+        w.field_fep = None;
+        return false;
+    };
+    let egui::Event::Key { key, pressed: true, modifiers, .. } = ev else {
+        if matches!(ev, egui::Event::Text(_) | egui::Event::Paste(_)) {
+            w.field_fep = None;
+        }
+        return false;
+    };
+    let text = decode_sjis(&buf);
+    let at = decode_sjis(&buf[..caret]).chars().count();
+    let Some(mut list) = w.field_fep.take() else {
+        if *key == egui::Key::Tab {
+            w.field_fep = fep::field_open(w, &text.chars().take(at).collect::<String>());
+            return true;
+        }
+        return false;
+    };
+    match fep::field_key(w, &mut list, *key, modifiers.shift) {
+        FieldPick::Pass => {
+            w.field_fep = Some(list);
+            false
+        }
+        FieldPick::Keep => {
+            w.field_fep = Some(list);
+            true
+        }
+        FieldPick::Close => true,
+        FieldPick::Put(put) => {
+            let max = field_max(false, f);
+            match fep::field_put(&text, at, &list.word, &put, |t| encode_sjis(t).len() <= max) {
+                Some((next, c)) => {
+                    if let Some(d) = w.macroedit.as_mut().and_then(|m| m.book.as_mut()).and_then(|b| b.edit.as_mut()).and_then(|e| e.editor.as_mut()) {
+                        d.fields[f] = encode_sjis(&next);
+                        d.caret = encode_sjis(&next.chars().take(c).collect::<String>()).len();
+                    }
+                    w.sounds.push(Ui::Select as u32);
+                }
+                None => w.sounds.push(Ui::Error as u32),
+            }
+            true
         }
     }
 }
@@ -824,6 +887,8 @@ pub(super) struct EditorView {
     pub lopt: Option<u16>,
     pub paste_ok: bool,
     pub focused: bool,
+    /// Tab's auto-translate list on the edited field: the candidates and the cursor.
+    pub fep: Option<(Vec<String>, usize)>,
 }
 
 pub(super) fn view(w: &World, gu: &GameUi) -> Option<View> {
@@ -867,6 +932,7 @@ pub(super) fn view(w: &World, gu: &GameUi) -> Option<View> {
             lopt: d.lopt,
             paste_ok: w.mcr_line.is_some(),
             focused: free && d.lopt.is_none() && d.editing.is_none(),
+            fep: w.field_fep.as_ref().filter(|_| d.editing.is_some()).map(|f| (f.cands.iter().map(|c| c.text.clone()).collect(), f.sel)),
         }
     });
     Some(View { menu, books, palettes, editor })
@@ -1057,6 +1123,9 @@ fn draw_editor(gu: &mut GameUi, w: &World, d: &Editor, sw: f32, sh: f32, free: b
         gu.text_fit(&text(0), r[0] + 2.0, r[1] + 5.0, 120.0, WHITE);
         if d.editing == Some(0) {
             caret_at(gu, w, &d.fields[0], d.caret, r[0] + 2.0, r[1] + 5.0, 120.0);
+            if let Some(f) = &w.field_fep {
+                rects.push(super::fep::draw_list(gu, &f.cands, f.sel, r[0] - 6.0, r[1] + 3.0));
+            }
         }
     }
     for k in 0..6 {
@@ -1064,6 +1133,9 @@ fn draw_editor(gu: &mut GameUi, w: &World, d: &Editor, sw: f32, sh: f32, free: b
         if d.editing == Some(k + 1) {
             gu.text_fit(&text(k + 1), x, y, 325.0, WHITE);
             caret_at(gu, w, &d.fields[k + 1], d.caret, x, y, 325.0);
+            if let Some(f) = &w.field_fep {
+                rects.push(super::fep::draw_list(gu, &f.cands, f.sel, x - 8.0, y - 2.0));
+            }
         } else {
             gu.text_fit(&text(k + 1), x, y, 315.0, WHITE);
         }

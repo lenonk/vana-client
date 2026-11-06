@@ -53,3 +53,64 @@ pub fn generic(w: &mut World, gu: &GameUi, name: &str, cursor: u16, ids: std::op
         key(w, gu, egui::Key::Enter);
     }
 }
+
+/// What a click on an itemctrl / moneyctr child re-sends (message 5, FUN_1013a6c0 / FUN_10140bc0's tables): 1 the
+/// confirm (Enter), 2 message 4 (Left: all, or ten times the step), 3 message 3 (Right: 1, or a tenth of the step),
+/// 4 message 1 (Down: one step less), 5 message 2 (Up: one step more). The windows' own keys do the rest.
+pub fn ctr_key(child: u16) -> Option<egui::Key> {
+    use egui::Key as K;
+    Some(match child {
+        1 => K::Enter,
+        2 => K::ArrowLeft,
+        3 => K::ArrowRight,
+        4 => K::ArrowDown,
+        5 => K::ArrowUp,
+        _ => return None,
+    })
+}
+
+/// A held - / + repeats (retail's message 0x1d re-sends 1 / 2 for children 4 / 5; how often it comes is not traced,
+/// ours: after 400 ms, every 60 ms).
+const HOLD: std::time::Duration = std::time::Duration::from_millis(400);
+const REPEAT: std::time::Duration = std::time::Duration::from_millis(60);
+
+/// The mouse on itemctrl / moneyctr (`name`, as drawn this frame): a click on a child is its message (ctr_key), - / +
+/// step on the press and repeat while held, a right click on the window is Escape. `key` is the window's key handler.
+pub fn ctr(w: &mut World, gu: &GameUi, name: &str, p: (f32, f32), clicked: bool, right: bool, mut key: impl FnMut(&mut World, &GameUi, egui::Key)) {
+    let (pressed, down) = w.ptr_button;
+    let (child, on) = child_under(w, name, p, 1..=5);
+    if !down || w.ctr_hold.is_some_and(|(c, _)| Some(c) != child) {
+        w.ctr_hold = None;
+    }
+    if right && on {
+        key(w, gu, egui::Key::Escape);
+        return;
+    }
+    let Some(id) = child else { return };
+    gu.hover.set(true);
+    let Some(k) = ctr_key(id) else { return };
+    if matches!(id, 4 | 5) {
+        let now = std::time::Instant::now();
+        if pressed {
+            w.ctr_hold = Some((id, now + HOLD));
+            key(w, gu, k);
+        } else if w.ctr_hold.is_some_and(|(_, next)| now >= next) {
+            w.ctr_hold = Some((id, now + REPEAT));
+            key(w, gu, k);
+        }
+    } else if clicked {
+        key(w, gu, k);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::Key as K;
+
+    #[test]
+    fn ctr_children_send_retails_messages() {
+        let keys: Vec<_> = (0..=6).map(ctr_key).collect();
+        assert_eq!(keys, [None, Some(K::Enter), Some(K::ArrowLeft), Some(K::ArrowRight), Some(K::ArrowDown), Some(K::ArrowUp), None]);
+    }
+}

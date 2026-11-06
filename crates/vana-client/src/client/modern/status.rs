@@ -1,7 +1,8 @@
 //! The modern Status page in the command window (client/status.rs keeps the state and its rules): the persona, the
 //! level and its gauge, retail's rows on the left and beside them the page under the cursor at once (retail shows one
 //! after Enter): profile, job and master levels, combat, magic and craft skills, and Currencies 1 and 2 as one list.
-//! Unity opens retail's window over it; Merit Points, Job Points and Alter Ego Points open modern/points.rs.
+//! Play Time ticks on its page. Unity opens retail's window over it; Merit Points, Job Points and Alter Ego Points open
+//! modern/points.rs.
 
 use super::super::status::{self, STATCOM};
 use super::super::{World, currencies, items as gitems, monstrosity};
@@ -189,6 +190,8 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let (mentor, mastery) = w.job_info.map_or((0, 0), |j| (j.mentor, j.mastery));
     let help = gu.focus_text(STATCOM, sel)[0].clone().unwrap_or_default();
     let mut held_only = m.held_only.get();
+    let played = super::super::textcmd::played(w);
+    let played_line = super::super::textcmd::playtime_text(w);
 
     let mut click = None;
     let mut open = false;
@@ -307,13 +310,41 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                             }
                         }
                     }
+                    9 => {
+                        // Play Time at once (retail prints it to the log on Enter): days, hours, minutes and seconds
+                        // ticking, retail's line under them, Enter or the button still prints it.
+                        match played {
+                            None => {
+                                ui.label(egui::RichText::new("Waiting for the play time...").size(m.theme.small).color(muted));
+                            }
+                            Some(t) => {
+                                ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+                                ui.horizontal(|ui| {
+                                    for (v, label) in [(t / 86400, "Days"), (t % 86400 / 3600, "Hours"), (t % 3600 / 60, "Minutes"), (t % 60, "Seconds")] {
+                                        let (r, _) = ui.allocate_exact_size(vec2(88.0, 62.0), Sense::hover());
+                                        ui.painter().rect_filled(r, 6.0, m.theme.color("charcoal").gamma_multiply(0.7));
+                                        let num = if label == "Days" { v.to_string() } else { format!("{v:02}") };
+                                        ui.painter().text(pos2(r.center().x, r.min.y + 24.0), Align2::CENTER_CENTER, num, FontId::monospace(m.theme.title + 4.0), gold);
+                                        ui.painter().text(pos2(r.center().x, r.max.y - 12.0), Align2::CENTER_CENTER, label, FontId::proportional(m.theme.small), muted);
+                                    }
+                                });
+                                if let Some(line) = &played_line {
+                                    ui.add_space(8.0);
+                                    ui.label(egui::RichText::new(line).size(m.theme.small).color(white));
+                                }
+                            }
+                        }
+                        ui.add_space(10.0);
+                        if kit::button(ui, m, "Show in the log", 0.0, kit::Btn::default()).clicked() {
+                            open = true;
+                        }
+                    }
                     _ => {
                         ui.label(egui::RichText::new(&help).size(m.theme.small).color(white));
                         ui.add_space(10.0);
                         let off = s.off.contains(&sel);
-                        let what = if sel == 9 { "Show" } else { "Open" };
                         let b = kit::Btn { off, ..Default::default() };
-                        if kit::clicked(&kit::button(ui, m, what, 120.0, b), b) {
+                        if kit::clicked(&kit::button(ui, m, "Open", 120.0, b), b) {
                             open = true;
                         }
                         if off {

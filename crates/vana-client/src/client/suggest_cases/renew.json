@@ -1,0 +1,67 @@
+{
+  "rule": "renew",
+  "note": "Refresh with 12 s left: renew it; Protect has 10 minutes.",
+  "facts": {
+    "party": [
+      {
+        "name": "Lenon",
+        "me": true,
+        "here": true,
+        "hp": 800,
+        "hp_max": 800,
+        "job": 5,
+        "effects": []
+      }
+    ],
+    "own": [
+      [
+        43,
+        12.0
+      ],
+      [
+        40,
+        600.0
+      ]
+    ],
+    "tp": 0,
+    "engaged": false,
+    "spells": [
+      {
+        "id": 109,
+        "name": "Refresh",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      },
+      {
+        "id": 43,
+        "name": "Protect",
+        "skill": 0,
+        "element": 0,
+        "mp": 0,
+        "targets": 0,
+        "area": false
+      }
+    ],
+    "abilities": [],
+    "weapon_skills": [],
+    "target": null,
+    "resonance": null,
+    "partners": [],
+    "weather_element": null,
+    "day_element": null
+  },
+  "expect": [
+    {
+      "action": {
+        "Spell": 109
+      },
+      "target": null,
+      "reason": "Refresh wears off in 12s.",
+      "group": [],
+      "label": null
+    }
+  ]
+}

@@ -723,6 +723,39 @@ fn naming_key(w: &mut World, gu: &GameUi, key: egui::Key) {
     }
 }
 
+/// link11 while it is up (the modern window draws it from this).
+pub(super) fn naming_view(w: &World) -> Option<Naming> {
+    w.linkshell.as_ref().and_then(|l| l.naming.clone())
+}
+
+/// The modern window's click on child `sel` (1 the name, 2..4 a channel, 5 OK, else Cancel): a channel being edited is
+/// kept and typing ends keeping its text (as their Enter / Escape), the cursor goes there, then retail's Enter.
+pub(super) fn naming_pick(w: &mut World, gu: &GameUi, sel: u16) {
+    let Some(nm) = w.linkshell.as_mut().and_then(|l| l.naming.as_mut()) else { return };
+    if nm.edit == 1 && sel == 1 {
+        return;
+    }
+    nm.edit = 0;
+    nm.sel = sel;
+    naming_key(w, gu, egui::Key::Enter);
+}
+
+/// The modern window's slider: channel `k` set to `v` (0..15) and kept, the cursor on its row.
+pub(super) fn naming_channel(w: &mut World, k: usize, v: u8) {
+    let Some(nm) = w.linkshell.as_mut().and_then(|l| l.naming.as_mut()) else { return };
+    if k > 2 {
+        return;
+    }
+    if nm.edit != k as u8 + 2 {
+        nm.edit = 0;
+    }
+    nm.sel = k as u16 + 2;
+    if nm.rgb[k] != v.min(15) {
+        nm.rgb[k] = v.min(15);
+        w.sounds.push(Ui::Cursor as u32);
+    }
+}
+
 /// link11's name box (FUN_101c5be0(1, 0x13, ..)) takes the typed text.
 pub fn typing(w: &World) -> bool {
     w.linkshell.as_ref().and_then(|l| l.naming.as_ref()).is_some_and(|n| n.edit == 1)
@@ -899,7 +932,7 @@ fn draw_naming(gu: &mut GameUi, w: &World, nm: &Naming, sw: f32, sh: f32) -> Opt
     Some(win.frame)
 }
 
-/// The modern page's view (none while link11 or link12 shows retail's): each shell row with its shell's name and
+/// The modern page's view (none while link11 or link12 has the window): each shell row with its shell's name and
 /// colour, the cursor, and the submenu.
 pub(super) fn modern_view(w: &World) -> Option<(Vec<(Row, String, u32)>, usize, Option<super::modern::MenuWin>)> {
     let l = w.linkshell.as_ref().filter(|l| l.naming.is_none() && w.linklist.is_none())?;

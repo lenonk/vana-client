@@ -78,22 +78,78 @@ pub fn typing(w: &World) -> bool {
     w.seacom_edit.is_some()
 }
 
-/// FUN_101dde60 with the box: text (40 bytes), Backspace; Down / Enter commit and go to the next line (the last
-/// reopens itself), Up the previous; Escape commits and closes (it keeps the text and sends).
+/// A line's Shift-JIS bytes (a phrase block 6).
+fn bytes(line: &str) -> usize {
+    crate::dat::font::encode_sjis(line).len()
+}
+
+/// Tab completion at the line's end (ours, fep.rs FieldFep; the box is mode 9, as the macro lines, which takes phrase
+/// blocks): Tab opens the list on the last word, its keys move it, Enter puts the pick in place of the word within 40
+/// bytes, typing closes it. True when the list took the event.
+fn complete(w: &mut World, e: Editor, ev: &egui::Event) -> bool {
+    use super::fep::{self, FieldPick};
+    let egui::Event::Key { key, pressed: true, modifiers, .. } = ev else {
+        if matches!(ev, egui::Event::Text(_) | egui::Event::Paste(_)) {
+            w.field_fep = None;
+        }
+        return false;
+    };
+    let text = store(w, e.mode).lines[e.line].clone();
+    let at = text.chars().count();
+    let Some(mut list) = w.field_fep.take() else {
+        if *key == egui::Key::Tab {
+            w.field_fep = fep::field_open(w, &text);
+            return true;
+        }
+        return false;
+    };
+    match fep::field_key(w, &mut list, *key, modifiers.shift) {
+        FieldPick::Pass => {
+            w.field_fep = Some(list);
+            false
+        }
+        FieldPick::Keep => {
+            w.field_fep = Some(list);
+            true
+        }
+        FieldPick::Close => true,
+        FieldPick::Put(put) => {
+            match fep::field_put(&text, at, &list.word, &put, |t| bytes(t) <= LINE) {
+                Some((next, _)) => {
+                    store(w, e.mode).lines[e.line] = next;
+                    w.sounds.push(Ui::Select as u32);
+                }
+                None => w.sounds.push(Ui::Error as u32),
+            }
+            true
+        }
+    }
+}
+
+/// FUN_101dde60 with the box: text (40 bytes), Backspace (a phrase as one); Tab the auto-translate list; Down /
+/// Enter commit and go to the next line (the last reopens itself), Up the previous; Escape commits and closes (it
+/// keeps the text and sends).
 pub fn text_events(w: &mut World, events: &[egui::Event]) {
     let Some(mut e) = w.seacom_edit else { return };
     for ev in events {
+        if complete(w, e, ev) {
+            continue;
+        }
         let line = &mut store(w, e.mode).lines[e.line];
         match ev {
             egui::Event::Text(t) | egui::Event::Paste(t) => {
                 for c in t.chars().filter(|c| (' '..='~').contains(c)) {
-                    if line.len() < LINE {
+                    if bytes(line) < LINE {
                         line.push(c);
                     }
                 }
             }
             egui::Event::Key { key: egui::Key::Backspace, pressed: true, .. } => {
-                line.pop();
+                // A phrase block (four chars here) goes whole.
+                let n = line.chars().rev().take_while(|&c| c as u32 >= crate::dat::font::PHRASE_BASE).count();
+                for _ in 0..if n >= 4 { 4 } else { 1 } {
+                    line.pop();
+                }
             }
             egui::Event::Key { key: egui::Key::ArrowDown | egui::Key::Enter, pressed: true, .. } => e.line = (e.line + 1).min(2),
             egui::Event::Key { key: egui::Key::ArrowUp, pressed: true, .. } => e.line = e.line.saturating_sub(1),
@@ -123,6 +179,7 @@ fn padded(lines: &[String; 3]) -> Vec<u8> {
 /// when the lines or the type changed, all blank sends "" (block 5 line 0 cleared), else the padded lines; then c2s
 /// 0x0E0 (FUN_100e5980).
 fn close(w: &mut World) {
+    w.field_fep = None;
     let Some(e) = w.seacom_edit.take() else { return };
     if e.mode == 0 {
         let s = &mut w.bazaar_msg;
@@ -214,10 +271,11 @@ fn install_time() -> u32 {
 }
 
 /// The editor as the modern layer draws it: the mode, the three lines, the line being edited.
-pub(super) fn view(w: &World) -> Option<(u8, [String; 3], usize)> {
+pub(super) fn view(w: &World) -> Option<(u8, [String; 3], usize, Option<(Vec<String>, usize)>)> {
     let e = w.seacom_edit?;
     let s = if e.mode == 0 { &w.bazaar_msg } else { &w.seacom };
-    Some((e.mode, s.lines.clone(), e.line))
+    let fep = w.field_fep.as_ref().map(|f| (f.cands.iter().map(|c| c.text.clone()).collect(), f.sel));
+    Some((e.mode, s.lines.clone().map(|l| super::fep::plain(w, &l)), e.line, fep))
 }
 
 /// The mouse onto line `k`.
@@ -251,13 +309,15 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let (s, dx, width) = if e.mode == 0 { (&w.bazaar_msg, 4.0, ww - 8.0) } else { (&w.seacom, 20.0, 335.0) };
     for (k, l) in s.lines.iter().enumerate() {
         let (x, y) = (x0 + dx, y0 + 4.0 + 16.0 * k as f32);
+        let l = super::fep::plain(w, l);
         if k == e.line {
             let caret = if (w.started.elapsed().as_secs_f32() * 60.0) as u32 % 30 < 20 { "|" } else { "" };
             gu.text(&format!("{l}{caret}"), x, y, 0, [0x80; 4]);
         } else {
-            gu.text_fit(l, x, y, width, WHITE);
+            gu.text_fit(&l, x, y, width, WHITE);
         }
     }
+    let list = w.field_fep.as_ref().map(|f| super::fep::draw_list(gu, &f.cands, f.sel, x0 + dx - 8.0, y0 + 2.0 + 16.0 * e.line as f32));
     let g = (w.seacom.kind >> 4 & 0xf) as usize;
     if e.mode == 2
         && let Some(&s) = super::search::GENRE.get(g.wrapping_sub(1))
@@ -265,5 +325,6 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         gu.sprite("menu    windowps", s, x0 + 8.0, y0 + 8.0, WHITE);
     }
     rects.push(win.frame);
+    rects.extend(list);
     rects
 }

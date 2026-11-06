@@ -399,6 +399,7 @@ fn handover_draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> 
     if let Some((_, v, max)) = h.qty
         && let Some(win) = gu.lobby_window_off(ITEMCTRL, sw, sh, (0.0, 0.0), Some(1), true, &[])
     {
+        super::winhits::record(w, ITEMCTRL, &win);
         let [x, y, ..] = win.frame;
         gu.shape_text(&format!("{v:2}"), x + 52.0, y + 22.0, WHITE, true);
         gu.shape_text(&format!("/{max:2}"), x + 58.0, y + 22.0, WHITE, false);
@@ -407,6 +408,7 @@ fn handover_draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> 
     if let Some((step, max, v)) = h.money
         && let Some(win) = gu.lobby_window_off(MONEYCTR, sw, sh, (0.0, 0.0), Some(1), true, &[])
     {
+        super::winhits::record(w, MONEYCTR, &win);
         super::post::draw_moneyctr(gu, win.frame, step, max, v);
         rects.push(win.frame);
     }
@@ -643,11 +645,8 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
         } else if clicked {
             key(w, gu, egui::Key::Enter);
         }
-    } else if let Some(name) = ctr
-        && right
-        && over(gu, name, sw, sh, p)
-    {
-        key(w, gu, egui::Key::Escape);
+    } else if let Some(name) = ctr {
+        super::winhits::ctr(w, gu, name, p, clicked, right, key);
     }
 }
 
@@ -1211,6 +1210,7 @@ fn p2p_draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     if let Some((_, v, max)) = u.qty
         && let Some(win) = gu.lobby_window_off(ITEMCTRL, sw, sh, (0.0, 0.0), Some(1), true, &[])
     {
+        super::winhits::record(w, ITEMCTRL, &win);
         let [x, y, ..] = win.frame;
         gu.shape_text(&format!("{v:2}"), x + 52.0, y + 22.0, WHITE, true);
         gu.shape_text(&format!("/{max:2}"), x + 58.0, y + 22.0, WHITE, false);
@@ -1219,6 +1219,7 @@ fn p2p_draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     if let Some((step, max, v)) = u.money
         && let Some(win) = gu.lobby_window_off(MONEYCTR, sw, sh, (0.0, 0.0), Some(1), true, &[])
     {
+        super::winhits::record(w, MONEYCTR, &win);
         super::post::draw_moneyctr(gu, win.frame, step, max, v);
         rects.push(win.frame);
     }

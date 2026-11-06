@@ -358,7 +358,8 @@ fn top_edge(m: &super::Modern, screen: Rect, x0: f32, x1: f32) -> f32 {
 /// too. Returns that.
 #[allow(clippy::too_many_arguments)]
 fn edge_window(p: &mut Panels, key: &str, width: f32, resize: bool, folded: bool, label: &str, add: impl FnOnce(&mut Ui, Side, bool) -> bool) -> bool {
-    if p.hidden.contains(&key) {
+    // Hidden by the mode (modes.rs) or by a Lua mod (ui.native.hide).
+    if p.vis(key) <= 0.01 || p.hidden.contains(&key) {
         return false;
     }
     let (m, ctx) = (p.m, p.ctx);

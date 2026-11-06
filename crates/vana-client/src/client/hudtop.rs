@@ -44,6 +44,8 @@ pub struct HudTop {
     net_page: u8,
     net_ticks: f32,
     pub mail: (u32, bool),
+    /// netstat +0x2c / +0x30 = 2 (FUN_10115250): a Help Desk reply is waiting (gmNotice.fdt complete, not deleted).
+    gm: bool,
 }
 
 /// The top bar's state for the modern layer: the shown texts, the fade, the busy strip's frame, the network numbers.
@@ -66,6 +68,8 @@ pub struct TopView {
     pub meter: (usize, u8),
     /// netstat's mail page while it shows: the unread count and whether a system message is among them.
     pub mail: Option<(u32, bool)>,
+    /// On the mail page: a Help Desk reply is waiting (retail's state 2, in place of the mail).
+    pub gm_reply: bool,
 }
 
 /// Text slots of helpwind (+0x20) and titlewin (+0xa4), FUN_10217230: index 0 action menu, 1 focused window,
@@ -214,8 +218,10 @@ impl HudTop {
         // titlewin HN mode (+0x448) and titlehan are not modelled. A busy bar counts as active (FUN_10221740).
         // The rule runs in game state 0x60 only; zoning and the zone load are taken as 0x70 (inferred).
         // Bits: 0x80 the scan, 4 party positions, 0x40 the stats, 1 the journal lists, 2 conquest, 8 a search query
-        // (FUN_1020a9d0), 0x80000000 an auction bid (LAB_101d95b0).
+        // (FUN_1020a9d0), 0x10 a PlayOnline message job (msgline's
+        // commits; friends.strip), 0x80000000 an auction bid (LAB_101d95b0).
         let busy = w.scan.busy
+            || w.friends.strip
             || w.scan.party_busy
             || w.status.as_ref().is_some_and(|s| s.busy)
             || super::missions::busy(w)
@@ -227,6 +233,7 @@ impl HudTop {
         self.fade.advance(ticks, !title.is_empty() || !help.is_empty() || busy, w.zoning_since.is_none() && w.loading.is_none());
         let unread = w.friends.mail.iter().filter(|m| m.unread);
         self.mail = (unread.clone().count().min(200) as u32, unread.clone().any(|m| m.header.kind == 0x1e));
+        self.gm = matches!(&w.gm_reply, Some((_, _, text, true)) if !text.is_empty());
         self.step_page(ticks);
         if w.modern {
             self.step_busy(ticks, busy);
@@ -250,6 +257,7 @@ impl HudTop {
                     _ => 0,
                 }),
                 mail: (self.net_page == 0).then_some(self.mail),
+                gm_reply: self.net_page == 0 && self.gm,
             };
         } else {
             self.net_hidden = w.lua.hides("network");
@@ -317,10 +325,19 @@ impl HudTop {
         }
         // netstat (W - 128, 16): mode 1 (network), FUN_101f8370. The frame and its "Network" sprite fade; the
         // content is drawn whatever the fade.
-        // Page 0 (FUN_10201180): the envelope (windowps 2, 418 with a system message) and the unread count at
+        // Page 0 (FUN_10201180): with a Help Desk reply waiting (+0x2c != 0, state +0x30 = 2) windowps 36 at
+        // (+4, +4), the state's sprite keytops3 118 at (+0x52, +4) scaled 1.6 and the count (1) at (+0x4e, +0x10) in
+        // 0x80804040, no mail; else the envelope (windowps 2, 418 with a system message) and the unread count at
         // (+0x6c, +0x10).
         let net_hidden = self.net_hidden;
         if net_hidden {
+        } else if self.net_page == 0
+            && self.gm
+            && let Some((x, y)) = gu.window_alpha("menu    netstat", sw, sh, a)
+        {
+            gu.sprite("menu    windowps", 36, x + 4.0, y + 4.0, 0x8080_8080);
+            gu.sprite_scaled("menu    keytops3", 118, x + 82.0, y + 4.0, 1.6, 1.6, 0x8080_8080);
+            gu.shape_text("1", x + 78.0, y + 16.0, 0x8080_4040, false);
         } else if self.net_page == 0
             && let Some((x, y)) = gu.window_alpha("menu    netstat", sw, sh, a)
         {
@@ -346,14 +363,15 @@ impl HudTop {
     }
 
     /// FUN_102014f0: the mail page for 60 ticks, then the network page for 120; held on the network page while nothing
-    /// is unread (no Help Desk count here).
+    /// is unread and no Help Desk reply waits (+0x2c). Retail's 3 x 120 network page while engine +0xe (+0x20) is
+    /// set never happens: nothing in the DLL counts +0xe up (only its init and FUN_100f6f20 zero it).
     fn step_page(&mut self, ticks: f32) {
         self.net_ticks += ticks;
         if self.net_page == 0 {
             if self.net_ticks > 60.0 {
                 (self.net_page, self.net_ticks) = (1, 0.0);
             }
-        } else if self.mail.0 == 0 {
+        } else if self.mail.0 == 0 && !self.gm {
             self.net_ticks = 0.0;
         } else if self.net_ticks > 120.0 {
             (self.net_page, self.net_ticks) = (0, 0.0);
