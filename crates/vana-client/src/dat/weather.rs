@@ -241,6 +241,8 @@ pub struct Lighting {
     /// (E+0xe4), the moon (E+0xc4) with the background moon colour (E+0xf4), both x the light scale; a flags-bit-0
     /// environment's data direction with its sun colour, and no second light. Direction, colour, direction, colour.
     pub two: [Vec3; 4],
+    /// A flags-bit-0 environment (interiors: Mog Houses, shops): its light keeps the data direction, no sun or moon.
+    pub fixed: bool,
 }
 
 /// FUN_101892b0 (K) and FUN_1018b8f0 (D, the scenery's draw distance; actors get the same values): `raw` an env's
@@ -401,6 +403,7 @@ impl Lighting {
             area: env.area_light(),
             draw_dist: env.draw_dist,
             two,
+            fixed: env.flags & 1 != 0,
         }
     }
 }

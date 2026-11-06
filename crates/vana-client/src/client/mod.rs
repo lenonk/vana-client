@@ -6556,6 +6556,8 @@ struct World {
     /// Scheduler tasks, cutscene camera and screen fades (they outlive the event), and the camera drawn last.
     screen: event::Screen,
     last_camera: Option<Camera>,
+    /// The real shadows' last logged state (log target "sunshadow").
+    sunshadow_diag: String,
     /// DAT_10346088 (event op 0x46): the free camera runs unless an event turned it off; reset at zone-in.
     cam_free: bool,
     /// After an event: ticks to the next 0x016 about ourselves, until a full 0x00D comes (FUN_100ac9c0 +0x1f8).
@@ -8663,6 +8665,7 @@ impl App {
                             event_pending: None,
                             screen: Default::default(),
                             last_camera: None,
+                            sunshadow_diag: String::new(),
                             cam_free: true,
                             self_lock: None,
                             map_open: None,
@@ -14513,9 +14516,9 @@ impl App {
                     };
                     r.lighting = mix(&|t| zw.at(t, minute)).map(|e| step(&mut w.light_ease, &e));
                     // Real character shadows (render/sunshadow.rs): cast by the sun, or by the moon at night (fainter by its
-                    // colour, softer), faded out around the change at 6:00 and 18:00.
+                    // colour, softer), faded out around the change at 6:00 and 18:00. Indoors the room light keeps day's edges.
                     r.shadow_level = crate::render::sunshadow::twilight(minute);
-                    r.shadow_soft = if crate::dat::weather::sun_moon(minute).0.y >= 0.0 { 1.0 } else { 2.0 };
+                    r.shadow_soft = if r.lighting.is_some_and(|l| l.fixed) || crate::dat::weather::sun_moon(minute).0.y >= 0.0 { 1.0 } else { 2.0 };
                     // FUN_1018b8f0: 100 before the env is up. Settings' Draw Distance scales it, or lifts it (0).
                     let (d, k) = crate::dat::weather::clipping(r.lighting.map_or(100.0, |l| l.draw_dist), x, zone);
                     let scale = self.cfg.draw_distance as f32 / 100.0;
@@ -15013,7 +15016,8 @@ impl App {
                     if r.clip[0] > 0.0 && *id != w.my_id && bx.is_some_and(|b| box_depth(cview, model, &box_corners(b)) > r.clip[0]) {
                         far_out.insert(*id);
                     }
-                    if drawn && let Some(b) = bx {
+                    // Invisible (InvisFlag, a GM's !hide): no shadow of any kind, as before the real shadows.
+                    if drawn && !(if *id == me { w.my_plate.invisible } else { *id >> 24 == 0 && w.entities.get(id).is_some_and(|e| e.invisible) }) && let Some(b) = bx {
                         let cs = box_corners(b);
                         seen.insert(*id, shadows::Seen { pos: model.w_axis.truncate(), corners: cs.map(|c| model.transform_point3(c)), depth: box_depth(cview, model, &cs) });
                     }
@@ -15047,6 +15051,7 @@ impl App {
                         g.tint = [g.tint[0] * t[0], g.tint[1] * t[1], g.tint[2] * t[2]];
                     }
                     g.hidden_weps = wepfx::mask(&a.wep_hide);
+                    g.lamp_caster = *id == w.my_id || *id == w.my_id | ride::ANIMAL;
                     g.shine = shines.get(id).copied();
                     // FUN_100d6d30: TFACTOR alpha (0x80 - model colour alpha) & 0xff; an opaque model adds nothing.
                     let r8 = crate::render::Refract::tf_alpha(a.alpha.clamp(0.0, 255.0) as u32);
@@ -15156,25 +15161,56 @@ impl App {
                 r.prepare_sun_shadow(&gfx.gpu, self.cfg.actor_shadows != 0 && w.game.get(0x3a) != 1, self.cfg.shadow_map);
                 // Ambient occlusion on the scenery (ours, render/ssao.rs), at the scene's size.
                 r.prepare_ssao(&gfx.gpu, self.cfg.ssao, bg);
-                // Lamp shadows (ours, render/lampshadow.rs): with Real shadows and Real lamp lights, the nearest lamps'
-                // light is cut behind the characters near them.
-                r.lamp_shadows = if self.cfg.actor_shadows != 0 && self.cfg.lamp_lights && w.game.get(0x3a) != 1 {
-                    let feet: Vec<Vec3> = seen.values().map(|s| s.pos).collect();
-                    let lamps: Vec<(Vec3, u32)> = w.lamps.list.iter().map(|l| (l.pos, l.slot)).collect();
-                    crate::render::lampshadow::pick(&lamps, &feet, camera.target)
-                } else {
-                    Vec::new()
+                // Lamp shadows (ours, render/lampshadow.rs): with Real shadows, the point lights nearest our own character
+                // (the zone's data lights, and with Real lamp lights the lamps) are cut behind it, one shadow each.
+                // Only ours casts them (with our mount while riding); others keep their sun or retail shadow. The lights
+                // are those lighting our character this frame (its floor's data lights and the lamps offered it), the
+                // ones retail's shadow eases toward.
+                let casters = [w.my_id, w.my_id | ride::ANIMAL];
+                let my_feet = seen.get(&w.my_id).map(|s| s.pos);
+                let feet: Vec<Vec3> = casters.iter().filter_map(|id| seen.get(id).map(|s| s.pos)).collect();
+                let lit: [u8; 4] = w.actors.get(&w.my_id).and_then(|a| a.gpu.as_ref()).map_or([0; 4], |g| g.lights);
+                let lights: Vec<(Vec3, u32)> = w.lamps.list.iter().map(|l| (l.pos, l.slot)).chain(w.lamps.data.iter().copied()).filter(|(_, s)| lit.contains(&((s + 1) as u8))).collect();
+                r.lamp_shadows = match my_feet {
+                    Some(f) if self.cfg.actor_shadows != 0 && w.game.get(0x3a) != 1 => crate::render::lampshadow::pick(&lights, &feet, f),
+                    _ => Vec::new(),
                 };
+                // The shadowed lights' positions: our character (or mount), casting from one, takes no retail shadow either.
+                let lamp_cast: Vec<(Vec3, glam::Mat4)> = r.lamp_shadows.iter().map(|(_, m, p)| (*p, *m)).collect();
+                // Which casters a lamp casts, from `seen` before the filters below take them out of it.
+                let lamp_lit = casters.map(|id| seen.get(&id).is_some_and(|s| lamp_cast.iter().any(|(l, m)| crate::render::lampshadow::casts(*l, *m, s.pos))));
+
+                // Diagnostics (log target "sunshadow"): the real shadows' state and ours on each change.
+                if self.cfg.actor_shadows != 0 && log::log_enabled!(target: "sunshadow", log::Level::Debug) {
+                    let light = r.sun_shadow_light(camera.target);
+                    let mine = seen.get(&w.my_id).map(|s| light.is_some_and(|(m, _, _)| crate::render::sunshadow::covers(m, s.pos, s.corners.iter().map(|c| c.distance(s.pos)).fold(0.0, f32::max))));
+                    let state = format!("{}; ours seen {:?} (covered: {:?})", r.sun_shadow_state(&gfx.gpu, camera.target, w.actors.get(&w.my_id).and_then(|a| a.gpu.as_ref())), mine.is_some(), mine);
+                    if w.sunshadow_diag != state {
+                        log::debug!(target: "sunshadow", "{state}");
+                        w.sunshadow_diag = state;
+                    }
+                }
                 // Only the actors drawn into the map lose retail's: the rest (fading, refracting, latched off) keep it.
                 if let Some((m, _, _)) = r.sun_shadow_light(camera.target) {
                     let done = gfx.gpu.mips_done();
                     let casts = |id: &u32| w.actors.get(id).and_then(|a| a.gpu.as_ref()).is_some_and(|g| g.casts_shadow(done));
                     seen.retain(|id, s| !casts(id) || !crate::render::sunshadow::covers(m, s.pos, s.corners.iter().map(|c| c.distance(s.pos)).fold(0.0, f32::max)));
                 }
+                if !lamp_cast.is_empty() {
+                    let done = gfx.gpu.mips_done();
+                    let casts = |id: &u32| w.actors.get(id).and_then(|a| a.gpu.as_ref()).is_some_and(|g| g.casts_shadow(done));
+                    seen.retain(|id, s| !casters.contains(id) || !casts(id) || !lamp_cast.iter().any(|(l, m)| crate::render::lampshadow::casts(*l, *m, s.pos)));
+                }
                 let shadow_modes = match w.ground.as_ref() {
                     Some(g) => shadows::modes(&shadows::Ctx { ground: g, setting: w.game.get(0x3a), me: w.my_id, zone: w.pos_zone, has: &has, flags: &flags, layers: r.shadow_layers(bg) }, &seen, camera.eye),
                     None => Vec::new(),
                 };
+                // A lamp casting ours takes over its main shadow: the sun's map leaves it out (back past the lamp's reach).
+                for (id, lit) in casters.into_iter().zip(lamp_lit) {
+                    if let Some(g) = w.actors.get_mut(&id).and_then(|a| a.gpu.as_mut()) {
+                        g.lamp_lit = lit;
+                    }
+                }
                 let drawn_map: HashMap<u32, &crate::render::ActorGpu> = w.actors.iter().filter(|(id, a)| !a.vanished() && !hidden.contains(id) && !far_out.contains(id) && !culled(id, a)).filter_map(|(id, a)| Some((*id, a.gpu.as_ref()?))).filter(|(_, g)| g.alpha >= 1e-4).collect();
                 let actors: Vec<&crate::render::ActorGpu> = drawn_map.values().copied().collect();
                 counts = perf::Counts { entities: w.entities.len(), actors: w.actors.len(), posed: counts.posed, drawn: actors.len(), zone_draws: r.draw_count(), ui_vertices: 0, fx: [(0, 0); 3] };

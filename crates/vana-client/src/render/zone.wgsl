@@ -60,7 +60,8 @@ struct Part {
 @group(0) @binding(3) var<storage, read> parts: array<Part>;
 
 // Lamp shadows (ours, render/lampshadow.rs): per layer the lamp's light slot + 1 (0 = unused) and its matrix;
-// misc = (strength, PCF step in uv).
+// misc = (strength, PCF step in uv, REACH, the fraction of a light's range within which a lamp takes over the main
+// shadow).
 struct LampShadowU {
     slots: vec4<u32>,
     vp: array<mat4x4<f32>, 4>,
@@ -347,6 +348,33 @@ fn vs_skinned_sun(v: SkinIn) -> SunOut {
     var out: SunOut;
     out.clip = sil_vp * vec4<f32>(s.world, 1.0);
     out.feet = pose[3].y;
+    return out;
+}
+
+// The sun's depth for our character (or mount) while a lamp map takes it in (ActorGpu::lamp_lit): left out, so the
+// lamp's shadow is its main one, while one of those lamps is lit and its live range (at most REACH) reaches the
+// character well inside its fade (lampshadow::receive); otherwise drawn as vs_skinned_sun.
+@vertex
+fn vs_skinned_sun_lamped(v: SkinIn) -> SunOut {
+    let sk = skin(v);
+    var out: SunOut;
+    out.clip = sil_vp * vec4<f32>(sk.world, 1.0);
+    out.feet = pose[3].y;
+    let centre = pose[3].xyz - vec3<f32>(0.0, 0.9, 0.0);
+    for (var j = 0; j < 4; j++) {
+        let s = lamp_sh.slots[j];
+        if (s == 0u) { continue; }
+        let a = plights[2u * (s - 1u)];
+        let c = plights[2u * (s - 1u) + 1u];
+        if (c.w <= 0.0 || max(c.r, max(c.g, c.b)) <= 0.0) { continue; }
+        if (distance(centre, a.xyz) >= lamp_sh.misc.w * min(a.w, lamp_sh.misc.z)) { continue; }
+        let q = lamp_sh.vp[j] * vec4<f32>(centre, 1.0);
+        if (q.w <= 0.0) { continue; }
+        let p = q.xyz / q.w;
+        if (abs(p.x) < 1.0 && abs(p.y) < 1.0 && p.z > 0.0 && p.z < 1.0) {
+            out.clip = vec4<f32>(0.0, 0.0, 2.0, 1.0);
+        }
+    }
     return out;
 }
 

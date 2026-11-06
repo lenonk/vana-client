@@ -26,6 +26,8 @@ pub const OWN: u32 = 0xffff;
 #[derive(Default)]
 pub struct Lamps {
     pub list: Vec<Lamp>,
+    /// The zone's data lights (position, table slot) from the last scan: lamp shadows fall from these too.
+    pub data: Vec<(Vec3, u32)>,
     at: Option<Instant>,
     /// The last scan's glows, data lights and shells (logged when they change).
     counts: (usize, usize, usize),
@@ -51,6 +53,7 @@ impl Lamps {
         }
         self.at = Some(Instant::now());
         let scan = fx.lamp_scan(on);
+        self.data = scan.lights.clone();
         let first = fx.reg.light_keys.len() as u32;
         let mut list = if on { build(&scan.glows, &scan.lights, first, |a, b| ground?.raycast(a, b)) } else { Vec::new() };
         // A lamp keeps the colour it was first given (glows pulse; the list changes only when the lamps do).

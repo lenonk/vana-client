@@ -18,11 +18,16 @@ pub const HALF_EXTENT: f32 = 16.0;
 /// How far the light's eye sits back from the target, and the depth range it covers.
 const BACK: f32 = 150.0;
 const DEPTH: f32 = 300.0;
-/// The most a shadow takes off a surface (multiplied by 1 - this), at full sun: retail's silhouette's, MODULATE2X
-/// of diffuse 0x40 into ZERO / INVSRCCOLOR (render/shadow.rs vs_ground), so a shadowed surface keeps half its light.
-pub const STRENGTH: f32 = 2.0 * 64.0 / 255.0;
+/// The most a shadow takes off a surface (multiplied by 1 - this), at full sun: half of retail's silhouette's
+/// (MODULATE2X of diffuse 0x40 into ZERO / INVSRCCOLOR, render/shadow.rs vs_ground, which keeps half the light), so a
+/// shadowed surface keeps three quarters of its light. Steven found the full one too dark beside the lamp shadows,
+/// which match it (lampshadow::STRENGTH).
+pub const STRENGTH: f32 = 64.0 / 255.0;
 /// Below this strength (dawn and dusk, a dim light) retail's shadows draw instead, so no character goes without one.
 pub const HANDOFF: f32 = 0.25 * STRENGTH;
+/// Indoors (a fixed-light environment whose light has no colour, as in every Mog House: straight down, black) the
+/// shadows fall from the room's light direction at the full strength.
+pub const INDOOR_STRENGTH: f32 = STRENGTH;
 /// How far below its caster's feet (world units, straight down) a shadow stays full, and where it has faded out: a
 /// character atop a wall casts nothing onto the ground far below. Measured from the feet rather than along the light,
 /// so a low sun or a small step in the ground (a seam between terrain pieces) does not cut a shadow off.
