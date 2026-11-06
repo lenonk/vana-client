@@ -555,4 +555,14 @@ Milestone 1:
 - The target panel's name in retail's name colour (FUN_1008db40 as the plates: unclaimed monster pale yellow, our
   party's claim red, another's magenta).
 - The first letter typed into a list's hidden search no longer also triggers its game hotkey.
+- Settings window search (ours, not retail): typing on a topic page searches every page's settings by name, help
+  and heading; a Retail only button (Ctrl+R) hides our settings; a details column shows the setting under the
+  cursor. Mods and Mod Settings show only their own tabs. This finishes what the 2026-11-04 Settings window entry
+  left to come.
+- Settings window (ours, not retail): the modern Config window is now "Settings", with every retail Config setting
+  and every setting of ours (the old Settings and Extras pages) on one of fourteen pages, grouped as Game, Graphics,
+  Sound, Input and System, each page in small headed groups. Chat Filters, Effects, Font Colors, Mods and the Lua
+  mods' settings open as their own pages from a button on their topic's page. Search, a retail-only filter and a details
+  pane, as in the mock-up, are still to come.
+- Typing in the Settings window's search no longer triggers game hotkeys (ours).
 - Not yet: alliance rows live.
