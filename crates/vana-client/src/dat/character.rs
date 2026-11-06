@@ -500,7 +500,10 @@ impl Track {
 
 /// 10-byte header (u8 ver, u8 converted, u16 tracks, u16 keys, f32 speed), 84-byte tracks:
 /// i32 bone, then rot xyzw, trans xyz, scale xyz as (i32 index, f32 value) blocks. A nonzero
-/// index points at `keys` floats at 10 + 4 * index; rot index with bit 31 set = no track.
+/// index points at `keys` floats at 10 + 4 * index. Rot index bit 31 (FUN_10019b30): in a region 1..6 chunk no track
+/// (the bone is left for another region or layer); in a region 0 chunk the flag is masked off and the track still
+/// writes the bone, its constants (identity, zero) included. So a gesture's legs chunk resets bone 2, which the idle
+/// under it keys: without that the idle's hip sway showed through and the feet slid.
 /// FUN_10018900 turns the key count into the frame count (one less) while the converted byte is 0 (every file).
 pub fn parse_animation(name: String, d: &[u8]) -> Result<Animation> {
     if d.len() < 10 {
@@ -511,13 +514,15 @@ pub fn parse_animation(name: String, d: &[u8]) -> Result<Animation> {
         bail!("animation {name}: {count} tracks / {keys} keys do not fit");
     }
     let frames = if d[1] == 0 { keys - 1 } else { keys };
+    let legs = name.as_bytes().get(3) == Some(&b'0');
     let mut tracks = Vec::with_capacity(count);
     for t in 0..count {
         let o = 10 + t * 84;
         let channels = |idx_at: usize, val_at: usize, n: usize| -> Result<Vec<Channel>> {
             (0..n)
                 .map(|i| {
-                    let idx = i32_at(d, idx_at + i * 4);
+                    let raw = i32_at(d, idx_at + i * 4);
+                    let idx = if legs { raw & 0x7fff_ffff } else { raw };
                     if idx <= 0 {
                         return Ok(Channel::Const(f32_at(d, val_at + i * 4)));
                     }
@@ -529,7 +534,7 @@ pub fn parse_animation(name: String, d: &[u8]) -> Result<Animation> {
                 })
                 .collect()
         };
-        if i32_at(d, o + 4) < 0 {
+        if i32_at(d, o + 4) < 0 && !legs {
             continue;
         }
         let rot: [Channel; 4] = channels(o + 4, o + 20, 4)?.try_into().unwrap();
@@ -1049,6 +1054,26 @@ mod tests {
             let h = -rest[bone as usize].at(off).y;
             println!("file {file}: point 12 bone {bone} height {h:.2}");
             assert!((lo..hi).contains(&h), "file {file}: {h}");
+        }
+    }
+
+    /// A Taru's thinking loop (th1, event motion file 32752) over the idle under it: the idle keys bone 2 (its hip
+    /// sway) and th10 marks bone 2 with bit 31, which in a legs chunk still writes the bone. The feet stay put
+    /// whatever frame the idle is on.
+    #[test]
+    fn legs_chunk_flagged_tracks_cover_the_idle() {
+        let Ok(index) = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()) else { return };
+        let (Ok(skel), Ok(ev)) = (index.read(19776), index.read(32752)) else { return };
+        let base = super::load_file(&skel).unwrap();
+        let ev = super::load_file(&ev).unwrap();
+        let skel = base.skeleton.unwrap();
+        let find = |list: &[super::Animation], n: &str| list.iter().find(|a| a.name == n).cloned().unwrap();
+        let (idl, th1) = (find(&base.animations, "idl0"), find(&ev.animations, "th10"));
+        assert!(th1.tracks.iter().any(|t| t.bone == 2), "th10 keeps its flagged bone 2 track");
+        let foot = |f: f32| super::pose(&skel, &[(&idl, f), (&th1, 4.0)])[77].t;
+        let first = foot(0.0);
+        for f in 1..idl.frames {
+            assert!(foot(f as f32).distance(first) < 1e-3, "idle frame {f}: {:?} vs {first:?}", foot(f as f32));
         }
     }
 
