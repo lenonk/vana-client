@@ -322,7 +322,10 @@ fn typing_elsewhere(w: &World) -> bool {
         // The modern Wide Scan name filter and the full log's find.
         || (w.modern && w.scan_typing)
         || (w.modern && w.full_log.is_some() && w.log_find.is_some())
+        // Ours: the Settings window's search.
+        || modern::config_finding(w)
 }
+
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
@@ -2052,12 +2055,17 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if find_typing {
         keys.clear();
     }
+    // The modern Settings window's search takes the text, Backspace, Escape and Ctrl+R while a topic page shows.
+    let settings_typing = modern::config_find_events(world, &input.events);
+    if settings_typing {
+        keys.clear();
+    }
     // The modern magic and ability windows' search takes the keys and text while it runs.
     let list_typing = listsearch::events(world, gu, &input.events);
     if list_typing {
         keys.clear();
     }
-    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing || comment_typing || macro_typing || faq_typing || mail_typing || lua_typing || voice_typing || list_typing || scan_typing || find_typing;
+    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing || comment_typing || macro_typing || faq_typing || mail_typing || lua_typing || voice_typing || list_typing || scan_typing || find_typing || settings_typing;
     if post_typing {
         post::text_events(world, &input.events);
         keys.clear();
@@ -11364,8 +11372,8 @@ impl App {
             } else {
                 0xffff
             };
-            // Not with the UI hidden: the search gets no events then.
-            f.typing = text_field_open(w) || (!w.ui_hidden && starts_search && listsearch::can_run(w));
+            // Not with the UI hidden: the search gets no events then. Ours: the Settings window's search opens the same way.
+            f.typing = text_field_open(w) || (!w.ui_hidden && starts_search && (listsearch::can_run(w) || modern::config_find_open(w)));
             f.keyboard = w.game.get(0x42);
             // A window has the keys: arrows go to it, not to the camera (the window-active state, MODLOG "Input
             // layer"). The log counts only while focused: Escape or another window unfocuses it and leaves the 0x78

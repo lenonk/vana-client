@@ -250,6 +250,10 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     if opts.kit {
         kit_sample(&mut p);
     }
+    if opts.settings {
+        let s = super::super::settings::SettingsUi::open(&crate::config::Config::default(), [1920, 1080]);
+        super::config::sample(&mut p, &s);
+    }
     if opts.rows.is_some() || opts.borders.is_some() {
         menu_sample(&mut p);
     }
@@ -261,7 +265,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
         timers_sample(m, ctx, screen.center().x - 190.0 - super::extras::WIDTH, super::extras::WIDTH, super::extras::Side::Left);
         timers_sample(m, ctx, screen.center().x - 180.0, 360.0, super::extras::Side::Left);
     }
-    if opts.list || opts.kit || opts.rows.is_some() || opts.borders.is_some() {
+    if opts.list || opts.kit || opts.settings || opts.rows.is_some() || opts.borders.is_some() {
         return;
     }
     // Every frame at a few sizes: nine-slice corners, tiled edges, the stretched gradient.
@@ -294,6 +298,8 @@ pub struct Opts {
     pub opacity: f32,
     /// A panel of the kit's controls.
     pub kit: bool,
+    /// The Settings window (config.rs).
+    pub settings: bool,
 }
 
 pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &Path, opts: &Opts) -> Result<()> {
