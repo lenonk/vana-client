@@ -11311,8 +11311,8 @@ impl App {
         }
         world.step_ticks += dt * 60.0;
         let speed = own_speed(world);
-        // FUN_100a8000, under the strafe lock or locked on (ours: not the right drag): backing up goes at a third of the
-        // speed (vt+0x1b0), sideways at a fixed 0.0625 a tick (0.125 riding), whatever the speed or the stick.
+        // FUN_100a8000, under the strafe lock or locked on (ours: the right drag's facing too): backing up goes at a third
+        // of the speed (vt+0x1b0), sideways at a fixed 0.0625 a tick (0.125 riding), whatever the speed or the stick.
         let riding = matches!(world.my_motion.status, 5 | 0x55);
         // Locked on (FUN_100a7b80), every control type: the same quarters and speeds, the stick read in the frame the
         // locked step moves in (forward toward the target, side about it, target::locked_step). Measured against this
@@ -11335,6 +11335,9 @@ impl App {
             let dir = world.net.me.lock().map_or(0, |m| m.dir);
             let f = world.my_face.filter(|f| f.0 == dir).map_or_else(|| forward_from_dir(dir), |f| f.1);
             crate::motion::strafe_dir(f, step)
+        } else if world.mouse_look && !tank {
+            // The right drag faces the camera's forward this frame (see `to` below), so the quarter is about that.
+            crate::motion::strafe_dir(face, step)
         } else {
             0
         };
