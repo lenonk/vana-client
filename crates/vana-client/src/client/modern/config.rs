@@ -34,11 +34,11 @@ enum Entry {
 
 /// The pages opened from a topic page's button: (name, page, help).
 const SUBS: [(&str, Entry, &str); 5] = [
-    ("Chat Filters", Entry::List("cfilter", None), "Each chat and battle message kind On, Off or Hold."),
-    ("Effects", Entry::List("fxfilter", None), "Which effects show: yours, your party's and others'."),
-    ("Font Colors", Entry::Colors, "The colour of each kind of chat and battle line."),
-    ("Mods", Entry::Mods, "The installed mod packs: on or off, their order, install and remove."),
-    ("Mod Settings", Entry::ModPages, "The settings the Lua mods declare, a page for each."),
+    ("Chat Filters", Entry::List("cfilter", None), "Choose which kinds of chat and battle messages show in the log."),
+    ("Effects", Entry::List("fxfilter", None), "Choose whose visual effects you see: yours, your party's and other players'."),
+    ("Font Colors", Entry::Colors, "Choose the colour of each kind of chat and battle message."),
+    ("Mods", Entry::Mods, "Turn mod packs on or off, change their order, and install or remove them."),
+    ("Mod Settings", Entry::ModPages, "Settings for your Lua mods, one page per mod."),
 ];
 const SUB_CHAT: usize = 0;
 const SUB_EFFECTS: usize = 1;

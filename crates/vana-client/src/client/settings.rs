@@ -276,92 +276,92 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [SRow] 
     use Val::*;
     use When::*;
     const GENERAL: &[SRow] = &[
-        row("Window Mode", "0034: full screen, a window, or borderless at the window size or the desktop's.", Tool("0034"), &[(0, "Full Screen"), (1, "Windowed"), (2, "Borderless"), (3, "Desktop")], Now),
-        row("MIP Mapping", "0000: lower-resolution textures on distant objects.", Tool("0000"), OFF_ON, NextZone),
-        row("Gamma Base", "0028: base gamma, added to the Gameplay page's R / G / B.", Gamma, &[], Now),
+        row("Window Mode", "Full screen, a window, or a borderless window at your chosen size or the size of your desktop.", Tool("0034"), &[(0, "Full Screen"), (1, "Windowed"), (2, "Borderless"), (3, "Desktop")], Now),
+        row("MIP Mapping", "Uses smaller copies of textures on things far away, which stops distant ground and walls from shimmering.", Tool("0000"), OFF_ON, NextZone),
+        row("Gamma Base", "Overall brightness. The Gameplay page's red, green and blue brightness sliders are added on top.", Gamma, &[], Now),
     ];
     const SCREEN: &[SRow] = &[
-        row("Resolution", "0001 / 0002: the window's size.", Size("0001", "0002", Sizes::Window), &[], Now),
-        row("Monitor", "The monitor the game opens on, in every window mode (not retail).", Monitor, &[], Now),
-        row("GPU", "The graphics card to draw with; Default is the high-performance one (not retail).", Gpu, &[], Restart),
-        row("Background", "0003 / 0004: the 3D scene's resolution, scaled to the window.", Size("0003", "0004", Sizes::Background), &[], Now),
-        row("Menu Size", "0037 / 0038: the resolution menus and text are laid out at, then stretched.", Size("0037", "0038", Sizes::Ui), &[], Now),
-        row("3D Aspect", "Window: the window's shape. Config: retail's ratio from Misc. 2 / the lobby Config.", RetailAspect, &[(0, "Window"), (1, "Config")], Now),
-        row("Draw Distance", "How far scenery, characters and effects draw: Retail is the game's distance, the others farther (not retail).", DrawDistance, &[(100, "Retail"), (150, "1.5x"), (200, "2x"), (300, "3x"), (0, "Unlimited")], Now),
+        row("Resolution", "The size of the game window.", Size("0001", "0002", Sizes::Window), &[], Now),
+        row("Monitor", "Which monitor the game opens on (not retail).", Monitor, &[], Now),
+        row("GPU", "Which graphics card draws the game. Default picks the faster one in laptops with two (not retail).", Gpu, &[], Restart),
+        row("Background", "How sharp the 3D world is drawn. Set it higher than the window for a sharper picture at a cost in speed, or lower for speed.", Size("0003", "0004", Sizes::Background), &[], Now),
+        row("Menu Size", "The size menus and text are drawn at before they are stretched to the window. Smaller numbers make menus bigger.", Size("0037", "0038", Sizes::Ui), &[], Now),
+        row("3D Aspect", "Window keeps the 3D world in proportion to the window. Config uses the shape set in the game's config tool, as retail does.", RetailAspect, &[(0, "Window"), (1, "Config")], Now),
+        row("Draw Distance", "How far away scenery, characters and effects still appear. Retail is the game's own distance, the others reach farther (not retail).", DrawDistance, &[(100, "Retail"), (150, "1.5x"), (200, "2x"), (300, "3x"), (0, "Unlimited")], Now),
     ];
     const TEXTURES: &[SRow] = &[
-        row("Textures", "0018: compressed (BC1 / BC2) or uncompressed textures.", Tool("0018"), &[(0, "High"), (1, "Low"), (2, "Full")], NextZone),
-        row("2-D Mapping", "0019: map images compressed (DXT3) or at full quality.", Tool("0019"), &[(0, "Compressed"), (1, "Full")], NextZone),
-        row("Fonts", "0036: the font texture quality.", Tool("0036"), &[(0, "Compressed"), (1, "Full"), (2, "High")], Restart),
+        row("Textures", "Texture quality. High and Low save video memory, Full is the sharpest.", Tool("0018"), &[(0, "High"), (1, "Low"), (2, "Full")], NextZone),
+        row("2-D Mapping", "Map quality. Compressed saves memory, Full is the sharpest.", Tool("0019"), &[(0, "Compressed"), (1, "Full")], NextZone),
+        row("Fonts", "Text quality. Higher is sharper.", Tool("0036"), &[(0, "Compressed"), (1, "Full"), (2, "High")], Restart),
     ];
     const EFFECTS: &[SRow] = &[
-        row("Lamp Lights", "Baked: the lamplight painted onto the walls, as retail. Real: point lights at the lamps (not retail).", LampLights, &[(0, "Baked"), (1, "Real")], Now),
-        row("Environment Animation", "0011: swaying vegetation (Normal 16 steps, Smooth 32).", Tool("0011"), &[(0, "Off"), (1, "Normal"), (2, "Smooth")], Now),
-        row("Bump Mapping", "0017: normal-mapped scenery; off lights it with the sun and moon together.", Tool("0017"), OFF_ON, NextZone),
-        row("Graphics Stabilization", "0040: On interpolates the shine overlay's coordinates plainly (no seam wrap).", Tool("0040"), OFF_ON, Now),
-        row("3D LCD Mode", "0030: side-by-side stereo for 3D screens.", Tool("0030"), OFF_ON, Now),
+        row("Lamp Lights", "Baked keeps the lamplight painted onto the walls, as retail. Real makes the lamps give off light of their own (not retail).", LampLights, &[(0, "Baked"), (1, "Real")], Now),
+        row("Environment Animation", "Makes grass, trees and other plants sway. Smooth sways them more smoothly than Normal.", Tool("0011"), &[(0, "Off"), (1, "Normal"), (2, "Smooth")], Now),
+        row("Bump Mapping", "Gives some walls and floors a raised, textured look. Off also lights them a little differently.", Tool("0017"), OFF_ON, NextZone),
+        row("Graphics Stabilization", "Retail's fix for glitches on some old graphics cards. It only changes the moving shine some spells and effects put on characters. Leave it Off unless that shine looks broken.", Tool("0040"), OFF_ON, Now),
+        row("3D LCD Mode", "Draws the game for 3D screens that need two side-by-side pictures. Leave it Off on a normal screen.", Tool("0030"), OFF_ON, Now),
     ];
     const SOUND: &[SRow] = &[
-        row("Sound", "0007: sound on or off.", Tool("0007"), OFF_ON, Now),
-        row("Sound Effect Channels", "0029: sound effects playing at once.", Tool("0029"), &[(12, "12"), (13, "13"), (14, "14"), (15, "15"), (16, "16"), (17, "17"), (18, "18"), (19, "19"), (20, "20")], Now),
-        row("Sound in Background", "0035: keep playing sound while the window is not focused.", Tool("0035"), OFF_ON, Now),
+        row("Sound", "Turns all sound on or off.", Tool("0007"), OFF_ON, Now),
+        row("Sound Effect Channels", "How many sound effects can play at the same time. More means fewer sounds are cut off.", Tool("0029"), &[(12, "12"), (13, "13"), (14, "14"), (15, "15"), (16, "16"), (17, "17"), (18, "18"), (19, "19"), (20, "20")], Now),
+        row("Sound in Background", "Keeps playing sound while you are in another window.", Tool("0035"), OFF_ON, Now),
         // The title's one volume (lobby config 0xa8); in game the Gameplay page has them (rows left out there).
-        row("Music Volume", "The volume before you are in game (the lobby's; in game, the Gameplay page's sliders).", Music, &[], Now),
-        row("Sound Effects Volume", "The volume before you are in game (the lobby's; in game, the Gameplay page's sliders).", Effects, &[], Now),
+        row("Music Volume", "Music volume at the title screen. In game, use the sliders on the Gameplay page.", Music, &[], Now),
+        row("Sound Effects Volume", "Sound effects volume at the title screen. In game, use the sliders on the Gameplay page.", Effects, &[], Now),
     ];
     const MISC: &[SRow] = &[
-        row("Hardware Mouse", "0021: the game folder's cursor files (.ani) instead of the cursor the game draws.", Tool("0021"), OFF_ON, Now),
-        row("Cursor Size", "The drawn cursor's size (Hardware Mouse off); Auto grows it with the window (not retail).", CursorSize, &[(0, "Auto"), (100, "1x"), (150, "1.5x"), (200, "2x"), (300, "3x"), (400, "4x")], Now),
-        row("Opening Movie", "0022: play the opening movie before the title; any key skips it.", Tool("0022"), OFF_ON, Restart),
-        row("Simple Character Creation", "0023: character creation with 2-D portraits instead of the 3D models.", Tool("0023"), OFF_ON, Now),
-        row("Screenshot Size", "0043: also save each screenshot at the screen size (ffxiuser/screenshots).", Tool("0043"), OFF_ON, Now),
+        row("Hardware Mouse", "Uses your system's mouse pointer with the game's cursor images, instead of a cursor the game draws.", Tool("0021"), OFF_ON, Now),
+        row("Cursor Size", "How big the game's own cursor is, when Hardware Mouse is Off. Auto makes it bigger in bigger windows (not retail).", CursorSize, &[(0, "Auto"), (100, "1x"), (150, "1.5x"), (200, "2x"), (300, "3x"), (400, "4x")], Now),
+        row("Opening Movie", "Plays the opening movie before the title screen. Any key skips it.", Tool("0022"), OFF_ON, Restart),
+        row("Simple Character Creation", "Shows flat pictures instead of 3D models during character creation.", Tool("0023"), OFF_ON, Now),
+        row("Screenshot Size", "Also saves each screenshot at your screen's size, in ffxiuser/screenshots.", Tool("0043"), OFF_ON, Now),
         row("Send Rate", "How often the client sends to a private server, which answers each time: faster brings what happens around you sooner. A PlayOnline sign-in keeps the game's rate (not retail).", SendRate, &[(400, "Retail"), (200, "2x"), (100, "4x"), (50, "8x")], Now),
     ];
     const CLIENT: &[SRow] = &[
-        row("Frame Limit", "Frames drawn a second; game time stays at 60 ticks.", FrameLimit, &[], Now),
-        row("Anisotropic Filtering", "Anisotropic texture filtering.", Aniso, &[(1, "Off"), (2, "2x"), (4, "4x"), (8, "8x"), (16, "16x")], NextZone),
-        row("Party TP", "Show TP in the party window (retail config 0xae, off there).", PartyTp, OFF_ON, Now),
-        row("Interface", "Classic: the game's own windows. Modern: the new interface's windows where it has them (not retail).", ModernUi, &[(0, "Classic"), (1, "Modern")], Now),
-        row("Interface Size", "The modern interface's size (not retail).", ModernScale, MODERN_SCALES, Now),
-        row("Panel Opacity", "How opaque the modern interface's window backgrounds are (not retail).", ModernOpacity, &[], Now),
-        row("Panel Places", "Reset puts this character's modern windows back where they start (not retail).", ResetPlaces, &[(0, "As Moved"), (1, "Reset")], Now),
+        row("Frame Limit", "The most frames drawn each second. The game itself always runs at the same speed.", FrameLimit, &[], Now),
+        row("Anisotropic Filtering", "Keeps ground and walls sharp when you look at them at a slant. Higher is sharper.", Aniso, &[(1, "Off"), (2, "2x"), (4, "4x"), (8, "8x"), (16, "16x")], NextZone),
+        row("Party TP", "Shows each member's TP in the party window.", PartyTp, OFF_ON, Now),
+        row("Interface", "Classic uses the game's own windows. Modern uses the new windows where there is one (not retail).", ModernUi, &[(0, "Classic"), (1, "Modern")], Now),
+        row("Interface Size", "How big the modern windows are (not retail).", ModernScale, MODERN_SCALES, Now),
+        row("Panel Opacity", "How see-through the modern windows' backgrounds are (not retail).", ModernOpacity, &[], Now),
+        row("Panel Places", "Reset puts this character's modern windows back where they started (not retail).", ResetPlaces, &[(0, "As Moved"), (1, "Reset")], Now),
     ];
     // A page holds 7 rows; the gamepad's have their own.
     const GAMEPAD: &[SRow] = &[
-        row("Gamepad", "Read a game controller, with FFXiPadConfig's layout (padsin in config.json changes it).", Gamepad, OFF_ON, Now),
-        row("Stick Dead Zone", "How far a stick moves before it counts; 33% is retail's 42 of 127, round here (not retail).", PadDeadZone, &[(15, "15%"), (20, "20%"), (25, "25%"), (33, "33%"), (40, "40%"), (50, "50%")], Now),
+        row("Gamepad", "Lets you play with a game controller. The button layout follows the game's pad config tool.", Gamepad, OFF_ON, Now),
+        row("Stick Dead Zone", "How far you must push a stick before it moves you. Raise it if you drift with the stick let go. 33% matches retail (not retail).", PadDeadZone, &[(15, "15%"), (20, "20%"), (25, "25%"), (33, "33%"), (40, "40%"), (50, "50%")], Now),
     ];
     const MAPS: &[SRow] = &[
-        row("Map Overlay", "Ctrl / Alt + O shows the zone map over the screen, as the map add-ons do.", MapOverlay, OFF_ON, Now),
-        row("Map Overlay Opacity", "How opaque the map overlay is.", MapOpacity, &[], Now),
-        row("Minimap", "The zone map in a corner, centred on you, with what is near; the mouse wheel over it zooms.", Minimap, OFF_ON, Now),
-        row("Minimap Position", "Where the minimap stands: the top right (beside the menus while one is open), or the top left under the cast bar.", MinimapDock, &[(0, "Top Right"), (1, "Top Left")], Now),
+        row("Map Overlay", "Ctrl or Alt + O shows the zone map over the game, like the map add-ons do.", MapOverlay, OFF_ON, Now),
+        row("Map Overlay Opacity", "How see-through the map overlay is.", MapOpacity, &[], Now),
+        row("Minimap", "A small map in a corner that follows you and shows what is nearby. Scroll over it to zoom.", Minimap, OFF_ON, Now),
+        row("Minimap Position", "Puts the minimap in the top right, moving aside for open menus, or in the top left below the cast bar.", MinimapDock, &[(0, "Top Right"), (1, "Top Left")], Now),
         row("Minimap Size", "How big the minimap is.", MinimapSize, &[(0, "Small"), (1, "Medium"), (2, "Large")], Now),
     ];
-    const TIMERS_ROW: SRow = row("Timers", "Recasts, our effects and the ones we put on others and on monsters, in a window that slides in and out (/timers).", Timers, OFF_ON, Now);
-    const REGIME_ROW: SRow = row("Training Regime", "While a Fields or Grounds of Valor regime is on, its targets and kills in a window beside the timers (from a manual's page, or the kills).", Regime, OFF_ON, Now);
-    const SKILLCHAIN_ROW: SRow = row("Skillchain Helper", "In a party: the skillchains it can make and their elements, and on your target the open one, what closes it and when to burst.", Skillchains, OFF_ON, Now);
+    const TIMERS_ROW: SRow = row("Timers", "Shows spell and ability recasts, your effects and the ones you put on others and on monsters, in a window that slides in and out (/timers).", Timers, OFF_ON, Now);
+    const REGIME_ROW: SRow = row("Training Regime", "While a Fields or Grounds of Valor regime is active, shows its targets and your kills in a window beside the timers.", Regime, OFF_ON, Now);
+    const SKILLCHAIN_ROW: SRow = row("Skillchain Helper", "In a party, shows which skillchains your party can make together. On your target, it shows an open skillchain, what closes it, and when to magic burst.", Skillchains, OFF_ON, Now);
     const TIMERS: &[SRow] = &[
         TIMERS_ROW,
-        row("Timers Position", "Where the timers window docks: the left edge, the right edge above the party list, or the top.", TimersDock, &[(0, "Left"), (1, "Right"), (2, "Top")], Now),
+        row("Timers Position", "Docks the timers window on the left, on the right above the party list, or at the top.", TimersDock, &[(0, "Left"), (1, "Right"), (2, "Top")], Now),
         REGIME_ROW,
         SKILLCHAIN_ROW,
     ];
     const TIMERS_MODERN: &[SRow] = &[TIMERS_ROW, REGIME_ROW, SKILLCHAIN_ROW];
     // A page holds 7 rows: what touches battle has its own.
     const EXTRA_BATTLE: &[SRow] = &[
-        row("Target Distance", "How far your target is, centre to centre, in the target window.", TargetDistance, OFF_ON, Now),
-        row("Target HP %", "The target's HP percent beside its gauge in the classic target window (the modern one shows it).", TargetHpp, OFF_ON, Now),
-        row("Trust Speech", "What your trusts say to the party (on summoning, on a weapon skill, on defeat) in the log, or not.", TrustSpeech, &[(0, "Shown"), (1, "Hidden")], Now),
-        row("Ready Lines", "The \"readies\" and \"starts casting\" lines: everyone's, or only yours and monsters' (what is coming at you).", ReadyLines, &[(0, "All"), (1, "Mine, Monsters'")], Now),
-        row("Battle Text", "Battle lines as the game words them, or short: \"Name [Fast Blade] → Wild Rabbit: 123\". Lines with no short form stay as they are.", ShortBattle, &[(0, "Retail"), (1, "Short")], Now),
-        row("Battle Names", "Names in battle lines in one colour, or coloured by who they are: you, your party, the alliance, a monster your party claimed, another's claim.", NameColours, &[(0, "Plain"), (1, "Coloured")], Now),
+        row("Target Distance", "Shows how far away your target is in the target window.", TargetDistance, OFF_ON, Now),
+        row("Target HP %", "Shows your target's HP percent next to its HP bar in the classic target window. The modern one always shows it.", TargetHpp, OFF_ON, Now),
+        row("Trust Speech", "Shows or hides what your trusts say in the chat log.", TrustSpeech, &[(0, "Shown"), (1, "Hidden")], Now),
+        row("Ready Lines", "Shows every \"readies\" and \"starts casting\" line, or only yours and monsters' so you see what is coming at you.", ReadyLines, &[(0, "All"), (1, "Mine, Monsters'")], Now),
+        row("Battle Text", "Shows battle lines the way the game words them, or shortened, like \"Name [Fast Blade] → Wild Rabbit: 123\".", ShortBattle, &[(0, "Retail"), (1, "Short")], Now),
+        row("Battle Names", "Shows names in battle lines in one colour, or coloured by who they are: you, your party, your alliance, monsters you claimed, and others' claims.", NameColours, &[(0, "Plain"), (1, "Coloured")], Now),
     ];
     const EXTRA_MISC: &[SRow] = &[
-        row("Synthesis Amount", "After Synthesize, ask how many to make and make them one after another.", SynthAmount, OFF_ON, Now),
-        row("Timestamps on All Lines", "Every log line gets the time, not only chat (the format of /timestamp; seconds while it is off).", StampAll, OFF_ON, Now),
-        row("Clock", "Earth time, the moon and the next Vana'diel day beside the game's clock.", EarthClock, OFF_ON, Now),
-        row("Text Auto-Advance", "An event's message waiting for a key goes on by itself after this many seconds.", AutoAdvance, &[(0, "OFF"), (3, "3 s"), (5, "5 s"), (8, "8 s")], Now),
+        row("Synthesis Amount", "After you press Synthesize, asks how many to make and crafts them one after another.", SynthAmount, OFF_ON, Now),
+        row("Timestamps on All Lines", "Puts the time on every chat log line, not only chat.", StampAll, OFF_ON, Now),
+        row("Clock", "Shows Earth time, the moon phase and the next Vana'diel day next to the game's clock.", EarthClock, OFF_ON, Now),
+        row("Text Auto-Advance", "Event messages that wait for a key move on by themselves after this many seconds.", AutoAdvance, &[(0, "OFF"), (3, "3 s"), (5, "5 s"), (8, "8 s")], Now),
     ];
     match kind {
         Kind::Extras if modern => [&MAPS[..3], TIMERS_MODERN, EXTRA_BATTLE, EXTRA_MISC].get(tab).copied().unwrap_or(&[]),
