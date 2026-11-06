@@ -5416,6 +5416,15 @@ fn directed_run(w: &World) -> bool {
     w.autorun && (w.follow.is_some() || w.run_to.is_some() || w.mod_run)
 }
 
+/// FUN_100964f0's effect checks: sleep (2), petrification (7), stun (10) or terror (28) (FUN_10096270), charm (14) or
+/// effect 633 among our effects, or the server's freeze flag (0x037 flags1 bit 13). The move input returns before
+/// reading the keys while any holds. FUN_10096270 also checks K.O. (0); ours leaves it to `dead()`, since some of our
+/// effect lists carry 0 for an empty slot. Sleep's other ids (19, lullaby 193) are not checked: retail leaves them to
+/// the server.
+fn effect_held(w: &World) -> bool {
+    w.my_plate.frozen || w.buffs.iter().any(|&b| matches!(b, 2 | 7 | 10 | 14 | 28 | 633))
+}
+
 /// Our run speed in units per second (FUN_100a48d0): Speed x0.1, doubled while riding (status 5 / 0x55), at most 30.
 fn own_speed(w: &World) -> f32 {
     let s = if w.my_motion.speed > 0 { w.my_motion.speed as f32 * 0.1 } else { RUN_SPEED };
@@ -11079,6 +11088,7 @@ impl App {
                 _ => world.autorun = false,
             }
         }
+        let held = effect_held(world);
         // A mod's run to a point: steered as /follow, ended there.
         if let Some((x, z, within)) = world.run_to {
             let d = Vec3::new(x - world.pos.x, 0.0, z - world.pos.z);
@@ -11156,8 +11166,9 @@ impl App {
         if world.walk {
             tier = f32::min(tier, 1.0 / 3.0);
         }
-        // FUN_100964f0: no movement during a synthesis (status 0x2c), fishing or its request, or a dig.
-        if world.my_motion.status == 0x2c || fishing::locked(world) || ride::digging(world) {
+        // FUN_100964f0: no movement during a synthesis (status 0x2c), fishing or its request, or a dig; nor while an
+        // effect holds us (FUN_10096270 and the two checks after it) or the server freezes us (+0x128 bit 15).
+        if world.my_motion.status == 0x2c || fishing::locked(world) || ride::digging(world) || held {
             tier = 0.0;
         }
         if tier == 0.0 {
@@ -11165,7 +11176,7 @@ impl App {
         }
         world.move_tier = tier;
         // Q / E: player yaw += ticks x 0.01745 x 1.57075; the camera follows the turn (FUN_1001d4c0).
-        let turn_delta = if turn != 0.0 && !world.autorun && !in_event && world.unlock_ticks <= 0.0 { turn * ticks * 0.017452778 * 1.57075 } else { 0.0 };
+        let turn_delta = if turn != 0.0 && !world.autorun && !in_event && !held && world.unlock_ticks <= 0.0 { turn * ticks * 0.017452778 * 1.57075 } else { 0.0 };
         world.yaw += turn_delta;
         // The turn (0x100a7381): heading += 2 x X x ticks x 0.01745, X normalised and tiered (FUN_100a78d0), wrapped;
         // the step goes along the new heading this frame. Autorun steers itself (the same 2 degrees a tick).
@@ -11250,7 +11261,7 @@ impl App {
             let sp = camera::speed(&world.camst);
             lock_cam = Some((ticks, dx - turn_keys * camera::YAW_RATE * sp * ticks, dy + v7 * camera::RISE_RATE * sp * ticks));
             let to = tp - world.pos;
-            if to.x.abs() + to.z.abs() > 1e-3 {
+            if !held && to.x.abs() + to.z.abs() > 1e-3 {
                 world.yaw = to.x.atan2(to.z);
             }
         } else {
@@ -11397,6 +11408,9 @@ impl App {
             // Standing still keeps the facing; only the camera turns. Locked, we face the target.
             let to = if let Some((_, Some(y))) = pin {
                 Some(Vec3::new(y.cos(), 0.0, -y.sin()))
+            } else if held {
+                // FUN_100a6210 returns before any turn while an effect holds us: the camera moves, the facing stays.
+                None
             } else if let Some(f) = tank_face {
                 Some(f)
             } else if face_cam {
