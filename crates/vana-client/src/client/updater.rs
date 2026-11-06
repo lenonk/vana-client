@@ -126,6 +126,11 @@ fn agent() -> ureq::Agent {
     ureq::Agent::config_builder().user_agent(concat!("vana-client/", env!("CARGO_PKG_VERSION"))).build().into()
 }
 
+/// A GitHub API answer's text.
+pub(super) fn get_text(url: &str) -> Result<String> {
+    Ok(agent().get(url).header("Accept", "application/vnd.github+json").call().with_context(|| url.to_string())?.body_mut().read_to_string()?)
+}
+
 /// The latest GitHub release and this platform's asset in it (None: no release, or no such asset).
 fn latest_release() -> Result<Option<Release>> {
     // VANA_RELEASE_API: another endpoint for the test drives (a local mock of the GitHub answer).
@@ -400,6 +405,17 @@ impl UpdateUi {
                     status.lock().unwrap().client = Client::Current;
                     lines.push(format!("vana-client {} is installed; restart to use it.", r.tag));
                     restart = true;
+                    // The notes since this version, for the restarted client to show (none if GitHub won't say).
+                    let from = env!("CARGO_PKG_VERSION");
+                    match super::notes::fetch(from, &r.tag) {
+                        Ok(notes) if !notes.is_empty() => {
+                            if let Err(e) = super::notes::save(&super::notes::Saved { from: from.into(), to: r.tag.clone(), notes }) {
+                                log::warn!("update: can't keep the release notes: {e:#}");
+                            }
+                        }
+                        Ok(_) => log::info!("update: no release notes after {from}"),
+                        Err(e) => log::warn!("update: release notes: {e:#}"),
+                    }
                 }
                 Ok(())
             })();

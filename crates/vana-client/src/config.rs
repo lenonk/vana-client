@@ -84,6 +84,15 @@ pub fn known_servers_path() -> PathBuf {
     }
 }
 
+/// The change notes an update left for the restarted client (client/notes.rs): in the data dir, or beside an
+/// FFXI_CONFIG copy.
+pub fn whats_new_path() -> PathBuf {
+    match std::env::var_os("FFXI_CONFIG") {
+        Some(p) => PathBuf::from(p).with_file_name("whats-new.json"),
+        None => data_dir().join("whats-new.json"),
+    }
+}
+
 /// The client's log: in the data dir, or beside an FFXI_CONFIG copy (test runs keep their own).
 pub fn log_path() -> PathBuf {
     match std::env::var_os("FFXI_CONFIG") {
@@ -209,6 +218,10 @@ pub struct Config {
     /// on and only to a private server. No Settings row: only a server with its GM extension can use it, so it is set
     /// in config.json by hand.
     pub gm_window: bool,
+    /// The version whose change notes were last shown (client/notes.rs): a newer client shows the notes since. A
+    /// config from before the notes has none, so its first newer build shows that build's own.
+    #[serde(default)]
+    pub notes_seen: String,
     /// Extra (the trust chatter filters): trusts' party lines (battle message 711) are not printed.
     pub hide_trust_speech: bool,
     /// Extra (Battlemod's filters): "readies" / "starts casting" lines only for us and monsters.
@@ -452,6 +465,7 @@ impl Default for Config {
             target_hpp: false,
             earth_clock: false,
             gm_window: false,
+            notes_seen: env!("CARGO_PKG_VERSION").into(),
             lamp_lights: true,
             actor_shadows: 0,
             shadow_map: 2048,

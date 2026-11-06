@@ -60,6 +60,7 @@ mod configui2;
 mod settings;
 mod modsui;
 mod updater;
+mod notes;
 mod firstrun;
 mod desktop;
 mod target;
@@ -7259,6 +7260,13 @@ pub struct App {
     /// No game files yet: the download window (not retail).
     first_run: Option<firstrun::FirstRun>,
     update_ui: Option<updater::UpdateUi>,
+    /// The change notes the last update left for this version, shown over the title once (client/notes.rs), and their
+    /// window while open.
+    whats_new: Option<notes::Saved>,
+    notes_ui: Option<notes::NotesUi>,
+    /// The notes since the version last seen, asked at start when no update left them (a manual download, or an update
+    /// by a build from before the notes).
+    notes_fetch: Option<notes::Fetch>,
     /// UI layout size / window size (Config-tool 0037 / 0038).
     ui_k: (f32, f32),
     /// The offscreen scene target and its scaling pass (background resolution other than the window's).
@@ -7387,6 +7395,10 @@ impl App {
             updater::tidy();
             updater::start(cfg.ffxi_dir())
         });
+        let whats_new = notes::pending();
+        // A test drive asks for the notes only with FFXI_NOTES_CHECK set (or FFXI_UPDATE_CHECK).
+        let notes_check = drive_checks || std::env::var_os("FFXI_NOTES_CHECK").is_some();
+        let notes_fetch = (whats_new.is_none() && notes_check && notes::due(&cfg.notes_seen)).then(|| notes::fetch_since(cfg.notes_seen.clone()));
         Self {
             cfg,
             applied_volumes: None,
@@ -7496,6 +7508,9 @@ impl App {
             updates,
             first_run: None,
             update_ui: None,
+            whats_new,
+            notes_ui: None,
+            notes_fetch,
             ui_k: (1.0, 1.0),
             // FFXI_DEBUG_OVERLAY=1 starts with the F12 lines on (test shots).
             debug_overlay: std::env::var_os("FFXI_DEBUG_OVERLAY").is_some(),
@@ -12529,7 +12544,24 @@ impl App {
                         ];
                         const UPDATE: usize = 5;
                         // FUN_10235fa0: while lobycwin (or our settings screen) is up the title takes no input.
-                        let config_open = self.lobby_cfg.is_some() || self.lobby_settings.is_some() || self.update_ui.is_some();
+                        // The change notes an update left (or the start asked for) open first, over everything else on the
+                        // title. An answer with none marks this version seen.
+                        if let Some(answer) = self.notes_fetch.as_ref().and_then(|f| f.lock().unwrap().take()) {
+                            self.notes_fetch = None;
+                            match answer {
+                                Some(s) => self.whats_new = Some(s),
+                                None => {
+                                    self.cfg.notes_seen = env!("CARGO_PKG_VERSION").into();
+                                    let _ = self.cfg.save();
+                                }
+                            }
+                        }
+                        if self.notes_ui.is_none()
+                            && let Some(s) = self.whats_new.take()
+                        {
+                            self.notes_ui = Some(notes::NotesUi::open(s));
+                        }
+                        let config_open = self.lobby_cfg.is_some() || self.lobby_settings.is_some() || self.update_ui.is_some() || self.notes_ui.is_some();
                         let window_over = config_open;
                         // Not retail: Update (menu 5) above Select Character while something is out of date.
                         let upd = self.updates.as_ref().is_some_and(|s| s.lock().unwrap().any());
@@ -12593,6 +12625,7 @@ impl App {
                                 mo.title_buttons(ctx, [screen_size[0] as u32, screen_size[1] as u32], self.cfg.modern_scale, self.ui_k, &buttons);
                             }
                             let help = match (&self.update_ui, &self.lobby_settings, &self.lobby_cfg) {
+                                _ if self.notes_ui.is_some() => self.notes_ui.as_ref().map(|n| n.help()).unwrap_or_default(),
                                 (Some(u), _, _) => u.help(),
                                 // Modern: the Config panel has its own help line.
                                 (None, _, Some(_)) if modern_title => ITEMS[3].1.to_string(),
@@ -12796,6 +12829,43 @@ impl App {
                                     }
                                     if out.closed {
                                         self.update_ui = None;
+                                        break;
+                                    }
+                                }
+                            }
+                            if let Some(n) = self.notes_ui.as_mut() {
+                                n.zoom = if modern_title { 1.35 } else { 1.0 };
+                                let mut outs = Vec::new();
+                                for ev in input.events.iter() {
+                                    if let egui::Event::Key { key, pressed: true, .. } = ev {
+                                        outs.push(n.key(*key));
+                                    }
+                                }
+                                if input.wheel != 0 {
+                                    n.wheel(input.wheel);
+                                }
+                                if let Some(p) = input.pointer {
+                                    outs.push(n.pointer(p, input.clicked, sw, sh));
+                                    if outs.last().is_some_and(|o| o.hover) {
+                                        lu.hover.set(true);
+                                    }
+                                }
+                                if modern_title {
+                                    self.modern.get_or_insert_with(|| modern::Modern::new(ctx)).notes_window(ctx, [screen_size[0] as u32, screen_size[1] as u32], self.cfg.modern_scale, self.ui_k, n, sw, sh);
+                                } else {
+                                    n.draw(lu, sw, sh);
+                                }
+                                for out in outs {
+                                    if let Some(a) = self.audio.as_mut() {
+                                        for x in &out.sounds {
+                                            a.ui(*x);
+                                        }
+                                    }
+                                    if out.closed {
+                                        self.notes_ui = None;
+                                        notes::seen();
+                                        self.cfg.notes_seen = env!("CARGO_PKG_VERSION").into();
+                                        let _ = self.cfg.save();
                                         break;
                                     }
                                 }

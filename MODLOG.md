@@ -22961,3 +22961,22 @@ From FFXiMain.dll (Steven's unpacked copy), full_text.asm, FUN_100a7b80.
   older ones go, and a temporary file left 10 min goes.
 - Test overlay::tests::shared_cache_builds_stay_readable: two configs, eight threads, every read whole. *(inf: the
   parallel test run's rare ground test miss on zone 230 came from a build removed under its reader.)*
+
+## Change notes after a client update (ours, 2026-11-06)
+
+- Not retail. When Update installs a newer vana-client (client/updater.rs), it asks GitHub for the releases
+  (`/releases?per_page=50`; VANA_RELEASES_API for a mock) and keeps the notes of every release after the running
+  version up to the installed one, newest first, drafts and pre-releases left out, in whats-new.json (the data dir, or
+  beside an FFXI_CONFIG copy). A failed fetch keeps nothing and shows nothing.
+- At start (client/notes.rs pending): a file for this version opens the "What's New" window over the title menu once;
+  one for a newer version stays (the restart did not take); an older one goes. Closing it removes the file.
+- Without a file (a manual download, or an update by a build from before the notes, whose updater keeps none), config
+  `notes_seen` decides: a client newer than it asks GitHub for the notes since in the background and shows them the
+  same way; a config without the field (from before the notes) gets this version's notes alone; a new config starts
+  at the running version. Closing the window, or an answer with no notes, sets it to the running version; a failed
+  ask leaves it for the next start. Test drives ask only with FFXI_NOTES_CHECK (or FFXI_UPDATE_CHECK).
+- The notes are each release's Markdown (pulldown-cmark): a heading per release (its version and date; a body's own
+  leading heading that names the version is left out), headings, paragraphs, nested lists, bold, inline code, code
+  blocks and tables. Classic: the game's frame and title strip, the game font with in-line colours (bold `1e 01`,
+  code `1e 02`), the list scroll bar, OK. Modern: the pack's frame, Fira Sans with the strong face and mono, a thin
+  bar. Up / Down, Page Up / Page Down (Space), Home / End and the wheel scroll; Enter or Escape closes, as does OK.
