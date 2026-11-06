@@ -617,6 +617,10 @@ pub enum NetEvent {
     Dig { id: u32, index: u16, flags: u8 },
     /// s2c 0x11E: ActIndex @4 used /jump.
     Jump(u16),
+    /// Ours: s2c 0x1F0, a page of the GM level and command list (client/gm.rs), the whole sub-packet.
+    GmCatalog(Vec<u8>),
+    /// Ours: s2c 0x1F1, a GM window command's result and output, the whole sub-packet.
+    GmResult(Vec<u8>),
     /// s2c 0x030 (GP_SERV_COMMAND_EFFECT): UniqueNo @4, ActIndex @8, EffectNum @0xa, Type @0xc, Status @0xd, Timer @0xe.
     SynthEffect { id: u32, index: u16, effect: i16, kind: i8, status: i8, timer: u16 },
     /// s2c 0x06F / 0x070 (COMBINE_ANS / COMBINE_INF).
@@ -1257,6 +1261,8 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         my_index = p.u16(8);
                         queue.push(build(0x00C, &[0u8; 8]));
                         queue.push(build(0x011, &[2, 0, 0, 0]));
+                        // Ours: ask for the GM level and command list (c2s 0x1F0, akreao/lsb); other servers ignore it.
+                        queue.push(build(0x1F0, &super::gm::CATALOG_REQUEST));
                         // EventNum @0x62, EventPara @0x64, EventMode @0x66, EventNo @0x40: the client starts
                         // the login event itself, on the player (FUN_10094ea0).
                         let (event_num, event_para) = (p.u16(0x62), p.u16(0x64));
@@ -1563,6 +1569,8 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x02E => tx.send(NetEvent::MogMenu)?,
                     0x11A => tx.send(NetEvent::EmoteUnlocks { jobs: p.u32(4), chairs: p.u16(8) })?,
                     0x11E => tx.send(NetEvent::Jump(p.u16(4)))?,
+                    0x1F0 => tx.send(NetEvent::GmCatalog(p.data.clone()))?,
+                    0x1F1 => tx.send(NetEvent::GmResult(p.data.clone()))?,
                     0x030 => tx.send(NetEvent::SynthEffect { id: p.u32(4), index: p.u16(8), effect: p.u16(0xa) as i16, kind: p.u8(0xc) as i8, status: p.u8(0xd) as i8, timer: p.u16(0xe) })?,
                     0x06F | 0x070 => {
                         let a = super::synth::Answer {

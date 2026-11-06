@@ -1,0 +1,211 @@
+# Ours: the GM window's grouping, warnings and form fields per lsb command (scripts/commands/*.lua).
+# Built from each script's usage line and onTrigger arguments. Columns, tab separated: command, group, danger (1),
+# description, then fields as label~kind~optional(1) joined by |. A command the server lists but this file
+# doesn't gets plain fields from its cmdprops type string, in Debug & scripts.
+addabytime	unlocks	0	Adds an amount of time to the given target. If no target then to the current player	minutes~number~0|player~player~1
+addallatma	unlocks	0	Adds all Atma Key Items to the given player	player~player~1
+addallattachments	unlocks	0	Unlocks all attachments	target~player~1
+addallmaps	unlocks	0	Adds all maps to the given player	player~player~1
+addallmonstrosity	unlocks	0	Adds all species, instincts, and variants for monstrosity	player~player~1
+addallmounts	unlocks	0	Adds all mount key items to player, granting access to their associated mounts	player~player~1
+addallspells	unlocks	0	Adds all valid spells EXCEPT TRUSTS to the given target. If no target then to the current player	player~player~1
+addalltrusts	unlocks	0	Adds all trust spells to the given target. If no target then to the current player	player~player~1
+addallwarps	unlocks	0	Adds all Survival Guides and Home Points to GM if no target is specified	player~player~1
+addallweaponskills	unlocks	0	Adds all learned weaponskills to the given target. If no target then to the current player	player~player~1
+addcurrency	items	0	Adds the specified currency to the player	currency type~currency~0|amount~number~0|player~player~1
+adddynatime	unlocks	0	Adds an amount of time to the given target. If no target then to the current player	minutes~number~0|player~player~1
+addeffect	player	0	Adds the given effect to the given player	player~player~1|effect~effect~0|power~text~1|duration~text~1|subid~text~1|subPower~text~1
+addfish	items	0	Adds a measured fish to the GMs inventory	fish~item~0|length~number~0|weight~number~0|ranked~number~1
+additem	items	0	Adds an item to the GMs inventory	itemId~item~0|quantity~number~1|aug1~augment~1|v1~augment~1|aug2~augment~1|v2~augment~1|aug3~augment~1|v3~augment~1|aug4~augment~1|v4~augment~1|trial~number~1
+addkeyitem	unlocks	0	Adds a key item to the player	key item ID~keyitem~0|player~player~1
+addlights	items	0	Adds the amount of specified light to the player	light type~text~0|amount~number~0|player~player~1
+addmission	quests	0	Adds a mission to the GM or target players log	logID~log~0|missionID~mission~0|player~player~1
+addquest	quests	0	Adds a quest to the given targets log	logID~log~0|questID~quest~0|player~player~1
+addspell	unlocks	0	adds the ability to use a spell to the player	spellID/spellName~spell~0|player~player~1
+addtempitem	items	0	Adds a temp item to the players inventory	itemID~item~0|quantity~number~0
+addtime	world	0	Resets and then adds offset (in seconds) to earth clock	offset_in_seconds~number~0
+addtitle	unlocks	0	Add and set player title	title ID~title~0|player~player~1
+addtreasure	items	0	Adds an item directly to the treasure pool	itemID~item~0|player~player~1|npcID~entity~1
+addweaponskillpoints	items	0	Adds weapon skill points to an equipped item	slot main=0, sub=1, ranged=2~number~0|points~number~0|player~player~1
+afkcheck	moderation	0	Sends a custom menu to the cursor target,	
+ah	items	0	opens the Auction House menu anywhere in the world	
+animatenpc	mobs	0	Changes the animation of the given npc. (For testing purposes.)	npcID~entity~1|animationID~text~0
+animatesubnpc	mobs	0	Changes the animationSub of the given npc. (For testing purposes.)	npcID~entity~1|animationID~text~0
+animation	player	0	Sets the players current animation	animationID~text~1
+besieged	world	0	Drives Besieged by hand until the system runs itself	mamool|troll|undead~text~0|start|win|loss~text~0|leader 0/1~text~1|arg3~number~1
+breaklinkshell	moderation	1	Breaks a linkshell and all pearls/sacks	linkshell name~text~0
+bring	travel	0	Brings the target to the player	player~player~1|forceZone (1 or 0)~number~1
+build	world	0	Print the server's current build information	
+cansee	travel	0	Can you see (via ximesh raycasting) your cursor target?	target~player~1
+capallskills	player	0	Caps all the players skills	
+capskill	player	0	Caps a specific skill	skillID~skill~0
+changejob	player	0	Changes the players current job	jobID~job~0|level~number~1|master: 0/1~number~1
+changesjob	player	0	Changes the players current subjob	jobID~job~0|level~number~1
+checkinstance	world	0	Displays Progress and Stage inside instance	
+checkinteraction	debug	0		handlerName~text~1
+checklocalvar	debug	0	checks player or npc local variable and returns result value	variable name~text~0|arg2~text~1|arg3~text~1
+checkmission	quests	0	Prints current MissionID for the given LogID and target Player to the in game chatlog	logID~log~0|player~player~1
+checkmissionstatus	quests	0	Prints current missionStatus for the given LogID and target Player to the in game chatlog	player~player~1|log ID~log~1|index~number~1
+checkquest	quests	0	Prints status of the quest to the in game chatlog	logID~log~0|questID~quest~0|player~player~1
+checkvar	debug	0	checks player or server variable and returns result value	arg1~text~1|arg2~text~1
+chocobo	items	0	Register and use a chocobo with a specific look	color~text~0|head~text~0|tail~text~0|feet~text~0
+cnation	player	0	check or alter target characters campaign allegiance	player~player~1|campaign allegiance~nation~0
+completemission	quests	0	Completes the given mission for the target player, if that mission is currently active	logID~log~0|missionID~mission~0|player~player~1
+completequest	quests	0	Completes the given quest for the GM or target player	logID~log~0|questID~quest~0|player~player~1
+completerecord	quests	0	Completes the given quest for the GM or target player	recordID~number~0|player~player~1
+costume	player	0	Sets the players current costume	costumeID~number~0
+costume2	player	0	Sets the players current costume2	costumeID~number~0
+cp	unlocks	0	Adds the given amount cp to the player	amount~number~0
+crash	debug	1	force the server process to crash	
+cs	debug	0	Starts the given event for the player	csID~number~0|op1~number~1|op2~number~1|op3~number~1|op4~number~1|op5~number~1|op6~number~1|op7~number~1|op8~number~1|texttable~number~1
+cs2	debug	0	Starts the given event for the player	csID~number~0|string1~text~1|string2~text~1|string3~text~1|string4~text~1|op1~number~1|op2~number~1|op3~number~1|op4~number~1|op5~number~1|op6~number~1|op7~number~1|op8~number~1
+delallinventory	items	1	Deletes all items in a player's inventory, if they have any	player~player~1
+delallweaponskills	unlocks	1	Removes all learned weaponskills to the given target. If no target then to the current player	player~player~1
+delcontaineritems	items	1	Deletes all items in a player's specified container, if they have any	container~number~0|player~player~1
+delcurrency	items	1	Removes the specified currency from the player	currency type~currency~0|amount~number~0|player~player~1
+deleffect	player	0	Removes the given effect from the given player	player~player~1|effect~effect~0
+delitem	items	1	Deletes a single item held by a player, if they have it	itemID~item~0|player~player~1
+delkeyitem	unlocks	1	Deletes the given key item from the player	key item ID~keyitem~0|player~player~1
+delmission	quests	1	Deletes the given mission from the GM or target player	logID~log~0|missionID~mission~0|player~player~1
+delquest	quests	1	Deletes the given quest from the GM or target player	logID~log~0|questID~quest~0|player~player~1
+delspell	unlocks	1	Removes a spell from the players spell list	spellID/spellName~spell~0|player~player~1
+despawnmob	mobs	0	Despawns the given mob <t> or mobID)	mobID~entity~1
+down	travel	0	Alters vertical coordinate	yalms~number~0|target~player~1
+entityvisual	debug	0	push entityVisual packet to player	animation string~text~0
+exec	debug	1	Allows you to execute a Lua string directly from chat	Lua string~text~0
+fafnir	mobs	0	Summon a fightable Fafnir (no loot)	
+garrison	world	0		command~text~0|player~player~1
+gc_full	debug	1	Tell Lua to run a full garbage collection	
+gc_step	debug	0	Tell Lua to run a garbage collection step	
+getcraftrank	player	0	returns target's RANK of specified craft skill	craft skill or ID~skill~0|player~player~1
+geteffects	player	0	Lists all active status effects on the specified target (or self if no target specified)	target~player~1
+getenmity	mobs	0	prints the target mob's current CE and VE towards you	
+getfame	quests	0	Gets fame level of a target player	player~player~1|fame region 0-15~number~0
+getfamily	mobs	0	Prints the mob's family ID	mob ID~entity~1
+getfishers	moderation	0	Returns a list of all players who have recently fished	MinutesToLookback~number~0
+getid	mobs	0	Prints the ID of the currently selected target under the cursor	
+getlocalvars	debug	0		
+getmobaction	mobs	0	Prints mob's current action to the command user	mobID~entity~1
+getmobflags	mobs	0	Used to get a mob's entity flags for testing	mob ID~entity~1
+getmobmod	mobs	0	gets a mod by ID on the player or cursor target	modID~text~0
+getmod	player	0	gets a mod by ID on the player or cursor target	modID~text~0
+getpool	mobs	0	prints the treasure pool of the current target	
+getprevzoneline	travel	0	gets the ID of the players last zoneline or cursor target	
+getquestvar	quests	0		player~player~1|logId~log~0|questId~quest~0|variable~text~0
+getskill	player	0	returns target's level of specified skill	skill name or ID~skill~0|player~player~1
+getspecies	mobs	0	Prints the mob's species ID	mob ID~entity~1
+getstats	player	0	prints stats of cursor target into chatlog, for debugging	option~text~1
+getta	mobs	0	returns the name of the entity that would be chosen for trick attack given the current (mob) target	
+gettp	player	0	prints tp of the player and the target(if applicable), for debugging	option~text~1
+getwspoints	items	0	prints current ws points, optionaly specifying the weapon slot to check (default main)	main/sub/ranged~text~1|target~player~1
+givebonanzapearl	items	0	Gives a bonanza pearl with <number> for <eventnum>	player~player~1|number~number~0|eventnum~number~0
+givegil	items	0	Gives the specified amount of gil to GM or target player	amount~number~0|player~player~1
+giveitem	items	0	Gives an item to the target player	player~player~1|itemId~item~0|amount~number~0|aug1~augment~1|v1~augment~1|aug2~augment~1|v2~augment~1|aug3~augment~1|v3~augment~1|aug4~augment~1|v4~augment~1
+givels	items	0	Makes a linkpearl for the given linkshell (pearlsack for gm)	linkshell name~text~0|target~player~1
+givemagianitem	items	0	Gives the Magian Item associated with the given Trial ID	player~player~1|trialId~number~0|RewardItem = False~toggle~1
+givexp	unlocks	0	Gives the GM or target player experience points	amount~number~0|player~player~1
+gmhome	travel	0	Sends you to zone 210 (GM_HOME), if you are a GM	
+godmode	player	0	Toggles god mode on the player, granting them several special abilities	tier~number~1
+goto	travel	0	Goes to the target player	player~player~1|forceZone (1 or 0)~number~1
+gotoid	travel	0	Go to given mob or npc ID	mobId|npcId~entity~0
+gotoname	travel	0	Go to given mob or npc by name	mob or npc name~entityname~0|index~number~1
+hasitem	items	0	Checks if a player has a specific item	itemID~item~0|player~player~1
+haskeyitem	unlocks	0	Checks if player has specified KeyItem	key item ID~keyitem~0|player~player~1
+hastitle	unlocks	0	Check if player already has a title	title ID~title~0|player~player~1
+hide	moderation	0	Hides the GM from other players	cmd~text~1
+homepoint	travel	0	Sends the target to their homepoint	player~player~1
+hp	player	0	Sets the GM or target players health	amount~number~0|player~player~1
+immortal	player	0	Sets a target to be unkillable	player~player~1
+inject	debug	1	Injects the given packet data	packet~text~0
+injectaction	debug	1	Injects an action packet with the specified action and animation id	action ID~number~0|animation ID~number~0|info~number~1|reaction~number~1|message~number~1
+instance	travel	0	Load an instance and take you there	instance_id~entity~0
+inwater	travel	0	Are you in water?	
+jail	moderation	1	Sends the target player to jail. (Mordion Gaol)	target~player~1|cellId~number~1|reason~text~1
+logoff	moderation	1	Logs the target player off by force	player~player~1
+masterjob	player	0	Masters the player's current job	player~player~1
+menu	debug	0	Shows a basic test menu with three options	
+menu_paginated	debug	0	Shows a paginated test menu with two pages, an option per page	
+messagebasic	debug	0	Injects a message basic packet	message ID~number~0|param1~number~1|param2~number~1
+messagespecial	debug	0	Injects a message special packet	message ID~number~0|param1~number~1|param2~number~1|param3~number~1|param4~number~1
+messagestandard	debug	0	Injects a standard message packet	message ID~number~0
+minigame	world	0	Opens a menu to allow you to quickly test minigames	
+mission	quests	0	mission command built with menu control, can add/delete/complete missions, see status,	logid~log~0|missionid~mission~0|player-name~player~1
+mobhere	mobs	0	Spawns a MOB and then moves it to the current position, if in same zone	mobID~entity~1|noDepop~text~1
+mobskill	mobs	0	Forces an entity to do a skill	skillID~skill~0|target~player~1|tp~number~1
+mobsub	mobs	0	Changes the sub-animation of the given mob. (For testing purposes.)	mob ID~entity~1|animation ID~text~0
+monstrosity	player	0	Toggles MON, keeping the current position. Leaving restores the jobs held on entry	
+monunlock	unlocks	0	Unlocks one Monstrosity family or variant by its enum name, such as TIGER or FLOWERING_TREANT	species or variant~text~0|player~player~1
+mount	items	0		mount ID~text~0|player~player~1|arg3~text~1
+mp	player	0	Sets the GM or target players mana	amount~number~0|player~player~1
+naga	world	0	POC for Domain Invasion and fenced content in general	
+npchere	mobs	0	Spawns an NPC and then moves it to the current position, if in same zone	npcID~entity~1|noDepop~text~1
+pardon	moderation	0	Pardons a player from jail. (Mordion Gaol)	target~player~1
+petgodmode	player	0	Toggles god mode on the player's pet, granting them several special abilities	
+pettp	player	0	Sets the players pet tp	amount~number~0
+pos	travel	0	Sets the players position. If none is given, prints out the position instead	x~coord~1|y~coord~1|z~coord~1|zone ID~zone~1|player~player~1
+posemannequin	items	0	changes the pose of a mannequin	race~number~0|pose~number~0|target~player~1
+posfix	travel	1	Resets a targets account session and warps them to Jeuno	player~player~1
+promote	moderation	1	Promotes the player to a new GM level	player~player~1|level~number~0
+provokeall	mobs	0	Makes all enemies in the current zone target you and sets their TP to 3000	
+quest	quests	0	quest command built with menu control, can add/delete/complete quests, see status,	logId~log~0|questId~quest~0|target~player~1
+racechange	player	0	Make player eligible for Ancestry Moogle Race Change service	player~player~1
+raise	player	0	Sends raise menu to GM or target player	power~text~1|player~player~1
+rebuildnavmesh	debug	1	Rebuild the navmesh for the current zone with configurable parameters	
+release	moderation	0	Releases the player from current events	name~text~1
+reloadbattlefield	debug	0	Attempt to reload specified battlefield lua without a restart	lua-file-name~text~0
+reloaddefaultactions	debug	0	Reloads default actions for current zone or all	allZones~zone~1
+reloadglobal	debug	0	Attempt to reload specified global lua without a restart	globalLua~text~1|other~text~1
+reloadinteraction	debug	0	Reloads the interaction framework	shouldReloadData~text~1
+reloadmagians	debug	0	Reloads the magian listeners	arg1~text~1
+reloadnavmesh	debug	0	Reload the navmesh for the current zone	
+reloadquest	debug	0	Attempt to reload specified quest lua without a restart	lua-file-name~text~0
+reloadrecipes	debug	0	Reloads crafting recipes from the DB	
+rename	mobs	0	Renames target NPC or MOB. Limited to 16 character spaces	string~text~1|npcID/mobID~entity~1
+reset	player	0	If no name is specified, resets your own JA timers	player~player~1
+resetlights	items	0	resets all lights to 0	player~player~1
+return	travel	0	Warps GM or target player to their previous zone	player~player~1
+send	travel	0	Teleport a player to:	player to send~player~1|destination player or zone~player~1
+setallegiance	player	0	Sets the players allegiance	allegiance~nation~0|player~player~1
+setbag	items	0	Sets the players bag size	bagsize~number~1
+setbattlefieldtime	world	0	Set time limit for an active battlefield	minutes~number~0
+setcapacitypoints	unlocks	0	Sets the target players job points count	amount~number~0|player~player~1
+setcraftrank	player	0	sets target's RANK of specified craft skill	craft skill or ID~skill~0|craft rank~skill~0|target~player~1
+setfamelevel	quests	0	Sets fame level on a target player	fame region 0-15~number~0|level 1-9~number~0|player~player~1
+setgil	items	1	Sets the players gil	amount~number~0
+setjobpoints	unlocks	0	Sets the target players job points count	amount~number~0|player~player~1
+setlocalvar	debug	0	set player npc or mob local variable and value	variable name~text~0|value~number~0|arg3~text~1|arg4~text~1
+setmentor	player	0	0 = Not a mentor, 1 = Unlocked but inactive, 2 = Unlocked & flag on	mode~number~0|player~player~1
+setmerits	unlocks	0	Sets the target players merit count	amount~number~0|player~player~1
+setmissionstatus	quests	0	Sets missionStatus for the given LogID and target Player	player~player~1|value~number~1|log ID~log~1|index~number~1
+setmobflags	mobs	0	Used to manipulate a mob's nameflags for testing	flags~text~0|mob ID~entity~1
+setmoblevel	mobs	0	Sets the target monsters level	level~number~0
+setmobmod	mobs	0	Sets the specified mob modifier to the specified value on the cursor target mob	modifier~text~1|amount~number~1|arg3~text~1
+setmod	player	0	Sets the specified modifier to the specified value on the cursor target or player	modifier~text~0|amount~number~0|target~player~1
+setmusic	world	0	Temporarily changes music played by users client	type ID~number~0|song ID~music~0
+setplayerlevel	player	0	Sets the target players level	player~player~1|level~text~0
+setplayermodel	player	0	Sets the look of the user or target player based on model id offset and slot (for testing)	model~number~0|slot~number~0|player~player~1
+setplayernation	player	0	Sets the target players nation	player~player~1|nation~nation~0
+setplayervar	debug	0	Sets a variable on the target player	player~player~1|variable~text~0|value~number~0
+setprogress	world	0	changes progress inside an instance	progress~number~1
+setquestvar	quests	0		player~player~1|logId~log~0|questId~quest~0|variable~text~0|value~number~0
+setrank	player	0	Sets the players rank	player~player~1|new rank~number~0
+setskill	player	0	sets target's level of specified skill	skill name or ID~skill~0|skill level~skill~0|player~player~1
+setstage	world	0	changes stage inside an instance	stage~number~1
+setweather	world	0	Sets the current weather for the current zone	weather ID~weather~0
+sleep	debug	1	inject an artificial delay of 1 second (FOR LOCAL PERFORMANCE TESTING ONLY)	
+spawnmob	mobs	0	Spawns a mob	mob ID~entity~0|despawntime~number~1|respawntime~number~1
+speed	travel	0	Sets the players movement speed	speed~number~1
+stun	mobs	0	stuns a non-NPC target for an hour. good for testing damage/mechanics on a punching bag	
+takegil	items	1	Removes the amount of gil from the given player	amount~number~0|player~player~1
+takexp	unlocks	1	Removes experience points from the target player	amount~number~0|player~player~1
+time	world	0	Prints time info	
+togglegm	moderation	0	Toggles a GMs nameflags/icon	
+tp	player	0	Sets a players tp. If they have a pet, also sets pet tp	amount~number~0|player~player~1
+trustengage	mobs	0	Sets the engagement type of a players trusts	type number~number~0
+up	travel	0	Alters vertical coordinate	yalms~number~0|target~player~1
+updateconquest	world	0	Updates all conquest guard. (Need modify in db first.)	type~number~0
+uptime	world	0	prints zone uptime	
+wallhack	travel	0	Allows the player to walk through walls	player~player~1
+where	travel	0	Tells the player about their current position	
+yell	moderation	1	Bans a specified player from using /yell	ban/unban~text~0|player~player~1|days~number~0
+zone	travel	0	Teleports a player to the given zone	zone ID or autotranslate phrase~zone~0

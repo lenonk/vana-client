@@ -16,6 +16,7 @@ mod chatsel;
 mod combat;
 mod command;
 mod config;
+mod gmwin;
 mod craft;
 mod equip;
 mod extras;
@@ -53,6 +54,7 @@ use super::World;
 use super::game_ui::GameUi;
 use egui::{Color32, Context, FontFamily, FontId, Id, LayerId, Order, Pos2, Rect, Sense, Shape, Ui, Vec2, pos2, vec2};
 pub use command::{BarFocus, CmdMenu, bar_focus, key as command_key};
+pub use gmwin::events as gm_events;
 pub use config::{key as config_key, find_events as config_find_events, finding as config_finding, open_mod_settings, lobby_key as lobby_config_key, lobby_settings as lobby_config_settings};
 pub use journal::key as journal_key;
 pub use config::find_open as config_find_open;
@@ -263,6 +265,7 @@ impl Modern {
         items::draw(&mut p, w);
         equip::draw(&mut p, w);
         config::draw(&mut p, w);
+        gmwin::draw(&mut p, w);
         modwin::draw(&mut p, w);
         status::draw(&mut p, w);
         points::draw(&mut p, w);
@@ -448,6 +451,7 @@ fn focus_panel(w: &World) -> Option<&'static str> {
         _ if w.friendui.as_ref().is_some_and(|u| u.list.is_some() && u.stat.is_none()) => "friendlist",
         _ if w.friendui.is_some() => "window",
         _ if w.settings.is_some() || w.config.is_some() || w.bluset.is_some() || w.pupset.is_some() => "window",
+        _ if gmwin::shown(w) => "window",
         _ if w.magic.is_some() || w.ability.is_some() => "list",
         _ if w.cats.is_some() => "cats",
         _ if w.inspect.up() => "check",
