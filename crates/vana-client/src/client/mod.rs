@@ -6003,6 +6003,9 @@ struct World {
     yaw: f32,
     /// Our model's drawn facing (dir angle, radians; actor +0x61c), eased toward the heading (FUN_100c4390).
     my_draw_yaw: Option<f32>,
+    /// Our step against the heading while it is held (actor +0x598, FUN_100a80d0): 0 none, 1 forward, 2 right, 3 back,
+    /// 4 left; picks the strafe motions (motion::strafe).
+    my_strafe: u8,
     entities: HashMap<u32, Entity>,
     /// Actors drawn on screen this frame (actor +0xb2 bit 0 clear, FUN_100c63d0 / FUN_100cbde0): the target keys
     /// only take these.
@@ -8226,6 +8229,7 @@ impl App {
                             pos: Vec3::ZERO,
                             yaw: 0.0,
                             my_draw_yaw: None,
+                            my_strafe: 0,
                             entities: HashMap::new(),
                             visible: HashSet::new(),
                             zone_lines: Vec::new(),
@@ -11213,6 +11217,17 @@ impl App {
         }
         world.step_ticks += dt * 60.0;
         let speed = own_speed(world);
+        // FUN_100a8000, under the strafe lock only (ours: not the right drag): backing up goes at a third of the speed
+        // (vt+0x1b0), sideways at a fixed 0.0625 a tick (0.125 riding), whatever the speed or the stick.
+        let riding = matches!(world.my_motion.status, 5 | 0x55);
+        let lock_dir = if face_cam && stepping && lock_target.is_none() {
+            // The same facing as my_strafe below: the float one while the byte is still ours.
+            let dir = world.net.me.lock().map_or(0, |m| m.dir);
+            let f = world.my_face.filter(|f| f.0 == dir).map_or_else(|| forward_from_dir(dir), |f| f.1);
+            crate::motion::strafe_dir(f, step)
+        } else {
+            0
+        };
         let falls = !in_event && !world.unsettled && world.in_scene();
         let shafts = world.lifts.shafts();
         let ride = |a: Vec3, b: Vec3| lifts::ride_in(&shafts, a, b);
@@ -11229,7 +11244,11 @@ impl App {
             let mut next = from;
             if stepping {
                 let s = step.normalize();
-                let d = speed * tier * ground::STEP_TICKS / 60.0;
+                let d = match lock_dir {
+                    3 => speed / 3.0 * ground::STEP_TICKS / 60.0,
+                    2 | 4 => (if riding { 0.125 } else { 0.0625 }) * ground::STEP_TICKS,
+                    _ => speed * tier * ground::STEP_TICKS / 60.0,
+                };
                 next = match lock_target {
                     Some(tp) => target::locked_step(from, tp, s.dot(forward), s.dot(right), d),
                     None => from + s * d,
@@ -11324,6 +11343,15 @@ impl App {
                 me.dir = dir_from_forward(f);
                 world.my_face = Some((me.dir, f));
             }
+            // FUN_100a80d0: with the heading held (the strafe lock; ours also the right drag's facing), the step's
+            // quarter about it, the sectors 90 degrees wide and centred on the axes.
+            let held = (face_cam || world.mouse_look) && pin.is_none() && lock_target.is_none();
+            world.my_strafe = if held && stepping {
+                let f = world.my_face.filter(|f| f.0 == me.dir).map_or_else(|| forward_from_dir(me.dir), |f| f.1);
+                crate::motion::strafe_dir(f, step)
+            } else {
+                0
+            };
             me.moving = moving;
             // FUN_10096c00: moving, the ticks add up; the frame after a stop sends the total, then it starts over.
             // Retail counts a tick a frame or more; ours counts 60 Hz time at any frame rate.
@@ -14341,6 +14369,7 @@ impl App {
                 let frame_of = |a: &Actor| Some(a.ticks * actmotion::find(&a.extra, a.character.as_ref()?, &a.motion).first()?.speed * 0.5);
                 let leads: HashMap<u32, f32> = w.actors.iter().filter_map(|(id, a)| Some((*id, frame_of(w.actors.get(&a.motion_link?)?)?))).collect();
                 let me = w.my_id;
+                let my_strafe = w.my_strafe;
                 let mut far_out: HashSet<u32> = HashSet::new();
                 // The event's actors log their motion changes as ours do (cutscene reports).
                 let event_ids: HashSet<u32> = w.event.as_ref().map(|l| l.st.bound.clone()).unwrap_or_default();
@@ -14384,7 +14413,8 @@ impl App {
                         // otherwise; ours takes the prefix).
                         (None, None) if a.jump >= 0.0 && matches!(status, 0 | 1) => ("jmp".to_string(), 1.0, false, crate::motion::BLEND_TICKS),
                         (None, None) => {
-                            let (n, r) = crate::motion::choose(&a.motion_names.unwrap_or(ch.motions), status, ratio);
+                            // FUN_100c8bb0: our strafe / backpedal motions over the walk / run, at its rate.
+                            let (n, r) = crate::motion::choose_strafed(&a.motion_names.unwrap_or(ch.motions), status, ratio, if *id == me { my_strafe } else { 0 });
                             // FUN_100c6380: a status motion the model lacks is not queued (FUN_100cb8e0 fails, +0x1f6
                             // stays), so what plays goes on: the walk of an NPC without a run.
                             if !has(n) && !a.motion.is_empty() && has(&a.motion) {
@@ -14488,7 +14518,7 @@ impl App {
                     let (base, base_rate) = match a.play.as_ref().filter(|_| held) {
                         Some(p) => (p.base.clone(), a.base_rate_now),
                         None => {
-                            let (b, r) = crate::motion::choose(&a.motion_names.unwrap_or(ch.motions), status, ratio);
+                            let (b, r) = crate::motion::choose_strafed(&a.motion_names.unwrap_or(ch.motions), status, ratio, if *id == me { my_strafe } else { 0 });
                             (b.to_string(), r)
                         }
                     };
