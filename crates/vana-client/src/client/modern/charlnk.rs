@@ -27,7 +27,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let at = m.charlnk_at.get().unwrap_or(pos2(screen.width() * 0.4, 120.0));
     let at = pos2(at.x.min(screen.max.x - W - 8.0), at.y.min(screen.max.y - h - 8.0).max(screen.min.y + 8.0));
     let (mut click, mut back) = (None, false);
-    p.panel_at("charlnk", Some(Title { icon: Some("icons/party"), text: &name, note: None }), W, at, |ui| {
+    p.panel_at("charlnk", Some(Title { icon: Some("icons/party"), text: &name, note: None, name: false }), W, at, |ui| {
         for (k, text) in &rows {
             let (r, resp) = ui.allocate_exact_size(vec2(W - 44.0, ROW), Sense::click());
             let on = !off.contains(k);

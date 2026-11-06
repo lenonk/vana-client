@@ -138,7 +138,7 @@ fn panel(p: &mut Panels, items: Option<&super::super::items::ItemCache>, pid: &s
     {
         let width = if win.width > 0.0 { win.width } else { 360.0 };
         let mut clicks: Vec<Click> = Vec::new();
-        let title = (!win.title.is_empty()).then_some(Title { icon: None, text: &win.title, note: None });
+        let title = (!win.title.is_empty()).then_some(Title { icon: None, text: &win.title, note: None, name: false });
         let frame = if win.framed { "window_normal" } else { "none" };
         let hidden = win.hidden();
         // A modal window is centred (on its last height), a popup at its anchor.

@@ -782,8 +782,8 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
 }
 
 /// The mouse (winhits.rs): cmbmenu, cmbhwin, cmbhlst's rows and tskill1 as the generic window; the crystal list and
-/// the picker as the item list (hover moves the row, a click on it is Enter, a right click Escape); itemctrl only the
-/// right click.
+/// the picker as the item list (hover moves the row, a click on it is Enter, a right click Escape); itemctrl as
+/// retail's (winhits::ctr).
 #[allow(clippy::too_many_arguments)]
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
     use super::winhits::generic;

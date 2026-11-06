@@ -1353,7 +1353,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
 
 /// The mouse on the shop's focused window: shopmain / guildsho and shopbuy / shopsell as the generic window; the
 /// list's rows as the item list (hover moves the row, a click on it is Enter, a right click Escape); itemctrl and
-/// moneyctr take only the right click (Escape) *(their arrows by mouse not done)*.
+/// moneyctr as retail's (winhits::ctr).
 pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
     use super::winhits::{child_under, generic};
     // The modern layer draws these and takes their mouse.

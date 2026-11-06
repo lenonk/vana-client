@@ -302,7 +302,7 @@ fn people(p: &mut Panels, v: People, found: &mut Option<super::lists::Found>) ->
     let mut mouse = PeopleMouse::default();
     let width = RES_W + if v.opts.is_empty() { 0.0 } else { COL_W + 12.0 } + 44.0;
     let first = v.header.is_some() as usize;
-    p.panel_at(v.id, Some(Title { icon: Some(v.icon), text: v.title, note: None }), width, at, |ui| {
+    p.panel_at(v.id, Some(Title { icon: Some(v.icon), text: v.title, note: None, name: false }), width, at, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(RES_W);
@@ -477,7 +477,7 @@ fn friends(p: &mut Panels, w: &mut World, gu: &GameUi) {
     if let Some(v) = menu {
         let title = gu.focus_text(v.name, 0)[1].clone().unwrap_or_else(|| "Friend List".into());
         let mut got = None;
-        p.panel("window", Some(Title { icon: Some("icons/party"), text: &title, note: None }), width(1), |ui| got = stack(ui, m, gu, std::slice::from_ref(&v), free));
+        p.panel("window", Some(Title { icon: Some("icons/party"), text: &title, note: None, name: false }), width(1), |ui| got = stack(ui, m, gu, std::slice::from_ref(&v), free));
         act(w, gu, got, |w, c| friendlist::set_cursor(w, c as usize), |w, _| friendlist::key(w, egui::Key::Enter));
         if ui.stat.is_some() {
             return;
@@ -553,7 +553,7 @@ fn messages(p: &mut Panels, w: &mut World, gu: &GameUi) {
         let h = m.rects.borrow().get("msgline").map_or(80.0, |r| r.height());
         let caret = if (w.started.elapsed().as_secs_f32() * 2.0) as u32 % 2 == 0 { "|" } else { "" };
         let shown = format!("{text}{caret}");
-        p.panel_at("msgline", Some(Title { icon: Some("icons/party"), text: &label, note: None }), 520.0, pos2(screen.width() * 0.0121, edge - h - 6.0), |ui| {
+        p.panel_at("msgline", Some(Title { icon: Some("icons/party"), text: &label, note: None, name: false }), 520.0, pos2(screen.width() * 0.0121, edge - h - 6.0), |ui| {
             ui.label(egui::RichText::new(shown).size(m.theme.ui).color(m.theme.color("text")));
         });
     }
@@ -671,7 +671,7 @@ fn help_page(p: &mut Panels, v: &helpdesk::PageView) -> Option<i32> {
     let m = p.m;
     let mut click = None;
     let t = p.ctx.input(|i| i.time);
-    p.panel("window", Some(Title { icon: Some("icons/help"), text: &v.title, note: None }), W + 44.0, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/help"), text: &v.title, note: None, name: false }), W + 44.0, |ui| {
         let seen = egui::Id::unique("help page cursor seen");
         let follow = ui.ctx().data(|d| d.get_temp::<i32>(seen)) != Some(v.cursor);
         ui.ctx().data_mut(|d| d.insert_temp(seen, v.cursor));
@@ -777,7 +777,7 @@ fn naming(p: &mut Panels, w: &mut World, gu: &GameUi, nm: &linkshell::Naming) {
     let icon = w.item_info.as_ref().and_then(|i| m.item_icon(p.ctx, i, 0x201));
     let v = NameView { name: &nm.name, rgb: nm.rgb, sel: nm.sel, edit: nm.edit };
     let mut out = (None, None);
-    p.panel("window", Some(Title { icon: Some("icons/linkshell"), text: "New Linkshell", note: None }), NAME_W + 44.0, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/linkshell"), text: "New Linkshell", note: None, name: false }), NAME_W + 44.0, |ui| {
         out = naming_body(ui, m, &v, icon, focused);
     });
     if !focused {
@@ -903,7 +903,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         }
         let focused = w.confirm.is_none();
         let mut got = None;
-        p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: "Moogle", note: None }), width(wins.len()), |ui| {
+        p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: "Moogle", note: None, name: false }), width(wins.len()), |ui| {
             got = stack(ui, m, gu, &wins, focused);
         });
         act(w, gu, got, moogle::set_cursor, |w, gu| {
@@ -916,7 +916,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         let v = MenuWin { name: region::MENU, sel, off: Vec::new(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
         let focused = w.confirm.is_none();
         let mut got = None;
-        p.panel("window", Some(Title { icon: Some("icons/find"), text: "Region Info", note: None }), width(1), |ui| {
+        p.panel("window", Some(Title { icon: Some("icons/find"), text: "Region Info", note: None, name: false }), width(1), |ui| {
             got = stack(ui, m, gu, std::slice::from_ref(&v), focused);
         });
         let set = |w: &mut World, c: u16| match w.region_menu.as_mut() {
@@ -934,7 +934,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     if let Some(v) = bazaar::view(w) {
         let focused = bazaar::focused(w);
         let mut got = None;
-        p.panel("window", Some(Title { icon: Some("icons/currency"), text: "Set Bazaar", note: None }), width(1), |ui| {
+        p.panel("window", Some(Title { icon: Some("icons/currency"), text: "Set Bazaar", note: None, name: false }), width(1), |ui| {
             got = stack(ui, m, gu, std::slice::from_ref(&v), focused);
         });
         let set = |w: &mut World, c: u16| match w.bazaar.as_mut() {
@@ -952,7 +952,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     if !wins.is_empty() {
         let focused = partymenu::focused(w);
         let mut got = None;
-        p.panel("window", Some(Title { icon: Some("icons/party"), text: "Party", note: None }), width(wins.len()), |ui| {
+        p.panel("window", Some(Title { icon: Some("icons/party"), text: "Party", note: None, name: false }), width(wins.len()), |ui| {
             got = stack(ui, m, gu, &wins, focused);
         });
         let set = |w: &mut World, c: u16| match w.partymenu.as_mut().and_then(|x| x.stack.last_mut()) {
@@ -973,7 +973,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         let mut got = None;
         let mut area_got = None;
         let extra = if area.is_some() { AREA_W + 12.0 } else { 0.0 };
-        p.panel("window", Some(Title { icon: Some("icons/find"), text: "Search", note: None }), width(wins.len()) + extra, |ui| {
+        p.panel("window", Some(Title { icon: Some("icons/find"), text: "Search", note: None, name: false }), width(wins.len()) + extra, |ui| {
             ui.horizontal_top(|ui| {
                 got = stack(ui, m, gu, &wins, focused);
                 if let Some(a) = &area {
@@ -1005,7 +1005,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         let icons: Vec<Option<egui::TextureId>> = rows.iter().map(|r| info.as_ref().and_then(|i| m.item_icon(p.ctx, i, r.0.item))).collect();
         let mut row_click: Option<usize> = None;
         let mut got = None;
-        p.panel("window", Some(Title { icon: Some("icons/linkshell"), text: "Linkshell", note: None }), LS_W + if sub.is_some() { COL_W + 14.0 } else { 0.0 } + 44.0, |ui| {
+        p.panel("window", Some(Title { icon: Some("icons/linkshell"), text: "Linkshell", note: None, name: false }), LS_W + if sub.is_some() { COL_W + 14.0 } else { 0.0 } + 44.0, |ui| {
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
                     ui.set_width(LS_W);

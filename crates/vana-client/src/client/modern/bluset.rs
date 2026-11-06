@@ -75,7 +75,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let title = gu.title_msg(0x8d).unwrap_or_else(|| "Blue Magic".into());
     let (mut equip, mut inven, mut sibo) = (None, None, None);
     let mut found = super::lists::found(p, w, "bluset");
-    p.panel("window", Some(Title { icon: Some("icons/magic"), text: &title, note: Some(&note) }), 2.0 * COL_W + 16.0 + 44.0, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/magic"), text: &title, note: Some(&note), name: false }), 2.0 * COL_W + 16.0 + 44.0, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(COL_W);

@@ -326,8 +326,8 @@ Milestone 1:
   retail's keytops3 69 on the party window. Atlases weather_0 / markers_0. Sources vc/weather, vc/markers.
 - Status (modern/status.rs): the persona, the level gauge, retail's rows on the left with the page under the cursor
   beside them at once (profile with the attributes, job and master levels with the job icons, combat / magic / craft
-  skills named by their sprites' captions, Currencies 1 and 2 as one list with "only those held"); Unity, Play Time,
-  Merit Points, Job Points and Alter Ego Points open retail's windows over it.
+  skills named by their sprites' captions, Currencies 1 and 2 as one list with "only those held"); Play Time shows on
+  the page; Unity, Merit Points, Job Points and Alter Ego Points open retail's windows over it.
 - Journal (modern/journal.rs): Missions, Quests and Key Items as tabs of one window (Tab or a click switches): every
   log / area / category on the left with counts, the chosen one's rows on the right (a log's or an area's current and
   completed together), the cursor row's description under them at once; a new key item is marked seen by Enter or a
@@ -335,7 +335,7 @@ Milestone 1:
   searches every key item, quest or mission there is (listsearch.rs).
 - Social (modern/social.rs): the Party menu, Search and Linkshell windows drawn from retail's menus (their rows
   named by their label sprites, retail's disabled rows and swaps, a window opened over another shown beside it);
-  link11 / link12 stay retail's. Set Bazaar the same way. View House is the storage view itself, opened on the Mog
+  link12 is the People member list and link11 (naming a new shell) a modern window. Set Bazaar the same way. View House is the storage view itself, opened on the Mog
   Safe, with every bag its menu allows as a tab (each opened as its row would).
 - Chat timestamps are in the monospace face.
 - The full log is the chat window itself at full height (under the top bar), with its tabs, scrolled by the wheel and
@@ -591,26 +591,27 @@ Milestone 1:
 - Auto-translate in fields (2026-11-02, ours): Tab completes the word before the caret from the auto-translate
   dictionary in the macro editor's title and lines and in the comment editor (search comment, bazaar message), as on
   the chat line: the same list (Tab / Space / arrows / Page keys move, Enter puts the pick in, a category opens its
-  phrases, Escape or Backspace backs out), drawn at the field in both UIs. A phrase goes in as one unit within the
-  field's bytes (6 of them); typing closes the list. The comment lines show phrases written out.
+  phrases, Escape or Backspace backs out), drawn at the field, with the Modern UI on (the classic UI keeps retail's
+  keys there). A phrase goes in as one unit within the field's bytes (6 of them); typing closes the list. The comment
+  lines show phrases written out.
 - The top bar's busy strip also runs while a PlayOnline message is being sent (retail's bit 0x10, set by msgline's
   commit: a message, a reply, a friend request, an accept or a decline; not by /befriend's search or Ignore;
   2026-11-02).
 - Command palette (2026-11-02, ours; listsearch.rs, modern/lists.rs): Ctrl+Space in the field searches every spell,
   ability, usable item and action menu command (Attack, Disengage, Switch Target, Check, Call for Help, Heal); recent
-  picks show on the empty field; a pick goes through the menus as the keys would. Ctrl+Space is a placeholder: the
-  open question of which keys open the palette and the search is left for upstream.
-- Title rows (2026-11-02, ours; modern/mod.rs): a note no longer runs under the title. A long one (the Commands
-  window's target name) breaks in two lines as retail's target window breaks a name (FUN_101c9fa0), the second cut
-  with an ellipsis; a long title is cut and leaves the note at least 40% of the row. `modern-shot --titles`.
+  picks show on the empty field; a pick goes through the menus as the keys would, and only the commands the action
+  menu offers now are listed. Ctrl+Space is a placeholder: which keys open the palette and the search is still open.
+- Title rows (2026-11-02, ours; modern/mod.rs): a note no longer runs under the title. The Commands window's target
+  name breaks in two lines as retail's target window breaks a name (FUN_101c9fa0), the second cut with an ellipsis;
+  other notes are cut; a long title is cut and leaves the note at least 40% of the row. `modern-shot --titles`.
 - Right-click menus (2026-11-02, ours; the pack's "right click a context menu"): one look for every menu
   (ctxmenu.rs popup, the chat window's Copy / Paste menus now use it too): an optional heading (the name), rows lit
   gold on hover, grey when they can't be picked now, closed by a pick, a press outside or Escape. An Items window row:
   Use, Drop, Sort, Move to... (the action menu's direct list: Use); they set the row's cursor and press iuse's or
-  itmsort2's own Enter, so Drop and Sort still ask. Move to... lists the bags open away from the moogle that take the
+  itmsort2's Enter, so Drop and Sort still ask. Move to... lists the bags open away from the moogle that take the
   item by the storage view's colours (Satchel, Sack, Case, the wardrobes; gear only into wardrobes, nothing equipped
   or in the bazaar) and sends 0x029 with the stack. A party or alliance row: Target, Check, Tell (the chat line on
-  "/tell name "), Focus Target (our own party's slots 1..5, as retail's party menu). An actor: a right click on the
+  "/tell name "), Focus Target (our party's slots 1..5, as retail's party menu). An actor: a right click on the
   world that did not drag (client/mod.rs, World::actor_menu) opens its menu in place of retail's right click (which
   clears the target); on nothing retail's right click stays. A monster: Target, Attack, Check; a player: Target,
   Check, Tell, Invite to Party, Trade; an NPC or a door: Talk, Target, Trade. They run the text commands (/check,
@@ -618,11 +619,9 @@ Milestone 1:
   `modern-shot --menus` draws three of them.
 - Layouts per display (2026-11-02, ours; plan B): config `modern_places` keeps a layout per character and display
   ("Name @2560x1440 60%": the window's pixels and the UI scale) beside the character's latest one (the plain name).
-  A display not arranged yet starts from the latest; a change saves both, so a window dragged through sizes stores
-  nothing until something is moved there. Panel Places' Reset clears every display's. No other panel resizes (the
-  user's call, kept 2026-11-02).
-- The user's call on resizing (2026-10-26: chat window only, no lock button) was kept on 2026-11-02, when the
-  resizable spell / ability list was dropped.
+  A display not seen yet starts from the latest; a change saves both; a display shown for 2 s keeps its layout as
+  its own, so arranging another display doesn't move its panels, and a window dragged through sizes stores nothing.
+  Panel Places' Reset clears every display's. No other panel resizes.
 - Favourites (2026-11-02, ours; the plan's "favourites" and "a small optional favourites strip"; client/favs.rs,
   modern/favs.rs): spells, abilities (not traits) and items are starred by the star at their row's right end in the
   magic and ability lists, the Items window and the search's hits, or with Ctrl+F on the cursor's row or the
@@ -632,24 +631,27 @@ Milestone 1:
   item's count, greyed as its list greys it, its name as the tooltip. A click runs it as a macro line would: /ma,
   /ja, /ws or /pet, /item, with <me> when only we are a valid target and <st> (the target prompt) otherwise. /favs
   [on | off] shows or hides it (config `modern_fav_strip`); it hides while nothing is starred. `modern-shot --favs`.
-  Not yet: macros in favourites (the open question "How macros and equipment sets show in search and favourites" stays open for upstream).
+  Not yet: macros in favourites (the open question "How macros and equipment sets show in search and favourites"
+  stays open). The strip and /favs are the Modern UI's only.
 - Focus and last target (2026-11-02, ours): a panel on the target panel with the focus target (retail's
   /focustarget, a party member) and the last target (the one before the current), each with HP; a click targets it.
   In modern, `<lt>` names / targets the last target and `<ft>` is `<focust>`.
 - Help Desk reply mark (2026-11-02, retail; hudtop.rs, modern/topbar.rs): while a Help Desk reply waits, the top
   bar's mail page shows retail's reply mark (netstat state 2, windowps 36 and keytops3 118, count 1) and the network
-  page isn't held; the modern top bar shows "Help Desk reply". Engine +0xe's count is feature 17.
+  page isn't held; the modern top bar shows "Help Desk reply". Engine +0xe's count never counts in this build
+  (MODLOG "netstat: the second count").
 - Pending actions (2026-11-02, ours; the plan's "state changes are server-confirmed" and its open question on latency
   and invalid targets; client/pending.rs, modern/pending.rs): a spell, weapon skill, job ability or item sent to the
   server (0x01A from /ma, /ws, /ja, /pet; 0x037) is pending until it answers. A chip over the cast bar (panel
   "pending", movable) shows "Cure III -> Raven  waiting..." once the wait passes 150 ms (a quick answer never flashes
-  it). Our 0x028 confirms it (the chip goes; the cast bar and the effect take over). A 0x029 of ours before that is the
-  refusal: the chip turns red with the message's own text ("Raven is out of range.") for 4 s. No answer in 5 s says
-  "The server has not answered." The client's own refusals (group 7 lines before anything is sent) start nothing.
-- Open question still open for upstream: "How latency, failed transfers and invalid targets are shown." The chip is
-  one candidate for actions only (not transfers); it does not settle it.
+  it). Our 0x028 of its kind confirms it (the chip goes; the cast bar and the effect take over). A 0x029 of ours before
+  that, within 2 s of the ask, is the refusal: the chip turns red with the message's text ("Raven is out of
+  range.") for 4 s. No answer in 5 s says "The server has not answered." The client's own refusals (group 7 lines
+  before anything is sent) start nothing.
+- Open question, still open: "How latency, failed transfers and invalid targets are shown." The chip is one candidate
+  for actions only (not transfers); it does not settle it.
 - The classic quantity and gil windows (itemctrl / moneyctr) take the mouse as retail's do: a click on a child is
-  the key retail re-sends for it, - / + repeat while held (winhits::ctr). The modern panels keep their own buttons.
+  the key retail re-sends for it, - / + repeat while held (winhits::ctr). The modern panels keep their buttons.
 - Remaining retail windows (2026-11-02, ours): Play Time ticks on the Status page (days, hours, minutes, seconds and
   retail's line; Enter or "Show in the log" still prints it). link11, naming a new linkshell, takes the window: the
   shell icon in the chosen colour, the name as a field (a click types), Red / Green / Blue as sliders 0..15, OK and
@@ -658,8 +660,6 @@ Milestone 1:
   panel (modern/regioninfo.rs) at the edge away from the cursor: the region's owner, tally and nation gauges, the
   nation ranking, Al Zahbi's and each army's level and orders, a stronghold's forces, mirrors and prisoners, an
   area's development and bivouacs, the coalition ranks and the legend's value.
-- Older lines now wrong: Status's "Unity, Play Time, ... open retail's windows over it" (Play Time no longer does)
-  and Social's "link11 / link12 stay retail's" (link12 is the People member list, link11 is modern as above).
 - Suggestion tests (2026-11-02, plan G): game states recorded as JSON cases (VANA_SUGGEST_RECORD=<folder>) and
   replayed against the rules by `cargo test suggest` (client/suggest_cases/, a case for every rule).
 - UI modes (2026-11-02, ours; the plan's "UI states" as adaptive presets; modern/modes.rs): the mode follows the game:
@@ -670,8 +670,11 @@ Milestone 1:
   shows in every mode. Panels fade in and out over 0.25 s unless Fades is off. Defaults: Combat hides the location
   panel (the user's rule of 2026-11-01, now this preset) and Training; Exploration and Management hide Skillchains.
   `/uimodes` opens the editor (Shown / Hidden per mode, Pin, Fades, Reset, Close; Escape closes); config
-  `modern_modes`. `modern-shot --modes`. The editor is mouse-only for now.
-- Open question still open for upstream: "Which windows hide in combat and which stay pinned?" The defaults above are
-  one candidate, every one changeable in the editor; they do not settle it.
-- The usable Items list (action menu > Items) puts a small bag name (Temporary, Inventory, Mog Wardrobe, Mog Wardrobe 2..8) above each bag's rows, and above the top visible row, once it lists rows from more than one bag (Vana Client; retail has no headers). The order and keys stay as retail's.
+  `modern_modes`. `modern-shot --modes`. The editor is mouse-only for now. The edge windows (Timers, Training,
+  Skillchains, the minimap) fade as the other panels.
+- Open question, still open: "Which windows hide in combat and which stay pinned?" The defaults above are one
+  candidate, every one changeable in the editor; they do not settle it.
+- The usable Items list (action menu > Items) puts a small bag name (Temporary, Inventory, Mog Wardrobe, Mog Wardrobe
+  2..8) above each bag's rows, and above the top visible row, once it lists rows from more than one bag (ours; retail
+  has no headers). The order and keys stay as retail's.
 - Not yet: alliance rows live.

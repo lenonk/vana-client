@@ -433,7 +433,7 @@ fn window(p: &mut Panels, g: &gm::Gm, target: Option<u32>) -> Option<Click> {
     let m = p.m;
     let mut click = None;
     let note = format!("GM {}", g.level);
-    p.panel("window", Some(Title { icon: Some("icons/system"), text: "Game Master", note: Some(&note) }), NAV_W + LIST_W + DETAIL_W + 48.0, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/system"), text: "Game Master", note: Some(&note), name: false }), NAV_W + LIST_W + DETAIL_W + 48.0, |ui| {
         ui.horizontal_top(|ui| {
             rail(ui, m, g, &mut click);
             ui.add_space(16.0);

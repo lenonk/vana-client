@@ -98,7 +98,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         social::width(1)
     };
     let mut found = super::lists::found(p, w, "macros");
-    p.panel("window", Some(Title { icon: Some("icons/macro"), text: "Macros", note: None }), width, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/macro"), text: "Macros", note: None, name: false }), width, |ui| {
         if super::lists::rows_or(ui, m, &mut found) {
             return;
         }
@@ -431,7 +431,7 @@ fn held_palette(p: &mut Panels, w: &World) {
     let titles: Vec<String> = (0..10).map(|k| mac.recs[k + 10 * (pal - 1)].title()).collect();
     let off: Vec<bool> = (0..10).map(|k| m.macro_off(w, &mac.recs[k + 10 * (pal - 1)])).collect();
     let cur = w.palette.3[pal - 1];
-    p.panel_at("macro palette", Some(Title { icon: Some("icons/macro"), text: label, note: Some(&note) }), width, at, |ui| {
+    p.panel_at("macro palette", Some(Title { icon: Some("icons/macro"), text: label, note: Some(&note), name: false }), width, at, |ui| {
         ui.horizontal(|ui| {
             for (k, t) in titles.iter().enumerate() {
                 keycap(ui, m, k, t, (k == cur).then_some(true), off[k]);
@@ -458,7 +458,7 @@ fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
         let (mut tile_click, mut row) = (None, None);
         let mut store = None;
         let mut done = false;
-        p.panel("window", Some(Title { icon: Some("icons/equip_set"), text: &title, note: v.names.get(v.row).map(|s| s.as_str()) }), 4.0 * (TILE + 8.0) + 380.0 + 60.0, |ui| {
+        p.panel("window", Some(Title { icon: Some("icons/equip_set"), text: &title, note: v.names.get(v.row).map(|s| s.as_str()), name: false }), 4.0 * (TILE + 8.0) + 380.0 + 60.0, |ui| {
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
                     let (area, _) = ui.allocate_exact_size(vec2(4.0 * (TILE + 8.0), 4.0 * (TILE + 8.0)), Sense::hover());
@@ -573,7 +573,7 @@ fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
         return;
     }
     let (mut page, mut row, mut opt) = (None, None, None);
-    p.panel("window", Some(Title { icon: Some("icons/equip_set"), text: &title, note: None }), BOOK_W + social::width(1) + 12.0, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/equip_set"), text: &title, note: None, name: false }), BOOK_W + social::width(1) + 12.0, |ui| {
         let pages: Vec<String> = (1..=10).map(|k| k.to_string()).collect();
         let labels: Vec<&str> = pages.iter().map(String::as_str).collect();
         for (k, resp) in super::tabs::strip(ui, m, "equip set pages", &labels, Some(v.page), None).into_iter().enumerate() {

@@ -85,9 +85,9 @@ pub struct Friends {
     pub hidden: [bool; 5],
     /// One PlayOnline message operation at a time (DAT_10663ac8).
     pub busy: bool,
-    /// The help bar's busy strip bit 0x10: set with the message jobs msgline's commits start (FUN_101ff3e0,
-    /// FUN_101ffc20, FUN_101ffdb0, FUN_101fff30, FUN_10200080), cleared by their answers (FUN_101ff8a0 /
-    /// FUN_101ff920). Not by /befriend's search (FUN_101ffa20) or Ignore (FUN_10200280), which hold only `busy`.
+    /// The help bar's busy strip bit 0x10: set with msgline's commit (FUN_101ff3e0), cleared by its answer
+    /// (FUN_101ff8a0 / FUN_101ff920). Retail's other setters are not modelled (MODLOG "The busy strip's 0x10"); not
+    /// /befriend's search (FUN_101ffa20) or Ignore (FUN_10200280), which hold only `busy`.
     pub strip: bool,
     /// The local messages, oldest first; messages that came since the count was last seen (netstat).
     pub mail: Vec<Mail>,

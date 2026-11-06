@@ -80,7 +80,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let title = if engaged { "Battle" } else { "Commands" };
     let (mut clicked, mut arrow) = (None, None);
     let width = if sugg.is_empty() { 270.0 } else { 360.0 };
-    let panel = p.panel("combat", Some(Title { icon: Some("icons/attack"), text: title, note: target.as_deref() }), width, |ui| {
+    let panel = p.panel("combat", Some(Title { icon: Some("icons/attack"), text: title, note: target.as_deref(), name: true }), width, |ui| {
         if !sugg.is_empty() {
             ui.label(egui::RichText::new("Suggested").size(m.theme.small).color(m.theme.color("gold")));
             for (k, (s, (label, icon, off))) in sugg.iter().zip(&shown).enumerate() {

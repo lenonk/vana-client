@@ -2168,6 +2168,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             }
             egui::Event::Cut if !event::cinema(world) => chat_prefix(world, "/linkshell2 "),
             egui::Event::Key { key, pressed: true, modifiers, .. } => match key {
+                // Ours: an open modern right-click menu has its keys (modern/ctxmenu.rs reads them from egui), so they
+                // reach nothing under it (Enter would target the nearest, Escape the target, the chat line send).
+                egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::Enter | egui::Key::Escape if world.modern && world.ctx_menu_open => {}
                 // Ctrl+Alt+Shift+V as a test script sends it (the window's own is taken before egui).
                 egui::Key::V if modifiers.ctrl && modifiers.alt && modifiers.shift => voicechat::toggle(world),
                 // The auto-translate list takes its keys first (FUN_101b5d10).
@@ -2219,6 +2222,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     keys.clear();
                 }
                 _ if world.typing => {}
+                // Ours: Escape closes the modern UI Modes editor (/uimodes), drawn over everything.
+                egui::Key::Escape if world.modern && world.uimodes_open => {
+                    world.uimodes_open = false;
+                    world.sounds.push(crate::audio::Ui::Cancel as u32);
+                }
                 // The voice chat window (ours, hidden) takes the keys while open.
                 _ if world.voice.focused() => voicechat::key(world, *key),
                 // The event's area picker (op 0xcc 0x10) and the concierge's list take the keys before the event.
@@ -6223,6 +6231,8 @@ struct World {
     actors: HashMap<u32, Actor>,
     /// A modern right-click menu is open (modern/ctxmenu.rs, chatsel.rs): its keys are no game keys.
     ctx_menu_open: bool,
+    /// The command palette's last hits: the query, when, the hits (listsearch.rs).
+    palette_cache: std::cell::RefCell<Option<(String, Instant, Vec<listsearch::Hit>)>>,
     moving: bool,
     /// First person's turn on the spot this frame: the walk or run motion plays in place (FUN_100c8930 takes the
     /// tier), though we do not move (combat and the effects read `moving`).
@@ -8429,6 +8439,7 @@ impl App {
                             actors: HashMap::new(),
                             moving: false,
                             ctx_menu_open: false,
+                            palette_cache: Default::default(),
                             turn_in_place: false,
                             move_acc: 0.0,
                             walk: false,
@@ -14026,8 +14037,8 @@ impl App {
                 self.input.drive_event(e);
             }
             // Script pointer steps go through the same world mouse path as the window's (physical pixels), consumed as
-            // egui-winit consumes them.
-            let ppp = gfx.window.scale_factor();
+            // egui-winit consumes them. Points to pixels by egui's scale, the modern UI's zoom included.
+            let ppp = gfx.egui_ctx.pixels_per_point() as f64;
             let consumed = gfx.egui_ctx.egui_wants_pointer_input();
             for e in &events {
                 match e {

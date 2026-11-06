@@ -157,6 +157,10 @@ pub struct Modern {
     dirty: bool,
     /// When we were last engaged (modes.rs holds Combat a little after).
     engaged_at: std::cell::Cell<Option<std::time::Instant>>,
+    /// The display key drawn at and since when (a display shown the template for a while keeps it).
+    display: Option<(String, std::time::Instant)>,
+    /// The last name note broken (`name_lines`): the name, its room, the lines.
+    name_split: std::cell::RefCell<Option<(String, u32, Vec<String>)>>,
 }
 
 impl Modern {
@@ -211,6 +215,8 @@ impl Modern {
             ctx_menu: Default::default(),
             dirty: false,
             engaged_at: Default::default(),
+            display: None,
+            name_split: Default::default(),
         }
     }
 
@@ -265,11 +271,20 @@ impl Modern {
         let focus = focus_panel(w);
         let mode = modes::current(w, &self.engaged_at, focus);
         let vis = modes::visibility(ctx, &cfg.modern_modes, mode);
-        // Places per display (plan B): this window size and UI scale's own layout, else the character's last one; a
-        // change saves both, so a new display starts from the latest arrangement and resizing the window through
-        // sizes nobody arranged for stores nothing.
+        // Places per display: this window size and UI scale's layout, else the character's last one (the
+        // template); a change saves both. A display shown the template for 2 s keeps it as its own, so a change on
+        // another display doesn't move its panels; sizes passed through while resizing store nothing.
         let key = display_key(&w.name, window, cfg.modern_scale);
-        let mut layout = cfg.modern_places.get(&key).or_else(|| cfg.modern_places.get(&w.name)).cloned().unwrap_or_default();
+        let steady = match &self.display {
+            Some((k, since)) if *k == key => since.elapsed().as_secs_f32() >= 2.0,
+            _ => {
+                self.display = Some((key.clone(), std::time::Instant::now()));
+                false
+            }
+        };
+        let own = cfg.modern_places.remove(&key);
+        let had_own = own.is_some();
+        let mut layout = own.or_else(|| cfg.modern_places.get(&w.name).cloned()).unwrap_or_default();
         let mut changed = false;
         let mut p = Panels { m: self, ctx, gu: Some(gu), layout: &mut layout, vis, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, battle_in_all: &mut cfg.modern_battle_in_all, condense: &mut cfg.modern_condense, folded: &mut cfg.modern_folded, scan_kinds: &mut cfg.modern_scan_kinds, this: HashMap::new(), retail: HashMap::new(), focus, hidden: modern_hidden(w) };
         // The chat window first: what sits on it places by this frame's height.
@@ -330,9 +345,13 @@ impl Modern {
         let this = std::mem::take(&mut p.this);
         *self.rects.borrow_mut() = this;
         if changed {
-            cfg.modern_places.insert(key, layout.clone());
-            cfg.modern_places.insert(w.name.clone(), layout);
+            cfg.modern_places.insert(w.name.clone(), layout.clone());
         }
+        let freeze = !had_own && !changed && steady && cfg.modern_places.contains_key(&w.name);
+        if had_own || changed || freeze {
+            cfg.modern_places.insert(key, layout);
+        }
+        self.dirty |= freeze;
         // The chat settings act at once (the world reads it as lines print).
         w.condense = cfg.modern_condense;
         w.chat.set_fold(cfg.modern_condense);
@@ -413,6 +432,8 @@ struct Title<'a> {
     icon: Option<&'a str>,
     text: &'a str,
     note: Option<&'a str>,
+    /// The note is a name: broken as retail's target window breaks one (`name_lines`).
+    name: bool,
 }
 
 /// What drawing needs besides the panel itself: the art, egui, the game's data.
@@ -432,9 +453,8 @@ fn modern_hidden(w: &World) -> Vec<&'static str> {
     h
 }
 
-/// What a frame's panels share.
 /// The config `modern_places` key of a character's layout for one display: the window's size in pixels and the UI
-/// scale (the plain name holds the character's latest layout, the template for a display not yet arranged).
+/// scale (the plain name holds the character's latest layout, the template for a display not yet shown).
 pub fn display_key(name: &str, window: [u32; 2], scale: u32) -> String {
     format!("{name} @{}x{} {scale}%", window[0], window[1])
 }
@@ -444,6 +464,7 @@ pub fn layout_of(key: &str, name: &str) -> bool {
     key == name || key.strip_prefix(name).is_some_and(|rest| rest.starts_with(" @"))
 }
 
+/// What a frame's panels share.
 struct Panels<'a> {
     m: &'a Modern,
     ctx: &'a Context,
@@ -624,7 +645,7 @@ fn ko(p: &mut Panels, w: &mut World) {
         let rows: Vec<(u16, String)> = if mon { vec![(1, caption(menu, 1, "Retry")), (2, caption(menu, 2, "Cancel"))] } else { vec![(1, caption(menu, 1, "Back to Home Point"))] };
         let mut pick = None;
         let at = pos2(screen.center().x - W / 2.0, screen.min.y + screen.height() * 0.3);
-        p.panel_at("ko", Some(Title { icon: Some("icons/warning"), text: &title, note: None }), W, at, |ui| {
+        p.panel_at("ko", Some(Title { icon: Some("icons/warning"), text: &title, note: None, name: false }), W, at, |ui| {
             ui.label(egui::RichText::new(&left).size(size).color(m.theme.color("text")));
             ui.add_space(10.0);
             ui.horizontal(|ui| {
@@ -661,7 +682,7 @@ fn ko(p: &mut Panels, w: &mut World) {
         let title = gu.focus_text("menu    resynus", 1)[1].clone().unwrap_or_else(|| "Revival".into());
         let (yes, no) = (caption("menu    resynus", 1, "Accept"), caption("menu    resynus", 2, "Decline"));
         let mut click = None;
-        p.panel_at("raise", Some(Title { icon: Some("icons/raise"), text: &title, note: None }), W, at, |ui| click = kit::yes_no(ui, m, "", [&yes, &no], w.raise_yes, size));
+        p.panel_at("raise", Some(Title { icon: Some("icons/raise"), text: &title, note: None, name: false }), W, at, |ui| click = kit::yes_no(ui, m, "", [&yes, &no], w.raise_yes, size));
         if let Some(v) = click {
             w.raise_yes = v;
             answer_raise(w, v);
@@ -1298,9 +1319,9 @@ fn title_row(ui: &mut Ui, m: &Modern, t: &Title) {
 
 /// A title row in another colour (the target's name in its retail name colour).
 ///
-/// Ours: the note keeps to the room the title leaves (a long target name over "Commands" ran under the title). A note
-/// too long for one line breaks in two as retail's target window breaks a name (FUN_101c9fa0, see `name_lines`), and
-/// the row grows to hold both lines. A title too long for the row leaves the note at least 40% of it.
+/// Ours: the note keeps to the room the title leaves (a long target name over "Commands" ran under the title). A name
+/// note breaks in two as retail's target window breaks a name (FUN_101c9fa0, see `name_lines`), and the row grows to
+/// hold both lines; another note is cut. A title too long for the row leaves the note at least 40% of it.
 fn title_row_in(ui: &mut Ui, m: &Modern, t: &Title, colour: egui::Color32) {
     const GAP: f32 = 12.0;
     let width = ui.available_width();
@@ -1316,7 +1337,21 @@ fn title_row_in(ui: &mut Ui, m: &Modern, t: &Title, colour: egui::Color32) {
     let title_room = (if t.note.is_some() { width - lead - GAP - note_w.min(0.4 * width) } else { width - lead }).max(0.0);
     let title = one_line(&painter, t.text, font, colour, title_room);
     let room = (width - lead - full.min(title_room) - GAP).max(0.0);
-    let lines = t.note.map(|n| name_lines(n, room, &measure)).unwrap_or_default();
+    let lines = match t.note {
+        Some(n) if t.name => {
+            let mut cache = m.name_split.borrow_mut();
+            match &*cache {
+                Some((s, r, l)) if s == n && *r == room.to_bits() => l.clone(),
+                _ => {
+                    let l = name_lines(n, room, &measure);
+                    *cache = Some((n.to_string(), room.to_bits(), l.clone()));
+                    l
+                }
+            }
+        }
+        Some(n) => vec![n.to_string()],
+        None => Vec::new(),
+    };
     let line_h = painter.layout_no_wrap("Ag".into(), small.clone(), muted).size().y;
     let h = 28.0f32.max(lines.len() as f32 * line_h + 2.0);
     let (r, _) = ui.allocate_exact_size(vec2(width, h), egui::Sense::hover());

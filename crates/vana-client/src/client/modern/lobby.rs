@@ -427,7 +427,7 @@ fn creator_panel(p: &mut Panels, gu: &GameUi, c: &Page, out: &mut creator::Point
         _ => 0,
     };
     let small = |t: &str, colour: Color32| egui::RichText::new(t).size(m.theme.small).color(colour);
-    p.panel_at("creator", Some(Title { icon: Some("icons/party"), text: "Create Character", note: note.as_deref() }), W + 44.0, at, |ui| {
+    p.panel_at("creator", Some(Title { icon: Some("icons/party"), text: "Create Character", note: note.as_deref(), name: false }), W + 44.0, at, |ui| {
         ui.label(small(&c.help, if c.status { m.theme.color("gold") } else { m.theme.color("muted") }));
         ui.add_space(8.0);
         if v.step != 5 {
@@ -606,7 +606,7 @@ fn list_panel(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
         });
     }
     let at = from_bottom(m, "select", width, pos2(screen.max.x - gap, bottom), true);
-    p.panel_at("select", Some(Title { icon: Some("icons/party"), text: &title, note: None }), width, at, |ui| {
+    p.panel_at("select", Some(Title { icon: Some("icons/party"), text: &title, note: None, name: false }), width, at, |ui| {
         let focused = v.list_focus;
         let tall = screen.height() * 0.55;
         egui::ScrollArea::vertical().id_salt("select rows").max_height(tall).auto_shrink([false, true]).show(ui, |ui| {
@@ -663,7 +663,7 @@ fn windows(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
         let title = gu.focus_text("menu    chfwin", 0)[1].clone().unwrap_or_else(|| "Settings".into());
         let active = v.slots.is_none() && v.prompt.is_none() && v.ok.is_none();
         let mut got = Pointer::default();
-        p.panel_at("select options", Some(Title { icon: None, text: &title, note: None }), 264.0, side, |ui| column(ui, rows, *cur, &mut got));
+        p.panel_at("select options", Some(Title { icon: None, text: &title, note: None, name: false }), 264.0, side, |ui| column(ui, rows, *cur, &mut got));
         if active {
             out.child = got.child;
         }

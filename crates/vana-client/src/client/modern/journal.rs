@@ -462,7 +462,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let follow = m.journal_seen.get() != (t as u8, cursor);
     m.journal_seen.set((t as u8, cursor));
 
-    p.panel("window", Some(Title { icon: Some("icons/quest_log"), text: "Journal", note: None }), NAV_W + 18.0 + LIST_W, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/quest_log"), text: "Journal", note: None, name: false }), NAV_W + 18.0 + LIST_W, |ui| {
         tabs(ui, m, t, &mut mouse);
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {

@@ -91,7 +91,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let title = gu.title_msg(0x14).unwrap_or_else(|| "Equipment".into());
     let (mut grid, mut list, mut sibo) = (None, None, None);
     let mut found = super::lists::found(p, w, "pupset");
-    p.panel("window", Some(Title { icon: Some("icons/equipment"), text: &title, note: None }), STAT_W + 2.0 * COL_W + 32.0 + 44.0, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/equipment"), text: &title, note: None, name: false }), STAT_W + 2.0 * COL_W + 32.0 + 44.0, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(STAT_W);

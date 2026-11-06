@@ -32,7 +32,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let (view, enabled) = inspect::view_wares(w);
     let ls = w.inspect.info.as_ref().filter(|g| g.ls_item != 0).map(|g| (linkshell::ls_name(&g.ls_name), g.ls_item, g.ls_colour));
     let mut click = None;
-    p.panel("check", Some(Title { icon: Some("icons/find"), text: &name, note: None }), GRID_W + 44.0, |ui| {
+    p.panel("check", Some(Title { icon: Some("icons/find"), text: &name, note: None, name: false }), GRID_W + 44.0, |ui| {
         if !jobs.is_empty() {
             ui.label(egui::RichText::new(&jobs).size(m.theme.ui).color(m.theme.color("gold")));
             ui.add_space(6.0);
@@ -114,7 +114,7 @@ pub fn dress(p: &mut Panels, w: &mut World) {
     let title = gu.title_msg(4).filter(|t| !t.is_empty()).unwrap_or_else(|| "Layout".into());
     let (mut grid, mut rows) = (None, None);
     let mut found = super::lists::found(p, w, "mannequin");
-    p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None }), GRID_W + 16.0 + LIST_W + 44.0, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None, name: false }), GRID_W + 16.0 + LIST_W + 44.0, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(GRID_W);

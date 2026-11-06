@@ -40,7 +40,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let note = format!("{} / {}", v.rows.len(), treasure::SLOTS);
     let (mut click, mut act, mut rest) = (None, None, false);
     let mut found = super::lists::found(p, w, "loot");
-    p.panel("loot", Some(Title { icon: Some("icons/currency"), text: "Treasure Pool", note: Some(&note) }), W, |ui| {
+    p.panel("loot", Some(Title { icon: Some("icons/currency"), text: "Treasure Pool", note: Some(&note), name: false }), W, |ui| {
         if super::lists::rows_or(ui, m, &mut found) {
             return;
         }

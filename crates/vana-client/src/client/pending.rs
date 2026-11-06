@@ -1,8 +1,9 @@
 //! Pending actions (not retail; the plan's "state changes are server-confirmed" and its open question "how latency,
 //! failed transfers and invalid targets are shown"): a spell, weapon skill, job ability or item we asked the server
-//! for (c2s 0x01A / 0x037) is pending until the server answers. An action packet of ours (0x028) confirms it; a battle
-//! message of ours (0x029) before that is its refusal, kept with the message's own text a few seconds; no answer for
-//! a while says so. The modern layer shows it (modern/hud.rs pending chip); retail's lines print as ever.
+//! for (c2s 0x01A / 0x037) is pending until the server answers. An action packet of ours (0x028) of its kind confirms
+//! it; a battle message of ours (0x029) soon after the ask and before that is its refusal, kept with the message's
+//! text a few seconds; no answer for a while says so. The modern layer shows it (modern/pending.rs chip);
+//! retail's lines print as ever.
 
 use super::World;
 use std::time::{Duration, Instant};
@@ -41,6 +42,9 @@ pub struct Pending {
 pub const SHOW_AFTER: Duration = Duration::from_millis(150);
 /// No answer within this is NoReply.
 const TIMEOUT: Duration = Duration::from_secs(5);
+/// A refusal comes at once (the server answers a refused ask as it reads it); a message of ours later is something
+/// else (an effect wearing off ...). Inferred, with room for lag.
+const REFUSED_WITHIN: Duration = Duration::from_secs(2);
 /// A refusal or NoReply stays this long.
 const KEEP: Duration = Duration::from_secs(4);
 
@@ -53,19 +57,30 @@ pub fn start(w: &mut World, ask: Ask, target: u32) {
     w.asked = Some(Pending { ask, target, at: now, state: State::Waiting, since: now });
 }
 
-/// 0x028 of ours: whatever was waiting is confirmed (and the cast bar or the effect takes over).
-pub fn confirm(w: &mut World) {
-    if w.asked.as_ref().is_some_and(|p| p.state == State::Waiting) {
+/// Whether a 0x028 category of ours answers `ask`: its start or its finish (a melee round or another kind does not).
+fn answers(ask: Ask, category: u8) -> bool {
+    match ask {
+        Ask::Spell(_) => matches!(category, 4 | 8),
+        // Monster skills (Monstrosity) finish as category 11.
+        Ask::WeaponSkill(_) => matches!(category, 3 | 7 | 11),
+        Ask::Ability(_) => matches!(category, 6 | 14 | 15),
+        Ask::Item(_) => matches!(category, 5 | 9),
+    }
+}
+
+/// 0x028 of ours: the action waiting is confirmed by one of its kind (the cast bar or the effect takes over).
+pub fn confirm(w: &mut World, category: u8) {
+    if w.asked.as_ref().is_some_and(|p| p.state == State::Waiting && answers(p.ask, category)) {
         w.asked = None;
     }
 }
 
-/// 0x029 of ours while waiting: its line is the refusal.
+/// 0x029 of ours soon after the ask, while waiting: its line is the refusal.
 pub fn message(w: &mut World, id: u16, line: &str) {
     if NOT_ANSWERS.contains(&id) {
         return;
     }
-    if let Some(p) = w.asked.as_mut().filter(|p| p.state == State::Waiting) {
+    if let Some(p) = w.asked.as_mut().filter(|p| p.state == State::Waiting && p.at.elapsed() < REFUSED_WITHIN) {
         p.state = State::Refused(crate::dat::font::strip_codes(line).trim().to_string());
         p.since = Instant::now();
     }
@@ -95,10 +110,17 @@ pub fn name(w: &World, ask: Ask) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::NOT_ANSWERS;
+    use super::{Ask, NOT_ANSWERS, answers};
 
     #[test]
     fn experience_is_not_an_answer() {
         assert!(NOT_ANSWERS.contains(&8) && NOT_ANSWERS.contains(&105));
+    }
+
+    #[test]
+    fn only_its_kind_confirms() {
+        assert!(answers(Ask::Spell(1), 8) && answers(Ask::Spell(1), 4));
+        assert!(!answers(Ask::Spell(1), 1) && !answers(Ask::Spell(1), 6));
+        assert!(answers(Ask::Item(1), 9) && !answers(Ask::Item(1), 2));
     }
 }

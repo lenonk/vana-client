@@ -107,7 +107,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     match &v {
         Look::Recv { slots: s, cursor, post2, no_return, sender, busy } => {
             let title = gu.focus_text(POST1, 0)[1].clone().unwrap_or_else(|| "Delivery Box".into());
-            p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: Some(&gil) }), GRID_W + 44.0 + 120.0, |ui| {
+            p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: Some(&gil), name: false }), GRID_W + 44.0 + 120.0, |ui| {
                 receive(ui, m, gu, &info, (s, *cursor, *post2, *no_return, sender.as_deref()), free && !busy, &mut mouse);
                 if *busy {
                     ui.label(egui::RichText::new("Please wait...").size(m.theme.small).color(m.theme.color("muted")));
@@ -119,7 +119,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             let wide = *part == SendPart::List;
             let width = GRID_W + GAP + SIDE_W + 44.0 + if wide { LIST_W + 16.0 } else { 0.0 };
             let can = free && (!busy || *part == SendPart::Recipient);
-            p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: Some(&gil) }), width, |ui| {
+            p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: Some(&gil), name: false }), width, |ui| {
                 // stringdl: the recipient, its field (child 1) and two buttons (keytops3 53 / 56 and 59).
                 ui.label(egui::RichText::new(label).size(m.theme.small).color(m.theme.color("gold")));
                 ui.horizontal(|ui| {

@@ -167,12 +167,15 @@ const COMMANDS: [(u8, &str); 6] = [
 /// A palette command the action menu would offer now (its rows for this target and state; Call for help with
 /// Disengage), so a pick does only what that row would. /heal checks itself.
 fn command_now(w: &World, c: u8) -> bool {
-    if c == HEAL {
-        return true;
-    }
-    let rows = super::combat::current_items(w, false);
-    rows.contains(&c) || (c == super::combat::cmd::CALL_HELP && rows.contains(&super::combat::cmd::DISENGAGE))
+    c == HEAL || command_in(&super::combat::current_items(w, false), c)
 }
+
+fn command_in(rows: &[u8], c: u8) -> bool {
+    c == HEAL || rows.contains(&c) || (c == super::combat::cmd::CALL_HELP && rows.contains(&super::combat::cmd::DISENGAGE))
+}
+
+/// How long the palette's hits stand for one query (every spell, ability and item scored again after).
+const PALETTE_FRESH: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// Where the palette may open: modern, in the field, alive, nothing open or typed, not under a prompt or Monstrosity.
 pub fn palette_allowed(w: &World) -> bool {
@@ -206,6 +209,18 @@ fn close_palette(w: &mut World) {
 /// The palette's candidates: every spell and ability the menus list, the usable items (one per item, the total as the
 /// note) and the commands. An empty query keeps only the recent picks.
 fn palette_matches(w: &World, query: &str) -> Vec<Hit> {
+    if let Some((q, at, hits)) = &*w.palette_cache.borrow()
+        && q == query
+        && at.elapsed() < PALETTE_FRESH
+    {
+        return hits.clone();
+    }
+    let out = palette_scored(w, query);
+    *w.palette_cache.borrow_mut() = Some((query.to_string(), std::time::Instant::now(), out.clone()));
+    out
+}
+
+fn palette_scored(w: &World, query: &str) -> Vec<Hit> {
     let mut out = Vec::new();
     let mut push = |kind: Kind, id: u16, name: String, slot: Option<u8>, note: String, journal: Option<Journal>| {
         let mut h = Hit { kind, cat: None, id, name, score: 0, slot, note, journal, recent: false, fav: false };
@@ -215,7 +230,8 @@ fn palette_matches(w: &World, query: &str) -> Vec<Hit> {
             out.push(h);
         }
     };
-    for &(c, label) in COMMANDS.iter().filter(|(c, _)| command_now(w, *c)) {
+    let rows = super::combat::current_items(w, false);
+    for &(c, label) in COMMANDS.iter().filter(|(c, _)| command_in(&rows, *c)) {
         push(Kind::Ability, c as u16, label.to_string(), None, "command".into(), Some(Journal::Command(c)));
     }
     for &(_, cat) in magic::cat_rows("menu    magselec") {

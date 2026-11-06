@@ -4,7 +4,7 @@
 
 use super::super::{World, region};
 use super::{Panels, Title};
-use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
+use egui::{Align2, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
 
 const W: f32 = 300.0;
 const LINE: f32 = 24.0;
@@ -157,7 +157,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     }
     let screen = p.ctx.content_rect();
     let x = if v.left { 16.0 } else { screen.width() - W - 44.0 - 16.0 };
-    p.panel_at("region info", Some(Title { icon: Some("icons/map"), text: &title, note: None }), W + 44.0, pos2(x, screen.height() * 0.12), |ui| {
+    p.panel_at("region info", Some(Title { icon: Some("icons/map"), text: &title, note: None, name: false }), W + 44.0, pos2(x, screen.height() * 0.12), |ui| {
         ui.set_width(W);
         for f in &lines {
             f(ui);

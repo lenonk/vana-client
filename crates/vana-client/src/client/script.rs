@@ -106,6 +106,12 @@ impl Script {
                     let (x, y) = xy()?;
                     steps.extend([Step::Move(x, y), Step::Right(true), Step::Wait(0.05), Step::Right(false)]);
                 }
+                // The right button pressed at X,Y and held; rup releases it where the pointer is.
+                "rdown" => {
+                    let (x, y) = xy()?;
+                    steps.extend([Step::Move(x, y), Step::Right(true)]);
+                }
+                "rup" => steps.push(Step::Right(false)),
                 "shot" => steps.push(Step::Shot(PathBuf::from(arg))),
                 "copy" => steps.push(Step::Copy),
                 "paste" => steps.push(Step::Paste(arg.to_string())),

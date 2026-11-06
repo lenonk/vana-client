@@ -963,7 +963,7 @@ pub(super) fn message_queue(w: &mut World, dt: f32) {
 /// message and reaction per hit, each after the last swing ends; ours splits the round and queues the rest.
 pub(super) fn on_action(w: &mut World, a: &Action) {
     if a.actor == w.my_id {
-        super::pending::confirm(w);
+        super::pending::confirm(w, a.category);
     }
     // A new round flushes what is left of the last one at once.
     if let Some((_, rest)) = w.rounds.remove(&a.actor) {

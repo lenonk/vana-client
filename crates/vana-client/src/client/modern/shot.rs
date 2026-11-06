@@ -26,7 +26,7 @@ fn list_sample(p: &mut Panels) {
     let m = p.m;
     let rows = [("Hi-Potion", 12), ("Echo Drops", 4), ("Fire Crystal", 99), ("Scroll of Protect II", 1), ("Sleep Bolt", 87), ("Mithkabob", 6)];
     let at = p.ctx.content_rect().center() + vec2(-160.0, -240.0);
-    p.panel_at("items", Some(super::Title { icon: Some("icons/items"), text: "Items", note: Some("42/80") }), 320.0, at, |ui| {
+    p.panel_at("items", Some(super::Title { icon: Some("icons/items"), text: "Items", note: Some("42/80"), name: false }), 320.0, at, |ui| {
         for (k, (name, n)) in rows.iter().enumerate() {
             let (r, _) = ui.allocate_exact_size(vec2(296.0, 28.0), egui::Sense::hover());
             let face = if k == 2 { "controls/list_row_selected" } else { "controls/list_row_normal" };
@@ -48,7 +48,7 @@ fn favs_sample(p: &mut Panels) {
     super::favs::strip(p, &chips);
     let m = p.m;
     let at = p.ctx.content_rect().center() + vec2(-160.0, -240.0);
-    p.panel_at("items", Some(super::Title { icon: None, text: "White Magic", note: Some("4") }), 320.0, at, |ui| {
+    p.panel_at("items", Some(super::Title { icon: None, text: "White Magic", note: Some("4"), name: false }), 320.0, at, |ui| {
         for (k, (name, on)) in [("Cure", true), ("Cure II", false), ("Cure IV", true), ("Protect", false)].into_iter().enumerate() {
             let (r, resp) = ui.allocate_exact_size(vec2(296.0, 30.0), egui::Sense::hover());
             let face = if k == 1 { "controls/list_row_selected" } else { "controls/list_row_normal" };
@@ -64,7 +64,7 @@ fn favs_sample(p: &mut Panels) {
 /// The kit's controls as a Config page has them: sliders with a short and a long value, options, a long-labelled line.
 fn kit_sample(p: &mut Panels) {
     let m = p.m;
-    p.panel("window", Some(Title { icon: Some("icons/config"), text: "Config", note: None }), 640.0, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/config"), text: "Config", note: None, name: false }), 640.0, |ui| {
         ui.set_width(440.0);
         kit::slider_setting(ui, m, "Resolution", false, false, 17, 16, "2560x1440");
         kit::slider_setting(ui, m, "GPU", true, false, 3, 1, "AMD Radeon RX 6800 XT (RADV NAVI21)");
@@ -76,7 +76,7 @@ fn kit_sample(p: &mut Panels) {
     });
     // link11 as the modern window draws it (no item cache here: a disc stands in for the shell icon).
     let v = super::social::NameView { name: "Sunset Watch", rgb: [15, 9, 3], sel: 3, edit: 0 };
-    p.panel_at("naming sample", Some(Title { icon: Some("icons/linkshell"), text: "New Linkshell", note: None }), super::social::NAME_W + 44.0, pos2(720.0, 40.0), |ui| {
+    p.panel_at("naming sample", Some(Title { icon: Some("icons/linkshell"), text: "New Linkshell", note: None, name: false }), super::social::NAME_W + 44.0, pos2(720.0, 40.0), |ui| {
         super::social::naming_body(ui, m, &v, None, true);
     });
 }
@@ -86,7 +86,7 @@ fn menu_sample(p: &mut Panels) {
     let [top, journal] = super::command::sample();
     let at = p.ctx.content_rect().right_top() + vec2(-290.0, 60.0);
     let mut rect = None;
-    p.panel_at("command", Some(super::Title { icon: None, text: "Menu", note: None }), 250.0, at, |ui| {
+    p.panel_at("command", Some(super::Title { icon: None, text: "Menu", note: None, name: false }), 250.0, at, |ui| {
         let r = ui.min_rect();
         for (label, icon, sub) in &top {
             super::rows::menu_row(ui, m, icon, label, *label == "Journal", false, *sub, true, *label == "Magic");
@@ -94,7 +94,7 @@ fn menu_sample(p: &mut Panels) {
         rect = Some(r);
     });
     let Some(r) = rect else { return };
-    p.panel_at("command sub", Some(super::Title { icon: Some("icons/quest_log"), text: "Journal", note: None }), 250.0, pos2(r.min.x - 274.0, r.min.y - 12.0), |ui| {
+    p.panel_at("command sub", Some(super::Title { icon: Some("icons/quest_log"), text: "Journal", note: None, name: false }), 250.0, pos2(r.min.x - 274.0, r.min.y - 12.0), |ui| {
         for (label, icon, sub) in &journal {
             super::rows::menu_row(ui, m, icon, label, *label == "Quests", *label == "Key Items", *sub, false, false);
         }
@@ -227,7 +227,7 @@ fn titles_sample(p: &mut Panels) {
         }
     };
     for (id, title, note) in [("combat", "Commands", "Ghillie Dhu of the Great Woods"), ("palette", "Battle", "Qu'Vho: Deathhurler"), ("list", "Commands", "Tonberry Creeper")] {
-        p.panel(id, Some(Title { icon: Some("icons/attack"), text: title, note: Some(note) }), 270.0, |ui| rows(ui, &["Attack", "Magic", "Abilities"]));
+        p.panel(id, Some(Title { icon: Some("icons/attack"), text: title, note: Some(note), name: false }), 270.0, |ui| rows(ui, &["Attack", "Magic", "Abilities"]));
     }
     hud::target_panel(p, &TargetView { name: "Shadow Lord's Lieutenant of the North".into(), ring: "indicators/target_hostile", locked: false, hp: Some((100, 1.0)), colour: None, cast: None, distance: Some(4.2) });
 }
@@ -302,7 +302,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     hud::cast_panel(&mut p, "cast", "Casting", 0.6, "60%");
     // A refused action's chip over the cast bar (pending.rs).
     super::pending::panel(&mut p, &super::pending::View { what: "Cure III".into(), on: Some("Raven".into()), state: super::super::pending::State::Refused("Raven is out of range.".into()), secs: 0.6 });
-if !opts.titles {
+    if !opts.titles {
         hud::target_panel(&mut p, &TargetView { name: "Robber Crab".into(), ring: "indicators/target_hostile", locked: true, hp: Some((72, 0.72)), colour: Some(egui::Color32::from_rgb(255, 80, 80)), cast: Some(("Firaga".into(), Some(0.4))), distance: Some(12.4) });
     }
     if opts.titles {

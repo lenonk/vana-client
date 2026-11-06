@@ -621,7 +621,10 @@ pub fn set(w: &mut World, t: Option<u32>) {
     }
     let e = t.and_then(|t| w.entities.get(&t));
     log::info!("target {:#x} {:?} at {:?} radius {:?} (ours {})", t.unwrap_or(0), e.map(|e| e.name.as_str()), e.map(|e| (e.pos.x, e.pos.z)), e.map(|e| e.hitbox), w.my_plate.hitbox);
-    if let Some(old) = w.target.filter(|&old| old != w.my_id) {
+    // The sub-target prompt's picks are stand-ins, not targets left.
+    if w.prompt.is_none()
+        && let Some(old) = w.target.filter(|&old| old != w.my_id)
+    {
         w.last_target = Some(old);
     }
     w.target = t;

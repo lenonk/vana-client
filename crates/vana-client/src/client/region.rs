@@ -889,7 +889,7 @@ pub fn poll_image(gu: &mut GameUi, m: &mut CnqMap) {
 /// cursor (anc_regi at the point - 8), the info windows of the mode.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
     draw_map(gu, w);
-    // The modern layer draws the info windows itself (modern/region.rs).
+    // The modern layer draws the info windows itself (modern/regioninfo.rs).
     if let Some(m) = w.cnq.as_ref().filter(|_| !w.modern) {
         draw_windows(gu, w, m, sw, sh);
     }
@@ -1112,7 +1112,8 @@ fn draw_windows(gu: &mut GameUi, w: &World, m: &CnqMap, sw: f32, sh: f32) {
     }
 }
 
-/// The info windows' contents for the modern layer (modern/region.rs names retail's label sprites by their captions).
+/// The info windows' contents for the modern layer (modern/regioninfo.rs names retail's label sprites by their
+/// captions).
 pub struct InfoView {
     pub mode: usize,
     /// The windows go on the left half (the cursor is on the right).

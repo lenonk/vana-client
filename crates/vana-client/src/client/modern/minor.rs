@@ -44,7 +44,7 @@ fn map_menu(p: &mut Panels, w: &mut World) {
     let free = w.confirm.is_none();
     let title = gu.focus_text("menu    map0", sel)[1].clone().unwrap_or_else(|| "Map".into());
     let mut got = None;
-    p.panel("map0", Some(Title { icon: None, text: &title, note: None }), social::width(1), |ui| {
+    p.panel("map0", Some(Title { icon: None, text: &title, note: None, name: false }), social::width(1), |ui| {
         let col = MenuWin { name: "menu    map0", sel, off: if scan { Vec::new() } else { vec![2] }, labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
         got = social::column(ui, m, gu, &col, free);
     });
@@ -64,7 +64,7 @@ fn map_markers(p: &mut Panels, w: &mut World) {
     let (mut set_click, mut row_click, mut v2_row) = (None, None, None);
     let follow = v.cursor.is_some_and(|c| m.moved("map markers", c));
     let mut found = small_found(p, w, &[Small::Markers]);
-    p.panel("mapv3", Some(Title { icon: None, text: "Markers", note: None }), W, |ui| {
+    p.panel("mapv3", Some(Title { icon: None, text: "Markers", note: None, name: false }), W, |ui| {
         ui.horizontal(|ui| {
             for (s, &on) in v.sets.iter().enumerate() {
                 let (r, resp) = ui.allocate_exact_size(vec2(36.0, 26.0), Sense::click());
@@ -138,7 +138,7 @@ fn map_scan(p: &mut Panels, w: &mut World) {
     let title = gu.focus_text("menu    scanlist", 1)[1].clone().unwrap_or_else(|| "Wide Scan".into());
     let mut click = None;
     let mut found = small_found(p, w, &[Small::MapScan]);
-    p.panel("scanlist", Some(Title { icon: None, text: &title, note: None }), W, |ui| {
+    p.panel("scanlist", Some(Title { icon: None, text: &title, note: None, name: false }), W, |ui| {
         if super::lists::rows_or(ui, m, &mut found) {
             return;
         }
@@ -154,7 +154,7 @@ fn map_scan(p: &mut Panels, w: &mut World) {
     let mut got = None;
     if let Some((c, track)) = v.mapscan {
         let title = gu.focus_text("menu    mapscan", c)[1].clone().unwrap_or_else(|| "Map".into());
-        p.panel("mapscan", Some(Title { icon: None, text: &title, note: None }), social::width(1), |ui| {
+        p.panel("mapscan", Some(Title { icon: None, text: &title, note: None, name: false }), social::width(1), |ui| {
             let col = MenuWin { name: "menu    mapscan", sel: c, off: if track { Vec::new() } else { vec![1] }, labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
             got = social::column(ui, m, gu, &col, free);
         });
@@ -180,7 +180,7 @@ fn map_list(p: &mut Panels, w: &mut World) {
     let follow = m.moved("map list", v.cursor);
     let mut click = None;
     let mut found = small_found(p, w, &[Small::MapList]);
-    p.panel("maplist", Some(Title { icon: None, text: "Change Map", note: None }), W + 80.0, |ui| {
+    p.panel("maplist", Some(Title { icon: None, text: "Change Map", note: None, name: false }), W + 80.0, |ui| {
         if super::lists::rows_or(ui, m, &mut found) {
             return;
         }
@@ -348,7 +348,7 @@ fn remodel_list(p: &mut Panels, w: &mut World) {
     let free = w.confirm.is_none();
     let title = gu.focus_text(remodel::WINDOW, 0)[1].clone().unwrap_or_else(|| "Remodel".into());
     let mut got = None;
-    p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None }), W + 44.0, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None, name: false }), W + 44.0, |ui| {
         got = plain_rows(ui, m, "remodel rows", &rows, sel, free);
     });
     act(w, got, remodel::set_sel, |w| remodel::key(w, egui::Key::Enter));
@@ -364,7 +364,7 @@ fn primer_lists(p: &mut Panels, w: &mut World) {
     let width = W + if v.list.is_some() { 16.0 + W } else { 0.0 } + 44.0;
     let (mut cats, mut topics, mut turn) = (None, None, None);
     let mut found = small_found(p, w, &[Small::PrimerCats, Small::PrimerTopics]);
-    p.panel("window", Some(Title { icon: Some("icons/help"), text: &title, note: None }), width, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/help"), text: &title, note: None, name: false }), width, |ui| {
         if super::lists::rows_or(ui, m, &mut found) {
             return;
         }
@@ -428,7 +428,7 @@ fn concierge_list(p: &mut Panels, w: &mut World) {
     let (mut tab, mut click) = (None, None);
     let mut found = small_found(p, w, &[Small::Concierge]);
     let title = gu.focus_text(super::super::linkshell::LIST, 0)[1].clone().unwrap_or_else(|| "Linkshell".into());
-    p.panel("window", Some(Title { icon: Some("icons/linkshell"), text: &title, note: None }), LIST_W + 44.0, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/linkshell"), text: &title, note: None, name: false }), LIST_W + 44.0, |ui| {
         if !v.title.is_empty() {
             ui.label(egui::RichText::new(&v.title).size(m.theme.ui).color(m.theme.color("gold")));
             ui.add_space(6.0);
@@ -538,7 +538,7 @@ fn fishing_ranking(p: &mut Panels, w: &mut World) {
     let focused = w.confirm.is_none();
     let mut click = None;
     let mut found = small_found(p, w, &[Small::Ranking]);
-    p.panel("window", Some(Title { icon: None, text: "Fishing Ranking", note: None }), LIST_W + 44.0, |ui| {
+    p.panel("window", Some(Title { icon: None, text: "Fishing Ranking", note: None, name: false }), LIST_W + 44.0, |ui| {
         if super::lists::rows_or(ui, m, &mut found) {
             return;
         }
@@ -593,7 +593,7 @@ fn comment(p: &mut Panels, w: &mut World) {
     let title = if mode == 0 { gu.title_msg(0x0f).unwrap_or_else(|| "Set Bazaar".into()) } else { "Comment".to_string() };
     let help = gu.menu_msg(0x32, "");
     let (mut pick, mut done) = (None, false);
-    p.panel("comment", Some(Title { icon: None, text: &title, note: None }), 420.0 + 44.0, |ui| {
+    p.panel("comment", Some(Title { icon: None, text: &title, note: None, name: false }), 420.0 + 44.0, |ui| {
         if !help.is_empty() {
             ui.label(egui::RichText::new(&help).size(m.theme.small).color(m.theme.color("muted")));
             ui.add_space(4.0);
@@ -633,7 +633,7 @@ fn block_list(p: &mut Panels, w: &mut World) {
     let title = gu.focus_text(blklist::LIST, 1)[1].clone().unwrap_or_else(|| "Blacklist".into());
     let (mut click, mut delete) = (None, false);
     let mut found = small_found(p, w, &[Small::Blocks]);
-    p.panel("blklist", Some(Title { icon: Some("icons/party"), text: &title, note: None }), W + 44.0, |ui| {
+    p.panel("blklist", Some(Title { icon: Some("icons/party"), text: &title, note: None, name: false }), W + 44.0, |ui| {
         if super::lists::rows_or(ui, m, &mut found) {
             return;
         }
@@ -699,7 +699,7 @@ fn chat_mode(p: &mut Panels, w: &mut World) {
     let free = w.confirm.is_none();
     let title = gu.focus_text(chatctrl::WINDOW, v.sel)[1].clone().unwrap_or_else(|| "Chat".into());
     let mut got = None;
-    p.panel("chatctrl", Some(Title { icon: None, text: &title, note: None }), social::width(1), |ui| {
+    p.panel("chatctrl", Some(Title { icon: None, text: &title, note: None, name: false }), social::width(1), |ui| {
         let col = MenuWin { name: chatctrl::WINDOW, sel: v.sel, off: v.off.clone(), labels: Vec::new(), marked: Vec::new(), values: v.values.clone() };
         got = social::column(ui, m, gu, &col, free);
         ui.add_space(6.0);
@@ -730,7 +730,7 @@ fn garden_windows(p: &mut Panels, w: &mut World) {
     let wide = if v.list.is_some() { 360.0 } else { social::width(1 + v.bank.is_some() as usize) - 44.0 };
     let (mut win, mut bank, mut row) = (None, None, None);
     let mut found = small_found(p, w, &[Small::Garden]);
-    p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None }), wide + 44.0, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None, name: false }), wide + 44.0, |ui| {
         if let (Some((rows, tints, cur)), Some(info)) = (&v.list, &info) {
             if super::lists::rows_or(ui, m, &mut found) {
                 return;
@@ -780,7 +780,7 @@ fn layout_windows(p: &mut Panels, w: &mut World) {
     let wide = if v.list.is_some() { 360.0 } else { social::width(1 + v.bank.is_some() as usize) - 44.0 };
     let (mut win, mut bank, mut row) = (None, None, None);
     let mut found = small_found(p, w, &[Small::Layout]);
-    p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None }), wide + 44.0, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None, name: false }), wide + 44.0, |ui| {
         if let (Some((rows, tints, cur)), Some(info)) = (&v.list, &info) {
             if super::lists::rows_or(ui, m, &mut found) {
                 return;
@@ -829,7 +829,7 @@ fn pup_menu(p: &mut Panels, w: &mut World) {
     let free = w.confirm.is_none();
     let title = gu.title_msg(0x14).unwrap_or_else(|| "Equipment".into());
     let mut got = None;
-    p.panel("window", Some(Title { icon: Some("icons/equipment"), text: &title, note: None }), social::width(1), |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/equipment"), text: &title, note: None, name: false }), social::width(1), |ui| {
         let col = MenuWin { name, sel, off: Vec::new(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
         got = social::column(ui, m, gu, &col, free);
     });

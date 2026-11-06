@@ -657,12 +657,14 @@ pub struct Case {
 }
 
 /// The rules by the names cases give them, in suggest's order.
+#[cfg(test)]
 pub const RULES: [&str; 17] = [
     "raise", "shadows", "ailment", "curaga", "cure", "waltz", "burst", "close", "provoke", "job_ability", "ninja_stance", "samba", "debuff", "open_chain", "strongest_ws", "renew", "between",
 ];
 
 /// With VANA_SUGGEST_RECORD set to a folder, each new set of suggestions is written there with its facts as a case
-/// (rule and note left for whoever files it under suggest_cases/).
+/// (rule and note left for whoever files it under suggest_cases/; the facts hold real player names: replace them
+/// before committing one).
 fn record(f: &Facts, out: &[Suggestion]) {
     let Some(dir) = std::env::var_os("VANA_SUGGEST_RECORD") else { return };
     let dir = std::path::PathBuf::from(dir);

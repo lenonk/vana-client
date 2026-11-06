@@ -83,7 +83,7 @@ pub fn editor(p: &mut Panels, open: &mut bool, cfg: &mut ModernModes, mode: Mode
     let mut close = false;
     let note = format!("now: {}", MODES[mode as usize].1);
     let at = p.ctx.content_rect().center() - vec2(260.0, 230.0);
-    p.panel_at("uimodes", Some(Title { icon: None, text: "UI Modes", note: Some(&note) }), 560.0, at, |ui| {
+    p.panel_at("uimodes", Some(Title { icon: None, text: "UI Modes", note: Some(&note), name: false }), 560.0, at, |ui| {
         ui.label(egui::RichText::new("Which panels each mode shows. A pinned panel always shows.").size(m.theme.small).color(m.theme.color("muted")));
         ui.add_space(6.0);
         let font = FontId::proportional(m.theme.small);
@@ -140,7 +140,8 @@ pub fn editor(p: &mut Panels, open: &mut bool, cfg: &mut ModernModes, mode: Mode
             }
         });
     });
-    if close || p.ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+    // Escape closes it in the key chain (client/mod.rs), so it reaches nothing under it.
+    if close {
         *open = false;
     }
     changed

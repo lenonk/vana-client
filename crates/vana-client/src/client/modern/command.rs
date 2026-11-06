@@ -231,7 +231,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     w.cmd.top = w.cmd.top.min(list_top.len() - 1);
     let c = w.cmd;
     let mut top_click = None;
-    let rect = p.panel("command", Some(Title { icon: None, text: "Menu", note: None }), 250.0, |ui| {
+    let rect = p.panel("command", Some(Title { icon: None, text: "Menu", note: None, name: false }), 250.0, |ui| {
         top_click = rows(ui, m, w, &list_top, c.sub.is_none().then_some(c.top), c.sub.map(|_| c.top), c.left);
     });
     let mut c = w.cmd;
@@ -258,7 +258,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let Some(sub) = c.sub else { return };
     let x = if c.left { r.min.x - SUB_GAP - SUB_WIDTH } else { r.max.x + SUB_GAP };
     let mut sub_click = None;
-    p.panel_at("command sub", Some(Title { icon: Some(list_top[c.top].icon), text: list_top[c.top].label, note: None }), SUB_WIDTH, egui::pos2(x, r.min.y), |ui| {
+    p.panel_at("command sub", Some(Title { icon: Some(list_top[c.top].icon), text: list_top[c.top].label, note: None, name: false }), SUB_WIDTH, egui::pos2(x, r.min.y), |ui| {
         sub_click = rows(ui, m, w, &list.iter().collect::<Vec<_>>(), Some(sub), None, false);
     });
     if let Some(k) = sub_click

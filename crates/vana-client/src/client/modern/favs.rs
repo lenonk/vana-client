@@ -78,7 +78,7 @@ pub(super) fn strip(p: &mut Panels, chips: &[Chip]) -> Option<Fav> {
     let m = p.m;
     let width = (chips.len().min(PER_ROW) as f32) * (TILE + 4.0) + 40.0;
     let mut used = None;
-    p.panel("favourites", Some(Title { icon: None, text: "Favourites", note: None }), width.max(180.0), |ui| {
+    p.panel("favourites", Some(Title { icon: None, text: "Favourites", note: None, name: false }), width.max(180.0), |ui| {
         for line in chips.chunks(PER_ROW) {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;

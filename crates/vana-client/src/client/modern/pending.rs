@@ -1,5 +1,5 @@
 //! The pending action's chip (client/pending.rs): what we asked for and on whom while the server has not answered
-//! ("waiting" after a moment, so a quick answer never flashes it), the server's refusal in its own words, or that no
+//! ("waiting" after a moment, so a quick answer never flashes it), the server's refusal in its words, or that no
 //! answer came. Not drawn once the server confirms (the cast bar and the effect take over).
 
 use super::super::World;

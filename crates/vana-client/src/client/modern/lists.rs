@@ -110,7 +110,7 @@ fn palette(p: &mut Panels, w: &mut World) {
     let Some((text, sel, hits, icons)) = search_hits(p, w) else { return };
     let m = p.m;
     let mut found = Mouse::default();
-    p.panel("palette", Some(Title { icon: Some("controls/search"), text: "Commands", note: Some("Esc closes") }), 420.0, |ui| {
+    p.panel("palette", Some(Title { icon: Some("controls/search"), text: "Commands", note: Some("Esc closes"), name: false }), 420.0, |ui| {
         found = search_rows(ui, m, w, &icons, &text, sel, &hits);
         if text.is_empty() && hits.is_empty() {
             ui.label(egui::RichText::new("Type a spell, ability, item or command. Recent picks show here.").size(m.theme.small).color(m.theme.color("muted")));
@@ -263,7 +263,7 @@ fn cats(p: &mut Panels, w: &mut World) {
     let mut mouse = Mouse::default();
     let search = if w.magic.is_none() && w.ability.is_none() { search_hits(p, w) } else { None };
     let mut found = Mouse::default();
-    p.panel("cats", Some(Title { icon: None, text: title, note: None }), if search.is_some() { 360.0 } else { 260.0 }, |ui| {
+    p.panel("cats", Some(Title { icon: None, text: title, note: None, name: false }), if search.is_some() { 360.0 } else { 260.0 }, |ui| {
         if let Some((text, sel, hits, icons)) = &search {
             found = search_rows(ui, m, w, icons, text, *sel, hits);
             return;
@@ -392,7 +392,7 @@ fn list(p: &mut Panels, w: &mut World) {
     let mut sort_click: Option<u16> = None;
     let mut ask_click: Option<bool> = None;
     let mut wheel = 0.0f32;
-    let rect = p.panel("list", Some(Title { icon: None, text: title, note: Some(&note) }), 360.0, |ui| {
+    let rect = p.panel("list", Some(Title { icon: None, text: title, note: Some(&note), name: false }), 360.0, |ui| {
         // The sort strip: its window's rows as the kit's buttons, the cursor's ringed while it has the keys.
         if let Some(menu) = win.sort {
             let labels = sort_labels(menu);

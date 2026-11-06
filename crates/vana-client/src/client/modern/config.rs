@@ -1471,7 +1471,7 @@ pub fn lobby(p: &mut Panels, c: &mut ConfigUi, v: &mut Values, mut s: Option<&mu
     let screen = p.ctx.content_rect();
     let size = m.rects.borrow().get("lobby config").map_or(vec2(640.0, 360.0), |r| r.size());
     let at = (screen.center() - size / 2.0).round();
-    p.panel_at("lobby config", Some(Title { icon: Some("icons/config"), text: "Config", note: None }), 640.0, at, |ui| {
+    p.panel_at("lobby config", Some(Title { icon: Some("icons/config"), text: "Config", note: None, name: false }), 640.0, at, |ui| {
         ui.horizontal_top(|ui| {
             entry_list(ui, m, &LOBBY, entry, open, &mut click);
             ui.add_space(16.0);
@@ -1643,7 +1643,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         Entry::Colors => (SWATCH_W + colours.0 + COL_GAP + colours.1 + 20.0).clamp(PAGE_W, (p.ctx.content_rect().width() - 260.0).max(PAGE_W)),
         _ => PAGE_W,
     };
-    p.panel("window", Some(Title { icon: Some("icons/config"), text: "Settings", note: None }), NAV_W + 32.0 + page_w + 16.0 + DETAIL_W, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/config"), text: "Settings", note: None, name: false }), NAV_W + 32.0 + page_w + 16.0 + DETAIL_W, |ui| {
         ui.horizontal_top(|ui| {
             // No page is lit while the hits of every page show.
             nav_list(ui, m, if find.is_some() { usize::MAX } else { entry }, open && c.m_sub.is_none(), &mut click);
@@ -1825,7 +1825,7 @@ pub fn sample(p: &mut Panels, s: &SettingsUi) {
     c.m_find = Some("shadow".into());
     refresh_hits(None, &mut c, &v, Some(s));
     let all: Vec<Line> = view(&c, Some(s)).into_iter().filter(|l| l.shape.is_none()).collect();
-    p.panel("window", Some(Title { icon: Some("icons/config"), text: "Settings", note: None }), NAV_W + 32.0 + PAGE_W + 16.0 + DETAIL_W, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/config"), text: "Settings", note: None, name: false }), NAV_W + 32.0 + PAGE_W + 16.0 + DETAIL_W, |ui| {
         ui.horizontal_top(|ui| {
             nav_list(ui, m, usize::MAX, true, &mut None);
             ui.add_space(16.0);

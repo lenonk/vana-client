@@ -1233,7 +1233,7 @@ pub(super) fn store_rows(w: &World, c: u8) -> Vec<Slot> {
 
 /// FUN_1021cc60: an empty slot in 1..size.
 pub(super) fn has_free(w: &World, c: u8) -> bool {
-    (w.inv.sizes[c as usize] as usize).saturating_sub(1) > w.inv.slots_of(c).iter().filter(|x| x.index != 0).count()
+    (w.inv.sizes[c as usize] as usize).saturating_sub(1) > w.inv.slots.range((c, 1)..=(c, 255)).count()
 }
 
 /// The two-list view on `bank` (FUN_101dc880): focused on the bank side.

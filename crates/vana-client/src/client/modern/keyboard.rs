@@ -28,7 +28,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let (mut hovered, mut clicked) = (None, None);
     let font = FontId::proportional(m.theme.ui * 1.25);
     let small = FontId::proportional(m.theme.small);
-    p.panel_at("keyboard", Some(Title { icon: None, text: "Keyboard", note: None }), width, at, |ui| {
+    p.panel_at("keyboard", Some(Title { icon: None, text: "Keyboard", note: None, name: false }), width, at, |ui| {
         let (area, _) = ui.allocate_exact_size(vec2(width - 24.0, 5.0 * KEY + 4.0 * GAP), Sense::hover());
         let o = area.min;
         let mut key = |ui: &mut egui::Ui, id: u16, r: egui::Rect, label: &str, font: &FontId, lit: bool, off: bool| {

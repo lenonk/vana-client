@@ -188,7 +188,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let carrying = v.on_grid && v.held.is_some_and(|h| h.3);
     let title = gu.title_msg(0x96).unwrap_or_else(|| "Tabula".into());
     let (mut list, mut filter, mut mouse) = (None, None, GridMouse::default());
-    p.panel("window", Some(Title { icon: Some("icons/items"), text: &title, note: Some(&v.tabula) }), COL_W + CELL * 5.0 + 32.0 + 44.0, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/items"), text: &title, note: Some(&v.tabula), name: false }), COL_W + CELL * 5.0 + 32.0 + 44.0, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(COL_W);

@@ -314,7 +314,7 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
     let strip = if rest.is_some() { REST_H } else { 0.0 };
     let height = super::MARGIN.sum().y + 37.0 + strip + n * row_h + (n - 1.0) * 4.0;
     let mut clicked = None;
-    let show = super::Show { title: Some(Title { icon: None, text: title, note: note.as_deref() }), size: vec2(340.0, 0.0), height: Some(height), ..Default::default() };
+    let show = super::Show { title: Some(Title { icon: None, text: title, note: note.as_deref(), name: false }), size: vec2(340.0, 0.0), height: Some(height), ..Default::default() };
     p.show(id, show, |ui, _| {
         ui.spacing_mut().item_spacing.y = 0.0;
         if let Some(r) = rest {
@@ -436,7 +436,7 @@ pub fn target_panel(p: &mut Panels, v: &TargetView) {
     let m = p.m;
     let frame = if v.locked { "window_alert" } else { "window_normal" };
     let dist = v.distance.map(|d| format!("{d:.1}"));
-    let title = Title { icon: Some(v.ring), text: &v.name, note: dist.as_deref() };
+    let title = Title { icon: Some(v.ring), text: &v.name, note: dist.as_deref(), name: false };
     let r = p.framed("target", None, 340.0, frame, |ui| {
         super::title_row_in(ui, m, &title, v.colour.unwrap_or(m.theme.color("gold")));
         ui.add_space(6.0);

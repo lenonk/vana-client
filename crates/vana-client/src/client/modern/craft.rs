@@ -304,7 +304,7 @@ fn synthesis(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
     let mut fav_open = false;
     let wide = v.crystals.is_some() || v.win.as_ref().is_some_and(|x| x.picker.is_some()) || v.history.is_some();
     let width = if wide { GRID_W + LIST_W + 70.0 } else { social::width(1) };
-    let title = Title { icon: Some("icons/craft"), text: "Synthesis", note: None };
+    let title = Title { icon: Some("icons/craft"), text: "Synthesis", note: None, name: false };
     let mut found = super::lists::found(p, w, "synth");
     p.panel("window", Some(title), width, |ui| {
         if let Some((sel, off, focused)) = v.menu {
@@ -450,7 +450,7 @@ fn trading(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
     let (mut gil_click, mut money_set) = (false, None);
     let name = if v.player { trade::TRADE } else { trade::HANDOVER };
     let gil_text = |g: u32| crate::inventory::gil_text(g as i64);
-    let title = Title { icon: Some("icons/trade"), text: "Trade", note: Some(&v.with) };
+    let title = Title { icon: Some("icons/trade"), text: "Trade", note: Some(&v.with), name: false };
     let free = w.confirm.is_none();
     let mine: [(u16, u32, bool); 8] = std::array::from_fn(|i| (v.mine[i].0, v.mine[i].1, false));
     let mut found = super::lists::found(p, w, "trade");

@@ -56,7 +56,7 @@ pub fn generic(w: &mut World, gu: &GameUi, name: &str, cursor: u16, ids: std::op
 
 /// What a click on an itemctrl / moneyctr child re-sends (message 5, FUN_1013a6c0 / FUN_10140bc0's tables): 1 the
 /// confirm (Enter), 2 message 4 (Left: all, or ten times the step), 3 message 3 (Right: 1, or a tenth of the step),
-/// 4 message 1 (Down: one step less), 5 message 2 (Up: one step more). The windows' own keys do the rest.
+/// 4 message 1 (Down: one step less), 5 message 2 (Up: one step more). The windows' keys do the rest.
 pub fn ctr_key(child: u16) -> Option<egui::Key> {
     use egui::Key as K;
     Some(match child {

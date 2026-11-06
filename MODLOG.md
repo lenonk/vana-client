@@ -14668,7 +14668,7 @@ FUN_101cf510 (client/layout.rs `overlay`, render/lines.wgsl, ZoneRenderer `set_l
   on the window is Escape. Hand-over: slots 1..8, OK 9, Cancel 10, gil 11; player trade: "menu    trade" 1..11
   (after our OK only OK / Cancel take the cursor, as the keys) and "menu    gift" 1..8. The picker (the inventory list
   at x 200, post::picker_row) as the item list: hover moves the row cursor, a click on it is Enter, a right click
-  Escape. itemctrl / moneyctr take only the right click (Escape) *(their arrows by mouse not done)*.
+  Escape. itemctrl / moneyctr as retail's (MODLOG "itemctrl / moneyctr: the mouse").
 - Live (Lnxcsfix, the Moogle in its house, main menu Trade): hover slot 2, click (picker), hover and click Distilled
   Water (No. of Items), Enter (in slot 2), right click (cursor to Cancel), click Cancel (closed). Player trade not
   tried live (one account).
@@ -15002,7 +15002,7 @@ client/macroedit.rs (`pointer`, `generic`, `child_under`, `hit`), esmenu.rs, ese
   right click over it Escape). MacroPalette (macroedit.rs) uses it now.
 - Shops (shop.rs `pointer`): shopmain / guildsho and shopbuy / shopsell as the generic window; the list's rows (18 px
   from (3, 4), short of the bar) as the item list: hover moves the row, a click on it is Enter, a right click on the
-  list Escape; itemctrl / moneyctr take only the right click *(their arrows by mouse not done)*.
+  list Escape; itemctrl / moneyctr as retail's (MODLOG "itemctrl / moneyctr: the mouse").
 - Live (Lnxcsfix at Capucine, Southern San d'Oria): hover Sell, click Buy, hover and click Mitts (the purchase
   confirm, cursor on Cancel), right clicks closing the list and the shop. The windows stacked on the log move as it
   shrinks or grows, so a click must land where they are that frame (the recorded rects follow them).
@@ -15017,7 +15017,7 @@ client/macroedit.rs (`pointer`, `generic`, `child_under`, `hit`), esmenu.rs, ese
 
 - post.rs `pointer` (winhits.rs): post1 / post2 (receive), delivery and stringdl (send; stringdl's buttons are drawn by
   code, so their rects come from the layout) as the generic window; the inventory list at x 200 as the item list;
-  itemctrl / moneyctr only the right click; nothing while busy or while the name is typed.
+  itemctrl / moneyctr as retail's (MODLOG "itemctrl / moneyctr: the mouse"); nothing while busy or while the name is typed.
 - Live (Lnxcsfix, its Mog House): moogle menu Delivery Box, mogpost Send, hover Exit ("Cancel.") and OK ("Is
   recipient's name correct?"), click Exit closes the send UI. The moogle menu and mogpost sit on the log and move with
   it (a click must use where they are that frame).
@@ -15177,7 +15177,7 @@ From the research notes:
 
 - synth.rs `pointer` (winhits.rs): cmbmenu, cmbhwin and tskill1 as the generic window, cmbhlst's code-drawn rows (18
   apart from (0, 4)) as its children; the crystal list and the material picker as the item list at x 200
-  (post::picker_row); itemctrl only the right click. A right click on tskill1 is its Escape (the cursor to Cancel).
+  (post::picker_row); itemctrl as retail's (MODLOG "itemctrl / moneyctr: the mouse"). A right click on tskill1 is its Escape (the cursor to Cancel).
 - Live (Lnxcsfix): main menu Synthesis, cmbmenu hover / click Crystal Synthesis, the crystal list hover / click Wind
   Crystal, tskill1 hover / click a slot (the picker), a picker row hovered, right clicks back, Cancel, the crystal list
   and cmbmenu closed by right clicks. Nothing synthesized.
@@ -15186,7 +15186,7 @@ From the research notes:
 
 - auction.rs `pointer` (winhits.rs): the command menus (auc1..aucitem, auc3, auc4, the sort menus) and shopsell as the
   generic window; auclist's and auchisto's code-drawn rows (18 apart from (4, 4)) as their children; the sell list (the
-  inventory list) by its row pitch; moneyctr only the right click. Scroll bars: Owner::Auction for auclist and the sell
+  inventory list) by its row pitch; moneyctr as retail's (MODLOG "itemctrl / moneyctr: the mouse"). Scroll bars: Owner::Auction for auclist and the sell
   list (FUN_101f6c70 rows: a notch moves the top, the hand keeps its screen row).
 - Live (Lnxcsfix, !ah): auc1 Bid, auc2 Crystals, auclist hover / wheel / click (auc3), right clicks back to auc2 and
   auc1, Sell (the sell list hover / wheel), right clicks out. Nothing bid or sold.
@@ -15625,10 +15625,10 @@ From the research notes:
   journal lists (FUN_10229770, FUN_1022dcf0, FUN_1022f670), 2 conquest (FUN_101e8030), **8** a search query
   (FUN_1020a9d0; cleared with its answer, FUN_1020a550, and the results window's close FUN_1020b3a0) and the Help
   Desk's Q&A loader / GM call (FUN_10212760, FUN_10217d20), **0x10** the mail windows (mes1rcv / mes2frnd / msgline /
-  msglist, FUN_101ff3e0..FUN_10200d70; not on LSB), **0x20** only cleared (FUN_101e3430, link5), **0x80000000** an
+  msglist, FUN_101ff3e0..FUN_10200d70; MODLOG "The busy strip's 0x10"), **0x20** only cleared (FUN_101e3430, link5), **0x80000000** an
   auction bid in flight (LAB_101d95b0 with DAT_1066344e; cleared FUN_101d7ac0 / FUN_101da370).
-- Ours now adds the search (search::busy) and the bid (bid.pending) to the strip; the Help Desk's (its Q&A never
-  loads in ours) and the mail windows' are not modelled.
+- Ours now adds the search (search::busy) and the bid (bid.pending) to the strip, and msgline's sends (friends.strip);
+  the Help Desk's (its Q&A never loads in ours) and the other mail windows' are not modelled.
 
 ## 0x00E SubKind 5 / 6 and event op 0xb6 0x11 (2026-10-26; partly traced)
 
@@ -17221,8 +17221,10 @@ keeps its newest 100 rows *(inf: retail ~50 at the switch, up to 100 while open)
   message; the unread count at (+0x6c, +0x10), 0x60808080) for 60 ticks (DAT_10385270), page 1 the network for 120
   (DAT_10385272), held on page 1 while nothing is unread; the modern top bar the same with its own envelope. Seen live
   in both UIs.
-- Not done: netstat's Help Desk count (GM replies) and its second count (engine +0xe), the busy strip bit 0x10, deleting / unblocking / reordering
-  (retail has no in-game way: the user's call), Away back to Online at login *(inf, below)*.
+- Done since: netstat's Help Desk reply mark, its second count (never non-zero in this build) and the busy strip bit
+  0x10 (MODLOG "netstat: the Help Desk reply mark", "netstat: the second count", "The busy strip's 0x10").
+- Not done: deleting / unblocking / reordering (retail has no in-game way: the user's call), Away back to Online at
+  login *(inf, below)*.
 - Also: the K.O. windows (dead, mp_dead) drawn 8 / 4 px larger (ours, the user's call, as the raise prompt).
 
 From the research notes:
@@ -17272,8 +17274,8 @@ From the research notes:
 - netstat page 0: windowps 2, or 418 (red) with unread SYS, or fontshp 118 "GM"; with a GM-call count windowps 36
   "Help Desk". Page 1 is held only while there is neither mail nor a GM count. A count that grows (FUN_100f6f30, <=
   200, and FUN_100f6f00) plays SE 0039 when config 0x48 is on (default 1).
-- Busy strip bit 0x10: set with DAT_10663ac8 while msglist's list job, a read (FUN_100f75f0) or a msgline send runs;
-  cleared at the job's end (result 1, the engine closed, only clears it).
+- Busy strip bit 0x10: set while msglist's list job, a read (FUN_100f75f0) or a msgline send runs; cleared at the
+  job's end (result 1, the engine closed, only clears it). Every setter in MODLOG "The busy strip's 0x10".
 - Our status at login: s2c 0x00A (LAB_100facf0, LoginState @0x80 in {1, 2, 0, 6}) sets Away back to Online with a
   0x0DC clear *(inf: only the first 0x00A)*; FUN_100daf30 state 4: FUN_100f7960 re-reads and re-sends our status with
   FUN_100e46a0(1, status == Away). At character select (FUN_100ee160) retail sends ChangeMyStatus(handle, character
@@ -17318,7 +17320,8 @@ From the research notes:
   (subs 0xa / 0xc / 0xb). Not seen live.
 - A 0x97 message's pages (op 0x48) print as mode 0xbe (asm 0x1013669b); 0x96 / 0x97 / 0x98 / 0xbe share colour id 91
   and mask bit 9, so only the record's mode differs.
-- Not done: the frames' magenta tint (windowps 43, below).
+- The frames' magenta tint (windowps 43, below): never drawn (MODLOG "rem4line / spoolmsg: the magenta plate is never
+  drawn").
 
 From the research notes:
 - The four windows (layout (16, 298) 366 x 70, one frame element): rem4line / rem4li2 (handlers DAT_105781cc /
@@ -22685,8 +22688,7 @@ From FFXiMain.dll (Steven's unpacked copy), full_text.asm, FUN_100a7b80.
   FUN_102008f0 (msglist's), FUN_10200230 (mes1rcv's mark-read answer), FUN_10200c90 / FUN_10200fe0, and the small
   function at 0x101ffb10 after /befriend's search.
 - Not set by /befriend's search (FUN_101ffa20 sets only DAT_10663ac8, 0x101ffaa3), by Ignore (FUN_10200280: list
-  calls only), or by mes1rcv's mark-read (FUN_100f7590 with DAT_10663ac8 at 0x10200217). The earlier note that
-  /befriend and Ignore set it was wrong.
+  calls only), or by mes1rcv's mark-read (FUN_100f7590 with DAT_10663ac8 at 0x10200217).
 - Ours: friends.strip is bit 0x10, set with msgline's commit (friends::send, every mode) and cleared with its
   answer. hudtop counts it. The other setters are not modelled: ours has no wait for msglist's load (local folders)
   and no counterpart for FUN_101ffc20 / FUN_101ffdb0 / FUN_101fff30 / FUN_10200080 / FUN_10200d70 yet (their jobs
@@ -22706,24 +22708,23 @@ From FFXiMain.dll (Steven's unpacked copy), full_text.asm, FUN_100a7b80.
 
 ## Long target names in title rows (ours, 2026-11-02)
 
-- Retail's action menu (playermo, draw at 0x1012b3c0 in the 2026-10-05 FFXiMain build) draws only its label sprites:
+- Retail's action menu (playermo, draw at 0x1012b3c0 in FFXiMain 30261006_0) draws only its label sprites:
   no title and no target name. The name is the target window's (targetwi draw 0x101501a0), which breaks a long one with
   FUN_101c9fa0: one line when it fits and has no ':'; else after the first ':' before the fit, else after the last
   ' ', '-', '@', ''' or ':' from fit + 1 down to fit / 4, else at the fit; the rest one line down, cut with an ellipsis
   (FUN_101c9d50) when it does not fit.
-- The modern Commands / Battle window shows the target's name as its title row's note. The note was drawn
-  right-aligned with no limit, so a long name ran under "Commands" (in-game report). Now (modern/mod.rs
-  `title_row_in`, `name_lines`) the note keeps to the room the title leaves and breaks in two as FUN_101c9fa0 does,
-  by measured width in chars and with the search from the fit (not fit + 1); the row grows to hold the two lines. A
-  title too long for its row (the target panel's name) is cut with an ellipsis and leaves the note at least 40% of
-  the row. Every panel's title row gets this (trade partner, equip set names, gil notes).
+- The modern Commands / Battle window shows the target's name as its title row's note (`Title::name`). The note
+  keeps to the room the title leaves (modern/mod.rs `title_row_in`); a name note breaks in two as FUN_101c9fa0 does
+  (`name_lines`), by measured width in chars and with the search from the fit (not fit + 1), and the row grows to
+  hold the two lines. Other notes (gil, counts, clocks) are cut with an ellipsis, never broken at a ':'. A title too
+  long for its row (the target panel's name) is cut with an ellipsis and leaves the note at least 40% of the row.
 - `modern-shot --titles`: the Commands window on long names, one with a ':', and a target with a long name.
 
 ## Right-click menus (ours, 2026-11-02)
 
 - Retail has no context menus; its right click on the world cancels a sub-target prompt, clears an unlocked target or
   stops autorun (target::click, FUN_101585f0 result 0x17). With the modern UI on, a right click that did not drag and
-  lands on an actor (Self::under_pointer, the left click's own pick) opens the modern layer's menu for it instead;
+  lands on an actor (Self::under_pointer, the left click's pick) opens the modern layer's menu for it instead;
   anywhere else, or with a prompt up, retail's right click is unchanged.
 - The menus only reach existing paths: the item list's keys (iuse Use / Drop, itmsort2 Auto-sort, with their
   questions), the storage view's 0x029 move and its rules (items::usable / tint, away from the moogle), the text
@@ -22732,30 +22733,34 @@ From FFXiMain.dll (Steven's unpacked copy), full_text.asm, FUN_100a7b80.
 
 ## Modern layouts per display (ours, 2026-11-02)
 
-- Config `modern_places` keys: the character's name (its latest layout) and "<name> @<w>x<h> <scale>%" per display
-  (modern::display_key). Read: the display's, else the latest; a change writes both. Reset removes every key of the
-  character (modern::layout_of).
+- Config `modern_places` keys: the character's name (its latest layout, the template) and "<name> @<w>x<h> <scale>%"
+  per display (modern::display_key). Read: the display's, else the template; a change writes both. A display shown
+  the template for 2 s keeps a copy as its own, so arranging another display doesn't move its panels; sizes passed
+  through while resizing store nothing. Reset removes every key of the character (modern::layout_of).
 
 ## Item info: no one-frame jump between a long and a short item (2026-11-02)
 
 - Ours (modern UI). A panel placed by its bottom (the item info on the action menu, anything docked on another
-  panel, the bottom-placed windows, a panel risen to fit the screen) was placed by its height last frame. The frame
-  its contents grew or shrank it stood that much too low or too high and then jumped back: moving the Items cursor
-  from a long description to a short one, or back, flashed the item info at the wrong size and place for one frame.
-- Panels::show now moves such a panel's drawn shapes by the difference its new height makes to its top, the same
-  frame (egui's transform_layer_shapes on its layer), and docks what sits on it on the moved rect. The panels placed
-  by their exact height (chat, party; the chat window fix of 2026-11-02) are unchanged.
+  panel, the bottom-placed windows, a panel risen to fit the screen) is placed by its height last frame (an egui area
+  offers only that). Panels::show moves its drawn shapes by the difference its new height makes to its top, the same
+  frame (egui's transform_layer_shapes on its layer), and docks what sits on it on the moved rect, so a cursor moved
+  between a long and a short item description never shows it a frame at the old size. The panels placed by their
+  exact height (chat, party) are unchanged.
 - Test panel_tests::docked_panel_keeps_its_bottom_as_it_resizes switches a docked panel between 12, 2, 1 and 7 rows
-  and checks its bottom stays on the panel under it every frame (it fails without the fix: bottom 473 on 667).
+  and checks its bottom stays on the panel under it every frame.
 
 ## Double click on the world (ours, 2026-11-02)
 
 - Retail has no double click on the world: a left click picks, and a click that leaves the target as it was confirms
   it (FUN_101585f0: talk, or the action menu for a player or monster). The modern UI's mouse contract adds one
   (target::click `double`): with config `modern_ui`, a second plain left click on the same actor within 500 ms (the
-  Windows default) runs Ctrl+C's FUN_10130280 instead (talk to an NPC, check anyone else, c2s 0x0DD) and closes the
-  action menu the first click may have opened. Locked targets, the sub-target prompt, drags and the classic UI keep
-  retail's rule.
+  Windows default), with no key pressed between, runs Ctrl+C's FUN_10130280 instead (talk to an NPC, check anyone
+  else, c2s 0x0DD) and closes the action menu the first click may have opened; with another window open it is
+  refused as retail's click is (only the action menu may be up). Locked targets, the sub-target prompt, drags and
+  the classic UI keep retail's rule.
+- A drag is a press moved 65 sq UI px or held 25 ticks, or one that turned the camera (mouse look warps or locks the
+  pointer, so its release lands where it was pressed: the look's travel counts). A right click that pans the camera
+  opens no menu.
 
 ## Modern UI: event HUD parity with retail (2026-11-02)
 
@@ -22800,8 +22805,8 @@ From FFXiMain.dll (Steven's unpacked copy), full_text.asm, FUN_100a7b80.
 - Page hold: the network page is held while +0x2c < 1 and +0x20 == 0 and +0x1c == 0; the network page lasts
   DAT_10385272 ticks, three times that when +0x20 != 0 and +0x1c == 0.
 - Built: hudtop.rs draws state 2 and holds the network page only with no mail and no reply waiting; the modern top
-  bar shows "Help Desk reply" (icons/help, icons/notification) on the mail page. Not done: engine +0xe (+0x20), its
-  count at +0x55 and the 3 x network page (feature 17 of the modern list).
+  bar shows "Help Desk reply" (icons/help, icons/notification) on the mail page. Engine +0xe (+0x20), its count at
+  +0x55 and the 3 x network page: below.
 
 ## modern-shot: the alliance windows, and the texture limit (ours, 2026-11-02)
 
@@ -22813,8 +22818,7 @@ From FFXiMain.dll (Steven's unpacked copy), full_text.asm, FUN_100a7b80.
 
 ## netstat: the second count (engine +0xe) never counts (2026-11-02)
 
-- Traced in the unpacked FFXiMain.dll (decompile + disassembly) for the modern list's "Help Desk count and the second
-  count". netstat +0x20 is FUN_100f6f00: the u16 at +0xe of the PlayOnline message object (DAT_104df908, set to
+- Traced in the unpacked FFXiMain.dll (decompile + disassembly). netstat +0x20 is FUN_100f6f00: the u16 at +0xe of the PlayOnline message object (DAT_104df908, set to
   &DAT_104df8a8 by FUN_100f76b0). Beside it: +0xa the unread mail (FUN_100f6f30, capped at 200, `inc word [eax + 0xa]`
   per message in LAB_100f2020), +0xc (FUN_100f6ed0 / cleared by FUN_100f6ef0), +0x10 the system messages
   (FUN_100f6f90, incremented in FUN_100f4bf5..100f657c).
@@ -22823,13 +22827,12 @@ From FFXiMain.dll (Steven's unpacked copy), full_text.asm, FUN_100a7b80.
   0x100fffff) adds to it. So in this build the second count is always 0: its number at (+0x55, +0x10) in
   0x60808080 never draws a non-zero value, and the 3 x DAT_10385272 network page (+0x20 set, no mail) never happens.
 - The Help Desk count itself is FUN_10115250 (0 / 1, a complete GM notice), drawn as "1" at (+0x4e, +0x10) by the
-  reply mark (docs/modlog/2026-11-02-helpdesk-reply-mark.md). Nothing more to build for feature 17; hudtop.rs's
-  step_page notes why.
+  reply mark (above). Nothing more to build; hudtop.rs's step_page notes why.
 
 ## rem4line / spoolmsg: the magenta plate is never drawn (2026-11-02)
 
-- Closes "Not done: the frames' magenta tint (windowps 43, spec §8)" under rem4line / spoolmsg (2026-10-28), from the
-  game data and the unpacked FFXiMain.dll (30261006_0), without the spec.
+- Closes "Not done: the frames' magenta tint (windowps 43)" under rem4line / spoolmsg (2026-10-28), from the game
+  data and the unpacked FFXiMain.dll (30261006_0).
 - The layouts: rem1line..rem4line, rem4li2, spoolmsg and splmsg2 are one element each (366 x 16 n + 6 at 16, 298;
   rem's anchor 0, spool's 2), whose window sprite is windowps 39 + n (40..43; rem4line, rem4li2, spoolmsg and splmsg2
   all 43). Each of those sprites is a single newtex cell in (128, 65, 128, 169): the magenta. Every other window
@@ -22846,10 +22849,11 @@ From FFXiMain.dll (Steven's unpacked copy), full_text.asm, FUN_100a7b80.
 ## Pending actions (ours, 2026-11-02)
 
 - Retail shows nothing between sending an action and the server's answer. Ours keeps the last 0x01A (magic 3, weapon
-  skill 7, job ability 9) or 0x037 sent; the first 0x028 with our id as actor confirms it, a 0x029 with our id as
-  actor before that is taken as the refusal (but experience, limit and capacity points, defeats: 6, 8, 105, 253, 371,
-  372, 718, 735). The heuristic leans on LSB answering a refused action with a 0x029 and an accepted one with a 0x028
-  first.
+  skill 7, job ability 9) or 0x037 sent; a 0x028 with our id as actor of its kind confirms it (magic 8 / 4, weapon
+  skills 7 / 3 and monster skills 11, job abilities 6 / 14 / 15, items 9 / 5; a melee round does not), a 0x029 with
+  our id as actor before that and within 2 s of the ask is taken as the refusal (but experience, limit and capacity
+  points, defeats: 6, 8, 105, 253, 371, 372, 718, 735). *inf:* the heuristic leans on LSB answering a refused action
+  at once with a 0x029 and an accepted one with a 0x028 first.
 
 ## itemctrl / moneyctr: the mouse (2026-11-02)
 
@@ -22864,7 +22868,7 @@ From FFXiMain.dll (Steven's unpacked copy), full_text.asm, FUN_100a7b80.
   trade, and the storage view's count. - / + step on the press and repeat while held, after 400 ms every 60 ms
   *(inf: the 0x1d rate is not traced)*; a right click on the window is Escape. trade.rs and the storage view now
   record the windows they draw (winhits::record) so the mouse hits them where they are.
-- Not tried live (no game data in the build container).
+- Not tried live.
 
 ## Remaining retail windows (ours, 2026-11-02)
 
@@ -22888,9 +22892,11 @@ From FFXiMain.dll (Steven's unpacked copy), full_text.asm, FUN_100a7b80.
 - Not retail (retail's storage view is keys and itemctrl only): modern/storage.rs. A row dragged onto the other pane
   moves its stack (c2s 0x029 as Enter does); the pane under the pointer is outlined with the pack's
   controls/drag_outline_drop_valid (teal) or _invalid (red) by the same rules as the row colours. Shift on the drop,
-  Shift-click or Shift+Enter opens a quantity strip on half the stack (retail's itemctrl opens on 1): - / + and Up /
-  Down by one, Left / Right by ten, Move / Enter, Cancel / Escape. Click and Ctrl-click send a stack to the paired
-  pane, right click one.
+  Shift-click or Shift+Enter opens the modern count row (craft.rs count_row, as the shop and synthesis ones) on half
+  the stack (retail's itemctrl opens on 1), with itemctrl's keys: - / + and Up / Down by one, Right 1, Left all, OK /
+  Enter, Cancel / Escape. Click and Ctrl-click send a stack to the paired pane, right click one. A drag carries its
+  row's part, slot and item: if the lists changed under it, the drop moves that stack where it is now, or says it
+  changed.
 - Refused rows say why, on hover and under the lists after a refused click, drop or key (items.rs judge: tint's rules
   with a reason each). Inventory rows in the bazaar (lock 0x19) are now refused in modern too, as retail's Enter does.
 - Nothing moves before the server: a sent move shows as "Moving ..." until its slot changes; unchanged after 5 s the
@@ -22904,10 +22910,11 @@ From FFXiMain.dll (Steven's unpacked copy), full_text.asm, FUN_100a7b80.
   ailment, curaga, cure, waltz, burst, close, provoke, job_ability, ninja_stance, samba, debuff, open_chain,
   strongest_ws, renew, between) has one.
 - Recording: with `VANA_SUGGEST_RECORD=<folder>` the client writes each new non-empty set of battle-menu
-  suggestions with its facts there (suggest-<ms>.json); fill in `rule` and `note` and move it under suggest_cases/.
+  suggestions with its facts there (suggest-<ms>.json); fill in `rule` and `note`, replace the real player names in
+  the facts, and move it under suggest_cases/.
   `VANA_SUGGEST_BLESS=1 cargo test suggest` rewrites the expectations from the current rules (check the diff).
-- The first 17 cases are written by hand in the recorded format, one per rule (no game data in the build box); real
-  recordings can replace or join them.
+- The first 17 cases are written by hand in the recorded format, one per rule; real recordings can replace or join
+  them.
 
 ## UI modes (ours, 2026-11-02)
 
@@ -22922,7 +22929,7 @@ From FFXiMain.dll (Steven's unpacked copy), full_text.asm, FUN_100a7b80.
   through the source's +0x48 (FUN_101f0e30) and +0x50 (FUN_101f0d20) filter: crystals, Maze Tabulae, non-gear with
   record flag 0x400, and gear that is equipped (FUN_10131f10) with charges. The main Items list's source has
   +0x40 = FUN_1012e4e0 (returns 0), so it stays inventory only.
-- We only listed the inventory, so enchanted gear kept in a wardrobe (Chariot Band, warp rings, experience rings)
-  could not be used from the menu. `items::listed_at` now appends the wardrobe rows for the direct list; the ready /
+- `items::listed_at` appends the wardrobe rows for the direct list, so enchanted gear kept in a wardrobe (Chariot
+  Band, warp rings, experience rings) can be used from the menu; the ready /
   not-ready colour reads the row's own bag's extdata, and Enter sends c2s 0x037 with that bag (LSB accepts
   wardrobes 1..8). The Modern UI list and its right-click Use take the same rows.

@@ -195,7 +195,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
 
     let mut click = None;
     let mut open = false;
-    p.panel("window", Some(Title { icon: Some("icons/status"), text: "Status", note: None }), SIDE_W + 18.0 + PAGE_W, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/status"), text: "Status", note: None, name: false }), SIDE_W + 18.0 + PAGE_W, |ui| {
         equip::persona_row(ui, m, &persona, &stats);
         ui.add_space(6.0);
         if ready {

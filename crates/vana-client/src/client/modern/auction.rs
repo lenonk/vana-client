@@ -224,7 +224,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let (mut found, mut start) = (super::lists::Mouse::default(), false);
     let mut generic = super::lists::found(p, w, "auction");
     let wide = if search.is_some() { LIST_W + 44.0 } else { 0.0 };
-    p.panel("window", Some(Title { icon: Some("icons/currency"), text: &title, note: Some(&gil) }), total.max(MENU_W + 44.0).max(wide), |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/currency"), text: &title, note: Some(&gil), name: false }), total.max(MENU_W + 44.0).max(wide), |ui| {
         if let Some((text, sel, hits, icons)) = search.as_ref().filter(|s| !s.0.is_empty()) {
             if loading {
                 // Every category is asked once, slowly (the server limits its sessions); later searches are instant.

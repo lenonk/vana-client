@@ -97,7 +97,7 @@ fn list(p: &mut Panels, w: &mut World) {
     let mut mouse = Mouse::default();
     let search = lists::search_hits(p, w);
     let mut found = lists::Mouse::default();
-    let title = Title { icon: None, text: "Items", note: (!direct).then_some(note.as_str()) };
+    let title = Title { icon: None, text: "Items", note: (!direct).then_some(note.as_str()), name: false };
     p.panel("window", Some(title), 380.0, |ui| {
         if let Some((text, sel, hits, icons)) = &search {
             found = lists::search_rows(ui, m, w, icons, text, *sel, hits);

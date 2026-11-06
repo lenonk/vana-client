@@ -82,7 +82,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let mono = |size: f32| FontId::monospace(size);
     let mut mouse = Mouse::default();
     let mut found = super::lists::found(p, w, "equip");
-    let title = Title { icon: None, text: "Equipment", note: Some(&gil) };
+    let title = Title { icon: None, text: "Equipment", note: Some(&gil), name: false };
     p.panel("window", Some(title), GRID_W + 18.0 + LIST_W, |ui| {
         persona_row(ui, m, &persona, &stats);
         ui.add_space(8.0);

@@ -202,7 +202,7 @@ fn unity_panel(p: &mut Panels, w: &mut World) {
     let note = format!("{}/99999", v.accolades);
     let width = COL_W + if v.info.is_some() { 16.0 + LIST_W } else { 0.0 } + 44.0;
     let (mut menu, mut rows_got, mut ranks_got) = (None, None, None);
-    p.panel("window", Some(Title { icon: Some("icons/status"), text: "Unity", note: Some(&note) }), width, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/status"), text: "Unity", note: Some(&note), name: false }), width, |ui| {
         ui.horizontal_top(|ui| {
             let col = MenuWin { name: unity::MENU, sel: v.sel, off: Vec::new(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
             menu = social::column(ui, m, gu, &col, free && v.info.is_none());
@@ -281,7 +281,7 @@ fn merit_points(p: &mut Panels, w: &mut World) {
     let width = cols * (COL_W + 16.0) + if v.list.is_some() { LIST_W } else { 0.0 } + 44.0;
     let mut mouse = MeritMouse::default();
     let mut found = super::lists::found(p, w, "points");
-    p.panel("window", Some(Title { icon: Some("icons/status"), text: "Merit Points", note: note.as_deref() }), width, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/status"), text: "Merit Points", note: note.as_deref(), name: false }), width, |ui| {
         let limit = v.limit.unwrap_or(0);
         let value = v.limit.map_or("----/10000".to_string(), |l| format!("{l}/10000"));
         gauge(ui, m, limit as f32 / 10000.0, "Limit Points", &value, false);
@@ -360,7 +360,7 @@ fn job_points(p: &mut Panels, w: &mut World) {
     let width = SIDE_W + if v.page.is_some() { 16.0 + LIST_W } else { 0.0 } + 44.0;
     let (mut jobs, mut page, mut tab) = (None, None, None);
     let mut found = super::lists::found(p, w, "points");
-    p.panel("window", Some(Title { icon: Some("icons/status"), text: "Job Points", note: note.as_deref() }), width, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/status"), text: "Job Points", note: note.as_deref(), name: false }), width, |ui| {
         let cap = v.points.map_or(0, |q| q[0]);
         let value = v.points.map_or(String::new(), |q| format!("{}/30000", q[0]));
         gauge(ui, m, cap as f32 / 30000.0, "Capacity Points", &value, false);
@@ -420,7 +420,7 @@ fn alter_ego(p: &mut Panels, w: &mut World) {
     let width = SIDE_W + if v.attrs.is_some() { 16.0 + LIST_W } else { 0.0 } + 44.0;
     let (mut cats, mut attrs) = (None, None);
     let mut found = super::lists::found(p, w, "points");
-    p.panel("window", Some(Title { icon: Some("icons/status"), text: "Alter Ego Points", note: note.as_deref() }), width, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/status"), text: "Alter Ego Points", note: note.as_deref(), name: false }), width, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(SIDE_W);

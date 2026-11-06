@@ -358,8 +358,9 @@ fn top_edge(m: &super::Modern, screen: Rect, x0: f32, x1: f32) -> f32 {
 /// too. Returns that.
 #[allow(clippy::too_many_arguments)]
 fn edge_window(p: &mut Panels, key: &str, width: f32, resize: bool, folded: bool, label: &str, add: impl FnOnce(&mut Ui, Side, bool) -> bool) -> bool {
-    // Hidden by the mode (modes.rs) or by a Lua mod (ui.native.hide).
-    if p.vis(key) <= 0.01 || p.hidden.contains(&key) {
+    // Hidden by the mode (modes.rs, faded as the other panels) or by a Lua mod (ui.native.hide).
+    let vis = p.vis(key);
+    if vis <= 0.01 || p.hidden.contains(&key) {
         return false;
     }
     let (m, ctx) = (p.m, p.ctx);
@@ -402,6 +403,7 @@ fn edge_window(p: &mut Panels, key: &str, width: f32, resize: bool, folded: bool
         let mut rect = r;
         let mut drag = None;
         egui::Area::new(id).order(egui::Order::Middle).fixed_pos(r.min).constrain(false).show(ctx, |ui| {
+            ui.multiply_opacity(vis);
             // A click opens it; a drag moves it as its window would.
             let (rr, resp) = ui.allocate_exact_size(r.size(), Sense::click_and_drag());
             drag = EdgeDrag::of(&resp);
@@ -457,6 +459,7 @@ fn edge_window(p: &mut Panels, key: &str, width: f32, resize: bool, folded: bool
     let mut moved: Option<EdgeDrag> = None;
     let mut sized: Option<Vec2> = None;
     let shown = egui::Area::new(id).order(egui::Order::Middle).fixed_pos(pos2(x, y)).constrain(false).show(ctx, |ui| {
+        ui.multiply_opacity(vis);
         // Room to the screen's bottom (an area offers only last frame's size).
         ui.set_max_height((screen.max.y - y).max(ui.min_rect().height()));
         // Under the top bar the open top's border stays hidden above the window.

@@ -140,7 +140,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let gil = crate::inventory::gil_text(w.inv.gil() as i64);
     let mut mouse = Mouse::default();
     let mut found = super::lists::found(p, w, "shop");
-    p.panel("window", Some(Title { icon: Some("icons/currency"), text: &title, note: Some(&gil) }), W, |ui| {
+    p.panel("window", Some(Title { icon: Some("icons/currency"), text: &title, note: Some(&gil), name: false }), W, |ui| {
         // shopmain / guildsho: Buy and Sell as tabs; the open list's open, else the cursor's marked.
         if !v.bazaar && !v.wares {
             let main = if v.guild { GUILDSHO } else { SHOPMAIN };
