@@ -229,10 +229,15 @@ fn zone_block(w: &mut World) -> Option<(Dialog, u32)> {
 
 // ---- Keeping it ----
 
+/// This server's folder name (its search address).
+fn server(w: &World) -> String {
+    let (ip, port) = w.search_addr;
+    format!("{ip}-{port}")
+}
+
 /// This character's file on this server.
 fn path(w: &World, name: &str) -> std::path::PathBuf {
-    let (ip, port) = w.search_addr;
-    crate::config::regime_path(&format!("{ip}-{port}"), name)
+    crate::config::regime_path(&server(w), name)
 }
 
 fn save(w: &World) {
@@ -259,17 +264,18 @@ pub fn on_zone(w: &mut World) {
         return;
     }
     w.regime.who = w.name.clone();
-    // The server's file; with none yet, the newest by-name file of an earlier build that reads (a kept `null` is a
-    // cancel, not a failure).
+    // The server's file; with none yet, the data dir's one when FFXI_CONFIG moved the folder, then the newest by-name
+    // file of an earlier build that reads (a kept `null` is a cancel, not a failure). The next save writes the own one.
     let read = |p: &std::path::PathBuf| std::fs::read(p).ok().and_then(|b| serde_json::from_slice::<Option<Regime>>(&b).ok());
     let own = path(w, &w.name);
+    let moved = || crate::config::regime_moved_path(&server(w), &w.name).and_then(|p| Some((read(&p)?, p)));
     let kept = match read(&own) {
         Some(r) => Some((r, own)),
-        None => {
+        None => moved().or_else(|| {
             let mut old: Vec<_> = crate::config::regime_legacy_paths(&w.name).into_iter().filter_map(|p| Some((std::fs::metadata(&p).and_then(|m| m.modified()).ok()?, p))).collect();
             old.sort_by(|a, b| b.0.cmp(&a.0));
             old.into_iter().find_map(|(_, p)| Some((read(&p)?, p)))
-        }
+        }),
     };
     w.regime.state = kept.as_ref().and_then(|(r, _)| r.clone());
     if let Some((Some(r), p)) = &kept {

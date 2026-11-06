@@ -57,9 +57,23 @@ pub fn regime_path(server: &str, name: &str) -> PathBuf {
     regime_dir().join(server).join(name_file(name))
 }
 
-/// Where earlier builds kept a character's regime (by name alone), read when the server's own file is not there yet.
+/// Where earlier builds kept a character's regime (by name alone), read when the server's own file is not there yet;
+/// with FFXI_CONFIG, the data dir's by-name file too.
 pub fn regime_legacy_paths(name: &str) -> Vec<PathBuf> {
-    vec![regime_dir().join(name_file(name))]
+    let mut v = vec![regime_dir().join(name_file(name))];
+    v.extend(regime_moved(std::env::var_os("FFXI_CONFIG").is_some()).map(|d| d.join(name_file(name))));
+    v
+}
+
+/// With FFXI_CONFIG, the data dir's file for this server and character: builds up to 1.0.5 kept every run's regime
+/// there, so it is read before the by-name files while the one beside the config is not there yet.
+pub fn regime_moved_path(server: &str, name: &str) -> Option<PathBuf> {
+    regime_moved(std::env::var_os("FFXI_CONFIG").is_some()).map(|d| d.join(server).join(name_file(name)))
+}
+
+/// The data dir's regime folder when FFXI_CONFIG puts the current one elsewhere.
+fn regime_moved(config_copy: bool) -> Option<PathBuf> {
+    config_copy.then(|| data_dir().join("regime"))
 }
 
 /// The servers' certificate fingerprints (net/tls.rs): in the data dir, or beside an FFXI_CONFIG copy.
@@ -606,6 +620,13 @@ mod tests {
         let Ok(before) = serde_json::from_slice::<serde_json::Value>(&b) else { return };
         let c: Config = serde_json::from_slice(&b).expect("the config parses");
         assert!(kept(&before, &written(&c)));
+    }
+
+    /// Only a config copy (FFXI_CONFIG) moves the regime folder, so only then is the data dir's read as well.
+    #[test]
+    fn regime_moved_with_a_config_copy() {
+        assert_eq!(super::regime_moved(false), None);
+        assert_eq!(super::regime_moved(true), Some(super::data_dir().join("regime")));
     }
 
     #[test]
