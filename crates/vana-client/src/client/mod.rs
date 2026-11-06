@@ -7262,6 +7262,11 @@ fn dir_from_forward(f: Vec3) -> u8 {
     ((theta / std::f32::consts::TAU * 256.0).rem_euclid(256.0)) as u8
 }
 
+/// A fixed-model actor (FUN_10084400 2 / 7: one model id, not race + gear), which has no mv? motions.
+fn fixed_model(a: &Actor) -> bool {
+    matches!(a.source, Some(Source::Npc(crate::dat::npc::NpcLook::Model(_))))
+}
+
 fn forward_from_dir(dir: u8) -> Vec3 {
     let theta = dir as f32 / 256.0 * std::f32::consts::TAU;
     Vec3::new(theta.cos(), 0.0, -theta.sin())
@@ -11217,10 +11222,16 @@ impl App {
         }
         world.step_ticks += dt * 60.0;
         let speed = own_speed(world);
-        // FUN_100a8000, under the strafe lock only (ours: not the right drag): backing up goes at a third of the speed
-        // (vt+0x1b0), sideways at a fixed 0.0625 a tick (0.125 riding), whatever the speed or the stick.
+        // FUN_100a8000, under the strafe lock or locked on (ours: not the right drag): backing up goes at a third of the
+        // speed (vt+0x1b0), sideways at a fixed 0.0625 a tick (0.125 riding), whatever the speed or the stick.
         let riding = matches!(world.my_motion.status, 5 | 0x55);
-        let lock_dir = if face_cam && stepping && lock_target.is_none() {
+        // Locked on (FUN_100a7b80), every control type: the same quarters and speeds against the way to the target.
+        let to_target = lock_target.map(|tp| Vec3::new(tp.x - world.pos.x, 0.0, tp.z - world.pos.z).normalize_or(Vec3::Z));
+        let lock_dir = if !stepping {
+            0
+        } else if let Some(f) = to_target {
+            crate::motion::strafe_dir(f, step)
+        } else if face_cam {
             // The same facing as my_strafe below: the float one while the byte is still ours.
             let dir = world.net.me.lock().map_or(0, |m| m.dir);
             let f = world.my_face.filter(|f| f.0 == dir).map_or_else(|| forward_from_dir(dir), |f| f.1);
@@ -11346,7 +11357,9 @@ impl App {
             // FUN_100a80d0: with the heading held (the strafe lock; ours also the right drag's facing), the step's
             // quarter about it, the sectors 90 degrees wide and centred on the axes.
             let held = (face_cam || world.mouse_look) && pin.is_none() && lock_target.is_none();
-            world.my_strafe = if held && stepping {
+            world.my_strafe = if lock_target.is_some() && pin.is_none() {
+                lock_dir
+            } else if held && stepping {
                 let f = world.my_face.filter(|f| f.0 == me.dir).map_or_else(|| forward_from_dir(me.dir), |f| f.1);
                 crate::motion::strafe_dir(f, step)
             } else {
@@ -14414,7 +14427,7 @@ impl App {
                         (None, None) if a.jump >= 0.0 && matches!(status, 0 | 1) => ("jmp".to_string(), 1.0, false, crate::motion::BLEND_TICKS),
                         (None, None) => {
                             // FUN_100c8bb0: our strafe / backpedal motions over the walk / run, at its rate.
-                            let (n, r) = crate::motion::choose_strafed(&a.motion_names.unwrap_or(ch.motions), status, ratio, if *id == me { my_strafe } else { 0 });
+                            let (n, r) = crate::motion::choose_strafed(&a.motion_names.unwrap_or(ch.motions), status, ratio, if *id == me { my_strafe } else { 0 }, fixed_model(a));
                             // FUN_100c6380: a status motion the model lacks is not queued (FUN_100cb8e0 fails, +0x1f6
                             // stays), so what plays goes on: the walk of an NPC without a run.
                             if !has(n) && !a.motion.is_empty() && has(&a.motion) {
@@ -14518,7 +14531,7 @@ impl App {
                     let (base, base_rate) = match a.play.as_ref().filter(|_| held) {
                         Some(p) => (p.base.clone(), a.base_rate_now),
                         None => {
-                            let (b, r) = crate::motion::choose_strafed(&a.motion_names.unwrap_or(ch.motions), status, ratio, if *id == me { my_strafe } else { 0 });
+                            let (b, r) = crate::motion::choose_strafed(&a.motion_names.unwrap_or(ch.motions), status, ratio, if *id == me { my_strafe } else { 0 }, fixed_model(a));
                             (b.to_string(), r)
                         }
                     };

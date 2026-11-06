@@ -15,4 +15,4 @@ From FFXiMain.dll (Steven's unpacked copy; 0x100c6b70 / 0x100c4390 are inside FU
   (0.125 riding), whatever the speed or the stick. Ours: the same under the strafe lock (update_movement's step);
   the right drag (ours, not retail) keeps the normal speed.
 - Ours: World::my_strafe (motion::strafe_dir) while the strafe lock is held, and also while the right drag holds the
-  facing (ours, not retail), and motion::strafe over our walk / run. The FUN_10084400 == 2 case is not done.
+  facing (ours, not retail), and motion::strafe over our walk / run. The FUN_10084400 == 2 case: see 2026-11-05-lock-on-strafe.

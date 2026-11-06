@@ -131,10 +131,17 @@ pub fn strafe(dir: u8, riding: bool) -> Option<&'static str> {
     }
 }
 
-/// `choose`, then `strafe` over it when it picked the walk or run (a status motion such as seated stays).
-pub fn choose_strafed(names: &MotionNames, status: u8, ratio: f32, dir: u8) -> (&'static str, f32) {
+/// `choose`, then `strafe` over it when it picked the walk or run (a status motion such as seated stays). `fixed`: a
+/// fixed-model actor (FUN_10084400 2 / 7, no mv? motions) takes its walk for 2..4 instead (0x100c8d5e).
+pub fn choose_strafed(names: &MotionNames, status: u8, ratio: f32, dir: u8, fixed: bool) -> (&'static str, f32) {
     let (n, r) = choose(names, status, ratio);
-    if n == names.walk || n == names.run { (strafe(dir, matches!(status, 5 | 0x55)).unwrap_or(n), r) } else { (n, r) }
+    if n != names.walk && n != names.run {
+        (n, r)
+    } else if fixed && matches!(dir, 2..=4) {
+        (names.walk, r)
+    } else {
+        (strafe(dir, matches!(status, 5 | 0x55)).unwrap_or(n), r)
+    }
 }
 
 #[cfg(test)]
@@ -156,9 +163,10 @@ mod tests {
         assert_eq!((strafe(2, false), strafe(3, true), strafe(4, true), strafe(1, false)), (Some("mvr"), Some("mvb"), Some("wlk"), None));
         // Only over the walk / run: seated (47) keeps si1, standing keeps idl.
         let n = MotionNames::default();
-        assert_eq!(choose_strafed(&n, 0, 0.5, 4).0, "mvl");
-        assert_eq!(choose_strafed(&n, 47, 0.5, 4).0, "si1");
-        assert_eq!(choose_strafed(&n, 0, 0.0, 4).0, "idl");
+        assert_eq!(choose_strafed(&n, 0, 0.5, 4, false).0, "mvl");
+        assert_eq!(choose_strafed(&n, 0, 0.9, 4, true).0, "wlk");
+        assert_eq!(choose_strafed(&n, 47, 0.5, 4, false).0, "si1");
+        assert_eq!(choose_strafed(&n, 0, 0.0, 4, false).0, "idl");
     }
 
     #[test]
