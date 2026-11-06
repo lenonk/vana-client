@@ -193,6 +193,10 @@ Milestone 1:
   character in config `modern_places`, saved when the pointer is let go. Only the chat window resizes, by the glyph
   in its corner: more room for the lines, nothing scales. Its settings button (the tabs' right) sets the font size
   (config `modern_chat_font`, 10 .. 32, default 15). User's call (2026-10-26): no lock button, no other resizing.
+- The chat settings' Tabs (2026-11-06, issue #78): a button per tab, lit while it shows; a hidden tab leaves the row
+  (its lines still show on All), All always stays, and the open tab going hidden opens All (config
+  `modern_chat_hidden`, by name). Num+ skips hidden tabs. Tabs that don't fit before the settings button are left
+  out, the open one always kept (those before it give way).
 - The top bar: retail's titlewin, helpwind (marquee, busy strip, "Help" legend) and netstat (meter, %, S / R) in
   their places and by their fade rule (hudtop.rs fills a TopView), in the pack's frames on a layer that takes no input.
 - The chat window runs the retail log's rule (logwin::LogAnim, shared with the retail log) on its wrapped rows:

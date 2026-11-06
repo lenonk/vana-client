@@ -272,6 +272,8 @@ pub struct Config {
     pub modern_battle_in_all: bool,
     /// The modern chat merges an action's lines that differ only in their number (BattleMod's condensing).
     pub modern_condense: bool,
+    /// The modern chat's tabs hidden by its settings, by name (All always shows).
+    pub modern_chat_hidden: Vec<String>,
     /// The list search's recent picks by character, newest first (listsearch.rs).
     pub modern_recent: std::collections::BTreeMap<String, Vec<String>>,
     /// The modern UI's mode presets (client/modern/modes.rs).
@@ -473,6 +475,7 @@ impl Default for Config {
             modern_scan_kinds: 7,
             modern_battle_in_all: true,
             modern_condense: true,
+            modern_chat_hidden: Vec::new(),
             modern_recent: Default::default(),
             modern_modes: Default::default(),
             modern_favourites: Default::default(),

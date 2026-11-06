@@ -29,6 +29,34 @@ pub const TABS: [(&str, &[u8]); 11] = [
 ];
 const BATTLE_TAB: u8 = 10;
 
+/// Whether tab `i` is in the tab row: All always, the others unless the settings hide them (by name).
+fn tab_shown(hidden: &[String], i: usize) -> bool {
+    i == 0 || TABS.get(i).is_some_and(|t| !hidden.iter().any(|h| h == t.0))
+}
+
+/// The tabs that fit in `room` from their widths (index, width), in order, 3 apart; the open tab always among them
+/// (the ones before it give way from the end).
+fn fitting(tabs: &[(usize, f32)], open: usize, room: f32) -> Vec<(usize, f32)> {
+    let mut out: Vec<(usize, f32)> = Vec::new();
+    let mut x = 0.0;
+    for &(i, w) in tabs {
+        if x + w > room {
+            break;
+        }
+        out.push((i, w));
+        x += w + 3.0;
+    }
+    if !out.iter().any(|t| t.0 == open)
+        && let Some(&t) = tabs.iter().find(|t| t.0 == open)
+    {
+        while !out.is_empty() && out.iter().map(|t| t.1 + 3.0).sum::<f32>() + t.1 > room {
+            out.pop();
+        }
+        out.push(t);
+    }
+    out
+}
+
 /// A line of this mode shows on tab `tab`; All leaves the battle lines out when `battle_in_all` is off.
 fn shows(tab: u8, mode: u16, battle_in_all: bool) -> bool {
     match tab {
@@ -134,21 +162,25 @@ pub fn line_job(stamp: (&str, Color32), line: &str, base: [u8; 4], font: &FontId
 }
 
 /// The tab row at the window's fade, the settings button at its right: the button's rect and whether it was clicked.
-fn tabs(ui: &mut Ui, m: &Modern, alpha: f32, unread: &[u32; 11]) -> (Rect, bool) {
+/// The tabs the settings hide are left out, and those past the button too (the open one stays).
+fn tabs(ui: &mut Ui, m: &Modern, alpha: f32, unread: &[u32; 11], hidden: &[String]) -> (Rect, bool) {
     let tab = m.chat_tab.get();
     let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), TAB_H), Sense::hover());
     let font = FontId::proportional(m.theme.small);
     let mut x = row.min.x;
     // The tabs on a baseline up to the settings button; the open one painted last, over the baseline.
-    super::tabs::baseline(ui.painter(), m, Rect::from_min_max(row.min, pos2(row.max.x - row.height() - 4.0, row.min.y + super::tabs::H)), alpha);
+    let end = row.max.x - row.height() - 4.0;
+    super::tabs::baseline(ui.painter(), m, Rect::from_min_max(row.min, pos2(end, row.min.y + super::tabs::H)), alpha);
+    let widths: Vec<(usize, f32)> = (0..TABS.len()).filter(|&i| tab_shown(hidden, i)).map(|i| (i, super::tabs::width(ui, TABS[i].0, &font, 56.0))).collect();
     let mut open_tab = None;
-    for (i, (name, _)) in TABS.iter().enumerate() {
-        let r = Rect::from_min_size(pos2(x, row.min.y), vec2(super::tabs::width(ui, name, &font, 56.0), super::tabs::H));
+    for (i, w) in fitting(&widths, tab as usize, end - row.min.x) {
+        let name = TABS[i].0;
+        let r = Rect::from_min_size(pos2(x, row.min.y), vec2(w, super::tabs::H));
         x = r.max.x + 3.0;
         let resp = ui.interact(r, ui.scope_id().with(("chat tab", i)), Sense::click());
         let state = super::tabs::State { open: i == tab as usize, hover: resp.hovered(), cursor: false };
         if state.open {
-            open_tab = Some((r, *name));
+            open_tab = Some((r, name));
         } else {
             super::tabs::paint(ui.painter(), m, r, name, &font, state, alpha);
         }
@@ -175,13 +207,13 @@ fn tabs(ui: &mut Ui, m: &Modern, alpha: f32, unread: &[u32; 11]) -> (Rect, bool)
         let c = if resp.hovered() || open { Color32::WHITE } else { Color32::from_gray(205) };
         ui.painter().add(paint::image(&s, g.min, g.width(), c.gamma_multiply(alpha)));
     }
-    m.tip(ui, g, "Chat settings", "The font size, battle lines in All, and their condensing.");
+    m.tip(ui, g, "Chat settings", "The font size, battle lines in All, their condensing, and which tabs show.");
     (g, resp.clicked())
 }
 
-/// The settings by the button (`at`, on the screen): the font size, - and +, the battle lines on All, their condensing.
-/// Closed by the button or a click elsewhere; true when one changed.
-fn settings(ctx: &egui::Context, m: &Modern, at: Rect, size: &mut f32, battle_in_all: &mut bool, condense: &mut bool) -> bool {
+/// The settings by the button (`at`, on the screen): the font size, - and +, the battle lines on All, their condensing,
+/// the tabs shown (All always). Closed by the button or a click elsewhere; true when one changed.
+fn settings(ctx: &egui::Context, m: &Modern, at: Rect, size: &mut f32, battle_in_all: &mut bool, condense: &mut bool, hidden: &mut Vec<String>) -> bool {
     let mut changed = false;
     // Below the button, or above it when the chat window sits in the screen's lower half.
     let up = at.center().y > ctx.content_rect().center().y;
@@ -244,6 +276,32 @@ fn settings(ctx: &egui::Context, m: &Modern, at: Rect, size: &mut f32, battle_in
                         changed = true;
                     }
                 }
+            });
+            ui.add_space(6.0);
+            // The tabs (not retail): each lit while it shows; a hidden tab's lines still show on All.
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                let (r, _) = ui.allocate_exact_size(vec2(96.0, 28.0), Sense::hover());
+                ui.painter().text(pos2(r.min.x, r.center().y), egui::Align2::LEFT_CENTER, "Tabs", FontId::proportional(m.theme.ui), m.theme.color("text"));
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 4.0;
+                    for row in (1..TABS.len()).collect::<Vec<_>>().chunks(3) {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            for &i in row {
+                                let shown = tab_shown(hidden, i);
+                                if super::craft::button(ui, m, TABS[i].0, 104.0, shown, false) {
+                                    if shown {
+                                        hidden.push(TABS[i].0.to_string());
+                                    } else {
+                                        hidden.retain(|h| h != TABS[i].0);
+                                    }
+                                    changed = true;
+                                }
+                            }
+                        });
+                    }
+                });
             });
         });
         let r = inner.response.rect;
@@ -463,8 +521,9 @@ fn wrap_width(room: Vec2) -> f32 {
 /// while more than a row away, then a sixth), new rows slide in, and with none it goes on folding down through its
 /// chrome until it is gone, carrying what rides on it. The full log closes it, as retail closes the small logs.
 pub fn panel(p: &mut Panels, w: &mut World) {
-    // A message waiting for a key (an NPC talking) shows on All: the channel tabs never show it (retail's either).
-    if super::super::event::prompt(w) && p.m.chat_tab.get() != 0 {
+    // A message waiting for a key (an NPC talking) shows on All: the channel tabs never show it (retail's either). A
+    // tab the settings hid goes back to All too.
+    if (super::super::event::prompt(w) || !tab_shown(p.chat_hidden, p.m.chat_tab.get() as usize)) && p.m.chat_tab.get() != 0 {
         p.m.chat_tab.set(0);
     }
     if w.full_log.is_some() {
@@ -571,8 +630,10 @@ fn empty_tab(p: &egui::Painter, m: &Modern, tab: u8, at: egui::Pos2, size: f32) 
 fn full(p: &mut Panels, w: &mut World) {
     let Some(fl) = w.full_log else { return };
     let m = p.m;
+    // Num+ (the full log's tab key): the next tab in the row.
     if std::mem::take(&mut w.full_log_next) {
-        m.chat_tab.set((m.chat_tab.get() + 1) % TABS.len() as u8);
+        let next = (1..=TABS.len()).map(|d| (m.chat_tab.get() as usize + d) % TABS.len()).find(|&i| tab_shown(p.chat_hidden, i)).unwrap_or(0);
+        m.chat_tab.set(next as u8);
     }
     let size = *p.chat_font;
     let font = FontId::proportional(size);
@@ -601,9 +662,11 @@ fn full(p: &mut Panels, w: &mut World) {
     let mut button = (Rect::NOTHING, false);
     let (mut short, mut hovered) = (None, false);
     let (mut clicked, mut picked) = (None, None);
+    // The hidden tabs out of `p` for the frame (the window's closure can't borrow it), back after.
+    let hidden = std::mem::take(p.chat_hidden);
     let r = p.show("chat", Show { size: default_room(p.ctx), resizable: true, height: Some(height), ..Default::default() }, |ui, room| {
         ui.spacing_mut().item_spacing.y = 0.0;
-        button = tabs(ui, m, 1.0, &v.unread);
+        button = tabs(ui, m, 1.0, &v.unread, &hidden);
         ui.add_space(GAP);
         let (area, resp) = ui.allocate_exact_size(vec2(ui.available_width(), lines_h), Sense::click_and_drag());
         hovered = resp.hovered();
@@ -708,7 +771,8 @@ fn full(p: &mut Panels, w: &mut World) {
     if button.1 {
         m.chat_settings.set(!m.chat_settings.get());
     }
-    if r.is_some() && m.chat_settings.get() && settings(p.ctx, m, button.0, p.chat_font, p.battle_in_all, p.condense) {
+    *p.chat_hidden = hidden;
+    if r.is_some() && m.chat_settings.get() && settings(p.ctx, m, button.0, p.chat_font, p.battle_in_all, p.condense, p.chat_hidden) {
         *p.changed = true;
     }
     chatsel::apply(m, w);
@@ -748,9 +812,11 @@ pub fn draw(p: &mut Panels, v: &ChatView, s: Shown, lift: bool) {
     };
     let mut button = (Rect::NOTHING, false);
     // Below its chrome it folds into its bottom edge, what rides on it going down with it.
+    // The hidden tabs out of `p` for the frame (the window's closure can't borrow it), back after.
+    let hidden = std::mem::take(p.chat_hidden);
     let r = p.show("chat", Show { size: default_room(p.ctx), resizable: true, height: Some(height), fold: total / height, ..Default::default() }, |ui, room| {
         ui.spacing_mut().item_spacing.y = 0.0;
-        button = tabs(ui, m, 1.0, &v.unread);
+        button = tabs(ui, m, 1.0, &v.unread, &hidden);
         ui.add_space(GAP);
         let (area, resp) = ui.allocate_exact_size(vec2(ui.available_width(), lines_h), Sense::click_and_drag());
         let wrap = wrap_width(room);
@@ -812,14 +878,28 @@ pub fn draw(p: &mut Panels, v: &ChatView, s: Shown, lift: bool) {
     if button.1 {
         m.chat_settings.set(!m.chat_settings.get());
     }
-    if r.is_some() && m.chat_settings.get() && settings(p.ctx, m, button.0, p.chat_font, p.battle_in_all, p.condense) {
+    *p.chat_hidden = hidden;
+    if r.is_some() && m.chat_settings.get() && settings(p.ctx, m, button.0, p.chat_font, p.battle_in_all, p.condense, p.chat_hidden) {
         *p.changed = true;
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::mentions;
+    use super::{fitting, mentions, tab_shown};
+
+    /// Tabs past the settings button are left out, but the open one stays (the ones before it give way).
+    #[test]
+    fn tabs_fit_with_the_open_one() {
+        let w = [(0, 50.0), (1, 50.0), (2, 50.0), (3, 50.0)];
+        let ids = |v: Vec<(usize, f32)>| v.into_iter().map(|t| t.0).collect::<Vec<_>>();
+        assert_eq!(ids(fitting(&w, 0, 1000.0)), [0, 1, 2, 3]);
+        assert_eq!(ids(fitting(&w, 1, 160.0)), [0, 1, 2]);
+        assert_eq!(ids(fitting(&w, 3, 160.0)), [0, 1, 3]);
+        // All stays whatever is hidden.
+        let hidden = vec!["All".to_string(), "Say".to_string()];
+        assert!(tab_shown(&hidden, 0) && !tab_shown(&hidden, 1) && tab_shown(&hidden, 2));
+    }
 
     #[test]
     fn mention_words() {

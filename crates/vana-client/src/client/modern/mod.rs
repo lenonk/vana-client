@@ -286,7 +286,7 @@ impl Modern {
         let had_own = own.is_some();
         let mut layout = own.or_else(|| cfg.modern_places.get(&w.name).cloned()).unwrap_or_default();
         let mut changed = false;
-        let mut p = Panels { m: self, ctx, gu: Some(gu), layout: &mut layout, vis, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, battle_in_all: &mut cfg.modern_battle_in_all, condense: &mut cfg.modern_condense, folded: &mut cfg.modern_folded, scan_kinds: &mut cfg.modern_scan_kinds, this: HashMap::new(), retail: HashMap::new(), focus, hidden: modern_hidden(w) };
+        let mut p = Panels { m: self, ctx, gu: Some(gu), layout: &mut layout, vis, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, battle_in_all: &mut cfg.modern_battle_in_all, condense: &mut cfg.modern_condense, chat_hidden: &mut cfg.modern_chat_hidden, folded: &mut cfg.modern_folded, scan_kinds: &mut cfg.modern_scan_kinds, this: HashMap::new(), retail: HashMap::new(), focus, hidden: modern_hidden(w) };
         // The chat window first: what sits on it places by this frame's height.
         self.chat_edge.set(None);
         chat::panel(&mut p, w);
@@ -477,6 +477,8 @@ struct Panels<'a> {
     battle_in_all: &'a mut bool,
     /// An action's battle lines merge (config modern_condense).
     condense: &'a mut bool,
+    /// The chat tabs hidden (config modern_chat_hidden).
+    chat_hidden: &'a mut Vec<String>,
     folded: &'a mut std::collections::BTreeMap<String, bool>,
     scan_kinds: &'a mut u8,
     /// The panels drawn this frame, as others dock on them (the chat window while it fades: its bottom edge).
@@ -1442,7 +1444,7 @@ mod panel_tests {
             let mut o = ctx.run_ui(raw, |ui| {
                 let ctx = ui.ctx();
                 let (mut changed, mut chat_font) = (false, 14.0);
-                let mut p = Panels { m: &m, ctx, gu: None, layout: &mut layout, vis: Default::default(), changed: &mut changed, chat_font: &mut chat_font, battle_in_all: &mut true, condense: &mut true, folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: None, hidden: Vec::new() };
+                let mut p = Panels { m: &m, ctx, gu: None, layout: &mut layout, vis: Default::default(), changed: &mut changed, chat_font: &mut chat_font, battle_in_all: &mut true, condense: &mut true, chat_hidden: &mut Vec::new(), folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: None, hidden: Vec::new() };
                 let combat = p.panel("combat", None, 200.0, |ui| {
                     ui.label("Attack");
                 });
