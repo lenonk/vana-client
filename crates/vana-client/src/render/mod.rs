@@ -15,10 +15,14 @@ pub mod invwin;
 pub mod screenfx;
 pub mod movie;
 pub mod scale;
+pub mod smaa;
 pub mod postfx;
 pub mod gputime;
 pub mod cull;
 pub mod shadow;
+pub mod sunshadow;
+pub mod lampshadow;
+pub mod ssao;
 pub mod sway;
 
 use crate::dat::zone::ZoneScene;
@@ -411,6 +415,22 @@ pub struct ZoneRenderer {
     sil_layout: wgpu::BindGroupLayout,
     sil_pipeline: wgpu::RenderPipeline,
     shadows: Option<shadow::Shadows>,
+    /// Real character shadows (render/sunshadow.rs; prepare_sun_shadow), and whether render drew them this frame
+    /// (the client then leaves retail's out).
+    sun_depth_pipeline: wgpu::RenderPipeline,
+    lamp_depth_pipeline: wgpu::RenderPipeline,
+    sun_shadow: Option<sunshadow::SunShadow>,
+    /// Ambient occlusion on the scenery (render/ssao.rs; prepare_ssao).
+    ssao: Option<ssao::Ssao>,
+    pub sun_shadow_drawn: std::cell::Cell<bool>,
+    /// Lamp shadows (render/lampshadow.rs): the maps (always made; bound in `globals`) and this frame's lamps (light
+    /// slot, matrix; empty = none), which the client sets.
+    lamp_shadow: lampshadow::LampShadows,
+    pub lamp_shadows: Vec<(u32, Mat4)>,
+    /// The real shadows' level from the Vana'diel clock (sunshadow::twilight; 0 at the sun / moon change) and their PCF
+    /// spacing (softer by the moon).
+    pub shadow_level: f32,
+    pub shadow_soft: f32,
     refract_buf: wgpu::Buffer,
     refract_group: wgpu::BindGroup,
     /// The refraction pass's scene copy (DAT_10456e6c: scene size, one per frame per refracting actor).
@@ -892,6 +912,10 @@ pub struct ZonePipes {
     /// The shadow silhouette pass (render/shadow.rs): its group 3 layout and pipeline.
     sil_layout: wgpu::BindGroupLayout,
     sil_pipeline: wgpu::RenderPipeline,
+    /// Real character shadows (render/sunshadow.rs, render/lampshadow.rs): the actors' depth from the sun (with
+    /// their feet heights) and from a lamp.
+    sun_depth_pipeline: wgpu::RenderPipeline,
+    lamp_depth_pipeline: wgpu::RenderPipeline,
     /// The scenery's frustum culling (render/cull.rs): its group 3 layout, the visibility and compaction passes.
     cull_layout: wgpu::BindGroupLayout,
     cull: [wgpu::ComputePipeline; 2],
@@ -936,6 +960,20 @@ impl ZonePipes {
                     ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
                     count: None,
                 },
+                // Lamp shadows (render/lampshadow.rs): their uniform, maps and comparison sampler.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2Array, multisampled: false },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry { binding: 7, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison), count: None },
             ],
         });
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1141,6 +1179,35 @@ impl ZonePipes {
             multiview_mask: None,
             cache: None,
         });
+        // Real character shadows (ours): the actors' depth from the sun or a lamp through the light matrix at group 3,
+        // both sides, textures ignored as the silhouette's. The sun's also writes each caster's feet height
+        // (sunshadow::FEET_FORMAT), which its shadow fades against.
+        let shadow_depth = |label: &str, feet: bool| {
+            let targets = [Some(wgpu::ColorTargetState { format: sunshadow::FEET_FORMAT, blend: None, write_mask: wgpu::ColorWrites::ALL })];
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some(label),
+                    bind_group_layouts: &[Some(&globals_layout), Some(&texture_layout), Some(&pose_layout), Some(&sil_layout)],
+                    immediate_size: 0,
+                })),
+                vertex: wgpu::VertexState { module: &shader, entry_point: Some(if feet { "vs_skinned_sun" } else { "vs_skinned_silhouette" }), compilation_options: Default::default(), buffers: &skin_buffers },
+                primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
+                    stencil: Default::default(),
+                    bias: wgpu::DepthBiasState { constant: 2, slope_scale: 2.0, clamp: 0.0 },
+                }),
+                multisample: Default::default(),
+                fragment: feet.then(|| wgpu::FragmentState { module: &shader, entry_point: Some("fs_sun_feet"), compilation_options: Default::default(), targets: &targets }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let sun_depth_pipeline = shadow_depth("sun shadow depth", true);
+        let lamp_depth_pipeline = shadow_depth("lamp shadow depth", false);
         // The shine overlay (FUN_10024e10's second pass): additive (SRCALPHA / ONE), z tested (as drawn) but not written.
         let shine_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("shine"),
@@ -1368,7 +1435,7 @@ impl ZonePipes {
         let cull_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("cull"), bind_group_layouts: &[Some(&globals_layout), None, None, Some(&cull_layout)], immediate_size: 0 });
         let make_cull = |entry: &str| device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some(entry), layout: Some(&cull_pl), module: &shader, entry_point: Some(entry), compilation_options: Default::default(), cache: None });
         let cull = [make_cull("cs_cull_vis"), make_cull("cs_cull_compact")];
-        Self { globals_layout, texture_layout, pose_layout, scenery, scenery_furn, scenery_bump, scenery_wire, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_wrap_layout, shine_pipeline, refract_pipeline, skin_solid_pipeline, faded_pipeline, faded_clear_pipeline, color_format, line_pipeline, world_pipelines, sil_layout, sil_pipeline, cull_layout, cull }
+        Self { globals_layout, texture_layout, pose_layout, scenery, scenery_furn, scenery_bump, scenery_wire, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_wrap_layout, shine_pipeline, refract_pipeline, skin_solid_pipeline, faded_pipeline, faded_clear_pipeline, sun_depth_pipeline, lamp_depth_pipeline, color_format, line_pipeline, world_pipelines, sil_layout, sil_pipeline, cull_layout, cull }
     }
 }
 
@@ -1758,6 +1825,7 @@ impl ZoneRenderer {
         if !geo.deltas.is_empty() {
             gpu.queue.put(&deltas, 0, bytemuck::cast_slice(&geo.deltas));
         }
+        let lamp_shadow = lampshadow::LampShadows::new(gpu, &p.sil_layout);
         let globals = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("globals"),
             layout: &p.globals_layout,
@@ -1767,6 +1835,9 @@ impl ZoneRenderer {
                 wgpu::BindGroupEntry { binding: 2, resource: areas.as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 3, resource: parts_gpu.as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 4, resource: deltas.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 5, resource: lamp_shadow.uniform.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::TextureView(&lamp_shadow.array) },
+                wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::Sampler(&lamp_shadow.cmp) },
             ],
         });
         let sampler = mip_sampler(device);
@@ -1858,6 +1929,15 @@ impl ZoneRenderer {
             sil_layout: p.sil_layout,
             sil_pipeline: p.sil_pipeline,
             shadows: None,
+            sun_depth_pipeline: p.sun_depth_pipeline,
+            lamp_depth_pipeline: p.lamp_depth_pipeline,
+            sun_shadow: None,
+            ssao: None,
+            sun_shadow_drawn: std::cell::Cell::new(false),
+            lamp_shadow,
+            lamp_shadows: Vec::new(),
+            shadow_level: 1.0,
+            shadow_soft: 1.0,
             refract_buf,
             refract_group,
             refract_copy: None,
@@ -2776,6 +2856,47 @@ impl ZoneRenderer {
         if let Some(c) = self.sub.as_ref().filter(|s| s.shown).and_then(|s| s.cull.as_ref()) {
             c.run(encoder, &self.globals, &self.cull_pipes);
         }
+        // Real character shadows (render/sunshadow.rs): the actors' depth from the zone's sun, laid on the scenery
+        // below after all the scenery (the blended too) and before the actors.
+        let sun = match (&self.sun_shadow, self.sun_shadow_light(camera.target), &self.pose_gpu) {
+            (Some(s), Some((m, d, st)), Some((_, group, _))) => Some((s, m, d, st, group)),
+            _ => None,
+        };
+        self.sun_shadow_drawn.set(sun.is_some());
+        if let Some((s, m, _, _, group)) = &sun {
+            s.set_light(gpu, *m);
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("sun shadow depth"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &s.feet, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store } })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &s.map, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.sun_depth_pipeline);
+            pass.set_bind_group(0, &self.globals, &[]);
+            pass.set_bind_group(3, &s.matrix_group, &[0]);
+            self.draw_actor_depth(&mut pass, actors, group, done);
+        }
+        // Lamp shadows (render/lampshadow.rs): each shadowed lamp's characters into its layer; the zone shader reads them.
+        let lamps: &[(u32, Mat4)] = if self.pose_gpu.is_some() { &self.lamp_shadows } else { &[] };
+        self.lamp_shadow.set(gpu, lamps);
+        if let Some((_, group, _)) = &self.pose_gpu {
+            for (k, _) in lamps.iter().enumerate().take(lampshadow::LAYERS) {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("lamp shadow depth"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &self.lamp_shadow.layers[k], depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                pass.set_pipeline(&self.lamp_depth_pipeline);
+                pass.set_bind_group(0, &self.globals, &[]);
+                pass.set_bind_group(3, &self.lamp_shadow.matrix_group, &[256 * k as u32]);
+                self.draw_actor_depth(&mut pass, actors, group, done);
+            }
+        }
         let [r, g, b] = clear;
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("zone"),
@@ -2813,7 +2934,38 @@ impl ZoneRenderer {
         pass.set_vertex_buffer(1, zone_inst.slice(..));
         pass.set_vertex_buffer(0, self.vertices.slice(..));
         pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
-        for mode in 0..4u8 {
+        // Mode 4 is no scenery: the point after the blended scenery, before the actors.
+        for mode in 0..5u8 {
+            // The ambient occlusion goes on the opaque and cut-out scenery (mode 2). The real shadows wait until the
+            // blended scenery is down too (mode 4): many ground pieces are blended layers laid over the terrain, which
+            // would otherwise cover the shadow and cut it off along their edges. They write no depth, so the pass
+            // reads the ground under them. Then the pass resumes.
+            let ssao_now = mode == 2 && self.ssao.is_some();
+            let sun_now = mode == 4 && sun.is_some();
+            if ssao_now || sun_now {
+                drop(pass);
+                if let Some(a) = self.ssao.as_ref().filter(|_| ssao_now) {
+                    a.draw(gpu, encoder, color, depth, vp, camera.eye);
+                }
+                if let Some((s, m, d, st, _)) = sun.as_ref().filter(|_| sun_now) {
+                    s.receive(gpu, encoder, color, depth, vp, *m, *d, *st, camera.eye, self.shadow_soft);
+                }
+                pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("zone (after shadows)"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: color, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store } })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: depth, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }), stencil_ops: None }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                pass.set_bind_group(0, &self.globals, &[]);
+                pass.set_vertex_buffer(1, zone_inst.slice(..));
+                pass.set_vertex_buffer(0, self.vertices.slice(..));
+                pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
+            }
+            if mode == 4 {
+                break;
+            }
             let mut bound = usize::MAX;
             let mut pipe = usize::MAX;
             for d in self.draws.iter().filter(|d| d.mode == mode) {
@@ -3012,6 +3164,56 @@ impl ZoneRenderer {
             pass.set_bind_group(2, group, &[skin.offset]);
             pass.set_bind_group(3, &self.faded_group, &[off as u32]);
             pass.draw(0..3, 0..1);
+        }
+    }
+
+    /// The skinned actors into a shadow depth pass (the sun's or a lamp's; its pipeline and groups 0 and 3 set).
+    fn draw_actor_depth(&self, pass: &mut wgpu::RenderPass<'_>, actors: &[&ActorGpu], group: &wgpu::BindGroup, done: u64) {
+        for a in actors.iter().filter(|a| a.mips <= done && a.refract.is_none() && a.alpha >= 0.5) {
+            let Some(skin) = a.skin.as_ref().filter(|s| s.frame == self.pose_frame) else { continue };
+            pass.set_bind_group(2, group, &[skin.offset]);
+            pass.set_vertex_buffer(0, skin.vertices.slice(..));
+            for (tex, range, wep) in &a.draws {
+                if *wep != NO_WEP && a.hidden_weps & (1 << wep) != 0 {
+                    continue;
+                }
+                pass.set_bind_group(1, &a.textures[*tex], &[]);
+                pass.draw(range.clone(), 0..1);
+            }
+        }
+    }
+
+    /// The real shadows' light this frame around `target` (the camera's): matrix, sun direction, strength. None when
+    /// they are off, there is no lit sun or moon (no zone lighting, a dim light) or no poses. By night `lighting` carries the moon, whose dimmer colour gives fainter shadows.
+    pub fn sun_shadow_light(&self, target: Vec3) -> Option<(Mat4, Vec3, f32)> {
+        let s = self.sun_shadow.as_ref().filter(|_| self.pose_gpu.is_some())?;
+        let l = self.lighting.as_ref()?;
+        // A light too dim to cast falls back to retail's; the dawn / dusk fade does not (it passes through zero).
+        let base = sunshadow::strength(l.diffuse);
+        (base > 0.0).then_some(())?;
+        let st = base * self.shadow_level.clamp(0.0, 1.0);
+        Some((sunshadow::light_matrix(l.dir, target, s.size)?, sunshadow::sun_direction(l.dir)?, st))
+    }
+
+    /// Ambient occlusion (ours) on or off at the scene's `size`; made at the first use.
+    pub fn prepare_ssao(&mut self, gpu: &Gpu, on: bool, size: [u32; 2]) {
+        if !on {
+            self.ssao = None;
+            return;
+        }
+        let format = self.color_format;
+        self.ssao.get_or_insert_with(|| ssao::Ssao::new(gpu, format)).resize(gpu, size);
+    }
+
+    /// Real character shadows (ours) on or off with a `size` map; made at the first use or a size change. render draws
+    /// them only with a lit sun or moon.
+    pub fn prepare_sun_shadow(&mut self, gpu: &Gpu, on: bool, size: u32) {
+        let size = if sunshadow::MAP_SIZES.contains(&size) { size } else { sunshadow::MAP_SIZE };
+        if !on {
+            self.sun_shadow = None;
+            self.sun_shadow_drawn.set(false);
+        } else if self.sun_shadow.as_ref().is_none_or(|s| s.size != size) {
+            self.sun_shadow = Some(sunshadow::SunShadow::new(gpu, &self.sil_layout, self.color_format, size));
         }
     }
 
@@ -3389,5 +3591,25 @@ mod faded_tests {
             let p = gpu.pipes.zone(f);
             assert_eq!(p.color_format, f);
         }
+    }
+
+    /// An empty zone builds its globals (the lamp shadow maps bound in them) and renders a frame with a lamp shadow
+    /// set, without validation errors.
+    #[test]
+    fn zone_renders_with_lamp_shadows() {
+        let Ok(gpu) = super::Gpu::headless() else { return };
+        let scene = crate::dat::zone::ZoneScene { regions: vec![], collision: None, placements: vec![], meshes: vec![], textures: vec![], warnings: vec![], light_keys: vec![], paths: Default::default(), camera_lists: Default::default(), sway: Default::default(), bumps: vec![] };
+        let format = wgpu::TextureFormat::Rgba8Unorm;
+        let mut r = super::ZoneRenderer::new(&gpu, &scene, format);
+        r.lamp_shadows = vec![(0, glam::Mat4::IDENTITY)];
+        let tex = gpu.device.create_texture(&wgpu::TextureDescriptor { label: None, size: wgpu::Extent3d { width: 8, height: 8, depth_or_array_layers: 1 }, mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2, format, usage: wgpu::TextureUsages::RENDER_ATTACHMENT, view_formats: &[] });
+        let depth = super::depth_view(&gpu.device, 8, 8);
+        let camera = super::Camera { eye: glam::Vec3::new(0.0, -2.0, 5.0), target: glam::Vec3::ZERO, up: glam::Vec3::NEG_Y, fov_y: 1.0 };
+        let scope = gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let mut enc = gpu.device.create_command_encoder(&Default::default());
+        r.render(&gpu, &mut enc, &tex.create_view(&Default::default()), &depth, &camera, 1.0, &[]);
+        gpu.queue.submit([enc.finish()]);
+        let err = pollster::block_on(scope.pop());
+        assert!(err.is_none(), "{err:?}");
     }
 }

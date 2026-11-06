@@ -1031,6 +1031,18 @@ impl GameUi {
         Some(win.children.into_iter().filter(|(id, _)| *id <= 2).collect())
     }
 
+    /// Ours: the yes / no window's warning icon (ptc6yesn child 3's sprite) at (x, y), for a warning next to a label.
+    /// Returns its width (0 when the layout is missing).
+    pub fn warning_icon(&mut self, x: f32, y: f32) -> f32 {
+        let ui = &self.data.lobby;
+        let Some(c) = ui.menu("menu    ptc6yesn").and_then(|m| m.elements.iter().find(|e| e.id == 3)) else { return 0.0 };
+        let Some(r) = c.refs.iter().find(|r| r.kind == 0) else { return 0.0 };
+        let Some(lib) = ui.lib(&r.lib) else { return 0.0 };
+        let k = r.index as usize;
+        self.batch.push_sprite(ui, lib, k, x, y, 1.0, 1.0, 0x8080_8080, 0);
+        screens::sprite_width(lib, k)
+    }
+
     /// menu ok (FUN_102319a0), centred: the text in the frame rect, 28 px off the bottom, and its OK child.
     pub fn ok_window(&mut self, text: &str, w: f32, h: f32) -> Option<[f32; 4]> {
         let win = self.lobby_window("menu    ok", w, h, true, Some(1), true, &[])?;
