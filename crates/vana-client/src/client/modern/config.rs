@@ -504,7 +504,7 @@ fn topic_detail(gu: Option<&GameUi>, c: &ConfigUi, v: &Values, all: &[Line], k: 
                     Some(gu) => topic_help(gu, c, v, all, k),
                     None => topic_help_ours(all, k),
                 };
-                let mut facts = vec![("Retail", if retail { "Yes" } else { "No (ours)" }.to_string())];
+                let mut facts = vec![("Retail", if retail { "Yes" } else { "No (Vana Client)" }.to_string())];
                 if find {
                     facts.push(("Page", page.to_string()));
                 }
@@ -1724,7 +1724,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             }));
             });
             if let Some(k) = c.m_sub.filter(|_| keys.is_none()) {
-                detail = Detail { name: SUBS[k].0.into(), text: SUBS[k].2.into(), facts: vec![("Retail", if k < SUB_MODS { "Yes" } else { "No (ours)" }.into())] };
+                detail = Detail { name: SUBS[k].0.into(), text: SUBS[k].2.into(), facts: vec![("Retail", if k < SUB_MODS { "Yes" } else { "No (Vana Client)" }.into())] };
             }
             ui.add_space(16.0);
             details(ui, m, &detail);
