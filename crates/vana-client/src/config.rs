@@ -213,6 +213,8 @@ pub struct Config {
     /// The drawn cursor's size (config 0021 off) in percent of retail's pixels on screen; 0 = auto (grows with the
     /// window height from 720). Not retail: it was sized for 640 x 480. The .ani cursors keep their own size.
     pub cursor_size: u32,
+    /// A key press hides the mouse cursor until the mouse moves (retail, FUN_10125f70(0)); off keeps it shown (ours).
+    pub keys_hide_cursor: bool,
     /// Ours (user, 2026-11-02): Mouse/Cam.'s Camera Keys, the keys' X / Y sense apart from the mouse: 0 Same (the
     /// camera rows, keys and mouse alike, as retail), 1 normal, 2 inverted.
     pub cam_keys_x: u32,
@@ -409,6 +411,7 @@ impl Default for Config {
             minimap_span: 160.0,
             rest_tick: None,
             cursor_size: 0,
+            keys_hide_cursor: true,
             cam_keys_x: 0,
             cam_keys_y: 0,
             auto_sort: 0,

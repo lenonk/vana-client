@@ -45,6 +45,7 @@ pub struct Settings {
     pub monitor: String,
     pub gpu: String,
     pub cursor_size: u32,
+    pub keys_hide_cursor: bool,
     pub modern_ui: bool,
     pub modern_scale: u32,
     pub modern_opacity: u32,
@@ -94,6 +95,7 @@ impl Settings {
             monitor: c.monitor.clone(),
             gpu: c.gpu.clone(),
             cursor_size: c.cursor_size,
+            keys_hide_cursor: c.keys_hide_cursor,
             modern_ui: c.modern_ui,
             modern_scale: c.modern_scale,
             modern_opacity: pct(c.modern_opacity),
@@ -135,6 +137,7 @@ impl Settings {
         c.minimap_size = self.minimap_size;
         c.retail_aspect = self.retail_aspect;
         c.cursor_size = self.cursor_size;
+        c.keys_hide_cursor = self.keys_hide_cursor;
         c.modern_ui = self.modern_ui;
         c.modern_scale = self.modern_scale;
         c.modern_opacity = self.modern_opacity as f32 / 100.0;
@@ -194,6 +197,7 @@ enum Val {
     Effects,
     RetailAspect,
     CursorSize,
+    KeysHideCursor,
     /// The monitor for full screen, from the list the app passes in.
     Monitor,
     /// The graphics adapter ("Default" then the app's list).
@@ -312,6 +316,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [SRow] 
     const MISC: &[SRow] = &[
         row("Hardware Mouse", "0021: the game folder's cursor files (.ani) instead of the cursor the game draws.", Tool("0021"), OFF_ON, Now),
         row("Cursor Size", "The drawn cursor's size (Hardware Mouse off); Auto grows it with the window (not retail).", CursorSize, &[(0, "Auto"), (100, "1x"), (150, "1.5x"), (200, "2x"), (300, "3x"), (400, "4x")], Now),
+        row("Keys Hide the Cursor", "On, as the game does: a key press hides the mouse cursor until the mouse moves. Off keeps it shown while you walk with the keys (not retail).", KeysHideCursor, OFF_ON, Now),
         row("Opening Movie", "0022: play the opening movie before the title; any key skips it.", Tool("0022"), OFF_ON, Restart),
         row("Simple Character Creation", "0023: character creation with 2-D portraits instead of the 3D models.", Tool("0023"), OFF_ON, Now),
         row("Screenshot Size", "0043: also save each screenshot at the screen size (ffxiuser/screenshots).", Tool("0043"), OFF_ON, Now),
@@ -544,6 +549,7 @@ impl SettingsUi {
             Val::Effects => self.s.effects,
             Val::RetailAspect => self.s.retail_aspect as u32,
             Val::CursorSize => self.s.cursor_size,
+            Val::KeysHideCursor => self.s.keys_hide_cursor as u32,
             Val::Mod(i) => self.mod_page().and_then(|p| p.rows.get(i)).map_or(0, |r| r.at as u32),
         }
     }
@@ -582,6 +588,7 @@ impl SettingsUi {
             Val::MinimapSize => self.s.minimap_size = x,
             Val::RetailAspect => self.s.retail_aspect = x != 0,
             Val::CursorSize => self.s.cursor_size = x,
+            Val::KeysHideCursor => self.s.keys_hide_cursor = x != 0,
             Val::Mod(i) => {
                 let Some(k) = self.tab.checked_sub(EXTRA_TABS.len()) else { return };
                 if let Some(p) = self.mod_pages.get_mut(k)
