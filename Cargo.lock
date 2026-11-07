@@ -4592,6 +4592,8 @@ dependencies = [
  "mlua",
  "msi",
  "nnnoiseless",
+ "objc2-core-foundation",
+ "objc2-io-kit",
  "png",
  "pollster 1.0.1",
  "pulldown-cmark",
@@ -4613,6 +4615,7 @@ dependencies = [
  "wgpu",
  "windows-sys 0.61.2",
  "winit",
+ "zbus",
  "zip",
 ]
 

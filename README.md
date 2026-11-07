@@ -172,6 +172,10 @@ the text field (or opens the chat line with it). The d-pad moves its cursor, A t
 Backspace, RB a space, X switches to capitals and symbols, Y is Enter, LT / RT move the caret, Start is Tab and Back
 closes it. Any key on a real keyboard closes it too. The modern UI draws it as one of its own panels.
 
+The desktop does not count pad input as activity, so while the pad is in use the client keeps the screen awake
+(Linux: the screen saver inhibit, or the desktop portal's; Windows: the display timer; macOS: IOKit power assertions).
+Five minutes after the pad's last input it lets go, and the desktop's own timeout applies again.
+
 | Field | Default | Meaning |
 |---|---|---|
 | `gamepad` | `true` | Read a game controller (Settings > Client > Gamepad) |

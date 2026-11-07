@@ -230,6 +230,8 @@ pub struct Frame {
     pub events: Vec<egui::Event>,
     /// A button went down (hides the mouse cursor, as a key does).
     pub pressed: bool,
+    /// A button or a stick past the dead zone is held (keeps the screen awake, client/keepawake.rs).
+    pub used: bool,
 }
 
 /// What has the pad this frame.
@@ -336,6 +338,7 @@ impl Gamepad {
         let mut f = self.step(held, &keys, dt);
         self.prev = held;
         f.pad = pad_bits;
+        f.used = held != 0 || v.iter().any(|&a| a != 0.0);
         // Outside the field the sticks do nothing (they never drive menus).
         f.stick = if field { [v[2] / 128.0, v[3] / 128.0, v[0] / 128.0, v[1] / 128.0] } else { [0.0; 4] };
         f
