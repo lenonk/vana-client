@@ -1,0 +1,75 @@
+name = "VCHotbar"
+version = "0.1.0"
+description = "Hotbars with multi-line macros that load by main job, then sub job."
+authors = ["Arusia"]
+permissions = ["actions", "ui.native"]
+
+[settings.hide_stock]
+type = "bool"
+default = true
+label = "Hide Stock Macro Bar"
+help = "Hide the game's own macro palette while VCHotbar is loaded. Its Ctrl and Alt keys still run macros unless a VCHotbar bar uses them. Needs the ui.native permission."
+
+[settings.visible]
+type = "bool"
+default = true
+label = "Show Hotbars"
+help = "Draw the hotbars on screen. //hb show and //hb hide switch them for this session."
+
+[settings.bars]
+type = "int"
+default = 3
+min = 1
+max = 3
+step = 1
+label = "Bars"
+help = "How many bars to show."
+
+[settings.slots]
+type = "int"
+default = 10
+min = 1
+max = 12
+step = 1
+label = "Slots per Bar"
+
+[settings.size]
+type = "int"
+default = 44
+min = 24
+max = 80
+step = 2
+label = "Slot Size"
+help = "Width and height of one slot, in pixels."
+
+[settings.gap]
+type = "int"
+default = 4
+min = 0
+max = 16
+step = 1
+label = "Slot Gap"
+
+[settings.offset_x]
+type = "int"
+default = 0
+min = -1000
+max = 1000
+step = 10
+label = "Horizontal Offset"
+help = "Move the bars left (negative) or right of the screen's centre."
+
+[settings.offset_y]
+type = "int"
+default = 120
+min = 0
+max = 600
+step = 10
+label = "Distance from Bottom"
+help = "How far the bottom bar sits above the bottom edge of the window."
+
+[settings.show_keys]
+type = "bool"
+default = true
+label = "Show Key Hints"
+help = "Show each slot's hotkey in its corner."
