@@ -29,7 +29,19 @@ fn rgba(c: [u8; 4]) -> Color32 {
 }
 
 /// A canvas's commands in `r`, clipped to it.
-fn canvas(ui: &egui::Ui, m: &super::Modern, ctx: &egui::Context, gu: Option<&super::super::game_ui::GameUi>, items: Option<&super::super::items::ItemCache>, r: Rect, cmds: &[model::Cmd]) {
+/// A mod's icon as an egui texture and its UV: an item's, a status's, or a spell's or an ability's list sprite.
+pub(super) fn icon_tex(m: &super::Modern, ctx: &egui::Context, gu: Option<&super::super::game_ui::GameUi>, world: Option<&super::super::World>, i: model::Icon) -> Option<(egui::TextureId, Rect)> {
+    match i {
+        model::Icon::Item(id) => world.and_then(|w| w.item_info.as_deref()).and_then(|c| m.item_icon(ctx, c, id)).map(|t| (t, super::FULL_UV)),
+        model::Icon::Status(id) => gu.and_then(|g| m.status_icon(ctx, g, false, id)),
+        model::Icon::Spell(_) | model::Icon::Ability(_) => {
+            let (lib, k) = world.and_then(|w| i.sprite(w))?;
+            gu.and_then(|g| m.sprite_icon(ctx, g, lib, k)).map(|t| (t, super::FULL_UV))
+        }
+    }
+}
+
+fn canvas(ui: &egui::Ui, m: &super::Modern, ctx: &egui::Context, gu: Option<&super::super::game_ui::GameUi>, world: Option<&super::super::World>, r: Rect, cmds: &[model::Cmd]) {
     use model::Cmd;
     let p = ui.painter().with_clip_rect(r.intersect(ui.clip_rect()));
     let at = |q: [f32; 2]| pos2(r.min.x + q[0], r.min.y + q[1]);
@@ -73,9 +85,8 @@ fn canvas(ui: &egui::Ui, m: &super::Modern, ctx: &egui::Context, gu: Option<&sup
             Cmd::Text { at: q, text, colour } => {
                 p.text(at(*q), Align2::LEFT_TOP, text, FontId::proportional(m.theme.small), rgba(*colour));
             }
-            Cmd::Icon { at: q, size, item, id } => {
-                let tex = if *item { items.and_then(|c| m.item_icon(ctx, c, *id)).map(|t| (t, super::FULL_UV)) } else { gu.and_then(|g| m.status_icon(ctx, g, false, *id)) };
-                if let Some((t, uv)) = tex {
+            Cmd::Icon { at: q, size, icon } => {
+                if let Some((t, uv)) = icon_tex(m, ctx, gu, world, *icon) {
                     p.image(t, Rect::from_min_size(at(*q), vec2(*size, *size)), uv, Color32::WHITE);
                 }
             }
@@ -110,7 +121,7 @@ impl Click {
 pub fn draw(p: &mut Panels, w: &mut World) {
     for (mod_id, win) in w.lua.open_windows() {
         let id = format!("mod:{mod_id}:{}", win.id);
-        let (clicks, shown) = panel(p, w.item_info.as_deref(), &id, &win);
+        let (clicks, shown) = panel(p, Some(&*w), &id, &win);
         // A click outside a popup closes it.
         if let Some(r) = shown
             && win.popup
@@ -132,7 +143,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
 }
 
 /// One window as a panel: the clicks on it and its rect.
-fn panel(p: &mut Panels, items: Option<&super::super::items::ItemCache>, pid: &str, win: &model::Window) -> (Vec<Click>, Option<Rect>) {
+fn panel(p: &mut Panels, world: Option<&super::super::World>, pid: &str, win: &model::Window) -> (Vec<Click>, Option<Rect>) {
     let m = p.m;
     let (ctx, gu) = (p.ctx, p.gu);
     {
@@ -206,9 +217,8 @@ fn panel(p: &mut Panels, items: Option<&super::super::items::ItemCache>, pid: &s
                             let ink = r.colour.map_or_else(|| kit::ink(m, row), rgba);
                             let cy = row.rect.center().y;
                             let mut x = row.rect.min.x + 10.0;
-                            if let Some((item, iid)) = r.icon {
-                                let tex = if item { items.and_then(|c| m.item_icon(ctx, c, iid)).map(|t| (t, super::FULL_UV)) } else { gu.and_then(|g| m.status_icon(ctx, g, false, iid)) };
-                                if let Some((t, uv)) = tex {
+                            if let Some(i) = r.icon {
+                                if let Some((t, uv)) = icon_tex(m, ctx, gu, world, i) {
                                     ui.painter().image(t, Rect::from_center_size(pos2(x + 9.0, cy), vec2(18.0, 18.0)), uv, Color32::WHITE);
                                 }
                                 x += 24.0;
@@ -309,7 +319,7 @@ fn panel(p: &mut Panels, items: Option<&super::super::items::ItemCache>, pid: &s
                     }
                     Elem::Canvas { w: cw, h: ch, cmds, .. } => {
                         let (r, resp) = ui.allocate_exact_size(vec2(*cw, *ch), Sense::click_and_drag());
-                        canvas(ui, m, ctx, gu, items, r, cmds);
+                        canvas(ui, m, ctx, gu, world, r, cmds);
                         let at = resp.interact_pointer_pos().or_else(|| ctx.input(|inp| inp.pointer.latest_pos())).map(|q| (q.x - r.min.x, q.y - r.min.y));
                         if resp.clicked()
                             && let Some(q) = resp.interact_pointer_pos()

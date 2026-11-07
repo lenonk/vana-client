@@ -89,6 +89,12 @@ Built (client/lua/, modern/modwin.rs), each checked live:
     map pixels), `game.map` (the map's page, file, scale, origin) and `game.map_pos` (world to map image pixels);
     checked live; PNG images from the mod's folder (`hud.image`, sized and tinted); `hud.on` takes left / right clicks on an element from the game; `hud.screen` (size,
     pixels per UI unit), `hud.bounds`. Checked live in both UIs, clicks too
+  - (a user's request, 2026-11-06) spell and ability icons (`kind = "spell"` / `"ability"`, the magic and ability
+    lists' sprites) for HUD, list and canvas icons; HUD drags (`drag_start`, `drag`, `drag_end` with the element
+    under the release, `drop` to it), `mouse_enter` / `mouse_leave`, and a `tip` on any HUD element (the kit's tooltip
+    in modern, a box by the pointer in classic); a click now comes at the release; `game.recasts().totals` (each
+    running recast's whole length, as it started) and `res.ability(id).recast` (LSB's base recast, bundled:
+    data/recasts.txt)
 - **Native windows** (`ui.native`): the game's open windows by name and whether one has the keys; the whole
   interface hidden or shown; HUD pieces hidden in both UIs while the mod runs (party, target, buffs, compass /
   location, minimap, cast bar, name plates, the alliance lists alone, the log windows (back while an event, a prompt

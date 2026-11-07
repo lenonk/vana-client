@@ -6774,6 +6774,10 @@ struct World {
     /// When each spell recast (DAT_106671e0) and 0x119 ability timer ends; 0x119 seen (DAT_10485824 bit 0).
     spell_recast: HashMap<u16, Instant>,
     ability_recast: HashMap<u16, Instant>,
+    /// Each running recast's whole length in seconds (ours, for mods): as it started, or LSB's base for one already
+    /// running at login.
+    spell_total: HashMap<u16, f32>,
+    ability_total: HashMap<u16, f32>,
     /// Each 0x119 timer's Calc1 / Calc2 (the charge shares' adjustments).
     ability_calc: HashMap<u16, (u8, i16)>,
     recasts_seen: bool,
@@ -8807,6 +8811,8 @@ impl App {
                             res_rdy: ResRdy::default(),
                             spell_recast: HashMap::new(),
                             ability_recast: HashMap::new(),
+                            spell_total: HashMap::new(),
+                            ability_total: HashMap::new(),
                             ability_calc: HashMap::new(),
                             extra_timers: self.cfg.timers,
                             extra_regime: self.cfg.regime,
@@ -10409,8 +10415,22 @@ impl App {
                     }
                 }
                 NetEvent::AbilityRecasts(timers) => {
-                    world.recasts_seen = true;
+                    let first = !std::mem::replace(&mut world.recasts_seen, true);
                     let now = Instant::now();
+                    // A timer's length: its seconds when it starts (new, or ending a second or more later than it did);
+                    // one already running at login takes the base recast when that is longer.
+                    let mut totals = HashMap::new();
+                    for &(id, s, ..) in timers.iter().filter(|t| t.1 > 0) {
+                        let s = s as f32;
+                        let left = world.ability_recast.get(&id).map(|e| e.saturating_duration_since(now).as_secs_f32());
+                        let total = match (left, world.ability_total.get(&id)) {
+                            (Some(l), Some(&t)) if s <= l + 1.0 => t,
+                            _ if first => crate::dat::recasts::timer(id).map_or(s, |b| (b as f32).max(s)),
+                            _ => s,
+                        };
+                        totals.insert(id, total);
+                    }
+                    world.ability_total = totals;
                     world.ability_calc = timers.iter().filter(|t| t.1 > 0).map(|t| (t.0, (t.2, t.3))).collect();
                     world.ability_recast = timers.into_iter().filter(|t| t.1 > 0).map(|(id, s, _, _)| (id, now + std::time::Duration::from_secs(s as u64))).collect();
                 }

@@ -259,8 +259,9 @@ pub struct Host {
     pub(in crate::client) music_dirty: bool,
     /// What the UI knows that mods read (the map grid).
     info: std::rc::Rc<std::cell::RefCell<state::FrameInfo>>,
-    /// HUD elements clicked since the last mod phase: (mod, element, button).
-    hud_clicks: Vec<(String, String, &'static str)>,
+    /// HUD element events since the last mod phase (clicks, drags, drops, the pointer in and out): (mod, element,
+    /// event).
+    hud_events: Vec<(String, String, serde_json::Value)>,
     /// Since when the world's mods wait for our character's state.
     start_wait: Option<std::time::Instant>,
     /// The game UI's data for this mod phase, lent to mods loaded during it too (their entry file and `load`).
@@ -1045,13 +1046,17 @@ pub(super) fn frame(w: &mut World, gu: Option<&super::game_ui::GameUi>) {
             let Some(vm) = host.vms.iter().find(|v| v.manifest.id == m && v.suspended.is_none() && v.st.borrow().granted.iter().any(|g| g == "multibox")) else { continue };
             lend(vm, w, |vm| vm.emit("ipc_message", (text.clone(), from.clone())));
         }
-        for (m, id, button) in std::mem::take(&mut host.hud_clicks) {
+        hud::hover(&mut host);
+        for (m, id, mut e) in std::mem::take(&mut host.hud_events) {
             let Some(vm) = host.vms.iter().find(|v| v.manifest.id == m && v.suspended.is_none()) else { continue };
             let f = vm.st.borrow().hud_handlers.iter().find(|h| h.0 == id).and_then(|h| vm.lua.registry_value::<mlua::Function>(&h.1).ok());
             if let Some(f) = f {
+                e["id"] = id.clone().into();
+                // The pointer coming and going is not the player acting.
+                let input = !matches!(e["kind"].as_str(), Some("mouse_enter" | "mouse_leave"));
                 lend(vm, w, |vm| {
-                    let e = api::to_lua(&vm.lua, &serde_json::json!({"kind": "click", "id": id, "button": button})).unwrap_or(mlua::Value::Nil);
-                    vm.call_input(f, (id.clone(), e));
+                    let t = api::to_lua(&vm.lua, &e).unwrap_or(mlua::Value::Nil);
+                    if input { vm.call_input(f, (id.clone(), t)) } else { vm.call(f, (id.clone(), t)) }
                 });
             }
         }
@@ -1441,6 +1446,11 @@ impl Host {
         self.info.borrow_mut().view_proj = m;
     }
 
+    /// The tooltip of the mod HUD element under the pointer: (title, text, seconds there).
+    pub(in crate::client) fn hud_tip(&self) -> Option<(String, String, f32)> {
+        hud::tip(self)
+    }
+
     /// Whether a mod hid a native HUD piece (ui.native.hide).
     pub(in crate::client) fn hides(&self, piece: &str) -> bool {
         self.info.borrow().hidden.get(piece).is_some_and(|m| !m.is_empty())
@@ -1538,6 +1548,60 @@ mod tests {
         assert!(t0.elapsed() < std::time::Duration::from_secs(2), "the test ran {:?}", t0.elapsed());
         assert!(vm.st.borrow().sleepers.is_empty());
         assert_eq!(vm.st.borrow().errors.len(), 1);
+    }
+
+    /// HUD elements: a press released in place is a click; one that moves is a drag, ending over another element that
+    /// gets a drop; the pointer coming and going; tips and spell icons from their specs.
+    #[test]
+    fn hud_clicks_drags_and_hover() {
+        use winit::event::MouseButton::Left;
+        let mut host = Host::default();
+        let vm = Vm::new(manifest::Manifest { id: "t".into(), ..Default::default() }, PathBuf::from("."), vm::Source::Dir(PathBuf::from("."))).unwrap();
+        api::install(&vm.lua, &vm, (serde_json::Value::Null, serde_json::Value::Null)).unwrap();
+        vm.lua
+            .load(
+                r#"
+                hud.rect("a", {x = 0, y = 0, w = 10, h = 10, tip = "A"})
+                hud.rect("b", {x = 20, y = 0, w = 10, h = 10, tip = {title = "B", text = "b"}})
+                hud.icon("c", {kind = "spell", id = 1})
+                hud.on("a", function() end)
+                hud.on("b", function() end)
+            "#,
+            )
+            .exec()
+            .unwrap();
+        assert!(vm.st.borrow().hud.iter().any(|e| e.id == "c" && matches!(e.kind, hud::Kind::Icon { icon: window::Icon::Spell(1), .. })));
+        host.vms.push(vm);
+        host.info.borrow_mut().hud_rects = vec![("t".into(), "a".into(), [0.0, 0.0, 10.0, 10.0]), ("t".into(), "b".into(), [20.0, 0.0, 10.0, 10.0])];
+        let at = |host: &mut Host, x: f64| {
+            host.input.borrow_mut().cursor = (x, 5.0);
+            input::hud_drag(host, x, 5.0);
+        };
+        let take = |host: &mut Host| std::mem::take(&mut host.hud_events).into_iter().map(|(_, id, e)| (id, e)).collect::<Vec<_>>();
+        let kinds = |ev: &[(String, serde_json::Value)]| ev.iter().map(|(id, e)| format!("{id} {}", e["kind"].as_str().unwrap())).collect::<Vec<_>>();
+        at(&mut host, 5.0);
+        assert!(input::hud_press(&mut host, Left));
+        at(&mut host, 7.0);
+        input::hud_release(&mut host, Left);
+        assert_eq!(kinds(&take(&mut host)), ["a click"]);
+        assert!(input::hud_press(&mut host, Left));
+        for x in [12.0, 18.0, 25.0] {
+            at(&mut host, x);
+        }
+        input::hud_release(&mut host, Left);
+        let ev = take(&mut host);
+        assert_eq!(kinds(&ev), ["a drag_start", "a drag", "a drag_end", "b drop"]);
+        // Pressed at x 7, released at 25.
+        assert_eq!((ev[1].1["dx"].as_i64(), ev[2].1["over"].as_str(), ev[3].1["from"].as_str()), (Some(18), Some("b"), Some("a")));
+        // Nothing under the pointer is pressed there.
+        at(&mut host, 15.0);
+        assert!(!input::hud_press(&mut host, Left));
+        at(&mut host, 25.0);
+        hud::hover(&mut host);
+        at(&mut host, 5.0);
+        hud::hover(&mut host);
+        assert_eq!(kinds(&take(&mut host)), ["b mouse_enter", "b mouse_leave", "a mouse_enter"]);
+        assert_eq!(hud::tip(&host).map(|t| (t.0, t.1)), Some((String::new(), "A".into())));
     }
 
     /// A suspended mod's provided functions don't run for other mods either.
@@ -1965,7 +2029,7 @@ pub(super) fn draw_classic(gu: &mut super::game_ui::GameUi, w: &World) -> Vec<[f
     let mut out = Vec::new();
     for (v, id, x, y) in classic_places(w) {
         if let Some(win) = w.lua.vms[v].st.borrow().windows.iter().find(|x| x.id == id) {
-            out.push(win.draw_classic(gu, w.item_info.as_deref(), x, y));
+            out.push(win.draw_classic(gu, Some(w), x, y));
         }
     }
     out

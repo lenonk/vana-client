@@ -191,6 +191,7 @@ pub mod msgfmt;
 pub mod dialog;
 pub mod msgshift;
 pub mod skillchains;
+pub mod recasts;
 pub mod resists;
 pub mod items;
 pub mod maze;

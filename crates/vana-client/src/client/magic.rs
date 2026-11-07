@@ -203,6 +203,7 @@ pub fn set_recast(w: &mut World, spell: u16, info: u32) {
     let Some(r) = w.actions.as_ref().and_then(|a| a.spell(spell)) else { return };
     let secs = if info == 0 { r.recast as f32 * 15.0 / 60.0 } else { info as f32 };
     w.spell_recast.insert(spell, Instant::now() + std::time::Duration::from_secs_f32(secs));
+    w.spell_total.insert(spell, secs);
 }
 
 /// The list order (FUN_1022c030 / FUN_10223c90): mix.dat / aix.dat as read at field entry (Macros), merged in place

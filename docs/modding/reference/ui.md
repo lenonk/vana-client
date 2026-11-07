@@ -109,7 +109,7 @@ A row is either a string (a number or a boolean is shown as text too), or a tabl
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `cells` | `table` | the row table's own list part | The row's cells, one per column. You may instead put the cells straight in the row table: `{"Potion", "12"}`. |
-| `icon` | `{kind, id}` | none | An icon before the first cell: `kind = "status"` for a status effect's icon, anything else (or no `kind`) for an item's icon; `id` is the status or item id (required in an `icon` table). |
+| `icon` | `{kind, id}` | none | An icon before the first cell: `kind` is `"item"` (or none), `"status"`, `"spell"` or `"ability"`, as for [`hud.icon`](hud.md#hudicon); `id` is the item, status, spell or ability id (required in an `icon` table). |
 | `colour` | `{r, g, b, a}` | none | The row's text colour. |
 
 A column is a table:
@@ -224,7 +224,7 @@ fields, all numbers defaulting to `0` unless shown:
 | `"circle"` | `x`, `y`, `r`, `line` | A filled circle centred on (x, y) with radius `r`; with `line`, only its outline, that thick. |
 | `"tri"` | `x1`, `y1`, `x2`, `y2`, `x3`, `y3` | A filled triangle. |
 | `"text"` | `x`, `y`, `text` (default `""`) | Text with its top left at (x, y), in the UI's text font. |
-| `"icon"` | `x`, `y`, `size` (default `16`), `kind`, `id` | A square icon with its top left at (x, y): `kind = "status"` for a status effect's icon, anything else (or none) for an item's icon. `id` (the status or item id) is required. |
+| `"icon"` | `x`, `y`, `size` (default `16`), `kind`, `id` | A square icon with its top left at (x, y): `kind` is `"item"` (or none), `"status"`, `"spell"` or `"ability"`, as for [`hud.icon`](hud.md#hudicon). `id` is required. |
 
 ### Pages (tabs)
 

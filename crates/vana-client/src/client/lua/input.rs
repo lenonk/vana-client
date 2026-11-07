@@ -181,7 +181,14 @@ pub(super) struct State {
     /// Presses a mod took: their repeats and releases are taken too.
     taken_keys: HashSet<K>,
     taken_buttons: Vec<MouseButton>,
+    /// A press on a mod's HUD element: its mod, element, button, where it went down, and whether it is a drag yet.
+    hud_press: Option<(String, String, MouseButton, (f64, f64), bool)>,
+    /// The HUD element under the pointer (one with a handler or a tip) and since when.
+    pub hud_hover: Option<(String, String, std::time::Instant)>,
 }
+
+/// A press moving this far (window pixels) is a drag.
+const DRAG_START: f64 = 4.0;
 
 impl State {
     pub fn held(&self, name: &str) -> bool {
@@ -310,26 +317,82 @@ fn key_edge(w: &mut World, code: K, down: bool, repeat: bool, mods: Option<Modif
 
 fn moved(w: &mut World, x: f64, y: f64) -> bool {
     w.lua.input.borrow_mut().cursor = (x, y);
+    hud_drag(&mut w.lua, x, y);
     filter(w, true, serde_json::json!({"kind": "move", "x": x.round() as i64, "y": y.round() as i64}))
+}
+
+/// A HUD element's event: kind, button, window pixels, and the drag's offset from where it went down.
+fn hud_event(kind: &str, button: MouseButton, (x, y): (f64, f64), (sx, sy): (f64, f64)) -> serde_json::Value {
+    serde_json::json!({"kind": kind, "button": button_name(button), "x": x.round() as i64, "y": y.round() as i64, "dx": (x - sx).round() as i64, "dy": (y - sy).round() as i64})
+}
+
+/// The pointer moving with a HUD element's press: past DRAG_START it is a drag (drag_start where it went down, then
+/// drag at most once a mod phase).
+pub(super) fn hud_drag(host: &mut super::Host, x: f64, y: f64) {
+    let st = host.input.clone();
+    let mut s = st.borrow_mut();
+    let Some((m, id, button, start, dragging)) = s.hud_press.as_mut() else { return };
+    if !*dragging {
+        if (x - start.0).hypot(y - start.1) < DRAG_START {
+            return;
+        }
+        *dragging = true;
+        host.hud_events.push((m.clone(), id.clone(), hud_event("drag_start", *button, *start, *start)));
+    }
+    let e = hud_event("drag", *button, (x, y), *start);
+    match host.hud_events.last_mut() {
+        Some(last) if last.0 == *m && last.1 == *id && last.2["kind"] == "drag" => last.2 = e,
+        _ => host.hud_events.push((m.clone(), id.clone(), e)),
+    }
+}
+
+/// A left or right press at the pointer on a HUD element with a handler: the element's (true), and its release too.
+pub(super) fn hud_press(host: &mut super::Host, button: MouseButton) -> bool {
+    let st = host.input.clone();
+    if !matches!(button, MouseButton::Left | MouseButton::Right) || st.borrow().hud_press.is_some() {
+        return false;
+    }
+    let (x, y) = st.borrow().cursor;
+    let Some((m, id)) = super::hud::hit(host, x, y) else { return false };
+    let mut s = st.borrow_mut();
+    s.hud_press = Some((m, id, button, (x, y), false));
+    s.taken_buttons.push(button);
+    s.buttons[if button == MouseButton::Left { 0 } else { 1 }] = true;
+    true
+}
+
+/// A HUD element's press released: a click, or the drag's end over the mod's element there (which gets a drop).
+pub(super) fn hud_release(host: &mut super::Host, button: MouseButton) {
+    let st = host.input.clone();
+    let Some((m, id, _, start, dragging)) = st.borrow_mut().hud_press.take_if(|p| p.2 == button) else { return };
+    let at = st.borrow().cursor;
+    if !dragging {
+        host.hud_events.push((m, id, hud_event("click", button, at, at)));
+        return;
+    }
+    let over = super::hud::top_of(host, &m, at.0, at.1);
+    let mut e = hud_event("drag_end", button, at, start);
+    e["over"] = over.clone().into();
+    host.hud_events.push((m.clone(), id.clone(), e));
+    if let Some(o) = over.filter(|o| *o != id) {
+        let mut d = hud_event("drop", button, at, start);
+        d["from"] = id.into();
+        host.hud_events.push((m, o, d));
+    }
 }
 
 fn button_edge(w: &mut World, button: MouseButton, down: bool) -> bool {
     let st = w.lua.input.clone();
-    // A press on a HUD element with a click handler is its (and its release).
-    if down && matches!(button, MouseButton::Left | MouseButton::Right) {
+    // A press on a HUD element with a handler is its (and its release): a click, or a drag once it moves.
+    if down && hud_press(&mut w.lua, button) {
         let (x, y) = st.borrow().cursor;
-        if let Some((m, id)) = super::hud::hit(w, x, y) {
-            w.lua.hud_clicks.push((m, id, button_name(button)));
-            {
-                let mut s = st.borrow_mut();
-                s.taken_buttons.push(button);
-                s.buttons[if button == MouseButton::Left { 0 } else { 1 }] = true;
-            }
-            // The filters still see the press, already taken, as they see its release.
-            let e = serde_json::json!({"kind": "down", "button": button_name(button), "x": x.round() as i64, "y": y.round() as i64});
-            filter_from(w, true, e, true);
-            return true;
-        }
+        // The filters still see the press, already taken, as they see its release.
+        let e = serde_json::json!({"kind": "down", "button": button_name(button), "x": x.round() as i64, "y": y.round() as i64});
+        filter_from(w, true, e, true);
+        return true;
+    }
+    if !down {
+        hud_release(&mut w.lua, button);
     }
     let (taken, (x, y)) = {
         let mut s = st.borrow_mut();

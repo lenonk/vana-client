@@ -11,7 +11,7 @@ pub(super) enum Kind {
     Text { text: String, size: f32, colour: Option<[u8; 4]>, bg: Option<[u8; 4]>, align: u8, pad: f32, font: Option<HudFace>, outline: Option<[u8; 4]>, outline_w: f32, shadow: bool },
     Rect { w: f32, h: f32, colour: [u8; 4] },
     Bar { w: f32, h: f32, value: f32, colour: Option<[u8; 4]>, kind: String },
-    Icon { item: bool, id: u16, size: f32 },
+    Icon { icon: super::window::Icon, size: f32 },
     /// A PNG from the mod's folder: its texture key, pixels (w, h, RGBA), drawn size and tint.
     Image { key: String, img: std::sync::Arc<(u32, u32, Vec<u8>)>, w: f32, h: f32, tint: [u8; 4] },
     /// The zone's map (the one the client shows here): centred on world (x, z) or on us, `span` map pixels across.
@@ -26,6 +26,8 @@ pub(super) struct Elem {
     pub visible: bool,
     pub layer: i32,
     pub kind: Kind,
+    /// The tooltip shown while the pointer rests on it: (title, text).
+    pub tip: Option<(String, String)>,
 }
 
 pub(super) fn colour(v: Value) -> mlua::Result<Option<[u8; 4]>> {
@@ -53,6 +55,14 @@ fn apply(e: &mut Elem, t: &Table) -> mlua::Result<()> {
     }
     if let Some(v) = t.get::<Option<i32>>("layer")? {
         e.layer = v;
+    }
+    // A string, {title, text}, or false for none.
+    if t.contains_key("tip")? {
+        e.tip = match t.get::<Value>("tip")? {
+            Value::String(s) => Some((String::new(), s.to_string_lossy())),
+            Value::Table(tt) => Some((tt.get::<Option<String>>("title")?.unwrap_or_default(), tt.get::<Option<String>>("text")?.unwrap_or_default())),
+            _ => None,
+        };
     }
     match &mut e.kind {
         Kind::Text { text, size, colour: c, bg, align, pad, font, outline, outline_w, shadow } => {
@@ -156,14 +166,11 @@ fn apply(e: &mut Elem, t: &Table) -> mlua::Result<()> {
                 *tint = v;
             }
         }
-        Kind::Icon { item, id, size } => {
-            // As list and canvas icons: kind = "status" for a status icon, else an item's.
-            if let Some(v) = t.get::<Option<String>>("kind")? {
-                *item = v != "status";
-            }
-            if let Some(v) = t.get::<Option<u16>>("id")? {
-                *id = v;
-            }
+        Kind::Icon { icon, size } => {
+            // As list and canvas icons: kind "item" (the default), "status", "spell" or "ability".
+            let kind = t.get::<Option<String>>("kind")?;
+            let id = t.get::<Option<u16>>("id")?.unwrap_or(icon.id());
+            *icon = super::window::Icon::of(Some(kind.as_deref().unwrap_or(icon.kind())), id);
             if let Some(v) = t.get::<Option<f32>>("size")? {
                 *size = v.max(1.0);
             }
@@ -173,7 +180,7 @@ fn apply(e: &mut Elem, t: &Table) -> mlua::Result<()> {
 }
 
 fn put(lua: &Lua, id: String, kind: Kind, spec: Table) -> mlua::Result<()> {
-    let mut e = Elem { id: id.clone(), x: 0.0, y: 0.0, visible: true, layer: 0, kind };
+    let mut e = Elem { id: id.clone(), x: 0.0, y: 0.0, visible: true, layer: 0, kind, tip: None };
     apply(&mut e, &spec)?;
     let st = super::api::state(lua);
     let mut s = st.borrow_mut();
@@ -251,7 +258,7 @@ pub(super) fn install(lua: &Lua, g: &Table, vm: &super::vm::Vm) -> mlua::Result<
     t.set("text", lua.create_function(|lua, (id, spec): (String, Table)| put(lua, id, Kind::Text { text: String::new(), size: 1.0, colour: None, bg: None, align: 0, pad: 4.0, font: None, outline: None, outline_w: 1.0, shadow: false }, spec))?)?;
     t.set("rect", lua.create_function(|lua, (id, spec): (String, Table)| put(lua, id, Kind::Rect { w: 100.0, h: 20.0, colour: [0, 0, 0, 160] }, spec))?)?;
     t.set("bar", lua.create_function(|lua, (id, spec): (String, Table)| put(lua, id, Kind::Bar { w: 120.0, h: 8.0, value: 0.0, colour: None, kind: "hp".into() }, spec))?)?;
-    t.set("icon", lua.create_function(|lua, (id, spec): (String, Table)| put(lua, id, Kind::Icon { item: true, id: 0, size: 32.0 }, spec))?)?;
+    t.set("icon", lua.create_function(|lua, (id, spec): (String, Table)| put(lua, id, Kind::Icon { icon: super::window::Icon::Item(0), size: 32.0 }, spec))?)?;
     t.set("map", lua.create_function(|lua, (id, spec): (String, Table)| put(lua, id, Kind::Map { w: 200.0, h: 200.0, centre: None, span: 256.0, alpha: 1.0 }, spec))?)?;
     let (src3, mod3) = (vm.src.clone(), vm.manifest.id.clone());
     t.set(
@@ -463,32 +470,94 @@ pub(super) fn draw(gu: &mut super::super::game_ui::GameUi, w: &World) {
                 gu.image_rect(key, x, y, iw, ih, tint.map(|c| c as f32 / 255.0));
                 [x, y, iw, ih]
             }
-            Kind::Icon { item, id, size } => {
+            Kind::Icon { icon, size } => {
                 let s = size * k.0;
-                if *item {
-                    if let Some(cache) = w.item_info.as_ref() {
-                        super::super::items::upload_icons(gu, cache, std::iter::once(*id));
-                        let icon = crate::render::invwin::icon_texture(*id);
-                        if gu.has_image(&icon) {
-                            gu.image_rect(&icon, x, y, s, s, [1.0; 4]);
-                        }
-                    }
-                } else if let Some(name) = gu.status_icon(false, *id) {
-                    gu.image_rect(&name, x, y, s, s, [1.0; 4]);
-                }
+                super::window::icon(gu, Some(w), *icon, x, y, s);
                 [x, y, s, s]
             }
         };
         rects.push((mod_id, e.id.clone(), [r[0] / k.0, r[1] / k.1, r[2] / k.0, r[3] / k.1]));
     }
     info.borrow_mut().hud_rects = rects;
+    // The classic UI's tooltip (the modern UI's is the kit's, modern/mod.rs), once the pointer rests a moment.
+    if !w.modern
+        && let Some((title, text, secs)) = tip(host)
+        && secs >= 0.35
+    {
+        let (cx, cy) = host.input.borrow().cursor;
+        draw_tip(gu, &title, &text, (cx as f32 * k.0, cy as f32 * k.1), (win[0] * k.0, win[1] * k.1));
+    }
 }
 
-/// The topmost element with a click handler under a window pixel: (mod, element).
-pub(super) fn hit(w: &World, x: f64, y: f64) -> Option<(String, String)> {
-    let f = w.lua.info.borrow();
+/// A tooltip box by the pointer (UI units), kept on screen: the title in gold over the text.
+fn draw_tip(gu: &mut super::super::game_ui::GameUi, title: &str, text: &str, at: (f32, f32), screen: (f32, f32)) {
+    let lines: Vec<(&str, [u8; 4])> = std::iter::once(title).filter(|t| !t.is_empty()).map(|t| (t, [255, 210, 120, 255])).chain(text.split('\n').map(|l| (l, [255, 255, 255, 255]))).collect();
+    let pad = 6.0;
+    let lw = lines.iter().map(|(l, _)| gu.width_in(l, None)).fold(0.0, f32::max);
+    let (bw, bh) = (lw + pad * 2.0, 16.0 * lines.len() as f32 + pad * 2.0);
+    let x = (at.0 + 16.0).min(screen.0 - bw).max(0.0);
+    let y = if at.1 + 24.0 + bh > screen.1 { at.1 - bh - 4.0 } else { at.1 + 24.0 };
+    gu.rect(x, y, bw, bh, [0.04, 0.06, 0.09, 0.92]);
+    for (n, (l, c)) in lines.iter().enumerate() {
+        gu.text_in(l, x + pad, y + pad + 16.0 * n as f32, tint(*c), 1.0, None);
+    }
+}
+
+fn inside(r: &[f32; 4], x: f32, y: f32) -> bool {
+    x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3]
+}
+
+/// The topmost element with a handler (or, with `tips`, a tooltip) under a window pixel: (mod, element).
+fn under(host: &super::Host, x: f64, y: f64, tips: bool) -> Option<(String, String)> {
+    let f = host.info.borrow();
     let (x, y) = (x as f32, y as f32);
-    f.hud_rects.iter().rev().find(|(m, id, r)| {
-        x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3] && w.lua.vms.iter().any(|v| v.manifest.id == *m && v.suspended.is_none() && v.st.borrow().hud_handlers.iter().any(|h| h.0 == *id))
-    }).map(|(m, id, _)| (m.clone(), id.clone()))
+    let wanted = |m: &str, id: &str| {
+        host.vms.iter().any(|v| {
+            if v.manifest.id != m || v.suspended.is_some() {
+                return false;
+            }
+            let st = v.st.borrow();
+            st.hud_handlers.iter().any(|h| h.0 == id) || (tips && st.hud.iter().any(|e| e.id == id && e.tip.is_some()))
+        })
+    };
+    f.hud_rects.iter().rev().find(|(m, id, r)| inside(r, x, y) && wanted(m, id)).map(|(m, id, _)| (m.clone(), id.clone()))
+}
+
+/// The topmost element with a handler under a window pixel: (mod, element).
+pub(super) fn hit(host: &super::Host, x: f64, y: f64) -> Option<(String, String)> {
+    under(host, x, y, false)
+}
+
+/// Mod `m`'s topmost element under a window pixel (where a drag ends).
+pub(super) fn top_of(host: &super::Host, m: &str, x: f64, y: f64) -> Option<String> {
+    let f = host.info.borrow();
+    f.hud_rects.iter().rev().find(|(mm, _, r)| mm == m && inside(r, x as f32, y as f32)).map(|(_, id, _)| id.clone())
+}
+
+/// The element under the pointer (one with a handler or a tooltip): mouse_leave and mouse_enter as it changes.
+pub(super) fn hover(host: &mut super::Host) {
+    let (x, y) = host.input.borrow().cursor;
+    let now = under(host, x, y, true);
+    let mut s = host.input.borrow_mut();
+    let was = s.hud_hover.as_ref().map(|h| (h.0.clone(), h.1.clone()));
+    if was == now {
+        return;
+    }
+    let e = |kind: &str| serde_json::json!({"kind": kind, "x": x.round() as i64, "y": y.round() as i64});
+    if let Some((m, id)) = was {
+        host.hud_events.push((m, id, e("mouse_leave")));
+    }
+    if let Some((m, id)) = now.clone() {
+        host.hud_events.push((m, id, e("mouse_enter")));
+    }
+    s.hud_hover = now.map(|(m, id)| (m, id, std::time::Instant::now()));
+}
+
+/// The tooltip of the element under the pointer, and how long it has been there.
+pub(super) fn tip(host: &super::Host) -> Option<(String, String, f32)> {
+    let s = host.input.borrow();
+    let (m, id, since) = s.hud_hover.as_ref()?;
+    let vm = host.vms.iter().find(|v| v.manifest.id == *m && v.suspended.is_none())?;
+    let (title, text) = vm.st.borrow().hud.iter().find(|e| e.id == *id && e.visible)?.tip.clone()?;
+    Some((title, text, since.elapsed().as_secs_f32()))
 }

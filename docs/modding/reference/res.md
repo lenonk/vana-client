@@ -177,6 +177,7 @@ skills 0..511 (0x000-0x1FF), job abilities from 512 (0x200), pet commands from 1
 | `kind` | `integer` | 1 job ability, 2 pet command, 3 weapon skill, 4 trait, 20 (0x14) Monstrosity; 6..23 are rows that open a sub-list. |
 | `cost` | `integer` | The MP cost, or the charges a Ready move uses. |
 | `recast_id` | `integer` | The recast timer it uses: the key into `game.recasts().abilities`. 900 means none. |
+| `recast` | `integer?` | Its base recast in seconds, before gear, merits and job points, as LandSandBoat has it (the game's files hold no recast lengths for abilities). `nil` for one without a recast (weapon skills, traits, Ready's charges). The length running now is in `game.recasts().totals`. |
 | `targets` | `integer` | Valid-target bits, the same bits as [`res.spell`](#resspell)'s `targets`. |
 | `tp` | `integer` | The TP cost; 255 means none. |
 | `level` | `integer` | The level the record gives (used by Monstrosity moves). |

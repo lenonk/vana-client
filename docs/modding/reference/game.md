@@ -25,7 +25,7 @@ end)
 | [`game.bag_size(bag)`](#gamebag_size) | How many slots a bag has. |
 | [`game.equipment()`](#gameequipment) | What you have equipped, by equipment slot. |
 | [`game.buffs()`](#gamebuffs) | Your status effects and their time left. |
-| [`game.recasts()`](#gamerecasts) | Seconds left on your spell and ability recasts. |
+| [`game.recasts()`](#gamerecasts) | Seconds left on your spell and ability recasts, and their whole lengths. |
 | [`game.time()`](#gametime) | The Vana'diel date, clock and moon. |
 | [`game.weather()`](#gameweather) | The current weather id. |
 | [`game.key_items()`](#gamekey_items) | The key items you hold. |
@@ -329,7 +329,7 @@ end
 game.recasts() -> table
 ```
 
-Seconds left before you can use spells and abilities again.
+Seconds left before you can use spells and abilities again, and how long each running recast is in all.
 
 **Returns** `table`, never nil:
 
@@ -337,6 +337,11 @@ Seconds left before you can use spells and abilities again.
 | --- | --- | --- |
 | `spells` | `table<integer, number>` | Seconds left, by spell id. |
 | `abilities` | `table<integer, number>` | Seconds left, by recast id (an ability's `recast_id` in `res.ability`). |
+| `totals` | `table` | `totals.spells` and `totals.abilities`: each running recast's whole length in seconds, with the same keys. |
+
+`totals` is the recast as it started: the length the server gave, with gear, merits and job points already in. A recast
+that was already running when you logged in has its base length (`res.ability`'s `recast`) when that is longer than
+what is left, else what was left. With `totals`, a recast overlay fills exactly: `1 - left / total`.
 
 A spell or ability with no entry is ready. An entry can also be 0 (ready again): spells stay in the table after their recast ends, and abilities until the server next updates their recasts.
 
@@ -345,7 +350,8 @@ A spell or ability with no entry is ready. An entry can also be 0 (ready again):
 **Example**
 
 ```lua
-local left = game.recasts().spells[1] or 0 -- spell 1, Cure
+local r = game.recasts()
+local left = r.spells[1] or 0 -- spell 1, Cure
 if left > 0 then
   print(("Cure is ready in %.1f s"):format(left))
 else

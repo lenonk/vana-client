@@ -1,10 +1,11 @@
 # `hud`
 
-The `hud` namespace draws things over the game: texts, filled rectangles, bars, a map, PNG images and item or status
-icons. Each element has an id you choose. You create it once (`hud.text`, `hud.rect`, ...), change it with `hud.set`
+The `hud` namespace draws things over the game: texts, filled rectangles, bars, a map, PNG images and item, status,
+spell or ability icons. Each element has an id you choose. You create it once (`hud.text`, `hud.rect`, ...), change it with `hud.set`
 as things happen, and it stays on screen until you remove it; you do not redraw it every frame. HUD elements draw over
 the game world and the name plates and under every window, in the game world only, and they hide while the player has
-the interface hidden. None of these functions needs a permission. A click on an element can be handled with `hud.on`.
+the interface hidden. None of these functions needs a permission. Clicks, drags and the pointer coming and going on an
+element can be handled with `hud.on`, and any element can carry a tooltip.
 
 ```lua
 hud.text("hp", {x = 20, y = -80, text = "HP", size = 1.5, colour = {255, 220, 120}})
@@ -23,12 +24,12 @@ end)
 | [`hud.bar(id, spec)`](#hudbar) | Creates or replaces a bar filled from 0 to 1. |
 | [`hud.map(id, spec)`](#hudmap) | Creates or replaces a window onto the zone's map. |
 | [`hud.image(id, spec)`](#hudimage) | Creates or replaces a PNG image from the mod's folder. |
-| [`hud.icon(id, spec)`](#hudicon) | Creates or replaces an item's or a status effect's icon. |
+| [`hud.icon(id, spec)`](#hudicon) | Creates or replaces an item's, a status effect's, a spell's or an ability's icon. |
 | [`hud.set(id, fields)`](#hudset) | Changes some fields of an element. |
 | [`hud.remove(id)`](#hudremove) | Removes an element. |
 | [`hud.clear()`](#hudclear) | Removes every element of the mod. |
-| [`hud.on(id, handler)`](#hudon) | Sets the function called when the player clicks an element. |
-| [`hud.off(id)`](#hudoff) | Removes an element's click handler. |
+| [`hud.on(id, handler)`](#hudon) | Sets the function called when the player clicks or drags an element, or the pointer comes or goes. |
+| [`hud.off(id)`](#hudoff) | Removes an element's handler. |
 | [`hud.screen()`](#hudscreen) | The game window's size in pixels, and the UI's scale. |
 | [`hud.bounds(id)`](#hudbounds) | Where an element was drawn last frame. |
 
@@ -58,6 +59,7 @@ hud.text("panel_text", {x = 20 + 8 * s, y = 200 + 10 * s, text = "Scaled with th
 | `y` | `number` | `0` | Its top edge, in window pixels; negative counts from the bottom edge. |
 | `visible` | `boolean` | `true` | `false` hides it (it keeps its fields, and takes no clicks while hidden). |
 | `layer` | `integer` | `0` | Elements on higher layers draw over those on lower ones. On the same layer, mods draw in their load order, and each mod's elements in the order it created them. |
+| `tip` | `string` or `table` | none | A tooltip shown while the pointer rests on the element: a string, or `{title = ..., text = ...}` (the title above the text; `\n` breaks lines). `false` in `hud.set` removes it. The modern UI shows it in its tooltip frame, the classic UI in a dark box by the pointer. |
 
 **Create and set.** Each create call (`hud.text`, `hud.rect`, ...) makes a new element from its spec: fields you leave
 out take their defaults. If your mod already has an element with that id, of any kind, it is replaced, keeping its
@@ -68,7 +70,8 @@ frame drawn).
 (`{r = 255, g = 0, b = 0}`); a missing channel is 255. `false` means no colour (it clears one in `hud.set`).
 Anything else raises `a colour is {r, g, b, a} (0..255), or false for none`.
 
-**Clicks.** An element takes clicks only once you give it a handler with [`hud.on`](#hudon).
+**Clicks.** An element takes clicks and drags only once you give it a handler with [`hud.on`](#hudon). One with a
+handler or a `tip` reports the pointer coming and going.
 
 The player's `/lua hide` command hides every mod's HUD elements (the mods keep running).
 
@@ -295,7 +298,8 @@ hud.image("logo", {x = -74, y = -74, path = "img/logo.png", w = 64, h = 64, colo
 hud.icon(id, spec)
 ```
 
-Creates or replaces a square icon: an item's icon or a status effect's icon, by id.
+Creates or replaces a square icon by id: an item's, a status effect's, or a spell's or an ability's (weapon skills
+and pet commands too) as the magic and ability lists draw them.
 
 **Parameters**
 
@@ -309,8 +313,8 @@ Creates or replaces a square icon: an item's icon or a status effect's icon, by 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `x`, `y`, `visible`, `layer` | | | As for [every element](#places-sizes-and-layers). |
-| `kind` | `string` | item | `"status"` for a status effect's icon; any other value, or none, for an item's icon (as for list and canvas icons). |
-| `id` | `integer` | `0` | The item id or the status effect id. |
+| `kind` | `string` | item | `"item"`, `"status"`, `"spell"` or `"ability"` (`"weaponskill"` is the same as `"ability"`). Any other value, or none, is an item's icon. List and canvas icons take the same kinds. |
+| `id` | `integer` | `0` | The item id, the status effect id, the spell id (as `res.spell`), or the ability id (as `res.ability`: weapon skills 0..0x1ff, job abilities from 0x200, pet commands from 0x400). |
 | `size` | `number` | `32` | Its width and height in window pixels (at least 1). |
 
 **Returns** nothing.
@@ -323,6 +327,9 @@ for _, b in ipairs(game.buffs()) do
   hud.icon("buff" .. b.id, {x = x, y = 120, kind = "status", id = b.id, size = 24})
   x = x + 26
 end
+-- Cure (spell 1) and Provoke (ability 0x200 + 35).
+hud.icon("cure", {x = 20, y = 160, kind = "spell", id = 1, size = 32})
+hud.icon("provoke", {x = 56, y = 160, kind = "ability", id = 0x200 + 35, size = 32})
 ```
 
 ## `hud.set`
@@ -406,25 +413,41 @@ end)
 hud.on(id, handler)
 ```
 
-Sets the function called when the player clicks one of your HUD elements with the left or the right mouse button. The
-press then belongs to your mod: the game sees neither it nor its release, and `input.on_mouse` filters see both with
-`blocked = true`. An element has one handler: a second call replaces the first. You may set it before the element
-exists. `hud.off`, `hud.remove` and `hud.clear` take it away.
+Sets the function called when the player clicks or drags one of your HUD elements with the left or the right mouse
+button, and when the pointer comes onto it or leaves it. A press on the element belongs to your mod: the game sees
+neither it nor its release, and `input.on_mouse` filters see both with `blocked = true`. An element has one handler: a
+second call replaces the first. You may set it before the element exists. `hud.off`, `hud.remove` and `hud.clear` take
+it away.
+
+- **Click:** `"click"` comes when the button is released, if the pointer moved less than 4 pixels since the press.
+- **Drag:** a press that moves 4 pixels or more is a drag. The handler gets `"drag_start"` (at the place the button
+  went down), `"drag"` as the pointer moves (at most once a frame), and `"drag_end"` at the release, wherever the
+  pointer is by then. `dx` and `dy` are the pointer's offset from where the button went down. `drag_end` names your
+  topmost element under the pointer in `over`; when it is another element with a handler, that one gets `"drop"`
+  with the dragged element in `from`. That is enough to drag one slot onto another, or to move a bar: set its `x` and
+  `y` from `dx` and `dy` while it drags.
+- **Pointer:** `"mouse_enter"` and `"mouse_leave"` come as the pointer comes onto the element and leaves it (with
+  `x` and `y` only). Elements with a `tip` show it on their own; use these for anything more (a slot showing its
+  macro's lines in another element).
 
 **Parameters**
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id` | `string` | yes | The element's id. |
-| `handler` | `function` | yes | Called as `handler(id, event)` when the button goes down on the element. |
+| `handler` | `function` | yes | Called as `handler(id, event)`. |
 
 `event` is a table:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `kind` | `string` | Always `"click"`. |
-| `id` | `string` | The element's id. |
-| `button` | `string` | `"left"` or `"right"`. |
+| `kind` | `string` | `"click"`, `"drag_start"`, `"drag"`, `"drag_end"`, `"drop"`, `"mouse_enter"` or `"mouse_leave"`. |
+| `id` | `string` | The element's id (for `"drop"`, the element dropped on). |
+| `button` | `string` | `"left"` or `"right"` (not on `"mouse_enter"` / `"mouse_leave"`). |
+| `x`, `y` | `integer` | The pointer, in window pixels. |
+| `dx`, `dy` | `integer` | The pointer's offset from where the button went down (0 for a click). |
+| `over` | `string` or `nil` | `"drag_end"` only: your topmost element under the pointer at the release. |
+| `from` | `string` | `"drop"` only: the element that was dragged. |
 
 **Returns** nothing.
 
@@ -439,12 +462,33 @@ hud.on("heal", function(id, e)
 end)
 ```
 
+Dragging a bar to a new place, and swapping two slots by dropping one on the other:
+
+```lua
+local at = {x = 400, y = 600}
+hud.bar("xp", {x = at.x, y = at.y, w = 300, h = 10, kind = "experience", tip = "Drag to move"})
+hud.on("xp", function(id, e)
+  if e.kind == "drag" or e.kind == "drag_end" then
+    hud.set(id, {x = at.x + e.dx, y = at.y + e.dy})
+    if e.kind == "drag_end" then at.x, at.y = at.x + e.dx, at.y + e.dy end
+  end
+end)
+
+for i, spell in ipairs({1, 2}) do
+  local id = "slot" .. i
+  hud.icon(id, {x = 20 + 40 * (i - 1), y = 200, kind = "spell", id = spell, size = 32, tip = res.spell(spell).name})
+  hud.on(id, function(id, e)
+    if e.kind == "drop" then print(e.from .. " dropped on " .. id) end
+  end)
+end
+```
+
 Notes:
-- A click reaches the element where it was drawn last frame. Hidden elements (`visible = false`) take no clicks.
-- When elements overlap, the click goes to the topmost one that has a handler: a text drawn over a rectangle with a
+- A press reaches the element where it was drawn last frame. Hidden elements (`visible = false`) take no clicks.
+- When elements overlap, the press goes to the topmost one that has a handler: a text drawn over a rectangle with a
   handler does not stop the rectangle's clicks.
-- The handler runs as the player's input, so with the `actions` permission it may do game actions (`actions.heal()`
-  above needs it).
+- Clicks, drags and drops run as the player's input, so with the `actions` permission they may do game actions
+  (`actions.heal()` above needs it). `mouse_enter` and `mouse_leave` do not.
 
 ## `hud.off`
 
@@ -452,7 +496,7 @@ Notes:
 hud.off(id)
 ```
 
-Removes the click handler of one of your HUD elements; the element stays and clicks go through to the game again. An
+Removes the handler of one of your HUD elements; the element stays and clicks go through to the game again. An
 id without a handler is ignored.
 
 **Parameters**

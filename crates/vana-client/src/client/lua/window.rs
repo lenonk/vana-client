@@ -5,12 +5,62 @@
 use super::super::game_ui::GameUi;
 use crate::audio::Ui as Se;
 
+/// An icon as mods name it ({kind = "item" | "status" | "spell" | "ability", id}): an item's, a status's, or a
+/// spell's or an ability's (weapon skills too) as the magic and ability lists draw it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Icon {
+    Item(u16),
+    Status(u16),
+    Spell(u16),
+    Ability(u16),
+}
+
+impl Icon {
+    /// By kind name; no kind (or an unknown one) is an item's.
+    pub fn of(kind: Option<&str>, id: u16) -> Icon {
+        match kind {
+            Some("status") => Icon::Status(id),
+            Some("spell") => Icon::Spell(id),
+            Some("ability" | "weaponskill" | "weapon_skill") => Icon::Ability(id),
+            _ => Icon::Item(id),
+        }
+    }
+
+    pub fn kind(self) -> &'static str {
+        match self {
+            Icon::Item(_) => "item",
+            Icon::Status(_) => "status",
+            Icon::Spell(_) => "spell",
+            Icon::Ability(_) => "ability",
+        }
+    }
+
+    pub fn id(self) -> u16 {
+        match self {
+            Icon::Item(id) | Icon::Status(id) | Icon::Spell(id) | Icon::Ability(id) => id,
+        }
+    }
+
+    /// A spell's or an ability's list sprite (library, index).
+    pub fn sprite(self, w: &super::World) -> Option<(&'static str, usize)> {
+        match self {
+            Icon::Spell(id) => super::super::magic::list_icon_of(w, true, id),
+            Icon::Ability(id) => {
+                // The list takes a record's index; ids and indexes match, but look it up if one does not.
+                let acts = w.actions.as_ref()?;
+                let k = if acts.abilities.get(id as usize).is_some_and(|a| a.id == id) { id } else { acts.abilities.iter().position(|a| a.id == id)? as u16 };
+                super::super::magic::list_icon_of(w, false, k)
+            }
+            _ => None,
+        }
+    }
+}
+
 /// A list row: its cells (one without columns), an icon before them, a colour.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Row {
     pub cells: Vec<String>,
-    /// (item icon, id): an item's icon when true, a status icon's when false.
-    pub icon: Option<(bool, u16)>,
+    pub icon: Option<Icon>,
     pub colour: Option<[u8; 4]>,
 }
 
@@ -64,8 +114,7 @@ pub enum Cmd {
     Circle { c: [f32; 2], radius: f32, colour: [u8; 4], line: Option<f32> },
     Tri { pts: [[f32; 2]; 3], colour: [u8; 4] },
     Text { at: [f32; 2], text: String, colour: [u8; 4] },
-    /// (item icon, id) as list rows take them.
-    Icon { at: [f32; 2], size: f32, item: bool, id: u16 },
+    Icon { at: [f32; 2], size: f32, icon: Icon },
 }
 
 /// What every element may carry: the help it shows under the cursor, the page it is on.
@@ -877,7 +926,7 @@ impl Window {
     }
 
     /// The classic page at (x, y): the Config pages' frame, bullets, buttons, sliders and the hand.
-    pub fn draw_classic(&self, gu: &mut GameUi, items: Option<&super::super::items::ItemCache>, x: f32, y: f32) -> [f32; 4] {
+    pub fn draw_classic(&self, gu: &mut GameUi, world: Option<&super::World>, x: f32, y: f32) -> [f32; 4] {
         let (w, h) = self.classic_size();
         if self.framed {
             gu.frame(x, y, w, h);
@@ -954,8 +1003,8 @@ impl Window {
                         let ry = ry0 + LINE * (k - *top) as f32;
                         let ink = row.colour.map_or(N, tint);
                         let mut ix = 0.0;
-                        if let Some((item, id)) = row.icon {
-                            icon(gu, items, item, id, x + 32.0, ry + 1.0, 16.0);
+                        if let Some(i) = row.icon {
+                            icon(gu, world, i, x + 32.0, ry + 1.0, 16.0);
                             ix = 18.0;
                         }
                         if cols.is_empty() {
@@ -1078,7 +1127,7 @@ impl Window {
                     }
                 }
                 Elem::Canvas { w: cw, h: ch, cmds, .. } => {
-                    draw_canvas(gu, items, cmds, x + 20.0, ey, *cw, *ch);
+                    draw_canvas(gu, world, cmds, x + 20.0, ey, *cw, *ch);
                 }
                 Elem::Section { label, open, .. } => {
                     let mark = if *open { "-" } else { "+" };
@@ -1116,7 +1165,7 @@ fn ring(c: [f32; 2], r: f32) -> Vec<[f32; 2]> {
 }
 
 /// A canvas's commands at (x, y), clipped to it.
-fn draw_canvas(gu: &mut GameUi, items: Option<&super::super::items::ItemCache>, cmds: &[Cmd], x: f32, y: f32, w: f32, h: f32) {
+fn draw_canvas(gu: &mut GameUi, world: Option<&super::World>, cmds: &[Cmd], x: f32, y: f32, w: f32, h: f32) {
     gu.clip(Some([x, y, w, h]));
     let at = |p: [f32; 2]| [x + p[0], y + p[1]];
     for c in cmds {
@@ -1156,9 +1205,9 @@ fn draw_canvas(gu: &mut GameUi, items: Option<&super::super::items::ItemCache>, 
                 let [tx, ty] = at(*p);
                 gu.text_fit(text, tx, ty, x + w - tx + 16.0, tint(*colour));
             }
-            Cmd::Icon { at: p, size, item, id } => {
+            Cmd::Icon { at: p, size, icon: i } => {
                 let [ix, iy] = at(*p);
-                icon(gu, items, *item, *id, ix, iy, *size);
+                icon(gu, world, *i, ix, iy, *size);
             }
         }
     }
@@ -1171,18 +1220,31 @@ fn button_w(gu: &GameUi, items: &[String]) -> f32 {
     if need <= 64.0 && items.len() >= 3 { 64.0 } else if need <= 88.0 { 88.0 } else { need }
 }
 
-/// An item's or a status icon at (x, y), `s` square.
-fn icon(gu: &mut GameUi, items: Option<&super::super::items::ItemCache>, item: bool, id: u16, x: f32, y: f32, s: f32) {
-    if item {
-        if let Some(cache) = items {
-            super::super::items::upload_icons(gu, cache, std::iter::once(id));
-            let name = crate::render::invwin::icon_texture(id);
-            if gu.has_image(&name) {
+/// An icon at (x, y), `s` square.
+pub(super) fn icon(gu: &mut GameUi, w: Option<&super::World>, i: Icon, x: f32, y: f32, s: f32) {
+    match i {
+        Icon::Item(id) => {
+            if let Some(cache) = w.and_then(|w| w.item_info.as_deref()) {
+                super::super::items::upload_icons(gu, cache, std::iter::once(id));
+                let name = crate::render::invwin::icon_texture(id);
+                if gu.has_image(&name) {
+                    gu.image_rect(&name, x, y, s, s, [1.0; 4]);
+                }
+            }
+        }
+        Icon::Status(id) => {
+            if let Some(name) = gu.status_icon(false, id) {
                 gu.image_rect(&name, x, y, s, s, [1.0; 4]);
             }
         }
-    } else if let Some(name) = gu.status_icon(false, id) {
-        gu.image_rect(&name, x, y, s, s, [1.0; 4]);
+        Icon::Spell(_) | Icon::Ability(_) => {
+            if let Some((lib, k)) = w.and_then(|w| i.sprite(w)) {
+                let (sw, sh) = (gu.sprite_width(lib, k), gu.sprite_height(lib, k));
+                if sw > 0.0 && sh > 0.0 {
+                    gu.sprite_scaled(lib, k, x, y, s / sw, s / sh, 0x8080_8080);
+                }
+            }
+        }
     }
 }
 

@@ -798,9 +798,21 @@ pub(super) fn install(lua: &Lua, vm: &super::vm::Vm, storage: (serde_json::Value
             for (id, at) in &w.ability_recast {
                 abilities.set(*id, left(at))?;
             }
+            // Each running recast's whole length.
+            let (st, at) = (lua.create_table()?, lua.create_table()?);
+            for id in w.spell_recast.keys() {
+                st.set(*id, w.spell_total.get(id).copied().unwrap_or(0.0))?;
+            }
+            for (id, end) in &w.ability_recast {
+                at.set(*id, w.ability_total.get(id).copied().unwrap_or_else(|| left(end) as f32))?;
+            }
+            let totals = lua.create_table()?;
+            totals.set("spells", st)?;
+            totals.set("abilities", at)?;
             let t = lua.create_table()?;
             t.set("spells", spells)?;
             t.set("abilities", abilities)?;
+            t.set("totals", totals)?;
             Ok(t)
         })?,
     )?;
@@ -946,6 +958,7 @@ pub(super) fn install(lua: &Lua, vm: &super::vm::Vm, storage: (serde_json::Value
             t.set("kind", a.kind)?;
             t.set("cost", a.cost)?;
             t.set("recast_id", a.timer)?;
+            t.set("recast", crate::dat::recasts::ability(id))?;
             t.set("targets", a.targets)?;
             t.set("tp", a.tp)?;
             t.set("level", a.level)?;
@@ -1454,14 +1467,14 @@ fn cmds(v: Option<Table>) -> mlua::Result<Vec<super::window::Cmd>> {
                 "circle" => Cmd::Circle { c: [n("x")?, n("y")?], radius: n("r")?, colour, line: c.get("line")? },
                 "tri" => Cmd::Tri { pts: [[n("x1")?, n("y1")?], [n("x2")?, n("y2")?], [n("x3")?, n("y3")?]], colour },
                 "text" => Cmd::Text { at: [n("x")?, n("y")?], text: c.get::<Option<String>>("text")?.unwrap_or_default(), colour },
-                "icon" => Cmd::Icon { at: [n("x")?, n("y")?], size: c.get::<Option<f32>>("size")?.unwrap_or(16.0), item: c.get::<Option<String>>("kind")?.as_deref() != Some("status"), id: c.get("id")? },
+                "icon" => Cmd::Icon { at: [n("x")?, n("y")?], size: c.get::<Option<f32>>("size")?.unwrap_or(16.0), icon: super::window::Icon::of(c.get::<Option<String>>("kind")?.as_deref(), c.get("id")?) },
                 other => return Err(mlua::Error::runtime(format!("unknown draw command {other:?}"))),
             })
         })
         .collect()
 }
 
-/// A list's rows: strings, or {cells..., icon = {kind = "item" | "status", id}, colour}.
+/// A list's rows: strings, or {cells..., icon = {kind = "item" | "status" | "spell" | "ability", id}, colour}.
 fn rows(v: Option<Table>) -> mlua::Result<Vec<super::window::Row>> {
     use super::window::Row;
     let cell = |v: Value| -> String {
@@ -1483,7 +1496,7 @@ fn rows(v: Option<Table>) -> mlua::Result<Vec<super::window::Row>> {
                         None => t.sequence_values::<Value>().map(|v| v.map(cell)).collect::<mlua::Result<_>>()?,
                     };
                     let icon = match t.get::<Option<Table>>("icon")? {
-                        Some(i) => Some((i.get::<Option<String>>("kind")?.as_deref() != Some("status"), i.get::<u16>("id")?)),
+                        Some(i) => Some(super::window::Icon::of(i.get::<Option<String>>("kind")?.as_deref(), i.get::<u16>("id")?)),
                         None => None,
                     };
                     Row { cells, icon, colour: super::hud::colour(t.get("colour")?)? }
