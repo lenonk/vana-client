@@ -145,6 +145,10 @@ pub struct Modern {
     /// The mods' look (ui.skin) as last applied, and the panels drawn scaled (their layers' transforms).
     skin_ver: std::cell::Cell<u64>,
     scaled: std::cell::RefCell<std::collections::HashSet<String>>,
+    /// Where the panels a mod hid would stand this frame (their last size), for mods that replace them, and each
+    /// panel's size as last drawn.
+    ghosts: std::cell::RefCell<HashMap<String, Rect>>,
+    sizes: std::cell::RefCell<HashMap<String, Vec2>>,
     /// An edge window's heading dragged (or let go) this frame.
     edge_grip: std::cell::Cell<Option<extras::EdgeDrag>>,
     /// The edge window being dragged and where the pointer holds it (its ghost follows the pointer).
@@ -217,6 +221,8 @@ impl Modern {
             styled: false,
             skin_ver: Default::default(),
             scaled: Default::default(),
+            ghosts: Default::default(),
+            sizes: Default::default(),
             retail: Default::default(),
             edge_grip: Default::default(),
             edge_ghost: Default::default(),
@@ -381,7 +387,9 @@ impl Modern {
         let this = std::mem::take(&mut p.this);
         // Where each panel is, for mods (ui.native.rect, HUD anchors), in window pixels.
         let ppp = ctx.pixels_per_point();
-        w.lua.set_native_rects(this.iter().map(|(k, r)| (k.clone(), [r.min.x * ppp, r.min.y * ppp, r.width() * ppp, r.height() * ppp])).collect());
+        let px = |r: &Rect| [r.min.x * ppp, r.min.y * ppp, r.width() * ppp, r.height() * ppp];
+        let ghosts = std::mem::take(&mut *self.ghosts.borrow_mut());
+        w.lua.set_native_rects(this.iter().map(|(k, r)| (k.clone(), px(r))).collect(), ghosts.iter().map(|(k, r)| (k.clone(), px(r))).collect());
         *self.rects.borrow_mut() = this;
         if changed {
             cfg.modern_places.insert(w.name.clone(), layout.clone());
@@ -1032,7 +1040,15 @@ impl<'a> Panels<'a> {
         // A mod's place (ui.native.place) fades it too; faded out, it is not drawn either.
         let placed = self.placed.get(id).copied();
         let vis = self.vis(id) * placed.map_or(1.0, |p| p.alpha);
-        if vis <= 0.01 || self.hidden.contains(&id) {
+        if self.hidden.contains(&id) {
+            // Where it would stand now at its last size, for a mod's replacement (ui.native.rect, HUD anchors).
+            let size = self.m.sizes.borrow().get(id).copied();
+            let h = o.height.or(size.map(|s| s.y)).unwrap_or(0.0);
+            let at = o.at.unwrap_or_else(|| self.resolve(id, &self.place(id), h));
+            self.m.ghosts.borrow_mut().insert(id.to_string(), Rect::from_min_size(at, vec2(size.map_or(o.size.x, |s| s.x), h)));
+            return None;
+        }
+        if vis <= 0.01 {
             return None;
         }
         let (m, ctx) = (self.m, self.ctx);
@@ -1128,9 +1144,13 @@ impl<'a> Panels<'a> {
         if COLUMN.contains(&id) {
             ctx.move_to_top(shown.response.layer_id);
         }
-        // A mod's scale, about the panel's top left; the pointer is transformed with it.
+        // A mod's scale, about the corner it names (the top left by default); the pointer is transformed with it.
         let scale = placed.map_or(1.0, |p| p.scale);
-        let zoom = egui::emath::TSTransform::new(pos.to_vec2() * (1.0 - scale), scale);
+        let (fx, fy) = placed.map_or((0.0, 0.0), |p| p.origin);
+        let area = shown.response.rect;
+        let pivot = area.min + vec2(area.width() * fx, area.height() * fy);
+        let zoom = egui::emath::TSTransform::new(pivot.to_vec2() * (1.0 - scale), scale);
+        m.sizes.borrow_mut().insert(id.to_string(), area.size());
         if (scale - 1.0).abs() > 0.001 {
             ctx.set_transform_layer(shown.response.layer_id, zoom);
             m.scaled.borrow_mut().insert(id.to_string());
@@ -1551,10 +1571,11 @@ mod panel_tests {
         o.textures_delta.clear();
         let m = Modern::new(&ctx);
         let mut layout = Layout::new();
-        let place = |x, scale| super::super::lua::Placed { x: Some(x), y: Some(100.0), scale, alpha: 1.0 };
+        let place = |x, scale| super::super::lua::Placed { x: Some(x), y: Some(100.0), scale, alpha: 1.0, origin: (0.0, 0.0) };
         let mut seen = Vec::new();
         // Frame 0 has egui's default screen.
-        for (f, placed) in [None, None, Some(place(200.0, 1.0)), Some(place(200.0, 2.0)), Some(place(200.0, 2.0)), Some(place(-400.0, 1.0)), None].into_iter().enumerate() {
+        let corner = super::super::lua::Placed { origin: (1.0, 1.0), ..place(200.0, 2.0) };
+        for (f, placed) in [None, None, Some(place(200.0, 1.0)), Some(place(200.0, 2.0)), Some(place(200.0, 2.0)), Some(place(-400.0, 1.0)), None, Some(corner), Some(corner)].into_iter().enumerate() {
             let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1280.0, 720.0))), time: Some(f as f64 * 0.1), max_texture_side: side, ..Default::default() };
             let mut o = ctx.run_ui(raw, |ui| {
                 let ctx = ui.ctx();
@@ -1576,6 +1597,8 @@ mod panel_tests {
         assert!((r[4].min.x - (1280.0 - 400.0 / ppp)).abs() < 0.5, "{:?}", r[4]);
         // Released: its own place again, at its own size.
         assert!((r[5].min - r[0].min).length() < 0.5 && (r[5].width() - r[0].width()).abs() < 0.5, "{:?} {:?}", r[0], r[5]);
+        // Scaled about its bottom right: that corner stays.
+        assert!((r[7].max - r[1].max).length() < 0.5 && (r[7].width() - 2.0 * r[1].width()).abs() < 1.0, "{:?} {:?}", r[1], r[7]);
     }
 
     /// Mods' sprites keep the pack's logical size, with their own pixels; frames take their colours; released, the

@@ -435,7 +435,7 @@ function hud.image(id, spec) end
 ---@param spec table 
 function hud.icon(id, spec) end
 
---- Changes an element's fields (only those given); false clears a colour; an image takes a new path. Every element also takes tip: a string or {title, text}, a tooltip shown while the pointer rests on it (false removes it); and anchor: a modern panel's name (ui.native.panels), making x and y count from the panel's top left (negative from its right or bottom edge), so the element follows the panel, and stays where a hidden panel last was (false: the window again).
+--- Changes an element's fields (only those given); false clears a colour; an image takes a new path. Every element also takes tip: a string or {title, text}, a tooltip shown while the pointer rests on it (false removes it); and anchor: a modern panel's name (ui.native.panels), making x and y signed offsets from one of the panel's corners (corner: top_left (the default), top_right, bottom_left, bottom_right), so the element follows the panel, and stays where a hidden panel last was (false: the window again). HUD elements draw under the panels: place them beside a panel, or where a hidden one was.
 ---@param id string 
 ---@param fields table 
 function hud.set(id, fields) end
@@ -494,12 +494,12 @@ function ui.native.interface(show) end
 ---@param hidden? boolean default true; false shows it again
 function ui.native.hide(piece, hidden) end
 
---- Places, scales or fades a modern panel while the mod is loaded (the newest mod's place wins): x, y (its top left in window pixels, negative from the right or bottom edge; none keeps the panel's own place, and a panel placed at a point is not moved by the player), scale (0.25..4, about its top left; the pointer works on it scaled) and alpha (0..1). nil gives it back. The edge windows (timers, minimap, regime) only hide. Modern UI only. Needs ui.native.
+--- Places, scales or fades a modern panel while the mod is loaded (the newest mod's place wins): x, y (its top left in window pixels, negative from the right or bottom edge; none keeps the panel's own place, and a panel placed at a point is not moved by the player), scale (0.25..4; the pointer works on it scaled) about origin (top_left (the default), top_right, bottom_left, bottom_right, center: the corner that stays put) and alpha (0..1). nil gives it back. The edge windows (timers, minimap, regime) only hide. Modern UI only. Needs ui.native.
 ---@param panel string a name from ui.native.panels
----@param place? {x: number?, y: number?, scale: number?, alpha: number?} nil gives it back
+---@param place? {x: number?, y: number?, scale: number?, origin: string?, alpha: number?} nil gives it back
 function ui.native.place(panel, place) end
 
---- Where a modern panel was drawn, in window pixels: {name, x, y, w, h, shown}; shown is false while it is not drawn (hidden, or closed), and the rect is where it last was. nil before it was ever drawn, and in the classic UI.
+--- Where a modern panel was drawn, in window pixels: {name, x, y, w, h, shown}; shown is false while it is not drawn (hidden, or closed), and the rect is where it last was; one a mod hides is where it would stand now (its last size). nil before it was ever drawn or hidden, and in the classic UI.
 ---@param panel string 
 ---@return {name: string, x: integer, y: integer, w: integer, h: integer, shown: boolean}?
 function ui.native.rect(panel) end

@@ -181,11 +181,13 @@ pub(super) struct State {
     /// Presses a mod took: their repeats and releases are taken too.
     taken_keys: HashSet<K>,
     taken_buttons: Vec<MouseButton>,
-    /// A press on a mod's HUD element: its mod, element, button, where it went down, and whether it is a drag yet.
-    hud_press: Option<(String, String, MouseButton, (f64, f64), bool)>,
+    hud_press: Option<HudPress>,
     /// The HUD element under the pointer (one with a handler or a tip) and since when.
     pub hud_hover: Option<(String, String, std::time::Instant)>,
 }
+
+/// A press on a mod's HUD element: its mod, element, button, where it went down, and whether it is a drag yet.
+type HudPress = (String, String, MouseButton, (f64, f64), bool);
 
 /// A press moving this far (window pixels) is a drag.
 const DRAG_START: f64 = 4.0;

@@ -135,7 +135,9 @@ and `ui.native.rect`, `ui.native.panels` and a HUD element's `anchor` take every
 | `"timers"`, `"minimap"`, `"regime"` | yes | no | The edge windows: Timers, the minimap, the training regime window. |
 
 **Replacing a panel.** Hide it, then draw your own HUD elements with `anchor` set to its name: they stand where the
-panel was (its last rect), and follow it if the player moves it while it shows. The panel's own place is the player's
+panel was (its last rect). **Adding to a panel.** HUD elements draw under the panels, so an element anchored to a
+shown panel goes beside it (`{anchor = "target", y = -24}` above the target window), and follows it as the player
+moves it. The panel's own place is the player's
 to set; `ui.native.place` overrides it while your mod runs.
 
 ## `ui.native.windows`
@@ -398,7 +400,8 @@ ui.native.place(panel, place?)
 
 Moves, scales or fades one of the modern UI's [panels](#modern-panels) while your mod is loaded. Given an `x` or a
 `y`, the panel stands there and the player's drag no longer moves it (its own place stays saved for when your mod
-gives it back). A `scale` grows or shrinks it about its top left; clicks and the wheel work on it at that size.
+gives it back). A `scale` grows or shrinks it about its `origin`, the corner that stays put; clicks and the wheel work
+on it at that size. A panel at the right or bottom of the screen grows best from its bottom right.
 `alpha` fades it (0 does not draw it at all). Call it again with other values to change them, and with `nil` to give
 the panel back. If two mods place one panel, the last call wins; a mod's `nil` only takes away its own place.
 
@@ -415,7 +418,8 @@ the panel back. If two mods place one panel, the last call wins; a mod's `nil` o
 | --- | --- | --- | --- |
 | `x` | `number` | the panel's own | Its left edge in window pixels; negative counts from the right edge (`-400`: 400 pixels in from it). |
 | `y` | `number` | the panel's own | Its top edge in window pixels; negative counts from the bottom edge. |
-| `scale` | `number` | `1` | Its size, 0.25 to 4, about its top left. |
+| `scale` | `number` | `1` | Its size, 0.25 to 4. |
+| `origin` | `string` | `"top_left"` | The point it scales about: `"top_left"`, `"top_right"`, `"bottom_left"`, `"bottom_right"` or `"center"`. |
 | `alpha` | `number` | `1` | Its opacity, 0 to 1. |
 
 **Returns** nothing.
@@ -430,12 +434,10 @@ the panel back. If two mods place one panel, the last call wins; a mod's `nil` o
 **Example**
 
 ```lua
--- A bigger target window above the party window, a little see-through.
-ui.native.place("target", {scale = 1.4, alpha = 0.85})
-local r = ui.native.rect("party")
-if r then
-  ui.native.place("target", {x = r.x, y = r.y - 200, scale = 1.4, alpha = 0.85})
-end
+-- A bigger target window, a little see-through, growing up and left from where it stands.
+ui.native.place("target", {scale = 1.4, origin = "bottom_right", alpha = 0.85})
+-- Or at a point of your own: 100 pixels in from the left, 200 down.
+ui.native.place("target", {x = 100, y = 200, scale = 1.4})
 ```
 
 ## `ui.native.rect`
@@ -446,7 +448,9 @@ ui.native.rect(panel) -> table?
 
 Where one of the modern UI's [panels](#modern-panels) was drawn last frame, in window pixels (as `hud` places
 elements). A panel that is not drawn now (hidden by a mod, faded out by a UI mode, or closed) keeps the rect it last
-had, with `shown = false`.
+had, with `shown = false`. A panel a mod hides has the place it would stand at now, at its last size (panels that
+sit on another move with it), with no height if it has never been drawn: anchor to such a panel by the corner its place
+keeps (the location panel stands on the chat window, so its bottom).
 
 **Parameters**
 
@@ -454,8 +458,8 @@ had, with `shown = false`.
 | --- | --- | --- | --- |
 | `panel` | `string` | yes | A name from the [Modern panels](#modern-panels) table. |
 
-**Returns** `table?`: `{name, x, y, w, h, shown}`, or `nil` when the panel has not been drawn since login, and in the
-classic UI.
+**Returns** `table?`: `{name, x, y, w, h, shown}`, or `nil` when the panel has been neither drawn nor hidden since
+login, and in the classic UI.
 
 **Errors** An unknown name: `no panel "..."`, with the list.
 

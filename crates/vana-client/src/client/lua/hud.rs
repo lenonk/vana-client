@@ -28,8 +28,10 @@ pub(super) struct Elem {
     pub kind: Kind,
     /// The tooltip shown while the pointer rests on it: (title, text).
     pub tip: Option<(String, String)>,
-    /// A modern panel its place counts from (ui.native.panels names them).
+    /// A modern panel its place counts from (ui.native.panels names them), and which corner: bit 0 right, bit 1
+    /// bottom.
     pub anchor: Option<String>,
+    pub corner: u8,
 }
 
 pub(super) fn colour(v: Value) -> mlua::Result<Option<[u8; 4]>> {
@@ -69,6 +71,15 @@ fn apply(e: &mut Elem, t: &Table) -> mlua::Result<()> {
                 Some(s)
             }
             _ => None,
+        };
+    }
+    if let Some(c) = t.get::<Option<String>>("corner")? {
+        e.corner = match c.as_str() {
+            "top_left" => 0,
+            "top_right" => 1,
+            "bottom_left" => 2,
+            "bottom_right" => 3,
+            _ => return Err(mlua::Error::runtime(format!("corner {c:?}: top_left, top_right, bottom_left or bottom_right"))),
         };
     }
     // A string, {title, text}, or false for none.
@@ -195,7 +206,7 @@ fn apply(e: &mut Elem, t: &Table) -> mlua::Result<()> {
 }
 
 fn put(lua: &Lua, id: String, kind: Kind, spec: Table) -> mlua::Result<()> {
-    let mut e = Elem { id: id.clone(), x: 0.0, y: 0.0, visible: true, layer: 0, kind, tip: None, anchor: None };
+    let mut e = Elem { id: id.clone(), x: 0.0, y: 0.0, visible: true, layer: 0, kind, tip: None, anchor: None, corner: 0 };
     apply(&mut e, &spec)?;
     let st = super::api::state(lua);
     let mut s = st.borrow_mut();
@@ -416,17 +427,15 @@ pub(super) fn draw(gu: &mut super::super::game_ui::GameUi, w: &World) {
     // Panels are the modern UI's: in the classic UI anchored elements wait.
     let panels = if w.modern { info.borrow().native_rects.clone() } else { Default::default() };
     for (mod_id, e) in all {
-        // Negative places count from the right or bottom edge: the window's, or the panel's it is anchored to (as
-        // last drawn, so it stays where a hidden panel was; not drawn before a panel ever was).
-        let frame = match &e.anchor {
-            Some(a) => match panels.get(a) {
-                Some((r, _)) => *r,
-                None => continue,
-            },
-            None => [0.0, 0.0, win[0], win[1]],
+        // Anchored: signed offsets from a corner of the panel (as last drawn, so where a hidden panel was; not drawn
+        // before a panel ever was). Else negative places count from the window's right or bottom edge.
+        let (px, py) = match &e.anchor {
+            Some(a) => {
+                let Some((r, _)) = panels.get(a) else { continue };
+                (r[0] + if e.corner & 1 != 0 { r[2] } else { 0.0 } + e.x, r[1] + if e.corner & 2 != 0 { r[3] } else { 0.0 } + e.y)
+            }
+            None => (if e.x < 0.0 { win[0] + e.x } else { e.x }, if e.y < 0.0 { win[1] + e.y } else { e.y }),
         };
-        let px = frame[0] + if e.x < 0.0 { frame[2] + e.x } else { e.x };
-        let py = frame[1] + if e.y < 0.0 { frame[3] + e.y } else { e.y };
         let (x, y) = (px * k.0, py * k.1);
         let r = match &e.kind {
             Kind::Text { text, size, colour, bg, align, pad, font, outline, outline_w, shadow } => {

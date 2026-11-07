@@ -197,7 +197,15 @@ pub(super) fn install(lua: &Lua, ui: &Table, mod_id: &str) -> mlua::Result<()> {
                 Some(s) => {
                     let scale = s.get::<Option<f32>>("scale")?.unwrap_or(1.0).clamp(0.25, 4.0);
                     let alpha = s.get::<Option<f32>>("alpha")?.unwrap_or(1.0).clamp(0.0, 1.0);
-                    let placed = super::state::Placed { x: s.get("x")?, y: s.get("y")?, scale, alpha };
+                    let origin = match s.get::<Option<String>>("origin")?.as_deref() {
+                        None | Some("top_left") => (0.0, 0.0),
+                        Some("top_right") => (1.0, 0.0),
+                        Some("bottom_left") => (0.0, 1.0),
+                        Some("bottom_right") => (1.0, 1.0),
+                        Some("center" | "centre") => (0.5, 0.5),
+                        Some(o) => return Err(mlua::Error::runtime(format!("origin {o:?}: top_left, top_right, bottom_left, bottom_right or center"))),
+                    };
+                    let placed = super::state::Placed { x: s.get("x")?, y: s.get("y")?, scale, alpha, origin };
                     f.placed.insert(name, (me.clone(), placed));
                 }
                 None => {

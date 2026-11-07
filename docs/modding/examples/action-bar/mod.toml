@@ -1,0 +1,4 @@
+name = "Action Bar"
+version = "1.0.0"
+description = "A bar of spells and abilities: click to use, drag to swap or move, a tooltip and a recast fill on each."
+permissions = ["actions"]

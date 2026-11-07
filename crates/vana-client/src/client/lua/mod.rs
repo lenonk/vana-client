@@ -1494,14 +1494,18 @@ impl Host {
         self.info.borrow().placed.iter().map(|(k, v)| (k.clone(), v.1)).collect()
     }
 
-    /// The modern panels drawn this frame, in window pixels; those not drawn keep their last rect, as not shown.
-    pub(in crate::client) fn set_native_rects(&self, drawn: Vec<(String, [f32; 4])>) {
+    /// The modern panels drawn this frame, in window pixels; those not drawn keep their last rect, as not shown, but
+    /// those a mod hid take where they would stand now (`hidden`: what they sit on moves).
+    pub(in crate::client) fn set_native_rects(&self, drawn: Vec<(String, [f32; 4])>, hidden: Vec<(String, [f32; 4])>) {
         let mut f = self.info.borrow_mut();
         for r in f.native_rects.values_mut() {
             r.1 = false;
         }
         for (id, r) in drawn {
             f.native_rects.insert(id, (r, true));
+        }
+        for (id, r) in hidden {
+            f.native_rects.insert(id, (r, false));
         }
     }
 
@@ -1664,12 +1668,20 @@ mod tests {
         }
         host.info.borrow_mut().skin.forget("a");
         assert_eq!((host.info.borrow().skin.ver, host.info.borrow().skin.colours.len()), (2, 0));
-        host.set_native_rects(vec![("party".into(), [1.0, 2.0, 3.0, 4.0])]);
+        host.set_native_rects(vec![("party".into(), [1.0, 2.0, 3.0, 4.0])], Vec::new());
         assert_eq!(a.lua.load(r#"local r = ui.native.rect("party"); return r.x, r.h, r.shown"#).eval::<(i64, i64, bool)>().unwrap(), (1, 4, true));
-        host.set_native_rects(Vec::new());
-        assert!(!a.lua.load(r#"return ui.native.rect("party").shown"#).eval::<bool>().unwrap());
+        // Closed: the last rect stays. Hidden by a mod: where it would stand now.
+        host.set_native_rects(Vec::new(), Vec::new());
+        assert_eq!(a.lua.load(r#"local r = ui.native.rect("party"); return r.x, r.shown"#).eval::<(i64, bool)>().unwrap(), (1, false));
+        host.set_native_rects(Vec::new(), vec![("party".into(), [9.0; 4]), ("where".into(), [5.0, 6.0, 7.0, 0.0])]);
+        assert_eq!(a.lua.load(r#"local r = ui.native.rect("party"); return r.x, r.shown"#).eval::<(i64, bool)>().unwrap(), (9, false));
+        assert_eq!(a.lua.load(r#"local r = ui.native.rect("where"); return r.x, r.shown"#).eval::<(i64, bool)>().unwrap(), (5, false));
+        assert!(run(&a, r#"ui.native.place("target", {scale = 2, origin = "middle"})"#).is_err());
+        run(&a, r#"ui.native.place("target", {scale = 2, origin = "bottom_right"})"#).unwrap();
+        assert_eq!(host.info.borrow().placed.get("target").map(|p| p.1.origin), Some((1.0, 1.0)));
         assert!(a.lua.load(r#"return ui.native.rect("focus")"#).eval::<Option<mlua::Table>>().unwrap().is_none());
-        run(&a, r#"hud.rect("r", {anchor = "party", x = -10})"#).unwrap();
+        run(&a, r#"hud.rect("r", {anchor = "party", corner = "top_right", x = -10, y = -24})"#).unwrap();
+        assert!(run(&a, r#"hud.rect("r", {anchor = "party", corner = "middle"})"#).is_err());
         let n: i64 = a.lua.load(r#"local n = 0 for _, p in ipairs(ui.native.panels()) do n = n + 1 end return n"#).eval().unwrap();
         assert_eq!(n as usize, native::PANELS.len());
     }
@@ -2349,7 +2361,7 @@ fn permission_text(p: &str) -> (&'static str, &'static str) {
         "exec" => ("Allow running programs", "Starts programs on this computer."),
         "clipboard" => ("Allow reading the clipboard", "Reads the text you copied."),
         "multibox" => ("Allow multibox", "Talks to your other game windows on this computer."),
-        "ui.native" => ("Allow game windows", "Opens, hides and drives the game's own windows."),
+        "ui.native" => ("Allow game windows", "Opens, hides, moves, scales and reskins the game's own windows and panels, and drives them."),
         "process" => ("Allow process settings", "Sets which CPU cores the game runs on, and its priority."),
         "devices" => ("Allow devices", "Talks to USB devices directly (G-keys, Stream Decks and the like)."),
         "mods" => ("Allow controlling mods", "Loads, unloads, reloads, hides and shows your other mods."),

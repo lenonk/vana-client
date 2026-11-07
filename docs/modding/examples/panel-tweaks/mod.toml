@@ -1,0 +1,4 @@
+name = "Panel Tweaks"
+version = "1.0.0"
+description = "Changes the modern interface's own panels: a larger target window, a compact location line, warmer colours."
+permissions = ["ui.native"]

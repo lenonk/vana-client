@@ -252,7 +252,7 @@ Reading needs no permission. The main places:
 | Who and what is around: players, NPCs, monsters | `game.entities()`, `game.entity(id)`, `game.target()` |
 | Your party and alliance | `game.party()` |
 | Your items, by bag | `game.items(bag)`, `game.equipment()` |
-| Status effects, recasts, spells and abilities known | `game.buffs()`, `game.recasts()`, `game.spells()`, `game.abilities()` |
+| Status effects, recasts (time left and each one's whole length), spells and abilities known | `game.buffs()`, `game.recasts()`, `game.spells()`, `game.abilities()` |
 | Zone, weather, Vana'diel time | `game.zone()`, `game.weather()`, `game.time()` |
 | Names and data from the game's files | `res.item(id)`, `res.spell(id)`, `res.zone(id)`, `res.status(id)`... |
 
@@ -324,7 +324,7 @@ permissions = ["actions", "net"]
 | `net` | The internet and local connections: web requests, TCP, UDP, opening links. |
 | `exec` | Starting programs, and recording the game window to video. |
 | `multibox` | Talking to your other game windows on this computer, and moving or focusing the game window. |
-| `ui.native` | Hiding the game's windows and HUD pieces, and changing game settings. |
+| `ui.native` | Hiding, moving, scaling and fading the game's windows, panels and HUD pieces; reskinning the modern interface (`ui.skin`); changing game settings. |
 | `clipboard` | Reading the clipboard (putting text on it needs nothing). |
 | `process` | Which CPU cores the client runs on, and its priority. |
 | `devices` | USB devices (G-keys, Stream Decks...) by their raw reports. |
@@ -341,7 +341,7 @@ There are four ways to put something on screen. All work in both the classic and
 | | What it is | Use it for |
 | --- | --- | --- |
 | `ui.window` | Windows with buttons, lists, sliders, text fields... drawn like the game's windows. | Anything the player works with. |
-| `hud` | Text, boxes, bars, images and maps over the game. | Readouts that stay on screen. |
+| `hud` | Text, boxes, bars, images, icons (items, statuses, spells, abilities) and maps over the game, which can take clicks and drags and show tooltips. | Readouts that stay on screen, buttons and bars. |
 | `draw` | Lines, rings, boxes, text and images placed in the 3D world. | Marking places and things in the world. |
 | `render` | How characters and the scene draw: hide, tint, resize, rename, post-process effects. | Changing what the game shows. |
 

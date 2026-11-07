@@ -1,8 +1,8 @@
 # Modding vana-client
 
 Mods are small Lua programs the client runs beside the game. A mod can show you things the game doesn't (timers,
-distances, a list of who is nearby), change what the game shows, add commands, and act in the game for you when you
-allow it. Mods use the client's windows and look, in both the classic and the modern interface.
+distances, a list of who is nearby), change what the game shows, change or replace the game's own interface (hide,
+move, scale and reskin its panels), add commands, and act in the game for you when you allow it. Mods use the client's windows and look, in both the classic and the modern interface.
 
 ## Where to start
 

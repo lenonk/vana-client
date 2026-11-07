@@ -38,13 +38,14 @@ pub(super) struct FrameInfo {
 }
 
 /// A modern panel's place from a mod: its top left in window pixels (negative from the right or bottom edge; none
-/// keeps the panel's own), its scale and opacity.
+/// keeps the panel's own), its scale, the point it scales about (a share of its width and height), its opacity.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Placed {
     pub x: Option<f32>,
     pub y: Option<f32>,
     pub scale: f32,
     pub alpha: f32,
+    pub origin: (f32, f32),
 }
 
 impl FrameInfo {
