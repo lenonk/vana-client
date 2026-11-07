@@ -825,7 +825,8 @@ fn mogdoor(p: &mut Panels, w: &mut World) {
 /// How a panel shows: its title, width (and the chat window's default room), resizable, at a fixed point (beside
 /// another, not moved), its frame, its exact height when known (placing it by its bottom without a frame's lag), its
 /// fade, and how much of its height shows from the bottom up (the chat window folds into its bottom edge as it fades).
-/// The rect returned and docked on is the part showing.
+/// The rect returned and docked on is the part showing. `cap` is room over the frame, in the panel (the party window's
+/// experience bar), counted in `height`.
 struct Show<'s> {
     title: Option<Title<'s>>,
     size: Vec2,
@@ -835,11 +836,12 @@ struct Show<'s> {
     height: Option<f32>,
     alpha: f32,
     fold: f32,
+    cap: f32,
 }
 
 impl Default for Show<'_> {
     fn default() -> Self {
-        Self { title: None, size: Vec2::ZERO, resizable: false, at: None, frame: "window_normal", height: None, alpha: 1.0, fold: 1.0 }
+        Self { title: None, size: Vec2::ZERO, resizable: false, at: None, frame: "window_normal", height: None, alpha: 1.0, fold: 1.0, cap: 0.0 }
     }
 }
 
@@ -1037,6 +1039,12 @@ impl<'a> Panels<'a> {
                 ui.set_clip_rect(ui.clip_rect().intersect(Rect::from_min_max(pos2(f32::NEG_INFINITY, top), pos2(f32::INFINITY, f32::INFINITY))));
             }
             let bg = ui.painter().add(Shape::Noop);
+            if o.cap > 0.0 {
+                let keep = ui.spacing().item_spacing.y;
+                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.allocate_exact_size(vec2(room.x, o.cap), Sense::hover());
+                ui.spacing_mut().item_spacing.y = keep;
+            }
             let inner = egui::Frame::NONE.inner_margin(margin).show(ui, |ui| {
                 ui.set_width(room.x - margin.sum().x);
                 ui.visuals_mut().override_text_color = Some(m.theme.color("text"));
@@ -1302,9 +1310,14 @@ fn status_count(id: u16) -> Option<&'static str> {
 /// at least 9 points.
 fn draw_status_count(painter: &egui::Painter, r: Rect, id: u16) {
     if let Some(n) = status_count(id) {
-        let font = FontId::new((r.height() * 0.54).clamp(9.0, 16.0), FontFamily::Name(STRONG.into()));
-        paint::outlined(painter, pos2(r.max.x + 1.0, r.max.y + 2.0), egui::Align2::RIGHT_BOTTOM, n, font, Color32::WHITE);
+        corner_number(painter, r, n, Color32::WHITE);
     }
+}
+
+/// A number on an icon's lower right corner (Utsusemi's shadows, a party member's level).
+fn corner_number(painter: &egui::Painter, r: Rect, n: &str, colour: Color32) {
+    let font = FontId::new((r.height() * 0.54).clamp(9.0, 16.0), FontFamily::Name(STRONG.into()));
+    paint::outlined(painter, pos2(r.max.x + 1.0, r.max.y + 2.0), egui::Align2::RIGHT_BOTTOM, n, font, colour);
 }
 
 /// Our status icons by status id (assets/modern/status_map.tsv: ids sharing a retail image share ours).

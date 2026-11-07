@@ -99,6 +99,7 @@ end)
 | `"network"` | The connection panel. |
 | `"palette"` | The macro palette's drawing (its keys still run macros). |
 | `"clock"` | The Earth time line of the Clock extra. |
+| `"experience"` | The experience bar on the modern party window's top edge. |
 
 ## `ui.native.windows`
 

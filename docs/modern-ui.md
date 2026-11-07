@@ -280,6 +280,13 @@ Milestone 1:
   Modern is on.
 - Seen live (Lnxcsfix, 2026-10-26): every panel above.
 - Party rows show the sub job small on the main job's corner.
+- Party and alliance rows show the main job's level on the job icon's lower right corner, as the status icons'
+  counts (Utsusemi's shadows) are drawn (ours, user 2026-11-06).
+- The experience bar (ours, user 2026-11-06): a slim bar centred on the party window's top edge between its corner
+  ornaments, in a 4-point strip the window keeps over its frame (so what docks on the window sits on the bar). It
+  fills with the level's EXP; once a master level is unlocked, its exemplar points; in merit mode, the limit points
+  toward the next merit point. Blue while capped. Its tooltip gives the numbers, the percent and what is left. Mods
+  hide it with `ui.native.hide("experience")`.
 - Synthesis and trade (modern/craft.rs): the slots as tiles beside one inventory list of every row; a click on an
   item puts it in the cursor's slot; the count and the gil asked inside the panel with buttons for their keys (gil:
   All and 0 outright). Synthesis keeps its menu, crystal list and history (favourites starred, Favorite /

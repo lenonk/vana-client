@@ -281,8 +281,8 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     hud::where_panel(&mut p, &WhereView { zone: "West Ronfaure".into(), grid: "(F-9)".into(), time: (18, 42), day: (3, "Windsday".into()), weather: Some(11), compass: Some(compass), clock: Some(super::super::clock::Parts { earth: "20:40".into(), moon: ("Last Quarter Moon".into(), 60), next: ("Lightningday".into(), 46) }) });
     let theirs = vec![fx("icons/protect", None, false), fx("icons/sleep", None, false)];
     let vit = |hp: u32, mp: u32, f: f32| hud::RowVitals { hp, hp_max: Some(1000), mp, tp: Some(if f > 0.9 { 1250 } else { 300 }), hpf: f, mpf: Some(f * 0.8), hp_colour: if f < 0.75 { egui::Color32::from_rgb(0xff, 0xd0, 0x40) } else { egui::Color32::WHITE } };
-    let row = |slot, name: &str, job, here: bool, hp: f32, marked, effects: Vec<Effect>| PartyRow { slot, name: name.into(), icon: hud::job_icon(job), sub_icon: hud::job_icon(if job == 3 { 5 } else { 0 }), here: here.then(|| vit((hp * 1000.0) as u32, 420, hp)), zone: "Port Jeuno".into(), marked, hand: marked.then_some(0x8080_8080), marks: (slot == 0) as u8, effects, jobs: String::new() };
-    hud::party_panel(&mut p, "party", "Party", &[row(0, "Lenon", 5, true, 0.98, false, vec![]), row(1, "Raven", 1, true, 0.88, false, theirs.clone()), row(2, "Koru", 3, true, 0.62, true, vec![]), row(3, "Shantotto", 4, true, 0.95, false, vec![]), row(4, "Prishe", 2, false, 1.0, false, vec![])], false, Some(super::super::resttick::Shown::Next(0.6, 4.0)));
+    let row = |slot, name: &str, job, here: bool, hp: f32, marked, effects: Vec<Effect>| PartyRow { slot, name: name.into(), icon: hud::job_icon(job), sub_icon: hud::job_icon(if job == 3 { 5 } else { 0 }), here: here.then(|| vit((hp * 1000.0) as u32, 420, hp)), zone: "Port Jeuno".into(), marked, hand: marked.then_some(0x8080_8080), marks: (slot == 0) as u8, effects, jobs: String::new(), level: [75, 99, 52, 7][slot % 4] };
+    hud::party_panel(&mut p, "party", "Party", &[row(0, "Lenon", 5, true, 0.98, false, vec![]), row(1, "Raven", 1, true, 0.88, false, theirs.clone()), row(2, "Koru", 3, true, 0.62, true, vec![]), row(3, "Shantotto", 4, true, 0.95, false, vec![]), row(4, "Prishe", 2, false, 1.0, false, vec![])], false, Some(super::super::resttick::Shown::Next(0.6, 4.0)), Some(&hud::ExpView { title: "Level 75".into(), now: 21_480, next: 34_000, capped: false, body: "EXP 21,480 / 34,000 (63%)\n12,520 to go".into() }));
     // The two alliance parties as party_rows builds them: no MP bar, leader marks (bit 1 the alliance leader's), a
     // member out of the zone, a trust's row without TP.
     let ally = |slot, name: &str, job, here: bool, hp: f32, marks: u8, tp: bool| {
@@ -296,8 +296,8 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     if opts.alliance {
         let a1 = [ally(6, "Ayame", 12, true, 1.0, 3, true), ally(7, "Naji", 1, true, 0.42, 0, true), ally(8, "Kupipi", 3, true, 0.9, 0, false), ally(9, "Mihli Aliapoh", 3, false, 1.0, 0, true), ally(10, "Excenmille", 7, true, 0.15, 0, true), ally(11, "Trion", 7, true, 0.77, 0, true)];
         let a2 = [ally(12, "Zeid", 8, true, 0.66, 1, true), ally(13, "Lion", 6, true, 1.0, 0, true)];
-        hud::party_panel(&mut p, "alliance1", "Alliance", &a1, false, None);
-        hud::party_panel(&mut p, "alliance2", "Alliance", &a2, false, None);
+        hud::party_panel(&mut p, "alliance1", "Alliance", &a1, false, None, None);
+        hud::party_panel(&mut p, "alliance2", "Alliance", &a2, false, None, None);
     }
     hud::cast_panel(&mut p, "cast", "Casting", 0.6, "60%");
     // A refused action's chip over the cast bar (pending.rs).

@@ -23,6 +23,7 @@ pub(super) const PIECES: &[(&str, &[&str])] = &[
     ("network", &[]),
     ("palette", &[]),
     ("clock", &[]),
+    ("experience", &[]),
 ];
 
 /// A magic or ability list's rows as mods name them: spells by id, abilities by name-table id, mounts, emotes.

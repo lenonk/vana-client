@@ -89,6 +89,8 @@ pub struct PartyRow {
     pub effects: Vec<Effect>,
     /// The jobs and levels for the tooltip ("WAR 22 / NIN 11").
     pub jobs: String,
+    /// The main job's level on the job icon's corner (0 none).
+    pub level: u8,
 }
 
 /// "WAR 22 / NIN 11" from (job, level) pairs; no sub job, the main alone.
@@ -297,11 +299,78 @@ fn rest_strip(ui: &mut Ui, m: &Modern, rest: Shown) {
     }
 }
 
+/// Ours: the experience bar on the party window: limit points in merit mode, else the master level's exemplar points
+/// once one is unlocked, else the level's EXP; blue while capped, as the status window's level gauge.
+pub struct ExpView {
+    pub title: String,
+    pub now: i64,
+    pub next: i64,
+    pub capped: bool,
+    /// The tooltip's lines under the title.
+    pub body: String,
+}
+
+/// The strip over the party window's frame that the bar's top half stands in, and the bar's height.
+pub(super) const EXP_CAP: f32 = 4.0;
+const EXP_H: f32 = 8.0;
+
+fn exp_view(w: &World, gu: Option<&super::super::game_ui::GameUi>) -> Option<ExpView> {
+    let st = w.stats.as_ref().filter(|_| w.recasts_seen)?;
+    let msg = |id: usize, d: &str| gu.map_or(d.to_string(), |gu| gu.lobby_msg(0xc, id, d)).trim().to_string();
+    let sep = gu.map_or(",".to_string(), |gu| gu.lobby_msg(0xc, 0x5b, ","));
+    let num = |v: i64| super::super::status::grouped(v, &sep);
+    let pct = |now: i64, next: i64| if next > 0 { now * 100 / next } else { 0 };
+    if let Some((limit, bits, max)) = w.merits.filter(|m| m.1 & 0x8000 != 0) {
+        // One merit point a 10,000 limit points.
+        let (now, merits) = (limit as i64, bits & 0x7f);
+        let full = merits >= max as u16;
+        let body = format!("Limit points {} / {} ({}%)\nMerit points {merits} / {max}", num(now), num(10_000), pct(now, 10_000));
+        return Some(ExpView { title: "Limit Points".into(), now, next: 10_000, capped: full, body });
+    }
+    let (title, label, now, next, capped) = if st.ml.1 & 1 != 0 {
+        let (now, next) = (st.ml_exp.0 as i64, st.ml_exp.1 as i64);
+        (format!("{} {}", msg(0x203, "M. Level"), st.ml.0), "Exemplar points", now, next, st.ml.1 & 2 != 0 && now >= next - 1)
+    } else {
+        let level = w.real_level.unwrap_or(st.main.1);
+        (format!("{} {level}", msg(0x56, "Level")), "EXP", st.exp.0 as i64, st.exp.1 as i64, w.merits.is_some_and(|m| m.1 & 0x4000 != 0))
+    };
+    let mut body = format!("{label} {} / {} ({}%)", num(now), num(next), pct(now, next));
+    if capped {
+        body.push_str("\nCapped");
+    } else if next > now {
+        body.push_str(&format!("\n{} to go", num(next - now)));
+    }
+    Some(ExpView { title, now, next, capped, body })
+}
+
+/// The experience bar on the party window's top edge, centred on the frame's line between the corner ornaments; the
+/// numbers in its tooltip.
+fn exp_bar(p: &Panels, id: &str, r: Rect, e: &ExpView) {
+    let m = p.m;
+    let (Some(empty), Some(full)) = (m.art.sprite("gauges/experience_empty"), m.art.sprite("gauges/experience_full")) else { return };
+    let a = p.vis(id);
+    // The frame's line is its top 3 points.
+    let mid = r.min.y + EXP_CAP + 1.5;
+    let bar = Rect::from_min_max(pos2(r.min.x + 30.0, mid - EXP_H / 2.0), pos2(r.max.x - 30.0, mid + EXP_H / 2.0));
+    let painter = p.over(id);
+    let k = bar.height() / empty.size.y;
+    painter.add(paint::faded(paint::nine_slice(&empty, bar, k, Color32::WHITE), a));
+    let f = if e.next > 0 { (e.now as f32 / e.next as f32).clamp(0.0, 1.0) } else { 0.0 };
+    if f > 0.0 {
+        let tint = if e.capped { Color32::from_rgb(120, 170, 255) } else { Color32::WHITE };
+        let clip = Rect::from_min_max(bar.min, pos2(bar.min.x + bar.width() * f, bar.max.y));
+        painter.with_clip_rect(clip.intersect(painter.clip_rect())).add(paint::faded(paint::nine_slice(&full, bar, k, tint), a));
+    }
+    if let Some(at) = p.ctx.input(|i| i.pointer.hover_pos()).filter(|at| bar.expand2(vec2(0.0, 3.0)).contains(*at) && p.ctx.layer_id_at(*at) == Some(painter.layer_id())) {
+        m.tip_at(p.ctx, at, &e.title, &e.body);
+    }
+}
+
 /// The party window (ours first; "Solo" outside a party) or an alliance's, as retail's ptwN / raid1 / raid2: per row
 /// the job, leader marks, the name over the HP bar with the HP number in its colour, the MP bar and number and TP
 /// (party rows), a member elsewhere greyed with the zone's name, the hand on the party cursor's or our target's row.
 /// Its height is exact, so the party window grows upward with no frame's lag. The slot clicked, if any.
-pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], small: bool, rest: Option<Shown>) -> Option<usize> {
+pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], small: bool, rest: Option<Shown>, exp: Option<&ExpView>) -> Option<usize> {
     if rows.is_empty() {
         return None;
     }
@@ -312,10 +381,11 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
     // Margins, the title row (28, egui's 3 under it, our 6), the rest tick's strip, the rows 4 apart.
     let n = rows.len() as f32;
     let strip = if rest.is_some() { REST_H } else { 0.0 };
-    let height = super::MARGIN.sum().y + 37.0 + strip + n * row_h + (n - 1.0) * 4.0;
+    let cap = if exp.is_some() { EXP_CAP } else { 0.0 };
+    let height = cap + super::MARGIN.sum().y + 37.0 + strip + n * row_h + (n - 1.0) * 4.0;
     let mut clicked = None;
-    let show = super::Show { title: Some(Title { icon: None, text: title, note: note.as_deref(), name: false }), size: vec2(340.0, 0.0), height: Some(height), ..Default::default() };
-    p.show(id, show, |ui, _| {
+    let show = super::Show { title: Some(Title { icon: None, text: title, note: note.as_deref(), name: false }), size: vec2(340.0, 0.0), height: Some(height), cap, ..Default::default() };
+    let shown = p.show(id, show, |ui, _| {
         ui.spacing_mut().item_spacing.y = 0.0;
         if let Some(r) = rest {
             rest_strip(ui, m, r);
@@ -354,6 +424,11 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
             // The sub job small on the main's upper right corner (the leader stars take the lower left).
             if let Some(s) = row.sub_icon.as_deref().and_then(|j| m.art.sprite(j)) {
                 painter.add(paint::image(&s, pos2(x + 15.0, r.center().y - 17.0), 15.0, dim));
+            }
+            // The level on its lower right corner, as the status icons' counts.
+            if row.level > 0 && row.icon.is_some() {
+                let icon = Rect::from_min_size(pos2(x, r.center().y - 12.0), vec2(24.0, 24.0));
+                super::corner_number(painter, icon, &row.level.to_string(), if row.here.is_some() { Color32::WHITE } else { m.theme.color("muted") });
             }
             // Leader marks on the job's corner: gold the party's, blue the alliance's.
             for (k, (bit, col)) in [(1u8, m.theme.color("gold")), (2u8, m.theme.color("focus"))].into_iter().enumerate() {
@@ -420,6 +495,9 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
             row_menu(m, &resp, row.slot);
         }
     });
+    if let (Some(e), Some(r)) = (exp, shown) {
+        exp_bar(p, id, r, e);
+    }
     clicked
 }
 
@@ -709,11 +787,14 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let (party, allies) = party_rows(p.look(), w);
     // ptw0 ("Solo") while our party has no leader.
     let title = if party.len() <= 1 && w.party.slots().leaders[0] == 0 { "Solo" } else { "Party" };
-    let mut picked = party_panel(p, "party", title, &party, small, super::super::resttick::shown(w));
+    let exp = exp_view(w, p.gu).filter(|_| !w.lua.hides("experience"));
+    let mut picked = party_panel(p, "party", title, &party, small, super::super::resttick::shown(w), exp.as_ref());
+    // The frame's top, under the experience bar's strip.
+    let frame = p.this.get("party").map(|r| Rect::from_min_max(pos2(r.min.x, r.min.y + if exp.is_some() { EXP_CAP } else { 0.0 }), r.max));
     // FUN_102041d0: while the pool holds items, retail's chest (fontshp 0x7a) on the party window's top edge near its
     // left end.
     if super::super::treasure::count(w) > 0
-        && let (Some(gu), Some(r)) = (p.gu, p.this.get("party").copied())
+        && let (Some(gu), Some(r)) = (p.gu, frame)
         && let Some(t) = p.m.sprite_icon(p.ctx, gu, "font    fontshp", 0x7a)
     {
         let at = Rect::from_min_size(pos2(r.min.x + 14.0, r.min.y - 12.0), vec2(26.0, 26.0));
@@ -721,14 +802,14 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     }
     // FUN_102041d0: a pending invite (retail's keytops3 69, our marker) centred on the party window's top-left corner.
     if w.invite.is_some()
-        && let Some(r) = p.this.get("party").copied()
+        && let Some(r) = frame
         && let Some(s) = p.m.art.sprite("indicators/party_invite_pending")
     {
         p.over("party").add(paint::image(&s, r.min - vec2(15.0, 15.0), 30.0, Color32::WHITE));
     }
     for (id, rows) in ["alliance1", "alliance2"].into_iter().zip(&allies) {
         if let Some(rows) = rows {
-            picked = picked.or(party_panel(p, id, "Alliance", rows, small, None));
+            picked = picked.or(party_panel(p, id, "Alliance", rows, small, None, None));
         }
     }
     if let Some(k) = picked {
@@ -863,6 +944,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
             marks: marks(w.my_id, 0),
             effects: Vec::new(),
             jobs: w.stats.as_ref().map_or(String::new(), |s| jobs_text(s.main, s.sub)),
+            level: w.stats.as_ref().map_or(0, |s| s.main.1),
         });
     }
     for (k, m) in (1..6).map_while(|k| slots.slots[k].as_ref().map(|m| (k, m))) {
@@ -880,6 +962,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
             marks: marks(m.id, 0),
             effects: effects(m.id),
             jobs: jobs_text((m.jobs[0], m.jobs[1]), (m.jobs[2], m.jobs[3])),
+            level: m.jobs[1],
         });
     }
     let hidden = super::super::alliance_hidden(w);
@@ -902,6 +985,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
                         marks: marks(m.id, a + 1),
                         effects: Vec::new(),
                         jobs: jobs_text((m.jobs[0], m.jobs[1]), (m.jobs[2], m.jobs[3])),
+                        level: m.jobs[1],
                     })
                 })
                 .collect()
