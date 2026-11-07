@@ -1664,7 +1664,7 @@ mod tests {
         assert!(host.hidden_panels().contains(&"focus"));
         {
             let f = host.info.borrow();
-            assert_eq!((f.skin.ver, f.skin.colours.get("gold").map(|c| c.1)), (1, Some([255, 0, 0, 255])));
+            assert_eq!((f.skin.ver, f.skin.colours.get("gold").and_then(|v| v.last()).map(|e| e.1)), (1, Some([255, 0, 0, 255])));
         }
         host.info.borrow_mut().skin.forget("a");
         assert_eq!((host.info.borrow().skin.ver, host.info.borrow().skin.colours.len()), (2, 0));
@@ -1684,6 +1684,32 @@ mod tests {
         assert!(run(&a, r#"hud.rect("r", {anchor = "party", corner = "middle"})"#).is_err());
         let n: i64 = a.lua.load(r#"local n = 0 for _, p in ipairs(ui.native.panels()) do n = n + 1 end return n"#).eval().unwrap();
         assert_eq!(n as usize, native::PANELS.len());
+    }
+
+    /// ui.skin: the newest mod's change wins, and a clear or unload lets the change before it show again.
+    #[test]
+    fn skin_override_precedence() {
+        let host = Host::default();
+        let new = |id: &str| {
+            let vm = Vm::new(manifest::Manifest { id: id.into(), ..Default::default() }, PathBuf::from("."), vm::Source::Dir(PathBuf::from("."))).unwrap();
+            vm.lua.set_app_data(host.info.clone());
+            api::install(&vm.lua, &vm, (serde_json::Value::Null, serde_json::Value::Null)).unwrap();
+            vm.st.borrow_mut().granted.push("ui.native".into());
+            vm
+        };
+        let (a, b) = (new("a"), new("b"));
+        let run = |vm: &Vm, code: &str| vm.lua.load(code).exec();
+        let gold = || host.info.borrow().skin.colours.get("gold").and_then(|v| v.last()).map(|e| e.1);
+        run(&a, r#"ui.skin.colour("gold", {255, 0, 0})"#).unwrap();
+        run(&b, r#"ui.skin.colour("gold", {0, 0, 255})"#).unwrap();
+        assert_eq!(gold(), Some([0, 0, 255, 255])); // b, the newest, wins.
+        run(&b, r#"ui.skin.colour("gold", false)"#).unwrap();
+        assert_eq!(gold(), Some([255, 0, 0, 255])); // b gives it back: a's shows again.
+        run(&b, r#"ui.skin.colour("gold", {0, 255, 0})"#).unwrap();
+        host.info.borrow_mut().skin.forget("b"); // b unloads: a's still shows.
+        assert_eq!(gold(), Some([255, 0, 0, 255]));
+        run(&a, r#"ui.skin.colour("gold", false)"#).unwrap();
+        assert_eq!(gold(), None);
     }
 
     /// A suspended mod's provided functions don't run for other mods either.

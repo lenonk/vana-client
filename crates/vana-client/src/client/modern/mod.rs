@@ -266,9 +266,9 @@ impl Modern {
         if let Some(s) = w.lua.skin_since(self.skin_ver.get()) {
             self.skin_ver.set(s.ver);
             let c = |c: [u8; 4]| egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]);
-            self.theme.set_skin(s.colours.iter().map(|(k, v)| (k.clone(), c(v.1))).collect());
-            let sprites: Vec<_> = s.sprites.iter().map(|(k, v)| (k.clone(), (v.1.key.clone(), v.1.img.clone()))).collect();
-            let frames: Vec<_> = s.frames.iter().map(|(k, v)| (k.clone(), v.1.border.as_ref().map(|b| (b.key.clone(), b.img.clone())), v.1.top.map(c), v.1.bottom.map(c))).collect();
+            self.theme.set_skin(s.colours.iter().filter_map(|(k, v)| v.last().map(|e| (k.clone(), c(e.1)))).collect());
+            let sprites: Vec<_> = s.sprites.iter().filter_map(|(k, v)| v.last().map(|e| (k.clone(), (e.1.key.clone(), e.1.img.clone())))).collect();
+            let frames: Vec<_> = s.frames.iter().filter_map(|(k, v)| v.last().map(|e| (k.clone(), e.1.border.as_ref().map(|b| (b.key.clone(), b.img.clone())), e.1.top.map(c), e.1.bottom.map(c)))).collect();
             self.art.set_skin(ctx, &sprites, &frames);
             // egui's widget colours come from the palette.
             self.styled = false;

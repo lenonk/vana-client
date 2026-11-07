@@ -21,41 +21,64 @@ pub struct Frame {
     pub bottom: Option<[u8; 4]>,
 }
 
-/// Every mod's changes by name: (mod, change). `ver` moves on each change, for the UI to rebuild once.
+/// Every mod's changes by name, oldest first: (mod, change); the last is the one in use. `ver` moves on each change,
+/// for the UI to rebuild once.
 #[derive(Clone, Default)]
 pub struct Skin {
     pub ver: u64,
-    pub sprites: BTreeMap<String, (String, Image)>,
-    pub colours: BTreeMap<String, (String, [u8; 4])>,
-    pub frames: BTreeMap<String, (String, Frame)>,
+    pub sprites: BTreeMap<String, Vec<(String, Image)>>,
+    pub colours: BTreeMap<String, Vec<(String, [u8; 4])>>,
+    pub frames: BTreeMap<String, Vec<(String, Frame)>>,
 }
 
 impl Skin {
     /// Drops a mod's changes (it unloaded).
     pub fn forget(&mut self, m: &str) {
-        let n = self.sprites.len() + self.colours.len() + self.frames.len();
-        self.sprites.retain(|_, v| v.0 != m);
-        self.colours.retain(|_, v| v.0 != m);
-        self.frames.retain(|_, v| v.0 != m);
-        if n != self.sprites.len() + self.colours.len() + self.frames.len() {
+        let mut changed = forget_map(&mut self.sprites, m);
+        changed |= forget_map(&mut self.colours, m);
+        changed |= forget_map(&mut self.frames, m);
+        if changed {
             self.ver += 1;
         }
     }
+}
+
+/// Drops `m`'s entries from a name's stack, and the names left empty; whether anything went.
+fn forget_map<T>(map: &mut BTreeMap<String, Vec<(String, T)>>, m: &str) -> bool {
+    let mut changed = false;
+    map.retain(|_, stack| {
+        let before = stack.len();
+        stack.retain(|(mod_, _)| mod_.as_str() != m);
+        changed |= stack.len() != before;
+        !stack.is_empty()
+    });
+    changed
 }
 
 fn info(lua: &Lua) -> std::rc::Rc<std::cell::RefCell<super::state::FrameInfo>> {
     lua.app_data_ref::<std::rc::Rc<std::cell::RefCell<super::state::FrameInfo>>>().map(|f| f.clone()).unwrap_or_default()
 }
 
-/// Sets or (None) clears a mod's entry; another mod's entry is left alone by a clear.
-fn put<T>(map: &mut BTreeMap<String, (String, T)>, name: String, me: &str, v: Option<T>) -> bool {
+/// Sets or (None) clears a mod's own change for a name; other mods' changes are left alone. The newest change is the
+/// one in use, so a clear or an unload lets the change before it show again. Whether the change in use moved.
+fn put<T>(map: &mut BTreeMap<String, Vec<(String, T)>>, name: String, me: &str, v: Option<T>) -> bool {
     match v {
         Some(v) => {
-            map.insert(name, (me.to_string(), v));
+            let stack = map.entry(name).or_default();
+            stack.retain(|(mod_, _)| mod_.as_str() != me);
+            stack.push((me.to_string(), v));
             true
         }
-        None if map.get(&name).is_some_and(|e| e.0 == me) => map.remove(&name).is_some(),
-        None => false,
+        None => {
+            let Some(stack) = map.get_mut(&name) else { return false };
+            let before = stack.len();
+            stack.retain(|(mod_, _)| mod_.as_str() != me);
+            let (removed, empty) = (stack.len() != before, stack.is_empty());
+            if empty {
+                map.remove(&name);
+            }
+            removed
+        }
     }
 }
 
