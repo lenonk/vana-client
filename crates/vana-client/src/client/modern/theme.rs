@@ -46,6 +46,8 @@ struct ThemeFile {
 
 pub struct Theme {
     colors: HashMap<String, Color32>,
+    /// Colours mods set (ui.skin.colour).
+    skin: std::cell::RefCell<HashMap<String, Color32>>,
     /// Point sizes: body text, titles, small print.
     pub ui: f32,
     pub title: f32,
@@ -73,11 +75,19 @@ impl Theme {
         // The pack's previews: parchment white text, a slate grey for the quiet parts.
         colors.entry("text".into()).or_insert(Color32::from_rgb(0xe6, 0xe1, 0xd6));
         colors.entry("muted".into()).or_insert(Color32::from_rgb(0x8f, 0x9d, 0xa6));
-        Self { colors, ui: 16.0, title: 18.0, small: 14.5 }
+        Self { colors, skin: Default::default(), ui: 16.0, title: 18.0, small: 14.5 }
+    }
+
+    /// The colours mods set, in place of the palette's.
+    pub fn set_skin(&self, colours: HashMap<String, Color32>) {
+        *self.skin.borrow_mut() = colours;
     }
 
     /// A palette colour (theme.json "palette").
     pub fn color(&self, name: &str) -> Color32 {
+        if let Some(c) = self.skin.borrow().get(name) {
+            return *c;
+        }
         self.colors.get(name).copied().unwrap_or(Color32::MAGENTA)
     }
 
@@ -131,11 +141,20 @@ pub struct Frame {
     pub inset: f32,
 }
 
+/// A mod's PNG (ui.skin): its texture key and pixels (width, height, RGBA).
+pub type SkinImage = (String, Arc<(u32, u32, Vec<u8>)>);
+/// A mod's frame: its name, border, and interior's top and bottom colours.
+pub type SkinFrame = (String, Option<SkinImage>, Option<Color32>, Option<Color32>);
+/// The mods' sprites and frames by name, and the textures they draw from.
+type SkinArt = (HashMap<String, Sprite>, HashMap<String, std::rc::Rc<Frame>>, Vec<TextureHandle>);
+
 /// The atlases on the GPU, the sprites by manifest id, the window frames by name.
 pub struct Art {
     _textures: Vec<TextureHandle>,
     sprites: HashMap<String, Sprite>,
-    frames: HashMap<String, Frame>,
+    frames: HashMap<String, std::rc::Rc<Frame>>,
+    /// Sprites and frames mods set (ui.skin), with the textures they draw from.
+    skin: std::cell::RefCell<SkinArt>,
 }
 
 fn decode(png: &[u8]) -> Option<([usize; 2], Vec<u8>)> {
@@ -237,19 +256,87 @@ impl Art {
                 let px = it.png_size[0] / it.size[0];
                 let border = ctx.load_texture(format!("modern/{name}"), ColorImage::from_rgba_unmultiplied([w, h], &rgba), TextureOptions::LINEAR);
                 let corner = it.nine_slice.map_or(24.0, |n| n[0]);
-                frames.insert(name.to_string(), Frame { border, gradient, size: it.size[0], corner, inset: top as f32 / px });
+                frames.insert(name.to_string(), std::rc::Rc::new(Frame { border, gradient, size: it.size[0], corner, inset: top as f32 / px }));
             }
         }
-        Self { _textures: textures, sprites, frames }
+        Self { _textures: textures, sprites, frames, skin: Default::default() }
     }
 
     pub fn sprite(&self, id: &str) -> Option<Sprite> {
+        if let Some(s) = self.skin.borrow().0.get(id) {
+            return Some(*s);
+        }
         self.sprites.get(id).copied()
     }
 
-    pub fn frame(&self, name: &str) -> Option<&Frame> {
-        self.frames.get(name)
+    pub fn frame(&self, name: &str) -> Option<std::rc::Rc<Frame>> {
+        if let Some(f) = self.skin.borrow().1.get(name) {
+            return Some(f.clone());
+        }
+        self.frames.get(name).cloned()
     }
+
+    /// Mods' sprites and frames (ui.skin) in place of the pack's: a sprite keeps the pack's logical size and insets
+    /// (its PNG's pixels spread over them); a frame keeps the pack's size, corners and inset, with the mod's border and
+    /// interior colours (or the pack's where it gives none).
+    pub fn set_skin(&self, ctx: &Context, sprites: &[(String, SkinImage)], frames: &[SkinFrame]) {
+        let mut textures = Vec::new();
+        let mut load = |key: &str, img: &(u32, u32, Vec<u8>)| {
+            let t = ctx.load_texture(key, ColorImage::from_rgba_unmultiplied([img.0 as usize, img.1 as usize], &img.2), TextureOptions::LINEAR);
+            textures.push(t.clone());
+            t
+        };
+        let mut s = HashMap::new();
+        for (name, (key, img)) in sprites {
+            let Some(base) = self.sprites.get(name) else { continue };
+            let t = load(key, img);
+            let full = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+            s.insert(name.clone(), Sprite { tex: t.id(), uv: full, px: img.0 as f32 / base.size.x.max(1.0), atlas: vec2(img.0 as f32, img.1 as f32), ..*base });
+        }
+        let mut f = HashMap::new();
+        for (name, border, top, bottom) in frames {
+            let Some(base) = self.frames.get(name) else { continue };
+            let border = match border {
+                Some((key, img)) => load(key, img),
+                None => base.border.clone(),
+            };
+            let (a, b) = (top.unwrap_or(base.gradient[0]), bottom.unwrap_or(*base.gradient.last().unwrap_or(&base.gradient[0])));
+            let gradient = if top.is_none() && bottom.is_none() { base.gradient.clone() } else { (0..16).map(|i| a.lerp_to_gamma(b, i as f32 / 15.0)).collect() };
+            f.insert(name.clone(), std::rc::Rc::new(Frame { border, gradient, size: base.size, corner: base.corner, inset: base.inset }));
+        }
+        *self.skin.borrow_mut() = (s, f, textures);
+    }
+}
+
+fn manifest() -> &'static ManifestFile {
+    static M: std::sync::OnceLock<ManifestFile> = std::sync::OnceLock::new();
+    M.get_or_init(|| serde_json::from_str(MANIFEST).unwrap_or(ManifestFile { items: Vec::new() }))
+}
+
+/// The pack's sprites by name with their logical sizes (the frames are `pack_frames`), for mods.
+pub fn pack_sprites() -> &'static std::collections::BTreeMap<String, [f32; 2]> {
+    static S: std::sync::OnceLock<std::collections::BTreeMap<String, [f32; 2]>> = std::sync::OnceLock::new();
+    S.get_or_init(|| manifest().items.iter().filter(|it| !it.id.starts_with("frames/")).map(|it| (it.id.clone(), it.size)).collect())
+}
+
+/// The palette's colour names.
+pub fn pack_colours() -> &'static Vec<String> {
+    static C: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    C.get_or_init(|| {
+        let f: ThemeFile = serde_json::from_str(THEME).unwrap_or_default();
+        let mut names: Vec<String> = f.palette.keys().cloned().chain(["text".to_string(), "muted".to_string()]).collect();
+        names.sort();
+        names.dedup();
+        names
+    })
+}
+
+/// The window frames: name, logical size and corner.
+pub fn pack_frames() -> &'static Vec<(String, f32, f32)> {
+    static F: std::sync::OnceLock<Vec<(String, f32, f32)>> = std::sync::OnceLock::new();
+    F.get_or_init(|| {
+        FRAMES.iter().filter_map(|n| manifest().items.iter().find(|it| it.id == format!("frames/{n}")).map(|it| (n.to_string(), it.size[0], it.nine_slice.map_or(24.0, |s| s[0])))).collect()
+    })
 }
 
 /// A bundled font's bytes by name ("Inter-BoldItalic" ...).

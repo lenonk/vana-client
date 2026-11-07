@@ -1,11 +1,12 @@
 # `ui.native`
 
 The `ui.native` namespace works with the game's windows and HUD: which windows are open, what the player's cursor
-is on, the rows of the list that has the keys, hiding parts of the HUD or the whole interface, item name colours in
-shop lists, and the game's config values. The functions that read the game (`windows`, `highlighted`, `list`,
+is on, the rows of the list that has the keys, hiding parts of the HUD or the whole interface, moving, scaling and
+fading the modern UI's panels and finding where they are, item name colours in shop lists, and the game's config
+values. To change how the modern UI looks (its sprites, colours and frames), see [ui.skin](ui.skin.md). The functions that read the game (`windows`, `highlighted`, `list`,
 `menu_open`, `interface_hidden`, `config`) raise `game state is not available here` in the lobby and inside chat
 filters. Changing things (`ui.native.interface`,
-`ui.native.hide`, `ui.native.set_config`) needs the `ui.native` permission. A common pattern is to read
+`ui.native.hide`, `ui.native.place`, `ui.native.set_config`) needs the `ui.native` permission. A common pattern is to read
 `ui.native.list()` or `ui.native.highlighted()` every frame and show extra information next to the game's window.
 
 ```lua
@@ -30,8 +31,11 @@ end)
 | [`ui.native.menu_open()`](#uinativemenu_open) | Whether any game window is open. |
 | [`ui.native.interface_hidden()`](#uinativeinterface_hidden) | Whether the player has hidden the interface. |
 | [`ui.native.interface(show)`](#uinativeinterface) | Shows or hides the whole interface. |
-| [`ui.native.hide(piece, hidden?)`](#uinativehide) | Hides or shows a piece of the game's HUD. |
-| [`ui.native.hidden(piece)`](#uinativehidden) | Whether any mod hides a HUD piece. |
+| [`ui.native.hide(piece, hidden?)`](#uinativehide) | Hides or shows a piece of the game's HUD, or a modern panel. |
+| [`ui.native.hidden(piece)`](#uinativehidden) | Whether any mod hides a HUD piece or panel. |
+| [`ui.native.place(panel, place?)`](#uinativeplace) | Moves, scales or fades a modern panel. |
+| [`ui.native.rect(panel)`](#uinativerect) | Where a modern panel is on screen. |
+| [`ui.native.panels()`](#uinativepanels) | Every modern panel a mod may name, with where it is. |
 | [`ui.native.item_colour(item, colour?)`](#uinativeitem_colour) | Colours an item's name in shop and auction house lists. |
 | [`ui.native.config(id)`](#uinativeconfig) | Reads a game config value. |
 | [`ui.native.set_config(id, value)`](#uinativeset_config) | Sets a game config value, as the Config window does. |
@@ -100,6 +104,39 @@ end)
 | `"palette"` | The macro palette's drawing (its keys still run macros). |
 | `"clock"` | The Earth time line of the Clock extra. |
 | `"experience"` | The experience bar on the modern party window's top edge. |
+
+## Modern panels
+
+In the modern UI the HUD and the menus are panels, each with a name. `ui.native.hide` takes the names marked
+"hides" (none of them takes the keys), `ui.native.place` those marked "moves" (the edge windows stay on their edge),
+and `ui.native.rect`, `ui.native.panels` and a HUD element's `anchor` take every name. In the classic UI only the
+[HUD pieces](#hud-pieces) hide; the rest of this works in the modern UI.
+
+| Panel | Hides | Moves | What it is |
+| --- | --- | --- | --- |
+| `"chat"` | yes | yes | The chat window: the log and the chat line (back while an event, a prompt or the chat line needs it). |
+| `"party"` | yes | yes | The party window. |
+| `"alliance1"`, `"alliance2"` | yes | yes | The alliance's other parties. |
+| `"target"` | yes | yes | The target window. |
+| `"focus"` | yes | yes | The focus target and the last target. |
+| `"status"` | yes | yes | Your status icons. |
+| `"where"` | yes | yes | The location panel: zone, time, day, weather, compass. |
+| `"cast"` | yes | yes | The cast bar. |
+| `"pending"` | yes | yes | The chip for an action waiting for the server's answer. |
+| `"countdown"`, `"objective"` | yes | yes | An event's countdown and objective bars. |
+| `"combat"` | yes | yes | The battle menu while engaged. |
+| `"favourites"` | yes | yes | The favourites strip. |
+| `"iteminfo"` | yes | yes | The item details beside the item lists. |
+| `"command"` | no | yes | The main menu. |
+| `"window"` | no | yes | The main menu's windows (status, equipment, ...). |
+| `"list"`, `"cats"` | no | yes | The magic and ability lists, and their categories. |
+| `"loot"` | no | yes | The treasure pool. |
+| `"check"` | no | yes | A player's /check. |
+| `"timers"`, `"minimap"`, `"regime"` | yes | no | The edge windows: Timers, the minimap, the training regime window. |
+
+**Replacing a panel.** Hide it, then draw your own HUD elements with `anchor` set to its name: they stand where the
+panel was (its last rect), and follow it if the player moves it while it shows. The panel's own place is the player's
+to set; `ui.native.place` overrides it while your mod runs.
 
 ## `ui.native.windows`
 
@@ -292,15 +329,17 @@ until then.
 ui.native.hide(piece, hidden?)
 ```
 
-Hides one piece of the game's HUD (see [HUD pieces](#hud-pieces)) while your mod is loaded, for example to replace it
-with your own. It shows again when your mod unloads, or when you call `ui.native.hide(piece, false)`. If several mods
-hide the same piece, it stays hidden until every one of them has shown it again.
+Hides one piece of the game's HUD (see [HUD pieces](#hud-pieces)), or in the modern UI a [panel](#modern-panels)
+by name, while your mod is loaded, for example to replace it with your own. It shows again when your mod unloads, or
+when you call `ui.native.hide(piece, false)`. If several mods hide the same piece, it stays hidden until every one of
+them has shown it again. A piece and a panel of the same name are one: `"party"` (the piece) hides the alliance
+parties too, `"alliance1"` only that one.
 
 **Parameters**
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `piece` | `string` | yes | The piece's name, from the [HUD pieces](#hud-pieces) table. |
+| `piece` | `string` | yes | The piece's name, from the [HUD pieces](#hud-pieces) table, or a panel that hides, from the [Modern panels](#modern-panels) table. |
 | `hidden` | `boolean` | no, default `true` | `true` hides it; `false` takes your mod's hide away. |
 
 **Returns** nothing.
@@ -309,7 +348,8 @@ hide the same piece, it stays hidden until every one of them has shown it again.
 
 **Errors**
 - Without the permission: `this needs the ui.native permission: ...`.
-- A name not in the table: `no HUD piece "..."`, followed by the list of names.
+- A name in neither table, or a panel that takes the keys: `no HUD piece or panel "..." that can hide`, followed by
+  the list of names.
 
 **Example**
 
@@ -347,6 +387,112 @@ Whether any mod (yours or another) hides a HUD piece now.
 ```lua
 if ui.native.hidden("minimap") then
   print("another mod hides the minimap")
+end
+```
+
+## `ui.native.place`
+
+```lua
+ui.native.place(panel, place?)
+```
+
+Moves, scales or fades one of the modern UI's [panels](#modern-panels) while your mod is loaded. Given an `x` or a
+`y`, the panel stands there and the player's drag no longer moves it (its own place stays saved for when your mod
+gives it back). A `scale` grows or shrinks it about its top left; clicks and the wheel work on it at that size.
+`alpha` fades it (0 does not draw it at all). Call it again with other values to change them, and with `nil` to give
+the panel back. If two mods place one panel, the last call wins; a mod's `nil` only takes away its own place.
+
+**Parameters**
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `panel` | `string` | yes | A panel that moves, from the [Modern panels](#modern-panels) table. |
+| `place` | `table` | no | The place; `nil` gives the panel back. |
+
+**`place` fields**
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `x` | `number` | the panel's own | Its left edge in window pixels; negative counts from the right edge (`-400`: 400 pixels in from it). |
+| `y` | `number` | the panel's own | Its top edge in window pixels; negative counts from the bottom edge. |
+| `scale` | `number` | `1` | Its size, 0.25 to 4, about its top left. |
+| `alpha` | `number` | `1` | Its opacity, 0 to 1. |
+
+**Returns** nothing.
+
+**Needs** the `ui.native` permission.
+
+**Errors**
+- Without the permission: `this needs the ui.native permission: ...`.
+- An unknown name: `no panel "..."`, with the list; an edge window: `... stays on its edge: it can be hidden, not
+  placed`.
+
+**Example**
+
+```lua
+-- A bigger target window above the party window, a little see-through.
+ui.native.place("target", {scale = 1.4, alpha = 0.85})
+local r = ui.native.rect("party")
+if r then
+  ui.native.place("target", {x = r.x, y = r.y - 200, scale = 1.4, alpha = 0.85})
+end
+```
+
+## `ui.native.rect`
+
+```lua
+ui.native.rect(panel) -> table?
+```
+
+Where one of the modern UI's [panels](#modern-panels) was drawn last frame, in window pixels (as `hud` places
+elements). A panel that is not drawn now (hidden by a mod, faded out by a UI mode, or closed) keeps the rect it last
+had, with `shown = false`.
+
+**Parameters**
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `panel` | `string` | yes | A name from the [Modern panels](#modern-panels) table. |
+
+**Returns** `table?`: `{name, x, y, w, h, shown}`, or `nil` when the panel has not been drawn since login, and in the
+classic UI.
+
+**Errors** An unknown name: `no panel "..."`, with the list.
+
+**Example**
+
+```lua
+-- A line of text just over the target window, wherever the player put it.
+events.on("frame", function()
+  local r = ui.native.rect("target")
+  if r and r.shown then
+    hud.text("over_target", {x = r.x, y = r.y - 22, text = "Engage!"})
+  else
+    hud.remove("over_target")
+  end
+end)
+```
+
+For text that only follows a panel, an element's `anchor` (see [hud](hud.md#places-sizes-and-layers)) does the
+same without a `frame` handler.
+
+## `ui.native.panels`
+
+```lua
+ui.native.panels() -> table[]
+```
+
+Every panel of the [Modern panels](#modern-panels) table, in its order: `name`, `about` (what it is), `hideable`,
+`movable`, `shown`, `placed_by` (the id of the mod placing it, or `nil`), and `x`, `y`, `w`, `h` once it has been
+drawn.
+
+**Returns** `table[]`, never nil.
+
+**Example**
+
+```lua
+for _, p in ipairs(ui.native.panels()) do
+  if p.shown then print(p.name, p.x, p.y, p.w, p.h) end
 end
 ```
 

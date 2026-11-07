@@ -28,6 +28,8 @@ pub(super) struct Elem {
     pub kind: Kind,
     /// The tooltip shown while the pointer rests on it: (title, text).
     pub tip: Option<(String, String)>,
+    /// A modern panel its place counts from (ui.native.panels names them).
+    pub anchor: Option<String>,
 }
 
 pub(super) fn colour(v: Value) -> mlua::Result<Option<[u8; 4]>> {
@@ -55,6 +57,19 @@ fn apply(e: &mut Elem, t: &Table) -> mlua::Result<()> {
     }
     if let Some(v) = t.get::<Option<i32>>("layer")? {
         e.layer = v;
+    }
+    // A panel's name, or false for the window.
+    if t.contains_key("anchor")? {
+        e.anchor = match t.get::<Value>("anchor")? {
+            Value::String(s) => {
+                let s = s.to_string_lossy();
+                if !super::native::PANELS.iter().any(|p| p.name == s) {
+                    return Err(mlua::Error::runtime(format!("no panel {s:?} to anchor to (ui.native.panels names them)")));
+                }
+                Some(s)
+            }
+            _ => None,
+        };
     }
     // A string, {title, text}, or false for none.
     if t.contains_key("tip")? {
@@ -180,7 +195,7 @@ fn apply(e: &mut Elem, t: &Table) -> mlua::Result<()> {
 }
 
 fn put(lua: &Lua, id: String, kind: Kind, spec: Table) -> mlua::Result<()> {
-    let mut e = Elem { id: id.clone(), x: 0.0, y: 0.0, visible: true, layer: 0, kind, tip: None };
+    let mut e = Elem { id: id.clone(), x: 0.0, y: 0.0, visible: true, layer: 0, kind, tip: None, anchor: None };
     apply(&mut e, &spec)?;
     let st = super::api::state(lua);
     let mut s = st.borrow_mut();
@@ -398,10 +413,20 @@ pub(super) fn draw(gu: &mut super::super::game_ui::GameUi, w: &World) {
     }
     all.sort_by_key(|(_, e)| e.layer);
     let mut rects = Vec::new();
+    // Panels are the modern UI's: in the classic UI anchored elements wait.
+    let panels = if w.modern { info.borrow().native_rects.clone() } else { Default::default() };
     for (mod_id, e) in all {
-        // Negative places count from the right or bottom edge.
-        let px = if e.x < 0.0 { win[0] + e.x } else { e.x };
-        let py = if e.y < 0.0 { win[1] + e.y } else { e.y };
+        // Negative places count from the right or bottom edge: the window's, or the panel's it is anchored to (as
+        // last drawn, so it stays where a hidden panel was; not drawn before a panel ever was).
+        let frame = match &e.anchor {
+            Some(a) => match panels.get(a) {
+                Some((r, _)) => *r,
+                None => continue,
+            },
+            None => [0.0, 0.0, win[0], win[1]],
+        };
+        let px = frame[0] + if e.x < 0.0 { frame[2] + e.x } else { e.x };
+        let py = frame[1] + if e.y < 0.0 { frame[3] + e.y } else { e.y };
         let (x, y) = (px * k.0, py * k.1);
         let r = match &e.kind {
             Kind::Text { text, size, colour, bg, align, pad, font, outline, outline_w, shadow } => {

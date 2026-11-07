@@ -130,7 +130,7 @@ pub fn window(m: &Modern, frame: &str, r: Rect) -> Shape {
     let Some(f) = m.art.frame(frame) else { return Shape::Noop };
     let style = m.border_style.get();
     if style == Style::Pack {
-        return paint::window(f, r, 1.0, m.opacity.get());
+        return paint::window(&f, r, 1.0, m.opacity.get());
     }
     Shape::Vec(shapes(m, frame, r, CornerRadius::same(6), style))
 }

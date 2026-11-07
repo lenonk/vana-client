@@ -218,8 +218,10 @@ timers = {}
 ui = {}
 --- Text, bars, images and maps drawn over the game, under the game's windows.
 hud = {}
---- The game's own windows and HUD pieces: what is open, what is highlighted, hiding, the config.
+--- The game's own windows, panels and HUD pieces: what is open, what is highlighted, hiding, placing and scaling panels, where they are, the config.
 ui.native = {}
+--- The modern UI's look: its sprites, palette colours and window frames, replaced while the mod runs.
+ui.skin = {}
 --- How entities and the camera draw, and post-process passes.
 render = {}
 --- The game's sounds and music, and the mod's own.
@@ -433,7 +435,7 @@ function hud.image(id, spec) end
 ---@param spec table 
 function hud.icon(id, spec) end
 
---- Changes an element's fields (only those given); false clears a colour; an image takes a new path. Every element also takes tip: a string or {title, text}, a tooltip shown while the pointer rests on it (false removes it).
+--- Changes an element's fields (only those given); false clears a colour; an image takes a new path. Every element also takes tip: a string or {title, text}, a tooltip shown while the pointer rests on it (false removes it); and anchor: a modern panel's name (ui.native.panels), making x and y count from the panel's top left (negative from its right or bottom edge), so the element follows the panel, and stays where a hidden panel last was (false: the window again).
 ---@param id string 
 ---@param fields table 
 function hud.set(id, fields) end
@@ -487,10 +489,24 @@ function ui.native.interface_hidden() end
 ---@param show boolean 
 function ui.native.interface(show) end
 
---- Hides a HUD piece of the game in both UIs while the mod is loaded: party (party and alliance lists, their status icons), target, buffs (our status icons), compass (the modern location panel), minimap, cast (the cast bar), plates (name plates), alliance (the alliance lists alone), log (the log windows: back while an event, a prompt or the chat line needs them), timers, regime (the training regime window), network (the connection panel), palette (the macro palette's drawing; its keys still run macros), clock (the Clock Extra's Earth time line), experience (the modern party window's experience bar). Needs ui.native.
----@param piece string 
+--- Hides a HUD piece of the game in both UIs while the mod is loaded, or a modern panel by name (ui.native.panels: those that never take the keys; in the classic UI only the pieces hide): party (party and alliance lists, their status icons), target, buffs (our status icons), compass (the modern location panel), minimap, cast (the cast bar), plates (name plates), alliance (the alliance lists alone), log (the log windows: back while an event, a prompt or the chat line needs them), timers, regime (the training regime window), network (the connection panel), palette (the macro palette's drawing; its keys still run macros), clock (the Clock Extra's Earth time line), experience (the modern party window's experience bar). Needs ui.native.
+---@param piece string a piece or a panel
 ---@param hidden? boolean default true; false shows it again
 function ui.native.hide(piece, hidden) end
+
+--- Places, scales or fades a modern panel while the mod is loaded (the newest mod's place wins): x, y (its top left in window pixels, negative from the right or bottom edge; none keeps the panel's own place, and a panel placed at a point is not moved by the player), scale (0.25..4, about its top left; the pointer works on it scaled) and alpha (0..1). nil gives it back. The edge windows (timers, minimap, regime) only hide. Modern UI only. Needs ui.native.
+---@param panel string a name from ui.native.panels
+---@param place? {x: number?, y: number?, scale: number?, alpha: number?} nil gives it back
+function ui.native.place(panel, place) end
+
+--- Where a modern panel was drawn, in window pixels: {name, x, y, w, h, shown}; shown is false while it is not drawn (hidden, or closed), and the rect is where it last was. nil before it was ever drawn, and in the classic UI.
+---@param panel string 
+---@return {name: string, x: integer, y: integer, w: integer, h: integer, shown: boolean}?
+function ui.native.rect(panel) end
+
+--- Every modern panel a mod may name: {name, about, hideable, movable, shown, placed_by (the mod placing it)} with x, y, w, h once it was drawn.
+---@return table[]
+function ui.native.panels() end
 
 --- Whether any mod hides a HUD piece.
 ---@param piece string 
@@ -511,6 +527,28 @@ function ui.native.config(id) end
 ---@param id integer 
 ---@param value integer 
 function ui.native.set_config(id, value) end
+
+--- Replaces one of the modern UI's sprites (gauges, icons, job icons, controls ...; ui.skin.list names them) with a PNG from the mod's folder while the mod is loaded, the newest mod's winning. It keeps the sprite's size and nine-slice insets: draw the PNG at the pack's proportions, any resolution (twice the logical size is the pack's own). false gives it back. Needs ui.native.
+---@param name string e.g. 'gauges/hp_full'
+---@param path string|false a PNG in the mod's folder
+function ui.skin.sprite(name, path) end
+
+--- Sets one of the modern UI's palette colours (text, muted, gold, focus, hp, mp, tp ...; ui.skin.list names them) while the mod is loaded. false gives it back. Needs ui.native.
+---@param name string 
+---@param colour {r, g, b, a}|false 
+function ui.skin.colour(name, colour) end
+
+--- Changes a modern window frame (window_normal, window_focused, window_inactive, window_alert, window_tooltip): path, a PNG laid out as the pack's frame (a square of the frame's size, corners its corner inset, transparent inside; edges tile from the middle), and top / bottom, the interior's colours (any not given stay the pack's). false gives it back. Applies in the pack border style (Settings). Needs ui.native.
+---@param name string 
+---@param frame {path: string?, top: table?, bottom: table?}|false 
+function ui.skin.frame(name, frame) end
+
+--- What can be changed: sprites (name -> {w, h}, logical size), colours (names) and frames (name -> {size, corner}).
+---@return {sprites: table<string, {w: number, h: number}>, colours: string[], frames: table<string, {size: number, corner: number}>}
+function ui.skin.list() end
+
+--- Gives back every sprite, colour and frame this mod changed.
+function ui.skin.reset() end
 
 --- How an entity draws while the mod is loaded: {hidden (model and plate), name (its plate's), name_colour {r, g, b, a}, alpha (0..1, at most its own), tint {r, g, b} multipliers, scale}. nil clears the mod's look for it; the newest mod's look wins.
 ---@param id integer server id (ourselves too)

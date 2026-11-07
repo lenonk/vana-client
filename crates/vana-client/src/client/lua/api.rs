@@ -469,6 +469,7 @@ pub(super) fn install(lua: &Lua, vm: &super::vm::Vm, storage: (serde_json::Value
         })?,
     )?;
     super::native::install(lua, &ui, &m.id)?;
+    super::skin::install(lua, &ui, vm)?;
     g.set("ui", ui)?;
 
     // timers: rows in the Timers window (the Extra's drawer, shown for them even when the Extra is off).

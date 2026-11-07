@@ -105,6 +105,12 @@ Built (client/lua/, modern/modwin.rs), each checked live:
   magic, abilities, key items, shops, the auction house's lists and menus), driven with `input.press`; checked live
   on the item, ability, weapon skill and key item lists (modern UI); shops and the auction house not tried live.
   `ui.native.item_colour` colours an item's name in the shop and auction lists (checked live in the AH's crystals).
+  Changing the built-in UI, as WoW's add-ons do (user, 2026-11-06): in the modern UI every panel that never takes
+  the keys hides by name; `ui.native.place` moves, scales (an egui layer transform, the pointer with it) and fades any
+  panel but the edge windows; `ui.native.rect` / `panels` say where each is; a HUD element's `anchor` places it from
+  a panel (where a hidden one last was: a replacement); `ui.skin` replaces the pack's sprites (keeping their logical
+  size and insets), palette colours and window frames (border and gradient). Each undone when its mod unloads. Not
+  checked live yet (headless tests: placement and scale, the skin, the Lua side).
 - **Render** (`render`): per entity, while the mod runs (the newest mod's wins): hidden (model and plate), plate name and
   colour, alpha, tint, size; the camera's distance read and set; `render.camera` / `set_camera`: the drawn eye's
   distance (a share of retail's, up to 10), the pan speed's scale, a distance while engaged. Checked live (a renamed, tinted, doubled NPC,

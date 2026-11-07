@@ -59,6 +59,7 @@ hud.text("panel_text", {x = 20 + 8 * s, y = 200 + 10 * s, text = "Scaled with th
 | `y` | `number` | `0` | Its top edge, in window pixels; negative counts from the bottom edge. |
 | `visible` | `boolean` | `true` | `false` hides it (it keeps its fields, and takes no clicks while hidden). |
 | `layer` | `integer` | `0` | Elements on higher layers draw over those on lower ones. On the same layer, mods draw in their load order, and each mod's elements in the order it created them. |
+| `anchor` | `string` | none | A modern [panel](ui.native.md#modern-panels)'s name: `x` and `y` count from that panel's top left (negative from its right or bottom edge), so the element follows the panel. A hidden panel keeps its last place; an element anchored to a panel never drawn yet is not drawn either. `false` in `hud.set` goes back to the window. Not in the classic UI. |
 | `tip` | `string` or `table` | none | A tooltip shown while the pointer rests on the element: a string, or `{title = ..., text = ...}` (the title above the text; `\n` breaks lines). `false` in `hud.set` removes it. The modern UI shows it in its tooltip frame, the classic UI in a dark box by the pointer. |
 
 **Create and set.** Each create call (`hud.text`, `hud.rect`, ...) makes a new element from its spec: fields you leave

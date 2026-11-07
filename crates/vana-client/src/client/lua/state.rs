@@ -18,8 +18,14 @@ pub(super) struct FrameInfo {
     pub focused: bool,
     /// The HUD elements drawn last frame in window pixels: (mod, element, x y w h).
     pub hud_rects: Vec<(String, String, [f32; 4])>,
-    /// Native HUD pieces hidden (ui.native.hide): piece -> the mods hiding it.
+    /// Native HUD pieces and modern panels hidden (ui.native.hide): name -> the mods hiding it.
     pub hidden: std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+    /// Modern panels mods placed, scaled or faded (ui.native.place): panel -> (mod, place).
+    pub placed: std::collections::BTreeMap<String, (String, Placed)>,
+    /// The modern panels as last drawn, in window pixels, and whether drawn last frame (ui.native.rect).
+    pub native_rects: std::collections::BTreeMap<String, ([f32; 4], bool)>,
+    /// The modern UI's look mods changed (ui.skin).
+    pub skin: super::skin::Skin,
     /// This frame's view-projection, for draw.to_screen.
     pub view_proj: glam::Mat4,
     /// Entity looks mods set (render.entity): server id -> (mod, look).
@@ -29,6 +35,16 @@ pub(super) struct FrameInfo {
     /// Post-process passes mods set (render.shader), in order: mod, id, version, WGSL, parameters.
     pub shaders: Vec<crate::render::postfx::Want>,
     pub shader_ver: u64,
+}
+
+/// A modern panel's place from a mod: its top left in window pixels (negative from the right or bottom edge; none
+/// keeps the panel's own), its scale and opacity.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Placed {
+    pub x: Option<f32>,
+    pub y: Option<f32>,
+    pub scale: f32,
+    pub alpha: f32,
 }
 
 impl FrameInfo {

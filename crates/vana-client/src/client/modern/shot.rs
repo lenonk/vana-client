@@ -250,7 +250,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     };
     super::topbar::draw(m, ctx, &top);
     let (mut changed, mut chat_font) = (false, opts.chat_font);
-    let mut p = Panels { m, ctx, gu: None, layout, vis: Default::default(), changed: &mut changed, chat_font: &mut chat_font, battle_in_all: &mut true, condense: &mut true, chat_hidden: &mut Vec::new(), folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: Some("target"), hidden: Vec::new() };
+    let mut p = Panels { m, ctx, gu: None, layout, vis: Default::default(), changed: &mut changed, chat_font: &mut chat_font, battle_in_all: &mut true, condense: &mut true, chat_hidden: &mut Vec::new(), folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: Some("target"), hidden: Vec::new(), placed: Default::default() };
     // The chat window first, as the layer draws it: the location panel sits on it.
     let wh = [0x80, 0x80, 0x80, 0x80];
     let lines = vec![
@@ -359,7 +359,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
         let Some(f) = m.art.frame(n) else { continue };
         let s = sizes[i % sizes.len()];
         let y = screen.center().y - s.y;
-        painter.add(paint::window(f, Rect::from_min_size(pos2(x, y), s), 1.0, 1.0));
+        painter.add(paint::window(&f, Rect::from_min_size(pos2(x, y), s), 1.0, 1.0));
         painter.text(pos2(x + 12.0, y + 14.0), egui::Align2::LEFT_TOP, *n, egui::FontId::proportional(12.0), m.theme.color("muted"));
         x += s.x + 12.0;
     }

@@ -26,6 +26,54 @@ pub(super) const PIECES: &[(&str, &[&str])] = &[
     ("experience", &[]),
 ];
 
+/// A modern panel mods may name: its id, whether a mod may hide it (none that take the keys), whether one may place it
+/// (the edge windows stay on their edge), and what it is.
+pub(super) struct Panel {
+    pub name: &'static str,
+    pub hide: bool,
+    pub place: bool,
+    pub what: &'static str,
+}
+
+const fn panel(name: &'static str, hide: bool, place: bool, what: &'static str) -> Panel {
+    Panel { name, hide, place, what }
+}
+
+/// The modern UI's panels as mods name them.
+pub(super) const PANELS: &[Panel] = &[
+    panel("chat", true, true, "the chat window (the log and the chat line)"),
+    panel("party", true, true, "the party window"),
+    panel("alliance1", true, true, "the first alliance party"),
+    panel("alliance2", true, true, "the second alliance party"),
+    panel("target", true, true, "the target window"),
+    panel("focus", true, true, "the focus and last target"),
+    panel("status", true, true, "our status icons"),
+    panel("where", true, true, "the location panel (zone, time, compass)"),
+    panel("cast", true, true, "the cast bar"),
+    panel("pending", true, true, "the pending action chip"),
+    panel("countdown", true, true, "an event's countdown"),
+    panel("objective", true, true, "an event's objective bars"),
+    panel("combat", true, true, "the battle menu while engaged"),
+    panel("favourites", true, true, "the favourites strip"),
+    panel("iteminfo", true, true, "the item details beside the item lists"),
+    panel("command", false, true, "the main menu"),
+    panel("window", false, true, "the main menu's windows (status, equipment, ...)"),
+    panel("list", false, true, "the magic and ability lists"),
+    panel("cats", false, true, "the magic and ability categories"),
+    panel("loot", false, true, "the treasure pool"),
+    panel("check", false, true, "a player's /check"),
+    panel("timers", true, false, "the Timers window (an edge window)"),
+    panel("minimap", true, false, "the minimap (an edge window)"),
+    panel("regime", true, false, "the training regime window (an edge window)"),
+];
+
+fn find_panel(name: &str) -> mlua::Result<&'static Panel> {
+    PANELS.iter().find(|p| p.name == name).ok_or_else(|| {
+        let names: Vec<&str> = PANELS.iter().map(|p| p.name).collect();
+        mlua::Error::runtime(format!("no panel {name:?} ({})", names.join(", ")))
+    })
+}
+
 /// A magic or ability list's rows as mods name them: spells by id, abilities by name-table id, mounts, emotes.
 fn list_rows(w: &World, l: &super::super::magic::ListWin) -> (&'static str, &'static str, Vec<u16>) {
     use super::super::magic::Kind;
@@ -118,9 +166,10 @@ pub(super) fn install(lua: &Lua, ui: &Table, mod_id: &str) -> mlua::Result<()> {
         "hide",
         lua.create_function(move |lua, (what, on): (String, Option<bool>)| {
             need(lua, "ui.native")?;
-            if !PIECES.iter().any(|p| p.0 == what) {
-                let names: Vec<&str> = PIECES.iter().map(|p| p.0).collect();
-                return Err(mlua::Error::runtime(format!("no HUD piece {what:?} ({})", names.join(", "))));
+            // A HUD piece, else a modern panel by name.
+            if !PIECES.iter().any(|p| p.0 == what) && !PANELS.iter().any(|p| p.name == what && p.hide) {
+                let names: Vec<&str> = PIECES.iter().map(|p| p.0).chain(PANELS.iter().filter(|p| p.hide).map(|p| p.name)).collect();
+                return Err(mlua::Error::runtime(format!("no HUD piece or panel {what:?} that can hide ({})", names.join(", "))));
             }
             let info = info(lua);
             let mut f = info.borrow_mut();
@@ -131,6 +180,77 @@ pub(super) fn install(lua: &Lua, ui: &Table, mod_id: &str) -> mlua::Result<()> {
                 mods.remove(&me);
             }
             Ok(())
+        })?,
+    )?;
+    let me = mod_id.to_string();
+    t.set(
+        "place",
+        lua.create_function(move |lua, (name, spec): (String, Option<Table>)| {
+            need(lua, "ui.native")?;
+            let p = find_panel(&name)?;
+            if !p.place {
+                return Err(mlua::Error::runtime(format!("{name} stays on its edge: it can be hidden, not placed")));
+            }
+            let info = info(lua);
+            let mut f = info.borrow_mut();
+            match spec {
+                Some(s) => {
+                    let scale = s.get::<Option<f32>>("scale")?.unwrap_or(1.0).clamp(0.25, 4.0);
+                    let alpha = s.get::<Option<f32>>("alpha")?.unwrap_or(1.0).clamp(0.0, 1.0);
+                    let placed = super::state::Placed { x: s.get("x")?, y: s.get("y")?, scale, alpha };
+                    f.placed.insert(name, (me.clone(), placed));
+                }
+                None => {
+                    if f.placed.get(&name).is_some_and(|p| p.0 == me) {
+                        f.placed.remove(&name);
+                    }
+                }
+            }
+            Ok(())
+        })?,
+    )?;
+    let rect = |lua: &Lua, name: &str, r: [f32; 4], shown: bool| -> mlua::Result<Table> {
+        let t = lua.create_table()?;
+        t.set("name", name)?;
+        t.set("x", r[0].round() as i64)?;
+        t.set("y", r[1].round() as i64)?;
+        t.set("w", r[2].round() as i64)?;
+        t.set("h", r[3].round() as i64)?;
+        t.set("shown", shown)?;
+        Ok(t)
+    };
+    t.set(
+        "rect",
+        lua.create_function(move |lua, name: String| {
+            find_panel(&name)?;
+            let info = info(lua);
+            let f = info.borrow();
+            f.native_rects.get(&name).map(|(r, shown)| rect(lua, &name, *r, *shown)).transpose()
+        })?,
+    )?;
+    t.set(
+        "panels",
+        lua.create_function(move |lua, ()| {
+            let info = info(lua);
+            let f = info.borrow();
+            let out = lua.create_table()?;
+            for p in PANELS {
+                let t = match f.native_rects.get(p.name) {
+                    Some((r, shown)) => rect(lua, p.name, *r, *shown)?,
+                    None => {
+                        let t = lua.create_table()?;
+                        t.set("name", p.name)?;
+                        t.set("shown", false)?;
+                        t
+                    }
+                };
+                t.set("hideable", p.hide)?;
+                t.set("movable", p.place)?;
+                t.set("about", p.what)?;
+                t.set("placed_by", f.placed.get(p.name).map(|x| x.0.clone()))?;
+                out.push(t)?;
+            }
+            Ok(out)
         })?,
     )?;
     t.set(

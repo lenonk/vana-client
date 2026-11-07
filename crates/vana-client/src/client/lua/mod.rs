@@ -19,10 +19,13 @@ mod native;
 mod pattern;
 pub(super) mod render;
 mod runtime;
+pub(super) mod skin;
 mod sock;
 mod state;
 mod vm;
 pub(super) mod window;
+
+pub(in crate::client) use state::Placed;
 
 use super::World;
 use std::path::PathBuf;
@@ -590,6 +593,8 @@ impl Host {
         for mods in info.hidden.values_mut() {
             mods.remove(&vm.manifest.id);
         }
+        info.placed.retain(|_, p| p.0 != vm.manifest.id);
+        info.skin.forget(&vm.manifest.id);
         info.looks.retain(|_, l| l.0 != vm.manifest.id);
         info.item_tints.retain(|_, t| t.0 != vm.manifest.id);
         info.shaders.retain(|s| s.0 != vm.manifest.id);
@@ -1478,9 +1483,32 @@ impl Host {
         self.info.borrow().looks.iter().map(|(id, l)| (*id, l.1.clone())).collect()
     }
 
-    /// The modern panels of the hidden pieces.
+    /// The modern panels of the hidden pieces, and the panels hidden by name.
     pub(in crate::client) fn hidden_panels(&self) -> Vec<&'static str> {
-        native::PIECES.iter().filter(|p| self.hides(p.0)).flat_map(|p| p.1.iter().copied()).collect()
+        let pieces = native::PIECES.iter().filter(|p| self.hides(p.0)).flat_map(|p| p.1.iter().copied());
+        pieces.chain(native::PANELS.iter().filter(|p| p.hide && self.hides(p.name)).map(|p| p.name)).collect()
+    }
+
+    /// The modern panels mods placed, scaled or faded (ui.native.place).
+    pub(in crate::client) fn placed(&self) -> std::collections::HashMap<String, Placed> {
+        self.info.borrow().placed.iter().map(|(k, v)| (k.clone(), v.1)).collect()
+    }
+
+    /// The modern panels drawn this frame, in window pixels; those not drawn keep their last rect, as not shown.
+    pub(in crate::client) fn set_native_rects(&self, drawn: Vec<(String, [f32; 4])>) {
+        let mut f = self.info.borrow_mut();
+        for r in f.native_rects.values_mut() {
+            r.1 = false;
+        }
+        for (id, r) in drawn {
+            f.native_rects.insert(id, (r, true));
+        }
+    }
+
+    /// The mods' look for the modern UI, when it changed since version `seen`.
+    pub(in crate::client) fn skin_since(&self, seen: u64) -> Option<skin::Skin> {
+        let f = self.info.borrow();
+        (f.skin.ver != seen).then(|| f.skin.clone())
     }
 
     /// The window's place on the desktop and its focus; a change of focus raises focus_change.
@@ -1602,6 +1630,48 @@ mod tests {
         hud::hover(&mut host);
         assert_eq!(kinds(&take(&mut host)), ["b mouse_enter", "b mouse_leave", "a mouse_enter"]);
         assert_eq!(hud::tip(&host).map(|t| (t.0, t.1)), Some((String::new(), "A".into())));
+    }
+
+    /// ui.native.place / rect / panels and ui.skin: names checked, the permission asked, each change its mod's (another
+    /// mod's release leaves it), a skin change counted once; HUD anchors name panels.
+    #[test]
+    fn native_panels_and_skin() {
+        let host = Host::default();
+        let new = |id: &str, granted: bool| {
+            let vm = Vm::new(manifest::Manifest { id: id.into(), ..Default::default() }, PathBuf::from("."), vm::Source::Dir(PathBuf::from("."))).unwrap();
+            vm.lua.set_app_data(host.info.clone());
+            api::install(&vm.lua, &vm, (serde_json::Value::Null, serde_json::Value::Null)).unwrap();
+            if granted {
+                vm.st.borrow_mut().granted.push("ui.native".into());
+            }
+            vm
+        };
+        let (a, b, c) = (new("a", true), new("b", true), new("c", false));
+        let run = |vm: &Vm, code: &str| vm.lua.load(code).exec();
+        run(&a, r#"ui.native.place("party", {x = 10, y = 20, scale = 2})"#).unwrap();
+        run(&b, r#"ui.native.place("party", nil)"#).unwrap();
+        assert_eq!(host.info.borrow().placed.get("party").map(|p| (p.0.as_str(), p.1.scale, p.1.x)), Some(("a", 2.0, Some(10.0))));
+        for bad in [r#"ui.native.place("timers", {})"#, r#"ui.native.place("nope", {})"#, r#"ui.native.hide("command")"#, r#"ui.skin.sprite("nope", false)"#, r#"ui.skin.colour("nope", false)"#, r#"hud.rect("r", {anchor = "nope"})"#] {
+            assert!(run(&a, bad).is_err(), "{bad}");
+        }
+        assert!(run(&c, r#"ui.native.place("party", {})"#).unwrap_err().to_string().contains("ui.native"));
+        run(&a, r#"ui.native.hide("focus"); ui.skin.colour("gold", {255, 0, 0}); ui.skin.sprite("gauges/hp_full", false)"#).unwrap();
+        run(&b, r#"ui.skin.colour("gold", false)"#).unwrap();
+        assert!(host.hidden_panels().contains(&"focus"));
+        {
+            let f = host.info.borrow();
+            assert_eq!((f.skin.ver, f.skin.colours.get("gold").map(|c| c.1)), (1, Some([255, 0, 0, 255])));
+        }
+        host.info.borrow_mut().skin.forget("a");
+        assert_eq!((host.info.borrow().skin.ver, host.info.borrow().skin.colours.len()), (2, 0));
+        host.set_native_rects(vec![("party".into(), [1.0, 2.0, 3.0, 4.0])]);
+        assert_eq!(a.lua.load(r#"local r = ui.native.rect("party"); return r.x, r.h, r.shown"#).eval::<(i64, i64, bool)>().unwrap(), (1, 4, true));
+        host.set_native_rects(Vec::new());
+        assert!(!a.lua.load(r#"return ui.native.rect("party").shown"#).eval::<bool>().unwrap());
+        assert!(a.lua.load(r#"return ui.native.rect("focus")"#).eval::<Option<mlua::Table>>().unwrap().is_none());
+        run(&a, r#"hud.rect("r", {anchor = "party", x = -10})"#).unwrap();
+        let n: i64 = a.lua.load(r#"local n = 0 for _, p in ipairs(ui.native.panels()) do n = n + 1 end return n"#).eval().unwrap();
+        assert_eq!(n as usize, native::PANELS.len());
     }
 
     /// A suspended mod's provided functions don't run for other mods either.

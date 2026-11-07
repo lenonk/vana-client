@@ -397,7 +397,9 @@ end)
 ```
 
 Positions are window pixels from the top left; negative ones count from the right or bottom edge. `hud.set` changes
-some fields, `hud.remove` takes an element away, and `hud.on(id, handler)` makes it clickable. See
+some fields, `hud.remove` takes an element away, and `hud.on(id, handler)` takes its clicks and drags and tells you
+when the pointer comes and goes. A `tip` shows a tooltip, and `anchor` makes an element's place count from one of the
+game's panels, so it follows the panel. Icons can be an item's, a status effect's, a spell's or an ability's. See
 [reference/hud.md](reference/hud.md).
 
 ### Drawing in the world
@@ -411,6 +413,21 @@ your target and its distance over its head. See [reference/draw.md](reference/dr
 `ui.native` tells you which of the game's windows are open, what the cursor is on in them (an item, a spell), and the
 rows of the list on screen. With the `ui.native` permission it can also hide HUD pieces: the party list, the target
 bar, the compass and so on. See [reference/ui.native.md](reference/ui.native.md).
+
+### Changing the game's own interface
+
+A mod can change the built-in interface as well as add to it. In the modern UI, with the `ui.native` permission:
+
+- **Hide** a panel (`ui.native.hide("focus")`) and draw your own in its place: HUD elements with `anchor = "focus"`
+  stand where it was.
+- **Move, scale or fade** a panel (`ui.native.place("target", {x = 600, y = 80, scale = 1.3, alpha = 0.9})`), and find
+  where any panel is (`ui.native.rect`).
+- **Reskin** it: replace its sprites with your PNGs, set its palette colours, or give its windows a new frame
+  (`ui.skin.sprite`, `ui.skin.colour`, `ui.skin.frame`). Every panel, and every mod's window, draws with them.
+
+All of it is undone when your mod unloads. In the classic UI the HUD pieces hide; its art is the game's own and is
+replaced with a DAT overlay mod. See [reference/ui.native.md](reference/ui.native.md#modern-panels) and
+[reference/ui.skin.md](reference/ui.skin.md).
 
 ## The chat log
 

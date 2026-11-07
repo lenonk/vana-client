@@ -53,6 +53,19 @@ mod storage;
 mod tabs;
 pub mod shot;
 mod theme;
+
+/// The pack's names for mods (lua/skin.rs).
+pub(in crate::client) mod pack {
+    pub fn sprites() -> &'static std::collections::BTreeMap<String, [f32; 2]> {
+        super::theme::pack_sprites()
+    }
+    pub fn colours() -> &'static Vec<String> {
+        super::theme::pack_colours()
+    }
+    pub fn frames() -> &'static Vec<(String, f32, f32)> {
+        super::theme::pack_frames()
+    }
+}
 mod topbar;
 
 use super::World;
@@ -129,6 +142,9 @@ pub struct Modern {
     journal_rows: std::cell::RefCell<Vec<usize>>,
     /// egui's text styles enlarged (put back when the layer goes off).
     styled: bool,
+    /// The mods' look (ui.skin) as last applied, and the panels drawn scaled (their layers' transforms).
+    skin_ver: std::cell::Cell<u64>,
+    scaled: std::cell::RefCell<std::collections::HashSet<String>>,
     /// An edge window's heading dragged (or let go) this frame.
     edge_grip: std::cell::Cell<Option<extras::EdgeDrag>>,
     /// The edge window being dragged and where the pointer holds it (its ghost follows the pointer).
@@ -199,6 +215,8 @@ impl Modern {
             journal_seen: Default::default(),
             journal_rows: Default::default(),
             styled: false,
+            skin_ver: Default::default(),
+            scaled: Default::default(),
             retail: Default::default(),
             edge_grip: Default::default(),
             edge_ghost: Default::default(),
@@ -237,6 +255,17 @@ impl Modern {
         if (zoom - self.zoom).abs() > 0.001 {
             ctx.set_zoom_factor(zoom);
             self.zoom = zoom;
+        }
+        // The mods' look (ui.skin), rebuilt when it changes.
+        if let Some(s) = w.lua.skin_since(self.skin_ver.get()) {
+            self.skin_ver.set(s.ver);
+            let c = |c: [u8; 4]| egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]);
+            self.theme.set_skin(s.colours.iter().map(|(k, v)| (k.clone(), c(v.1))).collect());
+            let sprites: Vec<_> = s.sprites.iter().map(|(k, v)| (k.clone(), (v.1.key.clone(), v.1.img.clone()))).collect();
+            let frames: Vec<_> = s.frames.iter().map(|(k, v)| (k.clone(), v.1.border.as_ref().map(|b| (b.key.clone(), b.img.clone())), v.1.top.map(c), v.1.bottom.map(c))).collect();
+            self.art.set_skin(ctx, &sprites, &frames);
+            // egui's widget colours come from the palette.
+            self.styled = false;
         }
         // egui's own text (tooltips, the few labels without a size) a little larger than its defaults.
         if !self.styled {
@@ -286,7 +315,7 @@ impl Modern {
         let had_own = own.is_some();
         let mut layout = own.or_else(|| cfg.modern_places.get(&w.name).cloned()).unwrap_or_default();
         let mut changed = false;
-        let mut p = Panels { m: self, ctx, gu: Some(gu), layout: &mut layout, vis, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, battle_in_all: &mut cfg.modern_battle_in_all, condense: &mut cfg.modern_condense, chat_hidden: &mut cfg.modern_chat_hidden, folded: &mut cfg.modern_folded, scan_kinds: &mut cfg.modern_scan_kinds, this: HashMap::new(), retail: HashMap::new(), focus, hidden: modern_hidden(w) };
+        let mut p = Panels { m: self, ctx, gu: Some(gu), layout: &mut layout, vis, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, battle_in_all: &mut cfg.modern_battle_in_all, condense: &mut cfg.modern_condense, chat_hidden: &mut cfg.modern_chat_hidden, folded: &mut cfg.modern_folded, scan_kinds: &mut cfg.modern_scan_kinds, this: HashMap::new(), retail: HashMap::new(), focus, hidden: modern_hidden(w), placed: w.lua.placed() };
         // The chat window first: what sits on it places by this frame's height.
         self.chat_edge.set(None);
         chat::panel(&mut p, w);
@@ -350,6 +379,9 @@ impl Modern {
         w.ctx_menu_open = self.ctx_menu.borrow().is_some() || self.chat_menu.borrow().is_some();
         keyboard::draw(&mut p, w);
         let this = std::mem::take(&mut p.this);
+        // Where each panel is, for mods (ui.native.rect, HUD anchors), in window pixels.
+        let ppp = ctx.pixels_per_point();
+        w.lua.set_native_rects(this.iter().map(|(k, r)| (k.clone(), [r.min.x * ppp, r.min.y * ppp, r.width() * ppp, r.height() * ppp])).collect());
         *self.rects.borrow_mut() = this;
         if changed {
             cfg.modern_places.insert(w.name.clone(), layout.clone());
@@ -498,6 +530,8 @@ struct Panels<'a> {
     vis: HashMap<&'static str, f32>,
     /// Panels a Lua mod hid (ui.native.hide).
     hidden: Vec<&'static str>,
+    /// Panels a Lua mod placed, scaled or faded (ui.native.place).
+    placed: HashMap<String, super::lua::Placed>,
 }
 
 /// The panel that takes the keys now, as the key dispatch (client/mod.rs) routes them: the prompt, the chat line, an
@@ -995,7 +1029,9 @@ impl<'a> Panels<'a> {
     fn show(&mut self, id: &str, o: Show, add: impl FnOnce(&mut Ui, Vec2)) -> Option<Rect> {
         // Hidden by the mode (modes.rs) or by a Lua mod (ui.native.hide): not drawn, so what docks on it falls to
         // what it sits on.
-        let vis = self.vis(id);
+        // A mod's place (ui.native.place) fades it too; faded out, it is not drawn either.
+        let placed = self.placed.get(id).copied();
+        let vis = self.vis(id) * placed.map_or(1.0, |p| p.alpha);
         if vis <= 0.01 || self.hidden.contains(&id) {
             return None;
         }
@@ -1004,10 +1040,19 @@ impl<'a> Panels<'a> {
         let mut place = self.place(id);
         let room = if o.resizable { self.room(id, o.size) } else { o.size };
         let h = o.height.or_else(|| m.rects.borrow().get(id).map(|r| r.height())).unwrap_or(0.0);
-        let mut pos = o.at.unwrap_or_else(|| self.resolve(id, &place, h));
+        // A mod's top left (window pixels, negative from the right or bottom edge) makes it a panel at a fixed point:
+        // the player's drag no longer moves it, and its own place stays saved.
+        let ppp = ctx.pixels_per_point();
+        let at = o.at.or_else(|| {
+            let p = placed.filter(|p| p.x.is_some() || p.y.is_some())?;
+            let own = self.resolve(id, &place, h);
+            let side = |v: Option<f32>, edge: f32, own: f32| v.map_or(own, |v| if v < 0.0 { edge + v / ppp } else { v / ppp });
+            Some(pos2(side(p.x, screen.max.x, own.x), side(p.y, screen.max.y, own.y)))
+        });
+        let mut pos = at.unwrap_or_else(|| self.resolve(id, &place, h));
         // The command window steps right of a retail window it would hide (they draw under every panel): the item
         // pickers a page opens at the top left (Set Bazaar's prices, the hand-over).
-        if id == "window" && o.at.is_none() {
+        if id == "window" && at.is_none() {
             let size = vec2(o.size.x.max(1.0), h.max(1.0));
             for _ in 0..4 {
                 let r = Rect::from_min_size(pos, size).shrink(2.0);
@@ -1017,13 +1062,13 @@ impl<'a> Panels<'a> {
         }
         // A panel running past the screen's bottom rises until it fits (its place stays): rows under the edge could be
         // walked to but not seen.
-        if o.at.is_none() && o.height.is_none() && !BOTTOM.contains(&id) && h > 0.0 {
+        if at.is_none() && o.height.is_none() && !BOTTOM.contains(&id) && h > 0.0 {
             pos.y = pos.y.min(screen.max.y - h).max(screen.min.y);
         }
         // A panel placed by its exact height is kept on screen here, by that height: egui keeps an area on screen by its
         // size last frame, and shrinking against the screen's bottom (the chat window at its default place) that
         // lifted it by the height just lost, a pixel or a few more or less every frame, so its bottom edge shook.
-        let exact = o.at.is_none() && o.height.is_some();
+        let exact = at.is_none() && o.height.is_some();
         if exact {
             let w = if o.resizable { room.x } else { m.rects.borrow().get(id).map_or(o.size.x, |r| r.width()) };
             pos = on_screen(Rect::from_min_size(pos, vec2(w, h)), screen);
@@ -1033,7 +1078,7 @@ impl<'a> Panels<'a> {
         // The panel with the keys in the focused frame.
         let frame = if frame == "window_normal" && self.focus == Some(id) { "window_focused" } else { frame };
         // A panel at a fixed point may stand partly off screen (the Timers slid in).
-        let shown = egui::Area::new(Id::unique(("modern panel", id))).order(Order::Middle).current_pos(pos).movable(o.at.is_none()).constrain(o.at.is_none() && !exact).show(ctx, |ui| {
+        let shown = egui::Area::new(Id::unique(("modern panel", id))).order(Order::Middle).current_pos(pos).movable(at.is_none()).constrain(at.is_none() && !exact).show(ctx, |ui| {
             ui.multiply_opacity(vis);
             // An area offers its contents only last frame's size: room to the screen's bottom, or a page grown taller
             // (a scroll area in it) stays clipped at its first height.
@@ -1083,6 +1128,15 @@ impl<'a> Panels<'a> {
         if COLUMN.contains(&id) {
             ctx.move_to_top(shown.response.layer_id);
         }
+        // A mod's scale, about the panel's top left; the pointer is transformed with it.
+        let scale = placed.map_or(1.0, |p| p.scale);
+        let zoom = egui::emath::TSTransform::new(pos.to_vec2() * (1.0 - scale), scale);
+        if (scale - 1.0).abs() > 0.001 {
+            ctx.set_transform_layer(shown.response.layer_id, zoom);
+            m.scaled.borrow_mut().insert(id.to_string());
+        } else if m.scaled.borrow_mut().remove(id) {
+            ctx.set_transform_layer(shown.response.layer_id, egui::emath::TSTransform::IDENTITY);
+        }
         let mut r = shown.response.rect;
         if exact {
             // Dragged past the screen's edge, it is saved where it will show.
@@ -1091,7 +1145,7 @@ impl<'a> Panels<'a> {
         // A panel placed by its bottom (on another, on the screen's bottom, or risen to fit) is placed by last frame's
         // height, so the frame its contents grow or shrink (the item info moving to a longer or shorter item) it stood
         // that much too low or too high, then jumped. It moves now by the height it was drawn at.
-        if o.at.is_none() && !exact && m.dragging.borrow().as_deref() != Some(id) && (r.height() - h).abs() > 0.5 {
+        if at.is_none() && !exact && m.dragging.borrow().as_deref() != Some(id) && (r.height() - h).abs() > 0.5 {
             let top = |h: f32| {
                 let y = self.resolve(id, &place, h).y;
                 if o.height.is_none() && !BOTTOM.contains(&id) && h > 0.0 { y.min(screen.max.y - h).max(screen.min.y) } else { y }
@@ -1102,14 +1156,14 @@ impl<'a> Panels<'a> {
                 r = r.translate(vec2(0.0, dy));
             }
         }
-        let showing = Rect::from_min_max(pos2(r.min.x, r.max.y - r.height() * fold), r.max);
+        let showing = zoom * Rect::from_min_max(pos2(r.min.x, r.max.y - r.height() * fold), r.max);
         // Placement trace (debug), only when a panel moves.
         thread_local!(static SEEN: std::cell::RefCell<HashMap<String, Pos2>> = Default::default());
         if log::log_enabled!(log::Level::Debug) && SEEN.with(|s| s.borrow_mut().insert(id.to_string(), pos).is_none_or(|p| (p - pos).length() > 0.5)) {
             log::debug!("panel {id}: pos {pos:?} h {h} rect {r:?} showing {showing:?} dock {:?}", place.dock);
         }
         self.this.insert(id.to_string(), showing);
-        if o.at.is_some() {
+        if at.is_some() {
             return Some(showing);
         }
         let mut changed = false;
@@ -1464,7 +1518,7 @@ mod panel_tests {
             let mut o = ctx.run_ui(raw, |ui| {
                 let ctx = ui.ctx();
                 let (mut changed, mut chat_font) = (false, 14.0);
-                let mut p = Panels { m: &m, ctx, gu: None, layout: &mut layout, vis: Default::default(), changed: &mut changed, chat_font: &mut chat_font, battle_in_all: &mut true, condense: &mut true, chat_hidden: &mut Vec::new(), folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: None, hidden: Vec::new() };
+                let mut p = Panels { m: &m, ctx, gu: None, layout: &mut layout, vis: Default::default(), changed: &mut changed, chat_font: &mut chat_font, battle_in_all: &mut true, condense: &mut true, chat_hidden: &mut Vec::new(), folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: None, hidden: Vec::new(), placed: Default::default() };
                 let combat = p.panel("combat", None, 200.0, |ui| {
                     ui.label("Attack");
                 });
@@ -1486,5 +1540,62 @@ mod panel_tests {
         for (bottom, under) in bottoms {
             assert!((bottom - (under - gap)).abs() < 0.5, "bottom {bottom} on {under}");
         }
+    }
+    /// A mod's place (ui.native.place): the panel at its top left (window pixels; negative from the right edge),
+    /// scaled about it, and back where it was once released.
+    #[test]
+    fn mod_placed_panel_moves_and_scales() {
+        let ctx = egui::Context::default();
+        let side = Some(16384);
+        let mut o = ctx.run_ui(egui::RawInput { max_texture_side: side, ..Default::default() }, |_| {});
+        o.textures_delta.clear();
+        let m = Modern::new(&ctx);
+        let mut layout = Layout::new();
+        let place = |x, scale| super::super::lua::Placed { x: Some(x), y: Some(100.0), scale, alpha: 1.0 };
+        let mut seen = Vec::new();
+        // Frame 0 has egui's default screen.
+        for (f, placed) in [None, None, Some(place(200.0, 1.0)), Some(place(200.0, 2.0)), Some(place(200.0, 2.0)), Some(place(-400.0, 1.0)), None].into_iter().enumerate() {
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1280.0, 720.0))), time: Some(f as f64 * 0.1), max_texture_side: side, ..Default::default() };
+            let mut o = ctx.run_ui(raw, |ui| {
+                let ctx = ui.ctx();
+                let (mut changed, mut chat_font) = (false, 14.0);
+                let placed = placed.map(|p| HashMap::from([("focus".to_string(), p)])).unwrap_or_default();
+                let mut p = Panels { m: &m, ctx, gu: None, layout: &mut layout, vis: Default::default(), changed: &mut changed, chat_font: &mut chat_font, battle_in_all: &mut true, condense: &mut true, chat_hidden: &mut Vec::new(), folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: None, hidden: Vec::new(), placed };
+                seen.push(p.panel("focus", None, 200.0, |ui| {
+                    ui.label("Focus");
+                }));
+                *m.rects.borrow_mut() = std::mem::take(&mut p.this);
+            });
+            o.textures_delta.clear();
+        }
+        let r: Vec<Rect> = seen.into_iter().skip(1).map(Option::unwrap).collect();
+        let ppp = ctx.pixels_per_point();
+        assert!((r[1].min - pos2(200.0 / ppp, 100.0 / ppp)).length() < 0.5, "{:?}", r[1]);
+        // Twice the size from the same top left.
+        assert!((r[3].min - r[1].min).length() < 0.5 && (r[3].width() - 2.0 * r[1].width()).abs() < 1.0, "{:?} {:?}", r[1], r[3]);
+        assert!((r[4].min.x - (1280.0 - 400.0 / ppp)).abs() < 0.5, "{:?}", r[4]);
+        // Released: its own place again, at its own size.
+        assert!((r[5].min - r[0].min).length() < 0.5 && (r[5].width() - r[0].width()).abs() < 0.5, "{:?} {:?}", r[0], r[5]);
+    }
+
+    /// Mods' sprites keep the pack's logical size, with their own pixels; frames take their colours; released, the
+    /// pack's again.
+    #[test]
+    fn skin_replaces_and_gives_back() {
+        let ctx = egui::Context::default();
+        let m = Modern::new(&ctx);
+        let base = m.art.sprite("gauges/hp_full").unwrap();
+        let img = std::sync::Arc::new((64u32, 8u32, vec![255u8; 64 * 8 * 4]));
+        let red = egui::Color32::from_rgb(200, 0, 0);
+        m.art.set_skin(&ctx, &[("gauges/hp_full".into(), ("test hp".into(), img))], &[("window_normal".into(), None, Some(red), None)]);
+        let s = m.art.sprite("gauges/hp_full").unwrap();
+        assert_ne!(s.tex, base.tex);
+        assert_eq!((s.size, s.margins), (base.size, base.margins));
+        assert_eq!(s.px, 64.0 / base.size.x);
+        assert_eq!(m.art.frame("window_normal").unwrap().gradient[0], red);
+        m.art.set_skin(&ctx, &[], &[]);
+        assert_eq!(m.art.sprite("gauges/hp_full").unwrap().tex, base.tex);
+        m.theme.set_skin(HashMap::from([("gold".to_string(), red)]));
+        assert_eq!(m.theme.color("gold"), red);
     }
 }

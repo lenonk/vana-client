@@ -56,7 +56,8 @@ actions.cast(spell, target?) -> nil
 | [filters](filters.md) | Keep, change or drop chat lines and typed lines. |
 | [hud](hud.md) | Text, boxes, bars, images and icons over the game. |
 | [ui](ui.md) | Your mod's windows: lists, buttons, sliders, inputs, canvases; prompts and menus. |
-| [ui.native](ui.native.md) | The game's windows and HUD: what is open, the highlighted row, hiding the interface, item colours, the game's config values. |
+| [ui.native](ui.native.md) | The game's windows and HUD: what is open, the highlighted row, hiding, moving and scaling panels, where they are, item colours, the game's config values. |
+| [ui.skin](ui.skin.md) | The modern UI's look: its sprites, colours and window frames. |
 | [draw](draw.md) | Lines, rings, boxes, labels and pictures in the 3D world. |
 | [render](render.md) | How entities look, post-process shader passes, the camera. |
 | [timers](timers.md) | Rows in the client's Timers window. |
