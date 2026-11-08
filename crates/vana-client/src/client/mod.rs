@@ -13757,14 +13757,8 @@ impl App {
             if b2 == b0 {
                 (b2, b3) = (b2 - 1.0, b3 + 1.0);
             }
-            let mut corners = Vec::with_capacity(8);
-            for x in [b2, b3] {
-                for y in [b0, b1] {
-                    for z in [b4, b5] {
-                        corners.push(Vec3::new(x, y, z));
-                    }
-                }
-            }
+            let corners: [Vec3; 8] =
+                std::array::from_fn(|i| Vec3::new([b2, b3][i >> 2], [b0, b1][(i >> 1) & 1], [b4, b5][i & 1]));
             if let Some((lo, hi, far)) = rect(&corners, vp * actor_matrix(place.pos, place.forward))
                 && inside(lo, hi)
             {
@@ -13788,22 +13782,23 @@ impl App {
         }
         hits.sort_by(|x, y| x.0.total_cmp(&y.0));
         let in_rect: HashSet<u32> = hits.iter().map(|h| h.1).collect();
-        let picked =
-            hits.iter().find(|&&(_, id, skinned)| !skinned || Self::fine_hit(world, id, view, proj, ndc)).map(|h| h.1);
+        let picked = hits
+            .iter()
+            .find(|&&(_, id, skinned)| !skinned || Self::fine_hit(world, id, my_dir, view, proj, ndc))
+            .map(|h| h.1);
         (picked, in_rect)
     }
 
     /// FUN_100cff40: circles at each geometry bone, its parent and the midpoint (radius 0.4 x the segment on screen),
     /// else around attach points 1 and 3 (world radius from points 13 / 15). From the read-back points; before any
     /// came back the rect alone decides (inferred).
-    fn fine_hit(world: &World, id: u32, view: glam::Mat4, proj: glam::Mat4, ndc: glam::Vec2) -> bool {
+    fn fine_hit(world: &World, id: u32, my_dir: u8, view: glam::Mat4, proj: glam::Mat4, ndc: glam::Vec2) -> bool {
         let Some(a) = world.actors.get(&id) else { return false };
         let Some(ch) = &a.character else { return false };
         if ch.skeleton.bones.len() <= 2 {
             return true;
         }
         let Some(pts) = world.pick_points.get(&id) else { return true };
-        let my_dir = world.net.me.lock().map(|m| m.dir).unwrap_or(0);
         let Some(root) = actor_place(world, id, my_dir).map(|p| p.pos) else { return false };
         let vp = proj * view;
         let screen = |p: Vec3| {

@@ -266,15 +266,32 @@ pub fn set_recast(w: &mut World, spell: u16, info: u32) {
 
 /// The list order (FUN_1022c030 / FUN_10223c90): mix.dat / aix.dat as read at field entry (Macros), merged in place
 /// with the known bits (FUN_1021e550; with no file: id order).
-fn order(w: &World, aix: bool, known: &[u8]) -> Vec<u16> {
-    let n = if aix { 0xb00 } else { 0x400 };
-    let mut o = w
-        .macros
-        .as_ref()
-        .map(|m| if aix { m.aix.clone() } else { m.mix.clone() })
-        .unwrap_or_else(|| super::macros::Order { bits: vec![0; n / 8], list: vec![0; n], count: 0 });
-    o.merge(known);
-    o.ids().to_vec()
+/// Kept until the stored order or the known bits change: the battle menu asks several times a frame.
+fn order(w: &World, aix: bool, known: &[u8]) -> std::rc::Rc<Vec<u16>> {
+    type Kept = Option<(Option<super::macros::Order>, Vec<u8>, std::rc::Rc<Vec<u16>>)>;
+    thread_local! {
+        static KEPT: std::cell::RefCell<[Kept; 2]> = Default::default();
+    }
+    let stored = w.macros.as_ref().map(|m| if aix { &m.aix } else { &m.mix });
+    KEPT.with_borrow_mut(|kept| {
+        let k = &mut kept[aix as usize];
+        if let Some((s, b, ids)) = k.as_ref()
+            && s.as_ref() == stored
+            && b == known
+        {
+            return ids.clone();
+        }
+        let n = if aix { 0xb00 } else { 0x400 };
+        let mut o = stored.cloned().unwrap_or_else(|| super::macros::Order {
+            bits: vec![0; n / 8],
+            list: vec![0; n],
+            count: 0,
+        });
+        o.merge(known);
+        let ids = std::rc::Rc::new(o.ids().to_vec());
+        *k = Some((stored.cloned(), known.to_vec(), ids.clone()));
+        ids
+    })
 }
 
 /// The merged order itself, for a sort: merged in place in Macros first.
@@ -291,7 +308,8 @@ fn order_mut<'a>(w: &'a mut World, aix: bool) -> Option<&'a mut super::macros::O
 pub(super) fn magic_rows(w: &World, ty: u16, list_mode: bool, exclude: u32) -> Vec<u16> {
     let (Some(acts), Some(st)) = (w.actions.as_ref(), w.stats.as_ref()) else { return Vec::new() };
     order(w, false, &w.spells_known)
-        .into_iter()
+        .iter()
+        .copied()
         .filter(|&s| {
             let Some(r) = acts.spell(s) else { return false };
             let shown = exclude & (1 << (r.kind & 0x1f)) == 0 && (ty == 0 || r.kind == ty);
@@ -308,7 +326,7 @@ pub(super) fn magic_rows(w: &World, ty: u16, list_mode: bool, exclude: u32) -> V
 /// The known blue magic (type 6) in the mix.dat order, for the Set Spells screen's bluinven.
 pub(super) fn blue_known(w: &World) -> Vec<u16> {
     let Some(acts) = w.actions.as_ref() else { return Vec::new() };
-    order(w, false, &w.spells_known).into_iter().filter(|&s| acts.spell(s).is_some_and(|r| r.kind == 6)).collect()
+    order(w, false, &w.spells_known).iter().copied().filter(|&s| acts.spell(s).is_some_and(|r| r.kind == 6)).collect()
 }
 
 /// FUN_10223ec0's rows: known abilities (0x0AC bits by table index) in the aix.dat order, of the type; pet commands
@@ -322,7 +340,8 @@ pub(super) fn ability_rows(w: &World, ty: u16) -> Vec<u16> {
     let Some(known) = super::monstrosity::ability_bits(w) else { return Vec::new() };
     let level = w.stats.as_ref().map_or(0, |s| s.main.1);
     order(w, true, &known)
-        .into_iter()
+        .iter()
+        .copied()
         .filter(|&i| {
             acts.abilities.get(i as usize).is_some_and(|a| {
                 a.id != 0

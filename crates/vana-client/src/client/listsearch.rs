@@ -538,14 +538,14 @@ fn matches(w: &World, query: &str) -> Vec<Hit> {
     }
     // The key items we hold, over every category (the category as the note).
     if key_items(w) {
-        for (k, (title, items)) in keyitems::all(w).into_iter().enumerate() {
-            for (id, name) in items.into_iter().filter(|(id, _)| w.has_key_item(*id)) {
-                if let Some(score) = qs.as_ref().and_then(|qs| score_forms(&name, qs)) {
+        for (k, (title, items)) in keyitems::all(w).iter().enumerate() {
+            for (id, name) in items.iter().filter(|(id, _)| w.has_key_item(*id)) {
+                if let Some(score) = qs.as_ref().and_then(|qs| score_forms(name, qs)) {
                     out.push(Hit {
                         kind: Kind::Ability,
                         cat: Some(k),
-                        id,
-                        name,
+                        id: *id,
+                        name: name.clone(),
                         score,
                         slot: None,
                         note: title.clone(),

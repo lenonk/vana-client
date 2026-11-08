@@ -3016,49 +3016,79 @@ fn unloads(pc: bool, flags: u32, structure: bool, reserved: bool, trust: bool) -
 /// 0x20000); otherwise by the server bits (+0x120 bits 14 / 15) or, unless it takes part, by (DAT_1046df04 |
 /// Mode) & 0x02 for player characters and & 0x10 for NPCs and monsters (+0x120 bit 0x800000).
 pub fn hidden(w: &World) -> HashSet<u32> {
-    let mut out = HashSet::new();
-    let (flags, script, part): (u32, Option<&HashSet<u32>>, Option<&HashSet<u32>>) = match (&w.event, &w.event_pending)
-    {
-        (Some(l), _) => (l.st.flags(), Some(&l.st.hidden), Some(&l.st.bound)),
-        (None, Some(p)) => (p.start.mode as u32, None, Some(&p.joined)),
-        _ => (0, None, None),
-    };
-    let takes_part = |id: &u32| part.is_some_and(|p| p.contains(id));
-    for (id, e) in &w.entities {
+    let rule = HideRule::of(w);
+    let mut out: HashSet<u32> =
+        w.entities.iter().filter(|(id, e)| rule.entity(w, **id, e)).map(|(id, _)| *id).collect();
+    if rule.me(w) {
+        out.insert(w.my_id);
+    }
+    out.extend(super::furniture::gated_hidden(w));
+    if let Some(id) = moogle_gone(w) {
+        out.insert(id);
+    }
+    out
+}
+
+/// `hidden(w).contains(&id)` for one actor, without building the set.
+pub fn hides(w: &World, id: u32) -> bool {
+    let rule = HideRule::of(w);
+    w.entities.get(&id).is_some_and(|e| rule.entity(w, id, e) || super::furniture::gate_hides(w, id, e))
+        || (id == w.my_id && rule.me(w))
+        || moogle_gone(w) == Some(id)
+}
+
+/// FUN_100a17f0(1): the moogle gone over to the Mog House (own model hidden, +0x120 bit 15).
+fn moogle_gone(w: &World) -> Option<u32> {
+    w.moogle_hidden.then(|| super::moogle::moogle_actor(w)).flatten()
+}
+
+/// The running or pending event's view of who is hidden (`hidden`'s per-actor rules).
+struct HideRule<'a> {
+    flags: u32,
+    script: Option<&'a HashSet<u32>>,
+    part: Option<&'a HashSet<u32>>,
+}
+
+impl<'a> HideRule<'a> {
+    fn of(w: &'a World) -> Self {
+        let (flags, script, part) = match (&w.event, &w.event_pending) {
+            (Some(l), _) => (l.st.flags(), Some(&l.st.hidden), Some(&l.st.bound)),
+            (None, Some(p)) => (p.start.mode as u32, None, Some(&p.joined)),
+            _ => (0, None, None),
+        };
+        HideRule { flags, script, part }
+    }
+
+    fn takes_part(&self, id: u32) -> bool {
+        self.part.is_some_and(|p| p.contains(&id))
+    }
+
+    fn entity(&self, w: &World, id: u32, e: &super::Entity) -> bool {
         // FUN_1008e4d0: /hidetrust (config 0x99 bit 5) takes the model of every trust outside our own party (its plate
         // and targeting go with it; the radar dot stays).
         let trust = w.game.get(0x99) & 0x20 != 0 && e.marks.trust && !w.party.party().any(|m| m.index == e.index);
-        let hide = match script {
-            Some(h) if takes_part(id) => h.contains(id),
+        let hide = match self.script {
+            Some(h) if self.takes_part(id) => h.contains(&id),
             _ => {
                 e.flags & 2 != 0
-                    || (!takes_part(id)
-                        && unloads(*id >> 24 == 0, flags, matches!(e.sub_kind, 2..=4), e.ev_reserved, trust))
+                    || (!self.takes_part(id)
+                        && unloads(id >> 24 == 0, self.flags, matches!(e.sub_kind, 2..=4), e.ev_reserved, trust))
             }
         };
         // FUN_100cd040: a listed-only NPC the s2c 0x077 list lacks is not drawn (+0xb2 bit 7), events included; nor
         // one outside our fenced content's gate (+0xb2 bit 5).
-        if hide || e.unlisted || super::objective::gated(w, e.gate) {
-            out.insert(*id);
-        }
+        hide || e.unlisted || super::objective::gated(w, e.gate)
     }
-    let me = w.my_id;
-    let hide_me = match script {
-        Some(h) if takes_part(&me) => h.contains(&me),
-        _ => !takes_part(&me) && unloads(true, flags, false, false, false),
-    };
-    // FUN_101d4d90: laying out the Mog House or gardening in it the player is not drawn (+0xb2 bit 4).
-    if hide_me || w.layout.is_some() || super::garden::hides_player(w) {
-        out.insert(me);
+
+    fn me(&self, w: &World) -> bool {
+        let me = w.my_id;
+        let hide_me = match self.script {
+            Some(h) if self.takes_part(me) => h.contains(&me),
+            _ => !self.takes_part(me) && unloads(true, self.flags, false, false, false),
+        };
+        // FUN_101d4d90: laying out the Mog House or gardening in it the player is not drawn (+0xb2 bit 4).
+        hide_me || w.layout.is_some() || super::garden::hides_player(w)
     }
-    out.extend(super::furniture::gated_hidden(w));
-    // FUN_100a17f0(1): the moogle gone over to the Mog House (own model hidden, +0x120 bit 15).
-    if w.moogle_hidden
-        && let Some(id) = super::moogle::moogle_actor(w)
-    {
-        out.insert(id);
-    }
-    out
 }
 
 pub fn idles(w: &World) -> HashMap<u32, String> {

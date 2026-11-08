@@ -106,6 +106,8 @@ struct Target {
     size: [u32; 2],
     tex: wgpu::Texture,
     view: wgpu::TextureView,
+    /// The plain (not sRGB) view of `tex` (`raw_view`).
+    raw: wgpu::TextureView,
     depth: wgpu::TextureView,
     group: wgpu::BindGroup,
 }
@@ -118,6 +120,8 @@ pub struct SceneScale {
     format: wgpu::TextureFormat,
     target: Option<Target>,
     smaa: Option<super::smaa::Smaa>,
+    /// The scale pass's group over the SMAA output, by that view.
+    smaa_group: super::BindCache<wgpu::TextureView>,
 }
 
 impl SceneScale {
@@ -197,7 +201,7 @@ impl SceneScale {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        Self { pipeline, layout, sampler, uniform, format, target: None, smaa: None }
+        Self { pipeline, layout, sampler, uniform, format, target: None, smaa: None, smaa_group: Default::default() }
     }
 
     /// The offscreen colour and depth views at `size`, made on first use or a size change, and the colour texture.
@@ -229,7 +233,11 @@ impl SceneScale {
                     wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.sampler) },
                 ],
             });
-            self.target = Some(Target { size, tex, view, depth, group });
+            let raw = tex.create_view(&wgpu::TextureViewDescriptor {
+                format: Some(self.format.remove_srgb_suffix()),
+                ..Default::default()
+            });
+            self.target = Some(Target { size, tex, view, raw, depth, group });
         }
         let t = self.target.as_ref().unwrap();
         (t.view.clone(), t.depth.clone(), t.tex.clone())
@@ -237,11 +245,7 @@ impl SceneScale {
 
     /// The scene texture through a plain (not sRGB) view: written and blended in gamma space.
     pub fn raw_view(&self) -> Option<wgpu::TextureView> {
-        let t = self.target.as_ref()?;
-        Some(t.tex.create_view(&wgpu::TextureViewDescriptor {
-            format: Some(self.format.remove_srgb_suffix()),
-            ..Default::default()
-        }))
+        Some(self.target.as_ref()?.raw.clone())
     }
 
     /// Scales the offscreen scene onto `dst` (window size) with a gamma per channel, replacing what is there. `lcd`:
@@ -264,8 +268,9 @@ impl SceneScale {
         let dst_size = [dst_size[0].max(1), dst_size[1].max(1)];
         let smaa = smaa && lcd.is_none() && t.size[0] <= dst_size[0] && t.size[1] <= dst_size[1];
         if !smaa {
-            // Off: its targets and the scene texture it holds go.
+            // Off: its targets and the scene texture it holds go (the kept group binds its output too).
             self.smaa = None;
+            self.smaa_group.clear();
         }
         let (on, strip, extra) = lcd.map_or((0.0, 0.0, 0.0), |(e, s)| (1.0, s as u32 as f32, e));
         let mut u = [
@@ -292,14 +297,16 @@ impl SceneScale {
             let (tex, size) = (t.tex.clone(), t.size);
             let s = self.smaa.get_or_insert_with(|| super::smaa::Smaa::new(gpu, self.format));
             let out = s.run(gpu, encoder, &tex, size).clone();
-            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("scene scale smaa"),
-                layout: &self.layout,
-                entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: self.uniform.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&out) },
-                    wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.sampler) },
-                ],
+            self.smaa_group.get(out.clone(), || {
+                gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("scene scale smaa"),
+                    layout: &self.layout,
+                    entries: &[
+                        wgpu::BindGroupEntry { binding: 0, resource: self.uniform.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&out) },
+                        wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                    ],
+                })
             })
         });
         let Some(t) = &self.target else { return };

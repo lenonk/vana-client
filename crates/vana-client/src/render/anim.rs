@@ -532,6 +532,7 @@ mod tests {
 pub struct GpuAnim {
     pipeline: wgpu::ComputePipeline,
     layout: wgpu::BindGroupLayout,
+    group: super::BindCache<[wgpu::Buffer; 4]>,
     /// Words added since the last upload; they go to `uploaded` and up.
     data: Vec<u32>,
     uploaded: usize,
@@ -595,6 +596,7 @@ impl GpuAnim {
     pub fn new(gpu: &Gpu) -> Self {
         let (pipeline, layout) = gpu.pipes.anim().clone();
         Self {
+            group: Default::default(),
             pipeline,
             layout,
             data: Vec::new(),
@@ -833,15 +835,18 @@ impl GpuAnim {
         }
         let (jb, _) = self.job_buf.as_ref().unwrap();
         gpu.queue.put(jb, 0, bytemuck::cast_slice(&self.jobs));
-        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("pose actors"),
-            layout: &self.layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: self.data_buf.as_ref().unwrap().as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: jb.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: pose.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: self.scratch.as_ref().unwrap().0.as_entire_binding() },
-            ],
+        let (data, scratch) = (self.data_buf.as_ref().unwrap(), &self.scratch.as_ref().unwrap().0);
+        let group = self.group.get([data.clone(), jb.clone(), pose.clone(), scratch.clone()], || {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("pose actors"),
+                layout: &self.layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: data.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 1, resource: jb.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 2, resource: pose.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 3, resource: scratch.as_entire_binding() },
+                ],
+            })
         });
         let mut pass = encoder
             .begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("pose actors"), timestamp_writes: None });

@@ -578,6 +578,38 @@ struct ModelGeo {
 /// Anisotropic filtering for scenery, actor and creator samplers (config `anisotropy`, 1 = off).
 pub static ANISOTROPY: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(16);
 
+/// A bind group kept until one of the resources it binds changes (they were made afresh every frame).
+pub struct BindCache<K>(std::sync::Mutex<Option<(K, wgpu::BindGroup)>>);
+
+impl<K> Default for BindCache<K> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl<K> BindCache<K> {
+    /// Lets go of the kept group and what it binds (a pass turned off or its targets remade).
+    pub fn clear(&self) {
+        if let Ok(mut c) = self.0.lock() {
+            *c = None;
+        }
+    }
+}
+
+impl<K: PartialEq> BindCache<K> {
+    pub fn get(&self, key: K, make: impl FnOnce() -> wgpu::BindGroup) -> wgpu::BindGroup {
+        let Ok(mut c) = self.0.lock() else { return make() };
+        match &*c {
+            Some((k, g)) if *k == key => g.clone(),
+            _ => {
+                let g = make();
+                *c = Some((key, g.clone()));
+                g
+            }
+        }
+    }
+}
+
 /// Config-tool 0000 (MIP mapping: D3DTSS_MIPFILTER LINEAR, else NONE = level 0 only) and 0018 = 2 (textures
 /// uploaded uncompressed); read when samplers and textures are made, so at the next zone load.
 pub static MIPMAPS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);

@@ -187,6 +187,8 @@ struct Params {
 }
 
 pub struct SunShadow {
+    /// The receive pass's group, by the depth, the map and the feet it binds.
+    group: super::BindCache<[wgpu::TextureView; 3]>,
     pub map: wgpu::TextureView,
     /// Beside the map: each texel's caster's feet height (FEET_FORMAT), written by the same pass.
     pub feet: wgpu::TextureView,
@@ -352,7 +354,7 @@ impl SunShadow {
             compare: Some(wgpu::CompareFunction::LessEqual),
             ..Default::default()
         });
-        Self { map, feet, size, matrix, matrix_group, layout, pipeline, uniform, cmp }
+        Self { group: Default::default(), map, feet, size, matrix, matrix_group, layout, pipeline, uniform, cmp }
     }
 
     /// Writes this frame's light matrix for the depth pass.
@@ -383,16 +385,18 @@ impl SunShadow {
             misc: [soft, 0.0, FADE_START, FADE_END],
         };
         super::Put::put(&gpu.queue, &self.uniform, 0, bytemuck::bytes_of(&p));
-        let group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("sun shadow receive"),
-            layout: &self.layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: self.uniform.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(depth) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&self.map) },
-                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.cmp) },
-                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&self.feet) },
-            ],
+        let group = self.group.get([depth.clone(), self.map.clone(), self.feet.clone()], || {
+            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("sun shadow receive"),
+                layout: &self.layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: self.uniform.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(depth) },
+                    wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&self.map) },
+                    wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.cmp) },
+                    wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&self.feet) },
+                ],
+            })
         });
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("sun shadow receive"),

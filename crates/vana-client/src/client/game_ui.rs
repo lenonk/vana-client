@@ -2265,6 +2265,11 @@ impl GameUi {
         crate::dat::statusinfo::entry(self.data.status[small as usize].as_deref()?, id)
     }
 
+    /// The entry's (cancel, no_timer) alone (per-frame callers).
+    pub fn status_flags(&self, small: bool, id: u16) -> Option<(bool, bool)> {
+        crate::dat::statusinfo::flags(self.data.status[small as usize].as_deref()?, id)
+    }
+
     /// An uploaded image stretched over a rect; colour 1.0 = 0x80.
     /// An image over any four corners (top left, top right, bottom left, bottom right) and their uvs.
     pub fn image_corners(&mut self, name: &str, corners: [[f32; 2]; 4], uvs: [[f32; 2]; 4], rgba: [f32; 4]) {

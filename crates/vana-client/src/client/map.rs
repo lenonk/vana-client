@@ -855,11 +855,18 @@ impl MapWin {
         self.open_scan();
     }
 
-    /// FUN_101fb4b0: the rows and their markers from the results (rebuilt every frame while the list shows): PCs
-    /// (not ourselves) with their own name, NPCs and monsters named from the zone NPC list by index & 0x3ff; those
-    /// without a name or outside the narrowed circle are left out.
+    /// FUN_101fb4b0: the rows and their markers from the results (rebuilt every frame while the list shows; ours only
+    /// when what they come from changed): PCs (not ourselves) with their own name, NPCs and monsters named from the
+    /// zone NPC list by index & 0x3ff; those without a name or outside the narrowed circle are left out.
     pub(super) fn rebuild_scan(&mut self, w: &World) {
         let Some(s) = self.scan.as_mut().filter(|s| !s.hidden) else { return };
+        let key = (w.scan.generation, w.npc_names.len(), w.my_index, s.filter, self.origin, self.region);
+        if s.built == Some(key) {
+            s.cursor = s.cursor.min(s.rows.len().saturating_sub(1));
+            s.scroll = s.scroll.min(s.cursor);
+            return;
+        }
+        s.built = Some(key);
         let names: HashMap<u16, &String> = w.npc_names.iter().map(|(id, n)| ((id & 0x3ff) as u16, n)).collect();
         s.rows = w
             .scan
@@ -1853,6 +1860,8 @@ pub struct ScanList {
     /// Hidden while narrowing.
     hidden: bool,
     rows: Vec<ScanRow>,
+    /// What `rows` was built from: the scan, the names, us, the circle, the origin and the map.
+    built: Option<(u64, usize, u16, Option<((i32, i32), i32)>, (i16, i16), Region)>,
     mapscan: Option<u16>,
     narrow: Option<(f32, f32)>,
 }

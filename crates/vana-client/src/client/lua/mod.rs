@@ -5295,10 +5295,6 @@ impl Host {
         out
     }
 
-    pub(super) fn open_windows(&self) -> Vec<(String, window::Window)> {
-        self.open_windows_where(|_| true)
-    }
-
     /// The open windows `keep` takes (copied: the caller draws them while it changes the world).
     pub(super) fn open_windows_where(&self, keep: impl Fn(&window::Window) -> bool) -> Vec<(String, window::Window)> {
         let mut out = Vec::new();

@@ -44,6 +44,7 @@ struct Staging {
 pub struct Points {
     pipeline: wgpu::ComputePipeline,
     layout: wgpu::BindGroupLayout,
+    group: super::BindCache<[wgpu::Buffer; 3]>,
     jobs: Vec<[u32; 4]>,
     keys: Vec<u64>,
     job_buf: Option<(wgpu::Buffer, u64)>,
@@ -102,6 +103,7 @@ impl Points {
             })
             .collect();
         Self {
+            group: Default::default(),
             pipeline,
             layout,
             jobs: Vec::new(),
@@ -162,14 +164,16 @@ impl Points {
         }
         let (jb, ob) = (&self.job_buf.as_ref().unwrap().0, &self.out_buf.as_ref().unwrap().0);
         gpu.queue.put(jb, 0, bytemuck::cast_slice(&words));
-        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("actor points"),
-            layout: &self.layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: pose.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: jb.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: ob.as_entire_binding() },
-            ],
+        let group = self.group.get([pose.clone(), jb.clone(), ob.clone()], || {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("actor points"),
+                layout: &self.layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: pose.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 1, resource: jb.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 2, resource: ob.as_entire_binding() },
+                ],
+            })
         });
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {

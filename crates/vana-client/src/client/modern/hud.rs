@@ -1252,7 +1252,7 @@ fn effects(p: Look, w: &World) -> Vec<Effect> {
     buffs::icons(w)
         .into_iter()
         .map(|(id, end)| {
-            let no_timer = p.gu.and_then(|gu| gu.status_entry(small, id)).is_some_and(|e| e.no_timer);
+            let no_timer = p.gu.and_then(|gu| gu.status_flags(small, id)).is_some_and(|f| f.1);
             let timed = timers && end != 0x7fff_ffff && !no_timer;
             let rem = (end.wrapping_sub(now).wrapping_add(59) as i32) / 60;
             Effect {

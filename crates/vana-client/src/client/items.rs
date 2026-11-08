@@ -111,9 +111,10 @@ impl Inventory {
     }
 
     pub fn viewed(&self, container: u8) -> Vec<Slot> {
-        let slots = self.slots_of(container);
         let o = self.order.get(&container).map(Vec::as_slice).unwrap_or_default();
-        o.iter().filter_map(|i| slots.iter().find(|s| s.index == *i).cloned()).collect()
+        o.iter()
+            .filter_map(|&i| self.slots.get(&(container, i)).map(|&(id, count)| self.slot(container, i, id, count)))
+            .collect()
     }
 
     pub fn count(&mut self, container: u8, index: u8, count: u32) {
@@ -135,17 +136,19 @@ impl Inventory {
     pub fn slots_of(&self, container: u8) -> Vec<Slot> {
         self.slots
             .range((container, 0)..=(container, 255))
-            .map(|(&(c, i), &(id, count))| {
-                let equipped = self.equip.contains(&Some((c, i)));
-                Slot {
-                    index: i,
-                    id,
-                    count,
-                    equipped,
-                    equipped_ex: equipped && self.ext.get(&(c, i)).is_some_and(charged_ready),
-                }
-            })
+            .map(|(&(c, i), &(id, count))| self.slot(c, i, id, count))
             .collect()
+    }
+
+    fn slot(&self, c: u8, i: u8, id: u16, count: u32) -> Slot {
+        let equipped = self.equip.contains(&Some((c, i)));
+        Slot {
+            index: i,
+            id,
+            count,
+            equipped,
+            equipped_ex: equipped && self.ext.get(&(c, i)).is_some_and(charged_ready),
+        }
     }
 
     pub fn gil(&self) -> u32 {

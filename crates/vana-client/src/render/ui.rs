@@ -990,6 +990,8 @@ pub struct UiRenderer {
     uniforms: wgpu::Buffer,
     globals_layout: wgpu::BindGroupLayout,
     globals: wgpu::BindGroup,
+    /// The depth `globals` binds.
+    globals_depth: wgpu::TextureView,
     /// Bound when no scene depth is given (nothing is depth tested then).
     no_depth: wgpu::TextureView,
     textures: HashMap<String, wgpu::BindGroup>,
@@ -1116,6 +1118,7 @@ impl UiRenderer {
             uniforms,
             globals_layout,
             globals,
+            globals_depth: no_depth.clone(),
             no_depth,
             textures: HashMap::new(),
             white,
@@ -1141,8 +1144,11 @@ impl UiRenderer {
 
     /// The scene depth that depth-tested quads (name plates) are tested against this frame; None = none.
     pub fn set_scene_depth(&mut self, gpu: &Gpu, depth: Option<&wgpu::TextureView>) {
-        self.globals =
-            Self::globals_group(&gpu.device, &self.globals_layout, &self.uniforms, depth.unwrap_or(&self.no_depth));
+        let depth = depth.unwrap_or(&self.no_depth);
+        if *depth != self.globals_depth {
+            self.globals = Self::globals_group(&gpu.device, &self.globals_layout, &self.uniforms, depth);
+            self.globals_depth = depth.clone();
+        }
     }
 
     fn bind(

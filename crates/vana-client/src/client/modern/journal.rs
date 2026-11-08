@@ -572,7 +572,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             let Some(k) = w.keyitems.clone() else { return };
             waiting = k.state == 0;
             let cats = keyitems::all(w);
-            for (title, items) in &cats {
+            for (title, items) in cats.iter() {
                 let n = items.iter().filter(|(id, _)| w.has_key_item(*id)).count();
                 nav.push((title.clone(), n.to_string(), n == 0));
             }

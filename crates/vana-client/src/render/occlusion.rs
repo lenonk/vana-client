@@ -50,6 +50,7 @@ struct Staging {
 pub struct Occlusion {
     pipeline: wgpu::ComputePipeline,
     layout: wgpu::BindGroupLayout,
+    group: super::BindCache<(wgpu::TextureView, wgpu::Buffer, wgpu::Buffer)>,
     queries: Vec<[f32; 4]>,
     ids: Vec<u32>,
     query_buf: Option<(wgpu::Buffer, u64)>,
@@ -119,6 +120,7 @@ impl Occlusion {
             })
             .collect();
         Self {
+            group: Default::default(),
             pipeline,
             layout,
             queries: Vec::new(),
@@ -178,14 +180,16 @@ impl Occlusion {
         }
         let (qb, ob) = (&self.query_buf.as_ref().unwrap().0, &self.out_buf.as_ref().unwrap().0);
         gpu.queue.put(qb, 0, bytemuck::cast_slice(&words));
-        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("occlusion"),
-            layout: &self.layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(depth) },
-                wgpu::BindGroupEntry { binding: 1, resource: qb.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: ob.as_entire_binding() },
-            ],
+        let group = self.group.get((depth.clone(), qb.clone(), ob.clone()), || {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("occlusion"),
+                layout: &self.layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(depth) },
+                    wgpu::BindGroupEntry { binding: 1, resource: qb.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 2, resource: ob.as_entire_binding() },
+                ],
+            })
         });
         {
             let mut pass = encoder

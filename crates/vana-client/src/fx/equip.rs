@@ -50,6 +50,17 @@ impl Effects {
         self.equip_calls.iter().any(|c| c.0 == actor)
     }
 
+    /// Whether `call` would change nothing for an actor with no calls waiting (the per-frame check skips it).
+    pub fn equip_noop(&self, actor: u32, call: EquipCall) -> bool {
+        let s = self.equip_state(actor);
+        match call {
+            EquipCall::Glow { n, .. } if glow_names(n, true).is_none() || glow_names(n, false).is_none() => true,
+            EquipCall::Glow { n, on } => (s.glow_off & (1u16 << n) == 0) == on,
+            EquipCall::In { hidden: true } | EquipCall::Kill => !s.in_on,
+            EquipCall::In { hidden: false } => s.in_on,
+        }
+    }
+
     /// A new actor on the id (our own at a zone-in).
     pub fn reset_equip(&mut self, actor: u32) {
         self.equip.remove(&actor);

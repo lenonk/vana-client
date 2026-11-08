@@ -130,6 +130,8 @@ struct Params {
 
 pub struct Ssao {
     layout: wgpu::BindGroupLayout,
+    /// The AO pass's group and the apply pass's, by the depth and the texture each binds.
+    groups: [super::BindCache<(wgpu::TextureView, wgpu::TextureView)>; 2],
     ao_pipeline: wgpu::RenderPipeline,
     apply_pipeline: wgpu::RenderPipeline,
     uniform: wgpu::Buffer,
@@ -232,7 +234,7 @@ impl Ssao {
             mapped_at_creation: false,
         });
         let blank = Self::ao_texture(device, [1, 1]);
-        Self { layout, ao_pipeline, apply_pipeline, uniform, target: None, blank }
+        Self { groups: Default::default(), layout, ao_pipeline, apply_pipeline, uniform, target: None, blank }
     }
 
     fn ao_texture(device: &wgpu::Device, size: [u32; 2]) -> wgpu::TextureView {
@@ -277,18 +279,20 @@ impl Ssao {
             lin: [super::NEAR, super::FAR, 0.0, 0.0],
         };
         super::Put::put(&gpu.queue, &self.uniform, 0, bytemuck::bytes_of(&p));
-        let group = |tex: &wgpu::TextureView| {
-            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("ssao"),
-                layout: &self.layout,
-                entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: self.uniform.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(depth) },
-                    wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(tex) },
-                ],
+        let group = |k: usize, tex: &wgpu::TextureView| {
+            self.groups[k].get((depth.clone(), tex.clone()), || {
+                gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("ssao"),
+                    layout: &self.layout,
+                    entries: &[
+                        wgpu::BindGroupEntry { binding: 0, resource: self.uniform.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(depth) },
+                        wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(tex) },
+                    ],
+                })
             })
         };
-        let (g_ao, g_apply) = (group(&self.blank), group(ao));
+        let (g_ao, g_apply) = (group(0, &self.blank), group(1, ao));
         for (view, pipeline, g) in [(ao, &self.ao_pipeline, &g_ao), (color, &self.apply_pipeline, &g_apply)] {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("ssao"),

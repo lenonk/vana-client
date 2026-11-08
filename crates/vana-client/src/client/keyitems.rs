@@ -84,8 +84,23 @@ pub fn categories(list: &[(u32, String)]) -> Vec<(String, Vec<(u16, String)>)> {
     out
 }
 
-pub(super) fn all(w: &World) -> Vec<(String, Vec<(u16, String)>)> {
-    w.names.as_ref().map_or(Vec::new(), |n| categories(&n.key_item_list()))
+pub type Categories = std::sync::Arc<Vec<(String, Vec<(u16, String)>)>>;
+
+/// Every category, built once per names table (it was built several times a frame).
+pub(super) fn all(w: &World) -> Categories {
+    use std::sync::{Arc, Weak};
+    thread_local! {
+        static BUILT: std::cell::RefCell<Option<(Weak<crate::dat::names::Names>, Categories)>> = Default::default();
+    }
+    let Some(n) = w.names.as_ref() else { return Default::default() };
+    BUILT.with_borrow_mut(|b| match b {
+        Some((of, cats)) if Weak::ptr_eq(of, &Arc::downgrade(n)) => cats.clone(),
+        _ => {
+            let cats: Categories = Arc::new(categories(&n.key_item_list()));
+            *b = Some((Arc::downgrade(n), cats.clone()));
+            cats
+        }
+    })
 }
 
 /// /keyitem (FUN_1007d220): evitem, waiting until a 0x055 has come.

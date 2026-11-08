@@ -30,7 +30,7 @@ pub const MODERN_ROW: usize = 10;
 /// FUN_10227eb0: a cancellable effect (its status info flag) is cancelled: c2s 0x0F1 and the icon goes at once.
 pub(super) fn cancel(gu: &GameUi, w: &mut World, id: u16) -> bool {
     let small = w.game.get(0x99) & 4 != 0;
-    if !gu.status_entry(small, id).is_some_and(|e| e.cancel) || !w.buffs.contains(&id) {
+    if !gu.status_flags(small, id).is_some_and(|f| f.0) || !w.buffs.contains(&id) {
         return false;
     }
     let _ = w.net.commands.send(super::net::NetCommand::CancelStatus(id));
@@ -114,7 +114,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
     for (k, (id, end)) in list.into_iter().take(36).enumerate() {
         let (cx, cy) = (x0 + 2.0 + 26.0 * (k % 9) as f32, y0 + 2.0 + 26.0 * (k / 9) as f32);
         let Some(tex) = gu.status_icon(small, id) else { continue };
-        let timed = timers && end != 0x7fff_ffff && !gu.status_entry(small, id).is_some_and(|e| e.no_timer);
+        let timed = timers && end != 0x7fff_ffff && !gu.status_flags(small, id).is_some_and(|f| f.1);
         let rem = (end.wrapping_sub(now).wrapping_add(59) as i32) / 60;
         let c = if timed && rem <= 15 { (0x40 + (64.0 * phase) as u32) as f32 / 128.0 } else { 1.0 };
         gu.image_rect(&tex, cx + 1.0, cy + 1.0, 24.0, 24.0, [c, c, c, 1.0]);

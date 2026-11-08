@@ -5,12 +5,9 @@ use super::items::{Field, string_table};
 
 pub const ENTRY: usize = 0x1800;
 
-/// An entry's head: cancellable (byte @2, Enter sends c2s 0x0F1), never timed (byte @3 0xff, e.g. KO), and the
-/// description (string table @4, string 0).
+/// An entry's description (string table @4, string 0); its flags are `flags`.
 #[derive(Clone, Debug, Default)]
 pub struct Entry {
-    pub cancel: bool,
-    pub no_timer: bool,
     pub desc: String,
 }
 
@@ -26,7 +23,15 @@ pub fn entry(file: &[u8], id: u16) -> Option<Entry> {
         .into_iter()
         .find_map(|f| if let Field::Text(s) = f { Some(s) } else { None })
         .unwrap_or_default();
-    Some(Entry { cancel: head[2] != 0, no_timer: head[3] == 0xff, desc })
+    Some(Entry { desc })
+}
+
+/// The head's flags: cancellable (byte @2, Enter sends c2s 0x0F1) and never timed (byte @3 0xff, e.g. KO). Only the
+/// first 16 bytes are unmasked: each byte's unmask depends only on bytes 2, 11 and 12.
+pub fn flags(file: &[u8], id: u16) -> Option<(bool, bool)> {
+    let mut head: [u8; 16] = raw(file, id)?.get(..0x1fc)?[..16].try_into().ok()?;
+    super::actions::unmask(&mut head);
+    Some((head[2] != 0, head[3] == 0xff))
 }
 
 /// The icon @0x284 as RGBA: flag byte, 16-byte name, BITMAPINFOHEADER (32 bpp), BGRA rows bottom-up. The size field
@@ -70,11 +75,21 @@ mod tests {
         let files = [0x3a, 0x3b].map(|s| crate::dat::msg::current_slot_file(&dll, 1, s));
         assert_eq!(files, [Some(87), Some(39557)]);
         let big = index.read(87).unwrap();
-        let haste = super::entry(&big, 33).unwrap();
-        assert!(haste.cancel && !haste.no_timer && !haste.desc.is_empty(), "{haste:?}");
-        assert!(super::entry(&big, 0).unwrap().no_timer);
+        assert!(!super::entry(&big, 33).unwrap().desc.is_empty());
+        assert_eq!(super::flags(&big, 33), Some((true, false)));
+        assert!(super::flags(&big, 0).unwrap().1);
         assert_eq!(super::icon(&big, 33).map(|i| (i.0, i.1)), Some((32, 32)));
         let small = index.read(39557).unwrap();
         assert_eq!(super::icon(&small, 33).map(|i| (i.0, i.1)), Some((16, 16)));
+        for file in [&big, &small] {
+            for id in 0..1024 {
+                let whole = super::raw(file, id).and_then(|r| r.get(..0x1fc)).map(|h| {
+                    let mut h = h.to_vec();
+                    crate::dat::actions::unmask(&mut h);
+                    (h[2] != 0, h[3] == 0xff)
+                });
+                assert_eq!(super::flags(file, id), whole, "{id}");
+            }
+        }
     }
 }

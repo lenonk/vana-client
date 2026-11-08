@@ -313,6 +313,9 @@ pub struct EffectsGpu {
     trail_group: Option<wgpu::BindGroup>,
     trail_pipe: wgpu::RenderPipeline,
     update_group: Option<wgpu::BindGroup>,
+    /// The depth `update_group` binds.
+    update_depth: Option<wgpu::TextureView>,
+    flare_group: super::BindCache<([wgpu::Buffer; 3], wgpu::TextureView)>,
     draw_group: Option<wgpu::BindGroup>,
     meshes: Vec<Option<GpuMesh>>,
     textures: HashMap<(usize, usize), wgpu::BindGroup>,
@@ -940,6 +943,8 @@ impl EffectsGpu {
             sframes: table("effects sprite frames"),
             mdata: table("effects morph data"),
             update_group: None,
+            update_depth: None,
+            flare_group: Default::default(),
             lamp_pipe,
             lamp_layout,
             lamp_buf,
@@ -1231,9 +1236,10 @@ impl EffectsGpu {
                 Write::LightOff(_) => {}
             }
         }
-        // The scene depth changes with the window: bound afresh each frame it is set.
-        if rebind || self.depth.is_some() {
-            let depth = self.depth.as_ref().map_or(&self.no_depth, |d| &d.0);
+        // The scene depth changes with the window: bound afresh when it is another view.
+        let depth = self.depth.as_ref().map_or(&self.no_depth, |d| &d.0);
+        if rebind || self.update_depth.as_ref() != Some(depth) {
+            self.update_depth = Some(depth.clone());
             self.update_group = Some(gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("effects update"),
                 layout: &self.update_layout,
@@ -1603,16 +1609,19 @@ impl EffectsGpu {
                 info: [self.count as f32, 0.0, 0.0, 0.0],
             };
             gpu.queue.put(&self.flare_u, 0, bytemuck::bytes_of(&fu));
-            let fg = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("effects flare"),
-                layout: &self.flare_layout,
-                entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: self.flare_u.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: self.elems.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 2, resource: self.slots.0.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 3, resource: self.outs.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(depth) },
-                ],
+            let key = ([self.elems.clone(), self.slots.0.clone(), self.outs.clone()], depth.clone());
+            let fg = self.flare_group.get(key, || {
+                gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("effects flare"),
+                    layout: &self.flare_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry { binding: 0, resource: self.flare_u.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 1, resource: self.elems.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 2, resource: self.slots.0.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 3, resource: self.outs.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(depth) },
+                    ],
+                })
             });
             let mut cp = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("effects flare"),

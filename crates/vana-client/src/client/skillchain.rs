@@ -244,15 +244,36 @@ pub struct Combo {
 
 /// Every chain two different members can make (by `members` index), the strongest first, then those with us in
 /// them; per pair of members and chain only the first found.
-pub fn combos(members: &[Member]) -> Vec<Combo> {
+/// Kept until a member's skills change (it was worked out every frame; it depends on nothing else).
+pub fn combos(members: &[Member]) -> std::rc::Rc<Vec<Combo>> {
+    type Kept = Option<(Vec<Vec<Skill>>, std::rc::Rc<Vec<Combo>>)>;
+    thread_local! {
+        static KEPT: std::cell::RefCell<Kept> = Default::default();
+    }
+    KEPT.with_borrow_mut(|kept| {
+        if let Some((skills, out)) = kept.as_ref()
+            && skills.len() == members.len()
+            && skills.iter().zip(members).all(|(s, m)| *s == m.skills)
+        {
+            return out.clone();
+        }
+        let out = std::rc::Rc::new(work_combos(members));
+        *kept = Some((members.iter().map(|m| m.skills.clone()).collect(), out.clone()));
+        out
+    })
+}
+
+fn work_combos(members: &[Member]) -> Vec<Combo> {
     let d = sc::data();
     let mut out: Vec<Combo> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for (a, ma) in members.iter().enumerate() {
         for (b, mb) in members.iter().enumerate().filter(|(b, _)| *b != a) {
             for &sa in &ma.skills {
+                let pa = d.props(sa);
                 for &sb in &mb.skills {
-                    let Some(chain) = sc::form(&d.props(sa), &d.props(sb)) else { continue };
-                    if !out.iter().any(|c| c.opener.0 == a && c.closer.0 == b && c.chain == chain) {
+                    let Some(chain) = sc::form(&pa, &d.props(sb)) else { continue };
+                    if seen.insert((a, b, chain)) {
                         out.push(Combo { opener: (a, sa), closer: (b, sb), chain });
                     }
                 }
@@ -364,7 +385,7 @@ pub fn view(w: &World) -> Option<View> {
     });
     let combos = combos(&members);
     let mut chains: Vec<ChainWays> = Vec::new();
-    for cb in &combos {
+    for cb in combos.iter() {
         let fam = sc::family(cb.chain);
         if chains.iter().any(|c| c.chain == fam) {
             continue;
@@ -483,7 +504,7 @@ pub fn lines(w: &World) -> Vec<Line> {
         out.push(Line::Text("None known yet.".into(), MUTED));
     }
     let mut chains: Vec<Prop> = Vec::new();
-    for cb in &combos {
+    for cb in combos.iter() {
         if chains.contains(&cb.chain) {
             continue;
         }

@@ -904,7 +904,7 @@ fn own_rows(w: &World, gu: &GameUi, t: &mut Timers, seen: &mut HashSet<(u8, u32)
         else {
             continue;
         };
-        if gu.status_entry(small, id).is_some_and(|e| e.no_timer) {
+        if gu.status_flags(small, id).is_some_and(|f| f.1) {
             continue;
         }
         let left = end.wrapping_sub(now60) as i32 as f32 / 60.0;

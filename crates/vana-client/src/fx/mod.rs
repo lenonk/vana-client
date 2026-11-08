@@ -390,7 +390,8 @@ pub struct Instance {
     pub size_scaled: bool,
     pub mslot: u32,
     pub weather: f32,
-    pub live: Vec<u32>,
+    /// Oldest first (the first is the one `model_hide` and `ramp_light` take); deaths are mostly at the front.
+    pub live: std::collections::VecDeque<u32>,
     pub finished: bool,
     /// A CMoGeneratorClone nothing holds (op 0x02's, a model file's): it goes with its last live element whatever its
     /// life (FUN_10043b30: the elements' references are the clone's count). `emptied`: that happened this frame.
@@ -1650,7 +1651,7 @@ impl Effects {
 
     /// FUN_10052220: a new running instance of the generator.
     pub fn start(&mut self, src: Ref, owner: Owner) -> Option<usize> {
-        let g = self.reg.libs[src.0].generator(src.1)?.clone();
+        let mut g = self.reg.libs[src.0].generator(src.1)?.clone();
         let mut de = 0u8;
         if g.name[0] == b'~' {
             de = (g.name[1].wrapping_sub(b'0') & 0xfb) | 0x80;
@@ -1664,7 +1665,7 @@ impl Effects {
         let inst = Instance {
             src,
             name: g.name,
-            streams: g.streams.clone(),
+            streams: std::mem::take(&mut g.streams),
             flags: g.flags | 0x800,
             stopping: false,
             held: false,
@@ -1691,7 +1692,7 @@ impl Effects {
             size_scaled: (g.attach >> 24) & 0xf != 0,
             mslot,
             weather: 1.0,
-            live: Vec::new(),
+            live: Default::default(),
             finished: false,
             clone: false,
             emptied: false,
@@ -1807,16 +1808,15 @@ impl Effects {
             }
         }
         if let Some(run) = c.parts {
-            self.part_free.push(run);
-            self.part_free.sort_unstable();
-            let mut merged: Vec<(u32, u32)> = Vec::with_capacity(self.part_free.len());
-            for r in self.part_free.drain(..) {
-                match merged.last_mut() {
-                    Some(m) if m.0 + m.1 == r.0 => m.1 += r.1,
-                    _ => merged.push(r),
-                }
+            // Kept sorted and merged: the run joins its neighbours in place.
+            let at = self.part_free.partition_point(|r| r.0 < run.0);
+            self.part_free.insert(at, run);
+            if at + 1 < self.part_free.len() && run.0 + run.1 == self.part_free[at + 1].0 {
+                self.part_free[at].1 += self.part_free.remove(at + 1).1;
             }
-            self.part_free = merged;
+            if at > 0 && self.part_free[at - 1].0 + self.part_free[at - 1].1 == run.0 {
+                self.part_free[at - 1].1 += self.part_free.remove(at).1;
+            }
         }
         if let Some(ch) = c.child
             && self.insts.get(ch).is_some_and(|x| x.is_some())
@@ -1923,12 +1923,10 @@ impl Effects {
                 self.follow(i, word, f, actors);
             }
             // Generator ops 0x0e..0x10: each rebuilds the attachment and spins it, so the stream's last one stands.
-            if let Some(Some(op)) = self.insts[i]
-                .as_ref()
-                .filter(|x| x.mode != 0)
-                .map(|x| x.streams[0].iter().rev().find(|o| matches!(o.code, 0x0e..=0x10)).cloned())
-            {
-                self.spin(i, &op, f, actors);
+            if let Some(Some(op)) = self.insts[i].as_ref().filter(|x| x.mode != 0).map(|x| {
+                x.streams[0].iter().rev().find(|o| matches!(o.code, 0x0e..=0x10)).map(|o| (o.code, o.u32(2), o.u32(3)))
+            }) {
+                self.spin(i, op, f, actors);
             }
             self.ground_frame(i, actors);
             let driven = self.drive(i, f);
@@ -2179,7 +2177,8 @@ impl Effects {
             };
             let (first, len) = self.part_free[k];
             if len == n {
-                self.part_free.swap_remove(k);
+                // `remove`: the list stays sorted for `drop_elem`'s merge.
+                self.part_free.remove(k);
             } else {
                 self.part_free[k] = (first + n, len - n);
             }
@@ -2265,7 +2264,7 @@ impl Effects {
         cpu.back = Some(parent);
         self.elems[e as usize] = Some(cpu);
         if let Some(x) = self.insts[inst].as_mut() {
-            x.live.push(e);
+            x.live.push_back(e);
         }
         // The CPU's lives ran before this spawn: the GPU skips its first decrement too, or it would run a frame's dt
         // ahead and sample t >= 1 on the last frame (keys ending in a spike at 1.0 flash white). That frame's t = 0
@@ -2517,7 +2516,11 @@ impl Effects {
     /// Element `e` of instance `inst` goes.
     fn elem_gone(&mut self, inst: usize, e: u32) {
         if let Some(x) = self.insts.get_mut(inst).and_then(|x| x.as_mut()) {
-            x.live.retain(|&l| l != e);
+            match x.live.iter().position(|&l| l == e) {
+                Some(0) => drop(x.live.pop_front()),
+                Some(k) => drop(x.live.remove(k)),
+                None => {}
+            }
             x.emptied |= x.clone && x.live.is_empty();
         }
         self.drop_elem(e);

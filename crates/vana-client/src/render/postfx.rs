@@ -28,6 +28,8 @@ struct Pass {
     key: (String, String, u64),
     pipeline: Option<wgpu::RenderPipeline>,
     uniform: wgpu::Buffer,
+    /// Its group, by the copy and the depth it binds.
+    group: super::BindCache<(wgpu::TextureView, wgpu::TextureView)>,
 }
 
 pub struct PostFx {
@@ -153,7 +155,7 @@ impl PostFx {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            next.push(Pass { key, pipeline, uniform });
+            next.push(Pass { key, pipeline, uniform, group: Default::default() });
         }
         self.passes = next;
         errors
@@ -196,15 +198,17 @@ impl PostFx {
                 copy.as_image_copy(),
                 wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
             );
-            let group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("mod post"),
-                layout: &self.layout,
-                entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(copy_view) },
-                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
-                    wgpu::BindGroupEntry { binding: 2, resource: pass.uniform.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(depth) },
-                ],
+            let group = pass.group.get((copy_view.clone(), depth.clone()), || {
+                gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("mod post"),
+                    layout: &self.layout,
+                    entries: &[
+                        wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(copy_view) },
+                        wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                        wgpu::BindGroupEntry { binding: 2, resource: pass.uniform.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(depth) },
+                    ],
+                })
             });
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("mod post"),

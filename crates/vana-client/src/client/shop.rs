@@ -522,10 +522,13 @@ fn wanted(w: &World) -> Vec<GuildItem> {
 /// The item ids we hold in the inventory (the darker price, FUN_101cba50) and wear (the green name, FUN_10131fa0:
 /// containers 0, 8, 10..16).
 fn held(w: &World, id: u16) -> (bool, bool) {
-    let inv = w.inv.slots_of(super::items::INVENTORY).iter().any(|s| s.id == id && s.index != 0);
-    let worn = [0u8, 8, 10, 11, 12, 13, 14, 15, 16]
+    let inv = w.inv.slots.range((super::items::INVENTORY, 1)..=(super::items::INVENTORY, 255)).any(|(_, s)| s.0 == id);
+    let worn = w
+        .inv
+        .equip
         .iter()
-        .any(|&c| w.inv.slots_of(c).iter().any(|s| s.id == id && s.equipped));
+        .flatten()
+        .any(|&(c, i)| matches!(c, 0 | 8 | 10..=16) && w.inv.slots.get(&(c, i)).is_some_and(|s| s.0 == id));
     (inv, worn)
 }
 

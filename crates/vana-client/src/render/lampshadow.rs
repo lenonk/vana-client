@@ -102,6 +102,8 @@ pub fn pick(lamps: &[(Vec3, u32)], feet: &[Vec3], target: Vec3) -> Vec<(u32, Mat
 /// The maps, their matrices for the depth passes (group 3 of the silhouette layout, 256 bytes apart), the zone shader's
 /// uniform, and the receive pass (its array view and comparison sampler).
 pub struct LampShadows {
+    /// The receive pass's group, by the depth, the array and the lights it binds.
+    group: super::BindCache<(wgpu::TextureView, wgpu::TextureView, wgpu::Buffer)>,
     pub layers: Vec<wgpu::TextureView>,
     pub array: wgpu::TextureView,
     pub cmp: wgpu::Sampler,
@@ -182,7 +184,18 @@ impl LampShadows {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        Self { layers, array, cmp, uniform, matrices, matrix_group, receive_layout, receive_pipeline, receive_uniform }
+        Self {
+            group: Default::default(),
+            layers,
+            array,
+            cmp,
+            uniform,
+            matrices,
+            matrix_group,
+            receive_layout,
+            receive_pipeline,
+            receive_uniform,
+        }
     }
 
     /// Writes this frame's lamps (light slot, matrix, position) for the depth passes and the zone shader; none clears
@@ -226,16 +239,18 @@ impl LampShadows {
         u.eye = [eye.x, eye.y, eye.z, STRENGTH];
         u.misc = [1.0 / SIZE as f32, FADE_START, FADE_END, REACH];
         super::Put::put(&gpu.queue, &self.receive_uniform, 0, bytemuck::bytes_of(&u));
-        let group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("lamp shadow receive"),
-            layout: &self.receive_layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: self.receive_uniform.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(depth) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&self.array) },
-                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.cmp) },
-                wgpu::BindGroupEntry { binding: 4, resource: lights.as_entire_binding() },
-            ],
+        let group = self.group.get((depth.clone(), self.array.clone(), lights.clone()), || {
+            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("lamp shadow receive"),
+                layout: &self.receive_layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: self.receive_uniform.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(depth) },
+                    wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&self.array) },
+                    wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&self.cmp) },
+                    wgpu::BindGroupEntry { binding: 4, resource: lights.as_entire_binding() },
+                ],
+            })
         });
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("lamp shadow receive"),

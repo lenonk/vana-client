@@ -92,6 +92,9 @@ pub use theme::{Theme, frame_image, sprite_pixels};
 pub use crate::config::{ModernDock as Dock, ModernLayout as Layout, ModernPlace as Place};
 use std::collections::HashMap;
 
+/// The modern Wide Scan list's filtered rows depend on: the rows' build, the origin, the area, the kinds, the text.
+type ScanViewKey = (Option<(u64, usize, u16)>, (f32, f32), Option<(f32, f32, f32)>, u8, String);
+
 pub struct Modern {
     pub theme: Theme,
     art: Art,
@@ -136,6 +139,9 @@ pub struct Modern {
     /// asked from; the row picked (its options open, ringed on the minimap); Narrow down range: waiting for a click on
     /// the minimap, then the area kept (world x, z, radius).
     scan_rows: std::cell::RefCell<Vec<(super::widescan::Entry, String)>>,
+    /// What `scan_rows` was built from (scan generation, names, our index), and the filtered view drawn from it.
+    scan_built: std::cell::Cell<Option<(u64, usize, u16)>>,
+    scan_view: std::cell::RefCell<Option<(ScanViewKey, std::rc::Rc<Vec<(super::widescan::Entry, String)>>)>>,
     scan_origin: std::cell::Cell<(f32, f32)>,
     scan_pick: std::cell::Cell<Option<u16>>,
     scan_picking: std::cell::Cell<bool>,
@@ -218,6 +224,8 @@ impl Modern {
             marquee: Default::default(),
             scan_at: Default::default(),
             scan_rows: Default::default(),
+            scan_built: Default::default(),
+            scan_view: Default::default(),
             scan_origin: Default::default(),
             scan_pick: Default::default(),
             scan_picking: Default::default(),

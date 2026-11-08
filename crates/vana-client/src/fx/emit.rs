@@ -103,9 +103,26 @@ pub fn emit(
     ground: &dyn Fn(Vec3, Vec3) -> Option<Vec3>,
     me: [bool; 2],
 ) -> Option<Spawn> {
+    // The emission stream is lent out while it runs (it was cloned per element) and put back.
+    let stream = std::mem::take(&mut inst.streams[1]);
+    let r = emit_ops(reg, inst, &stream, parent, f, rng, ground, me);
+    inst.streams[1] = stream;
+    r
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_ops(
+    reg: &mut Registry,
+    inst: &mut Instance,
+    stream: &[Op],
+    parent: Option<&Parent>,
+    f: &Frame,
+    rng: &mut Rng,
+    ground: &dyn Fn(Vec3, Vec3) -> Option<Vec3>,
+    me: [bool; 2],
+) -> Option<Spawn> {
     let lib = inst.src.0;
     let from = inst.src.1;
-    let stream = inst.streams[1].clone();
     let op1 = stream.first().filter(|o| o.code == 0x01)?;
     let mut e = Elem::default();
     e.0[w::ME] = me[0] as u32 | (me[1] as u32) << 1;
@@ -692,8 +709,10 @@ pub fn emit(
             0x9e if sound.is_some() => sound.as_mut().unwrap().ymode = 2,
             // Op 0x56: the particle block of a batched D3a (CMoVuAnmElem), from the other ops of this generator.
             0x56 if e.0[w::KIND] == dk::BATCHED => {
-                let find =
-                    |st: usize, code: u8| -> Option<Op> { inst.streams[st].iter().find(|o| o.code == code).cloned() };
+                let find = |st: usize, code: u8| -> Option<&Op> {
+                    let ops: &[Op] = if st == 1 { stream } else { &inst.streams[st] };
+                    ops.iter().find(|o| o.code == code)
+                };
                 let speed = find(1, 0x08).map_or(0.0, |o| o.f32(1));
                 let o7 = find(1, 0x07);
                 let r = o7.as_ref().map(|o| o.f32(1)).or_else(|| find(1, 0x06).map(|o| o.f32(1))).unwrap_or(0.0);

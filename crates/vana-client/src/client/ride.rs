@@ -412,6 +412,11 @@ pub fn hidden(w: &World) -> Vec<u32> {
     w.rides.iter().filter(|(_, r)| matches!(r.phase, Phase::Mounting(_))).map(|(id, _)| *id).collect()
 }
 
+/// `hidden(w).contains(&id)`.
+pub fn hides(w: &World, id: u32) -> bool {
+    w.rides.get(&id).is_some_and(|r| matches!(r.phase, Phase::Mounting(_)))
+}
+
 /// FUN_100c63d0: a rider's load fade waits for its animal (ours: not for one whose model failed or is not asked for).
 pub fn fade_held(w: &World, id: u32) -> bool {
     id & ANIMAL == 0

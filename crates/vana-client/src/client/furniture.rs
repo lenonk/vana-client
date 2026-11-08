@@ -230,7 +230,24 @@ const GATED_MODEL: u16 = 0x737;
 /// with one of the row's items installed on either floor (myroom +0x44, set by FUN_101d2b10 / FUN_101d39e0, cleared
 /// by FUN_101d5140); else hidden (+0xb2 bit 3), which takes their targeting too (FUN_10083430).
 pub fn gated_hidden(w: &World) -> Vec<u32> {
-    let Some(r) = w.myroom.filter(|_| w.in_scene()) else { return Vec::new() };
+    if !gate_shut(w) {
+        return Vec::new();
+    }
+    w.entities.iter().filter(|(id, e)| gated(**id, e)).map(|(id, _)| *id).collect()
+}
+
+/// `gated_hidden(w).contains(&id)` for one entity.
+pub fn gate_hides(w: &World, id: u32, e: &super::Entity) -> bool {
+    gated(id, e) && gate_shut(w)
+}
+
+fn gated(id: u32, e: &super::Entity) -> bool {
+    id >> 24 == 1 && e.model == GATED_MODEL
+}
+
+/// In a Mog House scene without the gating item installed on a floor that has one.
+fn gate_shut(w: &World) -> bool {
+    let Some(r) = w.myroom.filter(|_| w.in_scene()) else { return false };
     let ty = |id: u16| w.item_info.as_ref().and_then(|i| i.item(id)).map_or(0, |it| it.item_type);
     let installed = w.inv.slots.iter().any(|(&(c, s), &(id, _))| {
         matches!(c, 1 | 9)
@@ -239,10 +256,7 @@ pub fn gated_hidden(w: &World) -> Vec<u32> {
             && (TYPES.contains(&ty(id)) || ty(id) == MANNEQUIN)
             && w.inv.ext.get(&(c, s)).is_some_and(|x| x[1] & 0x40 != 0)
     });
-    if super::myroom::has_floors(&r) && installed {
-        return Vec::new();
-    }
-    w.entities.iter().filter(|(id, e)| *id >> 24 == 1 && e.model == GATED_MODEL).map(|(id, _)| *id).collect()
+    !(super::myroom::has_floors(&r) && installed)
 }
 
 /// DAT_1037d7b4[floor]: the grid origin (column, level, row).

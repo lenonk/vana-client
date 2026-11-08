@@ -28,6 +28,8 @@ pub struct Track {
 #[derive(Debug, Default)]
 pub struct Scan {
     pub entries: BTreeMap<u16, Entry>,
+    /// Changes with `entries` (never repeats, so the lists built from them can key on it); 0 while empty.
+    pub generation: u64,
     /// The last s2c 0x0F6 state (+0x3aeac): 1 list start, 2 list end.
     pub list_state: u32,
     pub track: Track,
@@ -41,6 +43,11 @@ pub struct Scan {
     pub asked: Option<std::time::Instant>,
 }
 
+fn next_generation() -> u64 {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 impl Scan {
     /// FUN_100f9360: the packet to send. While the server's last list is still open, c2s 0x0F6 (tracking end);
     /// otherwise the store is cleared (results, tracking, list state) and c2s 0x0F4 asks for a new list.
@@ -50,6 +57,7 @@ impl Scan {
             return 0x0F6;
         }
         (self.entries, self.track, self.list_state) = (BTreeMap::new(), Track::default(), 0);
+        self.generation = next_generation();
         0x0F4
     }
 
@@ -74,6 +82,7 @@ impl Scan {
     pub fn on_entry(&mut self, e: Entry) {
         if e.index < 0x900 {
             self.entries.insert(e.index, e);
+            self.generation = next_generation();
         }
     }
 

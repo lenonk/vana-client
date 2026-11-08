@@ -721,10 +721,10 @@ pub fn lock(w: &mut World, on: bool, why: &str) {
 fn invalid(w: &World, t: u32) -> Option<bool> {
     // Ourselves: only an event hiding us drops it (distance 0, never attackable).
     if t == w.my_id {
-        return super::event::hidden(w).contains(&t).then_some(false);
+        return super::event::hides(w, t).then_some(false);
     }
     let Some(e) = w.entities.get(&t) else { return Some(false) };
-    let hidden = e.flags & 2 != 0 || super::event::hidden(w).contains(&t);
+    let hidden = e.flags & 2 != 0 || super::event::hides(w, t);
     drop_rule(e.flags, e.untargetable, e.motion.status, (e.pos - w.pos).length(), hidden)
 }
 
