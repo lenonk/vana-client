@@ -1,8 +1,8 @@
 //! Ambient occlusion (ours, not retail; Settings > Effects > Ambient Occlusion, config `ssao`): screen-space AO from
 //! the scene's depth, worked out after the opaque and cut-out scenery and before anything else draws (as the real
 //! shadows, render/sunshadow.rs), so it darkens creases and corners of the world but never the characters' painted
-//! light. Two passes: the occlusion into a scene-size R8 target (12 samples in the hemisphere about the normal rebuilt
-//! from depth, turned per pixel), then a depth-aware 4 x 4 blur that multiplies the frame.
+//! light. Two passes: the occlusion into a half-size R8 target (12 samples in the hemisphere about the normal rebuilt
+//! from depth, turned per pixel), then a 4 x 4 blur of it, weighted by linear depth, that multiplies the frame.
 
 use super::Gpu;
 use glam::{Mat4, Vec3};
@@ -21,6 +21,8 @@ struct U {
     eye: vec4<f32>,
     // x: strength; y, z: the fade's start and end.
     params: vec4<f32>,
+    // x, y: the projection's near and far planes (depth 0..1 to the eye distance).
+    lin: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var depth: texture_depth_2d;
@@ -39,14 +41,21 @@ fn size() -> vec2<f32> { return vec2<f32>(textureDimensions(depth)); }
 fn depth_at(px: vec2<f32>) -> f32 {
     return textureLoad(depth, vec2<i32>(clamp(px, vec2<f32>(0.0), size() - 1.0)), 0);
 }
+// The distance along the view axis of a depth value (a 0..1 perspective projection).
+fn linear(d: f32) -> f32 {
+    return u.lin.x * u.lin.y / (u.lin.y - d * (u.lin.y - u.lin.x));
+}
 fn world_at(uv: vec2<f32>, d: f32) -> vec3<f32> {
     let h = u.inv_view_proj * vec4<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, d, 1.0);
     return h.xyz / h.w;
 }
 
+// At half the scene's size: each pixel reads the depth of the top-left full-size pixel under it, and rebuilds the
+// position on that same pixel's ray (the half-size pixel's own centre is a corner between four of them).
 @fragment fn fs_ao(i: VOut) -> @location(0) vec4<f32> {
-    let d = depth_at(i.pos.xy);
-    let p = world_at(i.uv, d);
+    let px = floor(i.pos.xy) * 2.0;
+    let d = depth_at(px);
+    let p = world_at((px + 0.5) / size(), d);
     var n = cross(dpdx(p), dpdy(p));
     let nl = length(n);
     n = select(vec3<f32>(0.0, -1.0, 0.0), n / max(nl, 1e-12), nl > 1e-12);
@@ -71,11 +80,12 @@ fn world_at(uv: vec2<f32>, d: f32) -> vec3<f32> {
         let q = c.xyz / c.w;
         let suv = vec2<f32>(q.x * 0.5 + 0.5, 0.5 - q.y * 0.5);
         let sd = depth_at(suv * size());
-        let hit = world_at(suv, sd);
-        // Occluded when the scene there is nearer than the sample, within the radius (no halos off far edges);
-        // samples off the screen have no depth to test and count as open.
+        // Occluded when the scene there is nearer than the sample, within the radius of this pixel (no halos off far
+        // edges); samples off the screen have no depth to test and count as open. The scene's point lies on the ray
+        // from the eye through the sample, so its linear depth over the sample's places it without a matrix.
         let on = all(suv >= vec2<f32>(0.0)) && all(suv <= vec2<f32>(1.0));
         let near = select(0.0, 1.0, on && sd < q.z - 1e-6);
+        let hit = u.eye.xyz + (s - u.eye.xyz) * (linear(sd) / linear(q.z));
         let range = 1.0 - smoothstep(0.5 * r, r, distance(hit, p));
         occ += near * range;
     }
@@ -85,19 +95,20 @@ fn world_at(uv: vec2<f32>, d: f32) -> vec3<f32> {
     return vec4<f32>(v, 0.0, 0.0, 1.0);
 }
 
-// The 4 x 4 blur, weighted against depth jumps, and the frame multiplied by 1 - strength x AO.
+// A 4 x 4 blur of the half-size occlusion, weighted against depth jumps along the view, and the frame multiplied by
+// 1 - strength x AO.
 @fragment fn fs_apply(i: VOut) -> @location(0) vec4<f32> {
     let d0 = depth_at(i.pos.xy);
-    let p0 = world_at(i.uv, d0);
+    let l0 = linear(d0);
+    let half = vec2<f32>(textureDimensions(ao));
+    let c = i.pos.xy * 0.5;
     var sum = 0.0;
     var w = 0.0;
     for (var y = -2; y < 2; y++) {
         for (var x = -2; x < 2; x++) {
-            let px = i.pos.xy + vec2<f32>(f32(x) + 0.5, f32(y) + 0.5);
-            let q = vec2<i32>(clamp(px, vec2<f32>(0.0), size() - 1.0));
-            let dq = textureLoad(depth, q, 0);
-            let pq = world_at((vec2<f32>(q) + 0.5) / size(), dq);
-            let wq = 1.0 - smoothstep(0.0, 0.5 * u.eye.w, distance(pq, p0));
+            let q = vec2<i32>(clamp(c + vec2<f32>(f32(x) + 0.5, f32(y) + 0.5), vec2<f32>(0.0), half - 1.0));
+            let dq = depth_at(vec2<f32>(q) * 2.0);
+            let wq = 1.0 - smoothstep(0.0, 0.5 * u.eye.w, abs(linear(dq) - l0));
             sum += textureLoad(ao, q, 0).r * wq;
             w += wq;
         }
@@ -114,6 +125,7 @@ struct Params {
     inv_view_proj: [[f32; 4]; 4],
     eye: [f32; 4],
     params: [f32; 4],
+    lin: [f32; 4],
 }
 
 pub struct Ssao {
@@ -241,7 +253,7 @@ impl Ssao {
     /// The occlusion target at the scene's size, made on first use or a size change.
     pub fn resize(&mut self, gpu: &Gpu, size: [u32; 2]) {
         if self.target.as_ref().is_none_or(|t| t.0 != size) {
-            self.target = Some((size, Self::ao_texture(&gpu.device, size)));
+            self.target = Some((size, Self::ao_texture(&gpu.device, [size[0].div_ceil(2), size[1].div_ceil(2)])));
         }
     }
 
@@ -262,6 +274,7 @@ impl Ssao {
             inv_view_proj: view_proj.inverse().to_cols_array_2d(),
             eye: [eye.x, eye.y, eye.z, RADIUS],
             params: [STRENGTH, FADE[0], FADE[1], 0.0],
+            lin: [super::NEAR, super::FAR, 0.0, 0.0],
         };
         super::Put::put(&gpu.queue, &self.uniform, 0, bytemuck::bytes_of(&p));
         let group = |tex: &wgpu::TextureView| {

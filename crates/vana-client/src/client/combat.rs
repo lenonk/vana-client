@@ -1598,14 +1598,39 @@ fn play(actor: &mut Actor, name: &str, len: f32, speed: f32) {
 }
 
 /// Melee (FUN_100d4600 / FUN_100d46f0): standing (+0xf8 clear) a random "ati?" avoiding the one just
-/// used; moving, the first "atf?" ('r' / 'b' / 'l' by the move direction +0x598; we move forward only).
+/// used; moving, the first "atf?", or "atr?" / "atb?" / "atl?" by the move's quarter +0x598 (2 / 3 / 4) while the
+/// facing is held (vt+0x330 false: locked on or the strafe lock; ours also the right drag).
 /// PCs find them in their battle files. Plays the op-0x05 motion; returns when its "dada" hit runs, and its name.
 /// FUN_100d4600's name patterns: `atf?` moving / `ati?` standing (the other first), the second letter
 /// `"t123t123"[sub-animation]` (forms of multi-form monsters).
-pub(super) fn swing_patterns(moving: bool, sub: u8) -> (String, String) {
+pub(super) fn swing_patterns(moving: bool, sub: u8, quarter: u8) -> (String, String) {
     let c = b"t123t123"[(sub & 7) as usize] as char;
-    let (f, i) = (format!("a{c}f?"), format!("a{c}i?"));
+    let way = match quarter {
+        2 => 'r',
+        3 => 'b',
+        4 => 'l',
+        _ => 'f',
+    };
+    let (f, i) = (format!("a{c}{way}?"), format!("a{c}i?"));
     if moving { (f, i) } else { (i, f) }
+}
+
+/// Ours: the moving swing `motion` (the third letter its way; `scheduler` a moving one, `a?r0` / `b?l1`..., whatever
+/// way it started) as the quarter `quarter` now wants it, when that differs: `amr` -> `aml`, dual wield's `arr` -> `arl`.
+pub(super) fn turned_swing(motion: &str, scheduler: &str, quarter: u8) -> Option<String> {
+    let way = match quarter {
+        1 => 'f',
+        2 => 'r',
+        3 => 'b',
+        4 => 'l',
+        _ => return None,
+    };
+    let (m, s) = (motion.as_bytes(), scheduler.as_bytes());
+    let moving = |c: u8| b"frbl".contains(&c);
+    if m.len() != 3 || m[0] != b'a' || !moving(m[2]) || s.len() < 3 || !moving(s[2]) || m[2] == way as u8 {
+        return None;
+    }
+    Some(format!("{}{way}", &motion[..2]))
 }
 
 /// FUN_100d46f0 by the hit's record (FUN_10185ea0: kind @4, animation @6): kind 1 animation 1 (the off hand) tries the
@@ -1631,7 +1656,8 @@ pub(super) fn start_attack(
     let a = w.actors.get_mut(&actor)?;
     let ch = a.character.clone()?;
     let names = actmotion::scheduler_names(&a.extra, &ch);
-    let (first, other) = swing_patterns(moving, sub);
+    let quarter = if actor == w.my_id { w.my_strafe } else { 0 };
+    let (first, other) = swing_patterns(moving, sub, quarter);
     let hand = |p: &str| swing_hand(record).map(|h| format!("{h}{}", &p[1..]));
     let mut pool = Vec::new();
     for p in [hand(&first), Some(first.clone()), hand(&other), Some(other.clone())].into_iter().flatten() {
@@ -2367,6 +2393,31 @@ fn send(w: &World, c: NetCommand) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A moving swing follows the move's quarter (FUN_100d46f0: 2 r, 3 b, 4 l, else f); standing keeps `ati?` first.
+    #[test]
+    fn moving_swing_turns() {
+        // The staff's am?, dual wield's main (ar?) and off hand (al?, from a `b` scheduler).
+        assert_eq!(turned_swing("amr", "atr0", 4).as_deref(), Some("aml"));
+        assert_eq!(turned_swing("arr", "atr1", 4).as_deref(), Some("arl"));
+        assert_eq!(turned_swing("alr", "btr0", 3).as_deref(), Some("alb"));
+        assert_eq!(turned_swing("all", "btl0", 1).as_deref(), Some("alf"));
+        // Turned once already: it turns back.
+        assert_eq!(turned_swing("aml", "atr0", 2).as_deref(), Some("amr"));
+        // Already right, standing (a digit), not moving, or not a swing.
+        assert_eq!(turned_swing("arl", "atl0", 4), None);
+        assert_eq!(turned_swing("ar2", "ati0", 4), None);
+        assert_eq!(turned_swing("arr", "atr0", 0), None);
+        assert_eq!(turned_swing("mvr", "atr0", 4), None);
+    }
+
+    #[test]
+    fn moving_swing_by_quarter() {
+        let first = |q| swing_patterns(true, 0, q).0;
+        assert_eq!([first(0), first(1), first(2), first(3), first(4)], ["atf?", "atf?", "atr?", "atb?", "atl?"]);
+        assert_eq!(swing_patterns(false, 0, 2), ("ati?".to_string(), "atr?".to_string()));
+        assert_eq!(swing_patterns(true, 1, 4).0, "a1l?");
+    }
 
     /// The edits after a mark give their lines; a mark older than the kept edits gives None (wrap everything).
     #[test]

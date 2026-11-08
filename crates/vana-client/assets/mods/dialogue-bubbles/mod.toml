@@ -1,5 +1,5 @@
 name = "Dialogue Bubbles"
-version = "1.0.0"
+version = "1.0.1"
 description = "NPC talk in a speech bubble with the speaker's face and name, its tail pointing at them, over the speaker or at the bottom of the screen (the balloon add-ons)."
 permissions = []
 

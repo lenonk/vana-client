@@ -559,11 +559,15 @@ impl Effects {
     /// The actor's destructor (FUN_100c5c00 -> FUN_10082b10, its caster and target links): every scheduler task and
     /// generator clone linked to it goes with it (the links' callbacks FUN_10057cf0 delete the task, FUN_10054380 ->
     /// FUN_100543a0 the clone and its elements at once, no burst); a generator run as its own template only forgets
-    /// it and runs on (the attach modes then give the identity, 0x1003c5f0); starts waiting on its own files go.
+    /// it and runs on (the attach modes then give the identity, 0x1003c5f0); starts waiting on its own files go. Its
+    /// dolls go with it (their link at +0xc4, vtable 0x1032f91c +0x10 / +0x14 = FUN_100abd50 / FUN_100abd70, deletes
+    /// the doll), and with each doll what is linked to it.
     pub fn forget_actor(&mut self, id: u32) {
-        let who = Who::Actor(id);
+        let gone: Vec<Who> = std::iter::once(Who::Actor(id))
+            .chain(self.dolls.iter().enumerate().filter(|(_, d)| d.of == id).map(|(k, _)| Who::Doll(k)))
+            .collect();
         let clear = |w: &mut Who| {
-            if *w == who {
+            if gone.contains(w) {
                 *w = Who::None;
             }
         };
@@ -577,14 +581,15 @@ impl Effects {
             clear(&mut p.a2);
         }
         for t in self.tasks.iter_mut() {
-            if t.as_ref().is_some_and(|t| t.a1 == who || t.a2 == who) {
+            if t.as_ref().is_some_and(|t| gone.contains(&t.a1) || gone.contains(&t.a2)) {
                 *t = None;
             }
         }
         // Clones: op 0x02's and the model file's, the footstep dust, prints and ripple, an element's sub-clones.
         for i in 0..self.insts.len() {
             let linked = self.insts[i].as_ref().is_some_and(|x| {
-                x.actors.contains(&who) && (x.clone || x.driven.is_some() || matches!(x.owner, super::Owner::Step(_)))
+                x.actors.iter().any(|a| gone.contains(a))
+                    && (x.clone || x.driven.is_some() || matches!(x.owner, super::Owner::Step(_)))
             });
             if linked {
                 self.kill(i);
@@ -1443,19 +1448,19 @@ impl Effects {
                 }
             }
             0x15 | 0x22 => {
-                t.a1 = self.doll(t.a1, op.code == 0x22, actors, t.uid);
+                t.a1 = self.doll(t.a1, 0, op.code == 0x22, actors, t.uid);
                 Flow::Next
             }
             0x16 | 0x23 => {
-                t.a2 = self.doll(t.a2, op.code == 0x23, actors, t.uid);
+                t.a2 = self.doll(t.a2, 1, op.code == 0x23, actors, t.uid);
                 Flow::Next
             }
             0x17 => {
-                t.a1 = self.undoll(t.a1, t.uid);
+                t.a1 = self.undoll(t.a1, 0, t.uid);
                 Flow::Next
             }
             0x18 => {
-                t.a2 = self.undoll(t.a2, t.uid);
+                t.a2 = self.undoll(t.a2, 1, t.uid);
                 Flow::Next
             }
             0x31 => {
@@ -2725,9 +2730,9 @@ impl Effects {
         }
     }
 
-    /// FUN_100abea0: a doll where the actor stands now; FUN_10062d50 moves the clones this task started (clone
-    /// +0xf0 == the task) to it, others stay on the actor.
-    fn doll(&mut self, w: Who, follow: bool, actors: &dyn Actors, uid: u64) -> Who {
+    /// FUN_100abea0: a doll where the actor in slot `slot` (0 actor1, 1 actor2) stands now; FUN_10062d50 moves the
+    /// clones this task started (clone +0xf0 == the task) to it in that slot, others stay on the actor.
+    fn doll(&mut self, w: Who, slot: usize, follow: bool, actors: &dyn Actors, uid: u64) -> Who {
         let Who::Actor(id) = w else { return w };
         let Some(m) = actors.matrix(id) else { return w };
         let d = Who::Doll(self.dolls.len());
@@ -2740,15 +2745,15 @@ impl Effects {
         }
         let points = (0..DOLL_POINTS).map(|k| if unposed { None } else { actors.point(id, k) }).collect();
         self.dolls.push(Doll { of: id, matrix: m, follow, points, unposed });
-        self.move_clones(w, d, uid);
+        self.move_clones(w, d, uid, slot);
         d
     }
 
     /// Ops 0x17 / 0x18: back to the actor, with the clones of this task.
-    fn undoll(&mut self, w: Who, uid: u64) -> Who {
+    fn undoll(&mut self, w: Who, slot: usize, uid: u64) -> Who {
         let back = self.doll_of(w);
         if back != w {
-            self.move_clones(w, back, uid);
+            self.move_clones(w, back, uid, slot);
         }
         back
     }
@@ -2761,12 +2766,11 @@ impl Effects {
         }
     }
 
-    fn move_clones(&mut self, from: Who, to: Who, uid: u64) {
+    /// Only the one slot's handle moves (FUN_10062d50 walks the actor's actor1 list +0x68 or actor2 list +0x6c).
+    fn move_clones(&mut self, from: Who, to: Who, uid: u64, slot: usize) {
         for x in self.insts.iter_mut().flatten().filter(|x| x.owner == Owner::Task(uid)) {
-            for a in x.actors.iter_mut() {
-                if *a == from {
-                    *a = to;
-                }
+            if x.actors[slot] == from {
+                x.actors[slot] = to;
             }
         }
     }
@@ -3934,6 +3938,81 @@ mod tests {
         fn sub_anim(&self, _: u32) -> u8 {
             1
         }
+    }
+
+    /// Two, the Hume with weapon skill file 35595 on it (a skill file, as the client puts it there).
+    struct Skilled;
+
+    impl Actors for Skilled {
+        fn matrix(&self, id: u32) -> Option<Mat4> {
+            Two.matrix(id)
+        }
+        fn point(&self, id: u32, k: u16) -> Option<Vec3> {
+            Two.point(id, k)
+        }
+        fn scale(&self, _: u32) -> f32 {
+            1.0
+        }
+        fn files(&self, id: u32) -> (Vec<u32>, Vec<u32>) {
+            let (a, mut b) = Two.files(id);
+            if id == HUME {
+                b.push(35595);
+            }
+            (a, b)
+        }
+        fn hidden(&self, _: u32) -> bool {
+            false
+        }
+        fn models(&self) -> Vec<(u32, Vec<u32>)> {
+            Vec::new()
+        }
+    }
+
+    /// A doll goes with the actor it stands for, and the clones on it with the doll. Weapon skill file 35595's `main`
+    /// starts g000 (endless, flag 0x1000) on the pair, dolls actor2 (op 0x23), and its `st44` stops g000 on the
+    /// undolled pair, which misses it: it glows on until the target despawns. Only actor2 moved to the doll.
+    #[test]
+    fn despawn_takes_its_dolls() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let index = std::sync::Arc::new(index);
+        let mut fx = Effects::new();
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        let files = [35595, 8392, 9672, 7072, 1300];
+        fx.preload(&files);
+        while files.iter().any(|f| fx.reg.lib_of(*f).is_none()) {
+            fx.poll_loads();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let lib = fx.reg.lib_of(35595).unwrap();
+        let f = Frame {
+            dt: 1.0,
+            seconds: 1.0 / 60.0,
+            dayfrac: 0.5,
+            view: Mat4::IDENTITY,
+            view_rot: Mat4::IDENTITY,
+            eye: Vec3::new(0.0, -2.0, -10.0),
+            draw_distance: 2000.0,
+            area_light: Vec3::ONE,
+            focal: 350.0,
+            moon_phase: 0,
+            weekday: 0,
+        };
+        fx.on_event_scheduler(35595, u32::from_le_bytes(*b"main"), Who::Actor(HUME), Who::Actor(ORC));
+        for _ in 0..400 {
+            fx.tick(&f, &Skilled);
+        }
+        let left: Vec<_> = fx.insts.iter().flatten().filter(|x| x.src.0 == lib).map(|x| (x.name, x.actors)).collect();
+        assert!(
+            left.len() == 1
+                && &left[0].0 == b"g000"
+                && left[0].1[0] == Who::Actor(HUME)
+                && matches!(left[0].1[1], Who::Doll(_)),
+            "{left:?}"
+        );
+        fx.forget_actor(ORC);
+        assert!(fx.insts.iter().flatten().all(|x| x.src.0 != lib));
     }
 
     /// FUN_100c5c00 -> FUN_10082b10: a despawned actor's tasks and generator clones go with it. Model 52742 (a Garlaige

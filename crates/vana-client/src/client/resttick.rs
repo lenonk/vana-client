@@ -3,7 +3,8 @@
 //! rest seen and kept moving: the first heal after the rest's start, the interval after each heal (the last one stands
 //! for every later one, so a server whose ticks quicken to a floor is followed), and the period of the server's looks
 //! (LSB heals every 10 s but looks at effects every 3 s, so its ticks land 9, 9, 12 s apart). Each rise in HP or MP
-//! re-anchors the rest's ticks, and one the model can't place starts the anchoring over from it. The party window
+//! re-anchors the rest's ticks, and one the model can't place starts the anchoring over from it. A stat's own ticks
+//! (Regen, Refresh: from spells, gear, food or songs, no icon needed) are told apart by their repeats. The party window
 //! shows how near the next tick is.
 
 use super::World;
@@ -79,18 +80,30 @@ impl Model {
     }
 }
 
-/// The rest being watched: its start, the vitals last frame, the rises seen (seconds from the start), whether its rises
-/// still follow on one another (none skipped), a rise seen in this zone (the server's looks fall a period apart from
-/// it); the model and whether it changed since saved.
+/// The rest being watched: its start, the vitals (HP, MP) last frame, each one's recent rises (when, by how much), the
+/// rise waiting to count, the rises seen (seconds from the start), whether its rises still follow on one another (none
+/// skipped), a rise seen in this zone (the server's looks fall a period apart from it); the model and whether it
+/// changed since saved.
 #[derive(Default)]
 pub struct RestTick {
     start: Option<Instant>,
-    last: (u32, u32),
+    last: [u32; 2],
+    recent: [Vec<(Instant, u32)>; 2],
+    held: Option<Held>,
     rises: Vec<f32>,
     chain: bool,
     grid: Option<(u16, Instant)>,
     pub model: Model,
     pub dirty: bool,
+}
+
+/// A rise waiting to count: when, its rest (start, zone), and the rises (when, by how much; HP, MP) that may still be a
+/// rest tick's (a stat may rise twice within it: an own tick, then a rest tick).
+struct Held {
+    at: Instant,
+    start: Instant,
+    zone: u16,
+    amounts: [Vec<(Instant, u32)>; 2],
 }
 
 impl RestTick {
@@ -112,61 +125,135 @@ pub enum Shown {
 const SAME: f32 = 2.0;
 /// A rest tick's interval lies here.
 const INTERVAL: (f32, f32) = (2.5, 60.0);
-/// Regen and Refresh: their own 3 s rises would read as rest ticks.
-const OWN_TICKS: [u16; 2] = [42, 43];
+/// A stat's own ticks repeat its amount this far apart (a look or two: LSB and retail apply them at every 3 s look).
+/// A rest tick on the same look adds to it; rest heals grow each tick, so two in a row never match.
+const OWN_GAP: (f32, f32) = (2.0, 7.0);
+/// A rise waits this long before it counts as a tick: an own tick's twin a look later shows what it was.
+const HOLD: f32 = 4.5;
 
-/// Per frame: a rest starts and ends with status 0x21; a rise in HP or MP during it is a tick.
+fn secs(from: Instant, to: Instant) -> f32 {
+    to.saturating_duration_since(from).as_secs_f32()
+}
+
+/// Per frame: a rest starts and ends with status 0x21; a rise in HP or MP during it, other than a stat's own tick,
+/// is a tick.
 pub fn update(w: &mut World) {
-    let now = Instant::now();
-    let vitals = w.vitals.map_or((0, 0), |v| (v.0, v.1));
-    let (resting, zone) = (w.my_motion.status == 0x21, w.pos_zone);
-    let regen = w.buffs.iter().any(|b| OWN_TICKS.contains(b));
-    let r = &mut w.rest;
-    let Some(start) = r.start.filter(|_| resting) else {
-        r.start = resting.then_some(now);
-        (r.rises, r.last, r.chain) = (Vec::new(), vitals, true);
-        return;
-    };
-    let rose = vitals.0 > r.last.0 || vitals.1 > r.last.1;
-    r.last = vitals;
-    let t = now.duration_since(start).as_secs_f32();
-    if !rose || r.rises.last().is_some_and(|x| t - x <= SAME) {
-        return;
-    }
-    if regen {
-        // Not a rest tick for sure: neither learnt from nor anchored on, and the chain is broken.
-        r.chain = false;
-        return;
-    }
-    log::debug!("rest tick seen {t:.2} s into the rest");
-    r.rises.push(t);
-    r.grid = Some((zone, now));
-    let n = r.rises.len();
-    if n == 1 {
-        if t > SAME && t < INTERVAL.1 {
-            r.model.learn_first(t);
-            r.dirty = true;
+    let v = w.vitals.unwrap_or_default();
+    let resting = w.my_motion.status == 0x21;
+    w.rest.feed(Instant::now(), resting, w.pos_zone, [v.0, v.1], [v.3 >= 100, v.4 >= 100]);
+}
+
+impl RestTick {
+    /// One frame's vitals (HP, MP) and whether each is full.
+    fn feed(&mut self, now: Instant, resting: bool, zone: u16, vitals: [u32; 2], full: [bool; 2]) {
+        let mut tick = [None; 2];
+        for s in 0..2 {
+            let a = vitals[s].saturating_sub(self.last[s]);
+            if a > 0 && !self.own_rise(s, now, a, full[s]) {
+                tick[s] = Some(a);
+            }
         }
-        return;
+        self.last = vitals;
+        let Some(start) = self.start.filter(|_| resting) else {
+            if resting {
+                // A new rest: what the last one held counts now, before its rises go.
+                self.count_held();
+                (self.rises, self.chain) = (Vec::new(), true);
+            }
+            self.start = resting.then_some(now);
+            // A heal held as the rest ended still waits for its twin.
+            self.settle(now);
+            return;
+        };
+        if tick != [None; 2] {
+            match self.held.as_mut() {
+                // HP and MP come in separate packets.
+                Some(h) if secs(h.at, now) <= SAME => {
+                    for (held, a) in h.amounts.iter_mut().zip(tick) {
+                        held.extend(a.map(|a| (now, a)));
+                    }
+                }
+                _ => {
+                    self.count_held();
+                    let amounts = tick.map(|a| a.map(|a| (now, a)).into_iter().collect());
+                    self.held = Some(Held { at: now, start, zone, amounts });
+                }
+            }
+        }
+        self.settle(now);
     }
-    let g = t - r.rises[n - 2];
-    if r.chain && r.model.fits(n - 2, g) {
-        r.model.learn_gap(n - 2, g);
-        if let Some(p) = look_period(&r.rises) {
-            r.model.period = p;
+
+    /// The held rise counts once its twin had time to show.
+    fn settle(&mut self, now: Instant) {
+        if self.held.as_ref().is_some_and(|h| secs(h.at, now) > HOLD) {
+            self.count_held();
         }
-        r.dirty = true;
-        if n == 4 {
-            let m = &r.model;
-            log::info!(
-                "rest ticks: first heal after {:.1} s, then {:?} s, looked at every {:.1} s",
-                m.first,
-                m.gaps.iter().map(|g| (g * 10.0).round() / 10.0).collect::<Vec<_>>(),
-                m.period
-            );
+    }
+
+    /// The held rise counts at the first of its amounts left (an own tick's twin may have dropped an earlier one).
+    fn count_held(&mut self) {
+        if let Some(h) = self.held.take() {
+            let at = h.amounts.iter().flatten().map(|x| x.0).min().unwrap_or(h.at);
+            self.count(h.start, h.zone, at);
         }
-    } else {
-        r.chain = false;
+    }
+
+    /// Whether stat `s`'s rise of `a` is its own tick: the amount it rose by a look or two before (or less, filling it).
+    /// The held amount this one twins was one too, and no longer counts.
+    fn own_rise(&mut self, s: usize, now: Instant, a: u32, full: bool) -> bool {
+        let like = |b: u32| a == b || (full && a < b);
+        let near = |at: Instant| (OWN_GAP.0..=OWN_GAP.1).contains(&secs(at, now));
+        let recent = &mut self.recent[s];
+        recent.retain(|&(at, _)| secs(at, now) <= OWN_GAP.1);
+        let own = recent.iter().any(|&(at, b)| near(at) && like(b));
+        recent.push((now, a));
+        if own
+            && let Some(h) = self.held.as_mut()
+            && near(h.at)
+            && let Some(i) =
+                h.amounts[s].iter().position(|x| x.1 == a).or_else(|| h.amounts[s].iter().position(|x| like(x.1)))
+        {
+            h.amounts[s].remove(i);
+            if h.amounts.iter().all(Vec::is_empty) {
+                self.held = None;
+            }
+        }
+        own
+    }
+
+    /// A rest tick at `at`: anchored on and learnt from.
+    fn count(&mut self, start: Instant, zone: u16, at: Instant) {
+        let t = secs(start, at);
+        log::debug!("rest tick seen {t:.2} s into the rest");
+        self.rises.push(t);
+        self.grid = Some((zone, at));
+        let n = self.rises.len();
+        if n == 1 {
+            if t > SAME && t < INTERVAL.1 {
+                self.model.learn_first(t);
+                self.dirty = true;
+            }
+            return;
+        }
+        let g = t - self.rises[n - 2];
+        if self.chain && self.model.fits(n - 2, g) {
+            self.model.learn_gap(n - 2, g);
+            if let Some(p) = look_period(&self.rises) {
+                self.model.period = p;
+            }
+            self.dirty = true;
+            if n == 4 {
+                let m = &self.model;
+                log::info!(
+                    "rest ticks: first heal after {:.1} s, then {:?} s, looked at every {:.1} s",
+                    m.first,
+                    m.gaps.iter().map(|g| (g * 10.0).round() / 10.0).collect::<Vec<_>>(),
+                    m.period
+                );
+            }
+        } else {
+            self.chain = false;
+        }
     }
 }
 
@@ -362,6 +449,68 @@ mod tests {
             rest(&mut m, &[20.0, 30.0, 40.0, 50.0, 60.0]);
         }
         assert!((m.gap(3) - 10.0).abs() < 0.3, "{m:?}");
+    }
+
+    /// LSB with Refresh +1 from gear (no icon) from `own_from` s, HP full: MP +1 on every 3 s look, the rest's heals
+    /// (every 10 s from its start at 0, from the second, on the first look after) on top. Only the heals count.
+    fn refresh_rest(own_from: f32) -> Vec<f32> {
+        let base = Instant::now();
+        let mut r = RestTick { chain: true, ..Default::default() };
+        let look = |k: i32| 0.7 + 3.0 * k as f32;
+        let mut events: Vec<(f32, u32)> = (-4..20).map(look).filter(|&t| t >= own_from).map(|t| (t, 1)).collect();
+        for j in 2..6 {
+            let at = (0..).map(look).find(|&t| t >= 10.0 * j as f32).unwrap();
+            events.push((at, 12 + j as u32 - 2));
+        }
+        let mut mp = 500;
+        let mut prev = -12.0;
+        for i in 0..72 * 60 {
+            let t = -12.0 + i as f32 / 60.0;
+            mp += events.iter().filter(|e| e.0 > prev && e.0 <= t).map(|e| e.1).sum::<u32>();
+            prev = t;
+            let now = base + std::time::Duration::from_secs_f32(t + 12.0);
+            r.feed(now, t >= 0.0, 1, [1000, mp], [true, false]);
+        }
+        r.rises
+    }
+
+    #[test]
+    fn own_ticks_are_not_rest_ticks() {
+        // Ticking before the rest, and only from just after it starts (a spell cast before sitting).
+        for own_from in [-12.0, 0.5] {
+            let rises = refresh_rest(own_from);
+            let want = [21.7, 30.7, 42.7, 51.7];
+            assert_eq!(rises.len(), want.len(), "{own_from}: {rises:?}");
+            assert!(rises.iter().zip(want).all(|(a, b)| (a - b).abs() < 0.05), "{own_from}: {rises:?}");
+        }
+    }
+
+    /// Feeds MP (HP full) at each `(t, mp)` from 0.0, resting until `stand` s, a frame every 1/60 s up to `until`.
+    fn feed_mp(events: &[(f32, u32)], stand: f32, until: f32) -> RestTick {
+        let base = Instant::now();
+        let mut r = RestTick { chain: true, ..Default::default() };
+        for i in 0..=(until * 60.0) as u32 {
+            let t = i as f32 / 60.0;
+            let mp = 500 + events.iter().filter(|e| e.0 <= t).map(|e| e.1).sum::<u32>();
+            r.feed(base + std::time::Duration::from_secs_f32(t), t < stand, 1, [1000, mp], [true, false]);
+        }
+        r
+    }
+
+    #[test]
+    fn a_heal_just_before_standing_counts() {
+        let r = feed_mp(&[(21.7, 12)], 23.0, 30.0);
+        assert_eq!(r.rises.len(), 1, "{:?}", r.rises);
+        assert!((r.rises[0] - 21.7).abs() < 0.05, "{:?}", r.rises);
+        assert!((r.model.first - 21.7).abs() < 0.05, "{:?}", r.model);
+    }
+
+    #[test]
+    fn a_heal_after_an_own_tick_in_its_hold_counts() {
+        // Refresh +1 from 20.5 (first seen there), the rest heal 1.2 s later, Refresh's twin a look after.
+        let r = feed_mp(&[(20.5, 1), (21.7, 12), (23.5, 1), (26.5, 1)], 40.0, 30.0);
+        assert_eq!(r.rises.len(), 1, "{:?}", r.rises);
+        assert!((r.rises[0] - 21.7).abs() < 0.05, "{:?}", r.rises);
     }
 
     #[test]

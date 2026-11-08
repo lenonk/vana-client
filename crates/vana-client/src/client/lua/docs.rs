@@ -2432,6 +2432,11 @@ pub const CLASSES: &[Class] = &[
             ("race", "integer?", ""),
             ("model", "integer", "a monster or NPC model id (0 for a player-style look)"),
             (
+                "bones",
+                "integer",
+                "its model's skeleton bones: a few for an object (a casket: 3), dozens for a creature; 0 for none (a ??? point, a door)",
+            ),
+            (
                 "look",
                 "{face: integer, head: integer, body: integer, hands: integer, legs: integer, feet: integer, main: integer, sub: integer, range: integer}?",
                 "a player-style look",

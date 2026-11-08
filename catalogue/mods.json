@@ -523,13 +523,13 @@
       "files": [
         {
           "path": "init.lua",
-          "sha256": "e355a1e693ebd2cbda6038c1f8ea5a8bc5f3151317ce495a763dfa971c83b53b",
-          "size": 4720,
+          "sha256": "28261429999e97a80e06d31bedafb17de8baf3f757c56e0e00d238e12231c0a5",
+          "size": 4957,
           "url": "https://raw.githubusercontent.com/lenonk/vana-client/master/crates/vana-client/assets/mods/dialogue-bubbles/init.lua"
         },
         {
           "path": "mod.toml",
-          "sha256": "81f342d6981fcaf1338b008d0aca7bb20d4d95e12f302242863768b44f15256f",
+          "sha256": "667467199f851c5e528205c2cbb0495039c325403bc3cef1b39c8a358b509d29",
           "size": 1014,
           "url": "https://raw.githubusercontent.com/lenonk/vana-client/master/crates/vana-client/assets/mods/dialogue-bubbles/mod.toml"
         }
@@ -537,7 +537,7 @@
       "id": "dialogue-bubbles",
       "kind": "lua",
       "name": "Dialogue Bubbles",
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "authors": [
@@ -2063,8 +2063,8 @@
       "files": [
         {
           "path": "init.lua",
-          "sha256": "4dc94d03f7d242ed27c1e861f69fa925475beaad710149d7945b2f27bb0757d8",
-          "size": 3443,
+          "sha256": "2198f2845c5ee6b4743ed9a3e089ef70f5d8e8defcf1fc27166ca3129e213534",
+          "size": 5095,
           "url": "https://raw.githubusercontent.com/lenonk/vana-client/master/crates/vana-client/assets/mods/trust-lineups/init.lua"
         },
         {

@@ -8,10 +8,25 @@ local function key(name)
   return (name:lower():gsub("[^%w]", ""))
 end
 
+-- The name a trust has in the party: its spell's without a "(UC)" or a roman numeral ("Apururu (UC)" and
+-- "Shantotto II" show as Apururu and Shantotto).
+local function party_key(spell)
+  local n = spell:gsub("%s*%b()", "")
+  n = n:gsub("%s+[IVX]+$", "")
+  return key(n)
+end
+
 local function sets()
   local s = storage.character
   s.lineups = s.lineups or {}
   return s.lineups
+end
+
+-- The spell each trust in the party was called with, by party name ("shantotto" -> "Shantotto II").
+local function called()
+  local s = storage.character
+  s.called = s.called or {}
+  return s.called
 end
 
 -- Our learned trust spells by lower-case name: {id, name, cast_time}.
@@ -34,6 +49,45 @@ local function in_party()
   return out
 end
 
+-- Our last trust cast, kept until its trust stands in the party.
+local last_cast
+
+local function learn()
+  if not last_cast or os.clock() - last_cast.at > 30 then return end
+  if in_party()[party_key(last_cast.name)] then
+    called()[party_key(last_cast.name)] = last_cast.name
+    storage.save()
+    last_cast = nil
+  end
+end
+
+events.on("action", function(a)
+  local me = game.player()
+  if not me or a.actor ~= me.id or a.category ~= 4 or a.param < 896 or a.param >= 1024 then return end
+  local s = res.spell(a.param)
+  if s and s.name and s.name ~= "" then
+    last_cast = { name = s.name, at = os.clock() }
+    learn()
+  end
+end)
+
+events.on("party_change", learn)
+
+-- The spell a party member was called with: the one we saw cast, else the learned trust its name is.
+local function spell_of(name, known)
+  local k = key(name)
+  local seen = called()[k]
+  if seen and known[key(seen)] then return known[key(seen)].name end
+  local found
+  for _, t in pairs(known) do
+    if party_key(t.name) == k then
+      if found then return known[k] and known[k].name end
+      found = t
+    end
+  end
+  return found and found.name
+end
+
 local function call(names)
   if busy then
     chat.add("Trust Lineups: still calling the last lineup.")
@@ -46,7 +100,7 @@ local function call(names)
       local t = known[key(n)]
       if not t then
         chat.add("Trust Lineups: you have not learned " .. n .. ".")
-      elseif not here[key(n)] then
+      elseif not here[party_key(t.name)] then
         commands.run(('/ma "%s" <me>'):format(t.name))
         -- The next once this one stands in the party (or we gave up) and the game takes a spell again, a few seconds
         -- after a cast ends.
@@ -54,7 +108,7 @@ local function call(names)
         repeat
           sleep(0.5)
           waited = waited + 0.5
-        until in_party()[key(n)] or waited >= t.cast + 12
+        until in_party()[party_key(t.name)] or waited >= t.cast + 12
         sleep(4)
       end
     end
@@ -84,7 +138,8 @@ commands.register("trusts", function(cmd, name, ...)
     else
       local known = known_trusts()
       for i, m in ipairs(game.party()) do
-        if i > 1 and i <= 6 and m.name and known[key(m.name)] then names[#names + 1] = known[key(m.name)].name end
+        local spell = i > 1 and i <= 6 and m.name and spell_of(m.name, known)
+        if spell then names[#names + 1] = spell end
       end
     end
     if #names == 0 then

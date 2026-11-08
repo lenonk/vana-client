@@ -40,6 +40,9 @@ local function frame()
   local ev = settings.get("on") and game.event()
   local t = ev and not ev.menu and ev.text
   if not (t and t.lines and #t.lines > 0) then return hide() end
+  -- Live NPCs only: an object talking (a casket, a ??? point, a door) keeps the game's window alone.
+  local speaker = t.actor and game.entity(t.actor)
+  if speaker and not speaker.me and (speaker.bones or 0) < 8 then return hide() end
   local name, body = split(t.lines)
   local scr = hud.screen()
   local u = scr.ui_scale

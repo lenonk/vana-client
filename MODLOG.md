@@ -16265,7 +16265,12 @@ From the research notes:
   spread is the looks' doing (within a period and a half, or a fifth of their mean) are one interval, their mean, as
   LSB's; a look period is taken only from a rest's steady gaps (a quickening server's even gaps are no look grid).
   A rest's rises learn only while they follow one on another: a gap the model can't place (a tick with HP and MP
-  full, a stray rise) stops it for that rest. Rises while Regen (42) or Refresh (43) is up neither learn nor anchor.
+  full, a stray rise) stops it for that rest. A stat's own ticks (Regen, Refresh: from spells, gear, food or songs;
+  issue #111, Refresh +1 from gear shows no icon) neither learn nor anchor. They are told by their repeats, not by the
+  icons 42 / 43: LSB applies them at every 3 s look, so the same amount rises again a look or two later (2-7 s; less
+  when it fills the bar), while rest heals grow each tick. Each rise is held 4.5 s for such a twin before it counts;
+  a twin drops the amount it matches, and a rest heal on the same look (added to it) or a second rise of the stat in
+  the hold (own tick, then heal) still counts. A rise held as the rest ends keeps waiting and counts for that rest.
   The server's start this rest is bounded by its rises, each at the tick it is nearest; a rise outside every bound
   anchors alone, so the countdown recovers at the next tick. Shown from the second heal of the first rest.
 - Captions read by the letters' ink (render/ui.rs ink: the light pixels; "font    font" letters sit in fully opaque
@@ -23161,3 +23166,68 @@ still gave `cor`. Both now go through actmotion::sdep_stand.
   - Ef60's below-4 path excludes +0xee 6 / 7 (SubKind 5 / 6): those take the flagged path whatever the sub-state.
   - The wanted value reaches the tasks `init`'s first step runs at once (kept over a file retry), not the ones it
     creates to step later (ops 0x30, 0x5c, 0x76 / 0x77, 0x84), which step after +0x8a5 is back.
+
+## Dolls go with their actor (2026-11-07)
+
+- User report (Garlaige Citadel): pink glows left on the floor where mobs had stood. The effects dump showed two
+  endless clones of `g000` (file 35595, a DRK bot's weapon skill 99) on dolls, their tasks long gone. The file's
+  `main` starts `g000` (flags 0x1000, endless) on the pair at t50, dolls actor2 at t60 (op 0x23), and its child
+  `st44` (op 0x03, t145) stops `g000` with op 0x1e. Children run on the undolled pair (FUN_10062770 / FUN_100627d0
+  unwrap CXiDollActors), and FUN_10053a00 matches a clone by its actor2 handle (FUN_1003b700), which is the doll:
+  the stop misses in retail too.
+- Retail ends it with the target: the doll's link sub-object at +0xc4 (vtable 0x1032f91c, set in FUN_100abea0, its
+  actor1 handle = the owner) is in the owner's +0x68 list. The owner's destructor walk (FUN_10082b10) calls its
+  vtable +0x10 / +0x14 = FUN_100abd50 / FUN_100abd70, which delete the doll (ADD ECX,-0xc4; vtable +0x18(1)); the
+  doll's destructor (FUN_100abf80 -> FUN_10082b40 -> FUN_10082b10) takes the clones and tasks linked to it. A doll
+  also deletes itself once nothing is linked to it (FUN_100ac010 / 070 / 0b0: +0x68, +0x6c, +0x84 all empty).
+- FUN_10062d50 (ops 0x15 / 0x16 / 0x22 / 0x23 and back 0x17 / 0x18) moves one handle only: actor1 (list +0x68) for
+  0x15 / 0x22 / 0x17, actor2 (list +0x6c) for 0x16 / 0x23 / 0x18. Ours moved every slot equal to the actor, so a
+  self-targeted effect lost its caster slot to the doll too.
+- Ours: Effects::forget_actor takes the actor's dolls with it (tasks and clones on them go as on the actor);
+  move_clones moves the op's slot only. Test fx::tasks::tests::despawn_takes_its_dolls. Left: our dolls are never
+  freed (a slot each; nothing is drawn from a dead one).
+
+## Mouse camera X follows the camera keys (2026-11-08)
+
+- FUN_10124bc0 (the mouse's camera axes, read through axis 6 / 7's second source 0x101232e0 -> +0x8c / +0x90) writes
+  +0x8c = -x and +0x90 = -y, then multiplies each by -1 for 0x8b / 0x8c; FUN_1001ee60 multiplies axis 6 / 7 by -1
+  for 0x8b / 0x8c again. So the retail mouse ends at -x / -y whatever the setting, and with the default (0x8b on) a
+  pointer at the right edge turns the camera as the right arrow does.
+- Ours applied 0x8b to the third-person drag without the leading negation (Y had it), so a drag to the right turned
+  the camera as the left arrow did and the X invert setting read backwards. Both third-person branches (free and
+  locked) now take -x: a drag turns as the camera keys do, and Mouse/Cam.'s X invert flips both, as Y already did.
+  First person (0x8d) already matched its keys and is unchanged.
+
+## Lock-on: the strafe quarter held at the 45 degree edge (ours, 2026-11-07)
+
+- User report: circling a locked target with a staff, the body often pointed one way and the legs another. The log
+  showed `mvr` and `run` swapping every 30 to 100 ms while moving (status 1, ratio 1): W + D (or a stick on the
+  diagonal) puts the locked step exactly on the edge between quarters 1 and 2, and update_movement re-reads it from
+  float vectors each frame, so noise picked a side every frame or two. A staff's `run` carries the body far from its
+  `mvr` (the two-handed stance turns the torso), so the endless blend between them twisted it against the legs.
+- Ours: the locked path takes motion::strafe_dir_held (the right drag's hold since lenonk/vana-client#95) before
+  FUN_100a7b80's 2 <-> 4 flip guard. Test motion::tests::locked_diagonal_holds. *(Retail's FUN_100a80d0 has no hold;
+  whether its keyboard diagonal flickers too is not known.)*
+
+## Swings while strafing: by the move's quarter (2026-11-07)
+
+- User report: attacking with a staff while holding only A or D (or Num4 / Num6) locked on, the upper body swung one
+  way and the legs another. The log showed `mvr -> amf ... keeps [mvr, None, mvr]`: the forward moving swing `atf?`
+  (whose `amf1` keys only the upper body) over the strafing legs.
+- FUN_100d46f0 (old build; moving branch): with vt+0x330 false (the facing held: locked on, the strafe lock) the
+  moving swing's third letter is from +0x598: 2 'r', 3 'b', 4 'l', else 'f'; with it true always 'f'. The battle files
+  carry `atr?` / `atl?` / `atb?` with `amr1` / `aml1` / `amb1`.
+- Ours: combat::swing_patterns takes the quarter (World::my_strafe for us, 0 for others: retail writes +0x598 only for
+  the local player). Test combat::tests::moving_swing_by_quarter.
+- Ours (user, 2026-11-07): retail picks the moving swing once, so reversing mid-swing left it on the old side over the
+  new legs. Our character's playing `am?` now turns with the quarter at the same frame (actmotion::Play::rename_current,
+  the one-shot too); other actors and retail's pick at the swing's start are unchanged.
+- Dual wield (user, 2026-11-08: "the same problem dual wield swords that I did with a staff"): its moving swings are
+  `ar?` (main hand, `at??` schedulers) and `al?` (off hand, `bt??`), and the turn above matched only `am?`, so a
+  reversal mid-swing left `arr` over `mvl` legs. Ours: combat::turned_swing turns any `a??` moving swing whose
+  scheduler is a moving one (third letter f / r / b / l), back and forth. Test combat::tests::moving_swing_turns.
+- Audit against the current build (30261006_0), from the user's log of RDM / NIN locked on: FUN_100c8bb0 plays
+  mvr / mvb / mvl when vt+0x340 (the strafe lock) is set or vt+0x330 is false (locked on), as lenonk/vana-client#62 has
+  it; FUN_100d6940 picks the standing swing by +0xf8 and the moving one's letter by +0x598 (2 r, 3 b, 4 l, else f),
+  as ours. mvr / mvl themselves turn the body part way toward the step (seen in npc-shot), so a strafe swing's torso
+  (`a?r1`, the upper body only) faces the target over legs running to the side by design.

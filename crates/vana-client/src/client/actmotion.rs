@@ -395,6 +395,14 @@ impl Play {
         self.motions.iter().rev().find(|m| m.at as f32 <= self.ticks).filter(|m| m.at as f32 >= cut)
     }
 
+    /// Ours: the motion playing now takes another name, its start tick kept (a moving swing turned with the strafe).
+    pub fn rename_current(&mut self, to: &str) {
+        let Some(at) = self.current().map(|m| m.at) else { return };
+        if let Some(m) = self.motions.iter_mut().rev().find(|m| m.at == at) {
+            m.name = to.to_string();
+        }
+    }
+
     /// Over once the scheduler ended and its last motion was counted (or none), or the status motion changed.
     pub fn over(&self, base: &str) -> bool {
         if base != self.base {
@@ -896,6 +904,26 @@ mod tests {
 
     /// Event op 0x50: a scheduler stopped at tick 30 starts no later motion and is no longer busy; its looping motion
     /// plays on, a counted one ends on its own.
+    /// Ours: a moving swing renamed mid-swing (amr -> aml) keeps its start tick; motions before and after are untouched.
+    #[test]
+    fn rename_current_keeps_tick() {
+        let m =
+            |name: &str, at: u32| sched::Motion { name: name.into(), at, speed: 1.0, ticks: 10, count: 1, blend: 0 };
+        let mut p = Play {
+            name: "atr0".into(),
+            motions: vec![m("btl", 0), m("amr", 10), m("btl", 80)],
+            length: 120.0,
+            ticks: 30.0,
+            base: "mvr".into(),
+            cut: -1.0,
+            stance_at: None,
+            end: None,
+        };
+        p.rename_current("aml");
+        let names: Vec<_> = p.motions.iter().map(|m| (m.name.as_str(), m.at)).collect();
+        assert_eq!(names, [("btl", 0), ("aml", 10), ("btl", 80)]);
+    }
+
     #[test]
     fn scheduler_stop_keeps_current() {
         let m = |name: &str, at: u32, count: u8| sched::Motion {

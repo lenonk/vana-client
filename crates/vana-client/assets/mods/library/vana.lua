@@ -91,6 +91,7 @@
 ---@field me boolean? true for our own character
 ---@field race integer?
 ---@field model integer a monster or NPC model id (0 for a player-style look)
+---@field bones integer its model's skeleton bones: a few for an object (a casket: 3), dozens for a creature; 0 for none (a ??? point, a door)
 ---@field look {face: integer, head: integer, body: integer, hands: integer, legs: integer, feet: integer, main: integer, sub: integer, range: integer}? a player-style look
 ---@field in_party boolean
 ---@field in_alliance boolean

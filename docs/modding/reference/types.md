@@ -71,6 +71,7 @@ A character, NPC or monster in the zone, from `game.entity`, `game.entities`, `g
 | `in_alliance` | `boolean` | It is in your party or alliance. true for yourself. |
 | `hitbox` | `number` | Its model radius as the server gives it, in yalms. |
 | `height` | `number?` | Its model's height in yalms, standing at rest (a hat counts); nil until its model is loaded. Its head is near `pos.y - height` (y goes down). |
+| `bones` | `integer` | Its model's skeleton bones: a few for an object (a treasure casket has 3), dozens for a creature or a character; 0 with no skinned model (a ??? point, a door) or until its model is loaded. |
 | `target_index` | `integer?` | The index of what it is targeting (for yourself: your target's index); nil when none. |
 | `target_id` | `integer?` | That target's server id, when it is known; nil otherwise. |
 | `pet` | `boolean?` | true for your own pet; nil for anything else. |

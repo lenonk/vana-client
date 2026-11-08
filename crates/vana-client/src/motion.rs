@@ -126,10 +126,10 @@ pub fn strafe_dir(f: glam::Vec3, step: glam::Vec3) -> u8 {
     }
 }
 
-/// Ours, for the right drag's facing (not retail's strafe lock): [`strafe_dir`], but a step within about a degree of a
-/// sector edge keeps last frame's quarter `old` when that is one of the two sides. W + A and the like lie on the edge,
-/// and the drag turns heading and step together every frame, so float noise alone picked a side each frame and the
-/// motion and speed flipped between run and strafe (lenonk/vana-client#95).
+/// Ours, for the right drag's facing and lock-on (not retail's strafe lock): [`strafe_dir`], but a step within about a
+/// degree of a sector edge keeps last frame's quarter `old` when that is one of the two sides. W + A and the like lie on
+/// the edge, and the drag (or circling a locked target) turns heading and step together every frame, so float noise
+/// alone picked a side each frame and the motion and speed flipped between run and strafe (lenonk/vana-client#95).
 pub fn strafe_dir_held(f: glam::Vec3, step: glam::Vec3, old: u8) -> u8 {
     let new = strafe_dir(f, step);
     if new == 0 || old == 0 || new == old || (new + old) % 2 == 0 {
@@ -260,6 +260,28 @@ mod tests {
         assert_eq!(choose_strafed(&n, 0, 0.9, 4, true).0, "wlk");
         assert_eq!(choose_strafed(&n, 47, 0.5, 4, false).0, "si1");
         assert_eq!(choose_strafed(&n, 0, 0.0, 4, false).0, "idl");
+    }
+
+    /// Circling a locked target with W + D: the heading turns a little every frame and the step is forward + right in
+    /// its frame. The plain quarter flips between run and strafe on float noise; the held one keeps its first.
+    #[test]
+    fn locked_diagonal_holds() {
+        use glam::Vec3;
+        let (mut flips, mut held, mut q) = (0, 0, 0);
+        let mut prev = 0;
+        for k in 0..2000 {
+            let yaw = k as f32 * 0.0137;
+            let f = Vec3::new(yaw.sin(), 0.0, yaw.cos());
+            let step = f.cross(Vec3::NEG_Y) + f;
+            let d = strafe_dir(f, step);
+            flips += (k > 0 && d != prev) as u32;
+            prev = d;
+            let h = strafe_dir_held(f, step, q);
+            held += (k > 0 && h != q) as u32;
+            q = h;
+        }
+        assert!(flips > 0, "the plain quarter never flipped: the case no longer shows the noise");
+        assert_eq!(held, 0);
     }
 
     #[test]
