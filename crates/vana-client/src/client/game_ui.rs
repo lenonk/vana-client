@@ -23,6 +23,8 @@ pub const GREY: [u8; 4] = [0x58, 0x58, 0x58, 0x80];
 const MODERN_CORNER: f32 = 24.0;
 
 /// Parsed resources; loaded off the UI thread.
+/// Wrapped texts each generation of GameUi::wrapped holds.
+const WRAP_KEPT: usize = 512;
 /// How long a name plate's raster stays undrawn before it goes (GameUi::touch_image).
 const TEMP_KEEP: std::time::Duration = std::time::Duration::from_secs(30);
 
@@ -348,9 +350,11 @@ pub struct GameUi {
     /// A mod image's older contents (image), freed once a frame's batch no longer draws them.
     stale: Vec<String>,
     /// Wrapped lines by (text, widths, TrueType text): windows wrap the same text every frame, and a wrap measures its
-    /// line again for every word (wrap_part).
+    /// line again for every word (wrap_part). Two generations, the newest and the one before (WRAP_KEPT each): a full
+    /// generation becomes the older one and the oldest goes, so a frame's texts past one generation's size don't all
+    /// miss at once, as a cache emptied when full would.
     #[allow(clippy::type_complexity)]
-    wrapped: std::cell::RefCell<std::collections::HashMap<u64, (String, [u32; 2], bool, Vec<String>)>>,
+    wrapped: std::cell::RefCell<[std::collections::HashMap<u64, (String, [u32; 2], bool, Vec<String>)>; 2]>,
     /// Images made for a while (name plates' rasters): when each was last drawn; unseen for TEMP_KEEP, stale.
     temp_seen: std::collections::HashMap<String, std::time::Instant>,
     /// The startup images a style replaced, for reset_style.
@@ -2366,19 +2370,25 @@ impl GameUi {
         let mut h = std::collections::hash_map::DefaultHasher::new();
         (line, widths, ttf).hash(&mut h);
         let key = h.finish();
-        if let Some(e) = self.wrapped.borrow().get(&key)
-            && e.0 == line
-            && e.1 == widths
-            && e.2 == ttf
-        {
+        let same = |e: &(String, [u32; 2], bool, Vec<String>)| e.0 == line && e.1 == widths && e.2 == ttf;
+        let mut c = self.wrapped.borrow_mut();
+        if let Some(e) = c[0].get(&key).filter(|e| same(e)) {
             return e.3.clone();
         }
-        let out = self.wrap_words(line, first, rest);
-        let mut c = self.wrapped.borrow_mut();
-        if c.len() >= 512 {
-            c.clear();
+        // In the older generation: moved to the newest, so what is still wrapped stays.
+        let out = match c[1].remove(&key).filter(|e| same(e)) {
+            Some(e) => e.3,
+            None => {
+                drop(c);
+                let out = self.wrap_words(line, first, rest);
+                c = self.wrapped.borrow_mut();
+                out
+            }
+        };
+        if c[0].len() >= WRAP_KEPT {
+            c[1] = std::mem::take(&mut c[0]);
         }
-        c.insert(key, (line.to_string(), widths, ttf, out.clone()));
+        c[0].insert(key, (line.to_string(), widths, ttf, out.clone()));
         out
     }
 

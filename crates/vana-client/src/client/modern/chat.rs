@@ -756,20 +756,22 @@ fn line_text(stamp: &str, line: &str) -> String {
 /// text or the tab change (every line every frame before).
 fn found_lines(m: &Modern, w: &World, find: &str, tab: u8, battle_in_all: bool) -> std::rc::Rc<Vec<usize>> {
     let key = (w.chat.start(), w.chat.len(), w.chat.edits(), find.to_string(), tab, battle_in_all);
-    if let Some((k, f)) = m.log_found.borrow().as_ref()
-        && *k == key
-    {
-        return f.clone();
-    }
     let f = find.to_lowercase();
-    let lines: Vec<usize> = (w.chat.start()..w.chat.len())
-        .filter(|&k| {
-            w.chat.mode(k).is_some_and(|md| shows(tab, md, battle_in_all))
-                && w.chat
-                    .timed(k)
-                    .is_some_and(|((l, _), _)| crate::dat::font::strip_codes(l).to_lowercase().contains(&f))
-        })
-        .collect();
+    let hit = |k: usize| {
+        w.chat.mode(k).is_some_and(|md| shows(tab, md, battle_in_all))
+            && w.chat.timed(k).is_some_and(|((l, _), _)| crate::dat::font::strip_codes(l).to_lowercase().contains(&f))
+    };
+    let lines = match m.log_found.borrow().as_ref() {
+        Some((k, found)) if *k == key => return found.clone(),
+        // Only new lines (and lines dropped from the front) since: in a fight a line comes every few frames, and each
+        // searched the whole log again.
+        Some((k, found)) if (&k.2, &k.3, k.4, k.5) == (&key.2, &key.3, key.4, key.5) && k.1 <= key.1 => {
+            let mut lines: Vec<usize> = found.iter().copied().filter(|&n| n >= key.0).collect();
+            lines.extend((k.1.max(key.0)..key.1).filter(|&n| hit(n)));
+            lines
+        }
+        _ => (w.chat.start()..w.chat.len()).filter(|&n| hit(n)).collect(),
+    };
     let lines = std::rc::Rc::new(lines);
     *m.log_found.borrow_mut() = Some((key, lines.clone()));
     lines

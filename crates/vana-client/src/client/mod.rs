@@ -2032,6 +2032,11 @@ fn self_plate(world: &World) -> plate::Plate {
 }
 
 fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam::Mat4) {
+    world.lua.with_looks(|looks| name_plates_with(gu, world, sw, sh, view_proj, looks));
+}
+
+/// `name_plates` with the mods' looks borrowed for the pass (no mod runs in it).
+fn name_plates_with(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam::Mat4, looks: &lua::Looks) {
     let project = |p: Vec3| -> Option<(f32, f32, [f32; 2], f32)> {
         let clip = view_proj * p.extend(1.0);
         let s = plate_scale(clip.w)?;
@@ -2047,7 +2052,6 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
     };
     let mut hidden = event::hidden(world);
     hidden.extend(event::nameless(world));
-    let looks = world.lua.looks();
     hidden.extend(looks.iter().filter(|(_, l)| l.hidden).map(|(id, _)| *id));
     // Retail draws plates into the scene target before the op 0x0f multiply (FUN_10010d20, MODLOG "Name plates under
     // the screen fade"); ours scale their colour by it, which is the same for an alpha-blended plate.
@@ -7803,6 +7807,10 @@ enum Confirm {
 impl World {
     /// The entity with target index `index`, and its id.
     fn entity_at(&self, index: u16) -> Option<(u32, &Entity)> {
+        // Index 0 is no one (the lookups this replaced skipped it).
+        if index == 0 {
+            return None;
+        }
         let id = *self.entity_index.get(&index)?;
         self.entities.get(&id).filter(|e| e.index == index).map(|e| (id, e))
     }
@@ -10777,8 +10785,15 @@ impl App {
                     let rising = e.hpp.is_some() && chair::rise(world, e.id, e.motion.status);
                     let held =
                         rising || combat::held(world, e.id) || fishrod::walking_hold(world, e.id, e.motion.status);
-                    // A new one is filed under its index (an entity's index never changes).
-                    if !world.entities.contains_key(&e.id) {
+                    // Filed under its index: a new one, and one whose index moved (none should, but the update below
+                    // takes the packet's index, and an index lookup missing it would lose its targets for good).
+                    let filed = world.entities.get(&e.id).map(|x| x.index);
+                    if filed != Some(e.index) {
+                        if let Some(old) = filed
+                            && world.entity_index.get(&old) == Some(&e.id)
+                        {
+                            world.entity_index.remove(&old);
+                        }
                         world.entity_index.insert(e.index, e.id);
                     }
                     let entry = world.entities.entry(e.id).or_insert(Entity {

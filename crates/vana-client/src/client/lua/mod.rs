@@ -1965,10 +1965,10 @@ impl Host {
         self.info.borrow().looks.get(&id).is_some_and(|l| l.1.hidden)
     }
 
-    /// The looks mods set (render.entity) by entity, borrowed (a copy every frame was a map of strings): hold it only
-    /// while no mod runs.
-    pub(in crate::client) fn looks(&self) -> Looks<'_> {
-        Looks(std::cell::Ref::map(self.info.borrow(), |f| &f.looks))
+    /// `f` with the looks mods set (render.entity) by entity, borrowed for the call (a copy every frame was a map of
+    /// strings). Scoped, so the borrow cannot outlive the call and meet a mod's own borrow (a panic).
+    pub(in crate::client) fn with_looks<R>(&self, f: impl FnOnce(&Looks) -> R) -> R {
+        f(&Looks(std::cell::Ref::map(self.info.borrow(), |f| &f.looks)))
     }
 
     /// The modern panels of the hidden pieces, and the panels hidden by name.

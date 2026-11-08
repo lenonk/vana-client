@@ -767,6 +767,16 @@ impl LogWin {
             true => Some(Vec::new()),
             false => chat.edited_since(old.2),
         };
+        // An edited line held in the tab with no rows yet (it wrapped to none) has no place to go back to: rebuilt.
+        let placed = |rows: &[Row], k: usize| {
+            rows.iter().position(|r| r.3 == k).map(Some).or_else(|| rows.first().filter(|r| r.3 < k).map(|_| None))
+        };
+        let edited = edited.filter(|e| {
+            e.iter().all(|&k| {
+                let (mode, gm) = chat.route(k);
+                k >= old.1 || !tab_shows(filter, &route, mode, gm) || placed(&self.tab.rows, k) != Some(None)
+            })
+        });
         if old.0 == key.0
             && old.3 == key.3
             && old.4 == key.4
@@ -778,7 +788,7 @@ impl LogWin {
                 if !tab_shows(filter, &route, mode, gm) {
                     continue;
                 }
-                if let Some(at) = self.tab.rows.iter().position(|r| r.3 == k) {
+                if let Some(Some(at)) = placed(&self.tab.rows, k) {
                     let end = at + self.tab.rows[at..].iter().take_while(|r| r.3 == k).count();
                     let new = self.wrap_line(gu, chat, k, self.width);
                     self.tab.rows.splice(at..end, new);
