@@ -868,14 +868,22 @@ fn bar_colour(kind: &str) -> [u8; 4] {
 /// pixel rects go to the frame info for clicks and hud.bounds.
 /// Every running mod's visible elements by layer, then load order: (mod, element).
 pub(in crate::client) fn elements(host: &super::Host) -> Vec<(String, Elem)> {
-    let mut all: Vec<(String, Elem)> = Vec::new();
+    visible(host, |id, e| Some((id.to_string(), e.clone())))
+}
+
+/// What `pick` takes from the running mods' visible elements (by mod id), in draw order: by layer, then mod and
+/// element order. Read in place: only what `pick` returns is made.
+pub(in crate::client) fn visible<T>(host: &super::Host, mut pick: impl FnMut(&str, &Elem) -> Option<T>) -> Vec<T> {
+    let mut all: Vec<(i32, T)> = Vec::new();
     for vm in host.vms.iter().filter(|v| v.suspended.is_none()) {
         for e in vm.st.borrow().hud.iter().filter(|e| e.visible) {
-            all.push((vm.manifest.id.clone(), e.clone()));
+            if let Some(t) = pick(&vm.manifest.id, e) {
+                all.push((e.layer, t));
+            }
         }
     }
-    all.sort_by_key(|(_, e)| e.layer);
-    all
+    all.sort_by_key(|p| p.0);
+    all.into_iter().map(|p| p.1).collect()
 }
 
 /// An element's place in window pixels. Anchored: signed offsets from a corner of the panel (as last drawn, so where a

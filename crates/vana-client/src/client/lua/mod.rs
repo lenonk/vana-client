@@ -288,6 +288,11 @@ impl Looks<'_> {
     }
 }
 
+/// Window `w` is open on its edge in place of built-in panel `panel` (edge_panel, has_edge_panel, timers_panels).
+fn stands_in(w: &window::Window, panel: &str) -> bool {
+    w.open && w.edge && w.panel.as_deref() == Some(panel)
+}
+
 /// The mods of this session.
 #[derive(Default)]
 pub struct Host {
@@ -1814,7 +1819,7 @@ impl Host {
             // Read in place (edge_panel copies the window).
             self.vms.iter().rev().filter(|v| v.suspended.is_none()).find_map(|v| {
                 let st = v.st.borrow();
-                let win = st.windows.iter().find(|w| w.open && w.edge && w.panel.as_deref() == Some(p))?;
+                let win = st.windows.iter().find(|w| stands_in(w, p))?;
                 Some(win.elems.iter().any(|e| matches!(e, window::Elem::Timers { builtin: true, .. })))
             })
         })
@@ -1827,7 +1832,7 @@ impl Host {
                 .vms
                 .iter()
                 .filter(|v| v.suspended.is_none())
-                .any(|v| v.st.borrow().windows.iter().any(|w| w.open && w.edge && w.panel.as_deref() == Some(panel)))
+                .any(|v| v.st.borrow().windows.iter().any(|w| stands_in(w, panel)))
     }
 
     /// The open edge window standing in for a built-in panel (the newest mod's).
@@ -1835,9 +1840,11 @@ impl Host {
         if self.all_hidden {
             return None;
         }
-        self.vms.iter().rev().filter(|v| v.suspended.is_none()).find_map(|v| {
-            v.st.borrow().windows.iter().find(|w| w.open && w.edge && w.panel.as_deref() == Some(panel)).cloned()
-        })
+        self.vms
+            .iter()
+            .rev()
+            .filter(|v| v.suspended.is_none())
+            .find_map(|v| v.st.borrow().windows.iter().find(|w| stands_in(w, panel)).cloned())
     }
 
     /// A number slot (target_distance, target_hpp).
@@ -1868,17 +1875,12 @@ impl Host {
             return Vec::new();
         }
         // Read in place (every element was copied for this every frame), in the draw order elements() gives.
-        let mut all: Vec<(i32, hud::Wanted)> = Vec::new();
-        for vm in self.vms.iter().filter(|v| v.suspended.is_none()) {
-            for e in vm.st.borrow().hud.iter().filter(|e| e.visible) {
-                if let hud::Kind::Portrait { entity, w, h, look, .. } = e.kind {
-                    all.push((e.layer, hud::Wanted { entity, size: [w, h], look }));
-                }
-            }
-        }
-        all.sort_by_key(|p| p.0);
+        let all = hud::visible(self, |_, e| match e.kind {
+            hud::Kind::Portrait { entity, w, h, look, .. } => Some(hud::Wanted { entity, size: [w, h], look }),
+            _ => None,
+        });
         let mut out: Vec<hud::Wanted> = Vec::new();
-        for (_, p) in all {
+        for p in all {
             if !out.iter().any(|o| o.entity == p.entity) {
                 out.push(p);
             }

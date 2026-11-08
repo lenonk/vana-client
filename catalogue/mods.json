@@ -255,8 +255,8 @@
       "files": [
         {
           "path": "init.lua",
-          "sha256": "9f0eda1b758d48107603935a30a89384c800920f556e7fb1683fd2914a13e9b6",
-          "size": 4314,
+          "sha256": "5d62553388885a94ad9f7f178ec478d4d35b50804120dcf26e720397accac9aa",
+          "size": 4328,
           "url": "https://raw.githubusercontent.com/lenonk/vana-client/master/crates/vana-client/assets/mods/cast-grid/init.lua"
         },
         {

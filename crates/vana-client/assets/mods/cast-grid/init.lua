@@ -110,7 +110,7 @@ local function draw()
 end
 
 events.on("frame", draw)
-for _, e in ipairs({ "settings_changed", "job_change", "level_up", "zone_change" }) do
+for _, e in ipairs({ "settings_changed", "job_change", "level_up", "level_down", "zone_change" }) do
   events.on(e, refresh)
 end
 timer.every(1, function() have = nil end)
