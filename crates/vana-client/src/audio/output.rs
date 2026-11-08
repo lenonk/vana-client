@@ -3,7 +3,7 @@
 use super::mixer::Mixer;
 use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{FromSample, SampleFormat, SizedSample, StreamConfig};
+use cpal::{BufferSize, FromSample, SampleFormat, SizedSample, StreamConfig, SupportedBufferSize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -87,8 +87,21 @@ pub fn open<R: Render>(device: Option<&str>, make: impl FnOnce(u32) -> R) -> Res
     };
     let supported = device.default_output_config()?;
     let format = supported.sample_format();
-    let config: StreamConfig = supported.into();
+    let range = supported.buffer_size().clone();
+    let mut config: StreamConfig = supported.into();
     let rate = config.sample_rate;
+    // PulseAudio with the default buffer leaves every buffer attribute to the server and sets no ADJUST_LATENCY,
+    // so the server's 2 s default target length applies: sounds play long after they are triggered (worst on
+    // slower ARM boards, where the queue stays full). Ask for 20 ms callbacks instead, which cpal turns into a
+    // 40 ms target with ADJUST_LATENCY. PipeWire and ALSA already pick a period-sized buffer by default.
+    if host.id().name() == "PulseAudio" {
+        let want = (rate / 50).max(1);
+        if let SupportedBufferSize::Range { min, max } = range
+            && (min..=max).contains(&want)
+        {
+            config.buffer_size = BufferSize::Fixed(want);
+        }
+    }
     let mixer = make(rate);
     let stream = match format {
         SampleFormat::F32 => build::<f32, R>(&device, config.clone(), mixer)?,
