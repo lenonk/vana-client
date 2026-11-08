@@ -1155,7 +1155,10 @@ fn mods_act(s: &mut SettingsUi, act: kit::Act, at: At) -> ModOut {
         && let Some(b) = m.browse.as_mut()
     {
         match act {
-            kit::Act::Moved => b.cursor = at.sub,
+            kit::Act::Moved => {
+                b.cursor = at.sub;
+                s.sounds.push(Se::Cursor);
+            }
             kit::Act::Press(_, k) => {
                 b.cursor = k;
                 if let Some(path) = b.enter() {
@@ -1183,7 +1186,10 @@ fn mods_act(s: &mut SettingsUi, act: kit::Act, at: At) -> ModOut {
             s.m_mods = (1, 0);
             s.sounds.push(Se::Cursor);
         }
-        kit::Act::Moved => s.m_mods = (at.stop, at.sub),
+        kit::Act::Moved => {
+            s.m_mods = (at.stop, at.sub);
+            s.sounds.push(Se::Cursor);
+        }
         kit::Act::Press(0, 0) => {
             if let Some(m) = s.mods_mut() {
                 m.browse = Some(super::super::modsui::Browse::open(lua));
@@ -3116,6 +3122,10 @@ mod tests {
         assert!(s.lua_page() && matches!(mods_stops(&s)[0], Stop::Buttons { n: 1, .. }));
         s.in_game = true;
         assert!(matches!(mods_stops(&s)[0], Stop::Buttons { n: 2, .. }));
+        // A cursor move ticks.
+        mods_key(&mut s, egui::Key::ArrowRight, false);
+        assert_eq!(s.m_mods, (0, 1));
+        assert!(matches!(s.sounds.as_slice(), [Se::Cursor]));
         assert_eq!(mods_act(&mut s, kit::Act::Press(0, 1), At::new(0, 1)), ModOut::Standard);
         assert_eq!(mods_act(&mut s, kit::Act::Back, At::new(0, 0)), ModOut::Back);
     }
