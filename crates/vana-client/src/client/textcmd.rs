@@ -322,7 +322,7 @@ fn number(s: &str) -> Option<i64> {
 }
 
 fn by_index(w: &World, index: u16) -> Option<(u32, &super::Entity)> {
-    w.entities.iter().find(|(_, e)| e.index == index).map(|(id, e)| (*id, e))
+    w.entity_at(index)
 }
 
 fn current_target(w: &World) -> Option<(u32, u16)> {
@@ -469,10 +469,7 @@ pub(super) fn resolve(w: &World, text: Option<&str>, fallback: bool, wide: bool,
             "<me>" => Some((w.my_id, w.my_index)),
             "<bt>" => battle_target(w),
             // FUN_1007a1c0: the tracked actor while tracking, when it is here.
-            "<scan>" => w
-                .scan
-                .tracking()
-                .and_then(|t| w.entities.iter().find(|(_, e)| e.index == t.index).map(|(id, e)| (*id, e.index))),
+            "<scan>" => w.scan.tracking().and_then(|t| w.entity_at(t.index).map(|(id, e)| (id, e.index))),
             "<pet>" => pet(w),
             "<lt>" if w.modern => super::target::last_target(w),
             "<ht>" => super::target::call_for_help(w).and_then(|id| w.entities.get(&id).map(|e| (id, e.index))),

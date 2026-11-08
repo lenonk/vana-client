@@ -482,23 +482,19 @@ pub fn view(w: &World) -> ChatView<'_> {
 
 /// The view with the newest `keep` lines.
 fn view_keep(w: &World, keep: usize) -> ChatView<'_> {
+    let end = w.chat.len();
+    view_of(w, end.saturating_sub(keep).max(w.chat.start())..end)
+}
+
+/// The view of lines `ks` (their numbers, in log order): their stamps and mentions worked out for these alone.
+fn view_of(w: &World, ks: impl IntoIterator<Item = usize>) -> ChatView<'_> {
     let stamps = (w.game.get(0xb5), w.stamp_all_lines);
-    let modes = w.chat.modes();
-    let all: Vec<_> = w.chat.iter_timed().zip(modes.iter().copied()).collect();
-    let from = all.len().saturating_sub(keep);
-    let base = w.chat.start();
-    let lines = all[from..]
-        .iter()
-        .enumerate()
-        .map(|(i, (((line, c), (time, chat, _)), mode))| {
-            (
-                stamp_of(stamps, *time, *chat),
-                line.as_str(),
-                *c,
-                *mode,
-                incoming(*mode) && mentions(line, &w.name),
-                base + from + i,
-            )
+    let lines = ks
+        .into_iter()
+        .filter_map(|k| {
+            let ((line, c), (time, chat, _)) = w.chat.timed(k)?;
+            let mode = w.chat.mode(k)?;
+            Some((stamp_of(stamps, time, chat), line.as_str(), *c, mode, incoming(mode) && mentions(line, &w.name), k))
         })
         .collect();
     let input = w.typing.then(|| InputView {
@@ -756,6 +752,31 @@ fn line_text(stamp: &str, line: &str) -> String {
     line_job((stamp, Color32::WHITE), line, [0x80; 4], &FontId::default(), f32::INFINITY).text
 }
 
+/// The full log's find: the lines of tab `tab` holding `find` (any case), worked out again only when the log, the
+/// text or the tab change (every line every frame before).
+fn found_lines(m: &Modern, w: &World, find: &str, tab: u8, battle_in_all: bool) -> std::rc::Rc<Vec<usize>> {
+    let key = (w.chat.start(), w.chat.len(), w.chat.edits(), find.to_string(), tab, battle_in_all);
+    let f = find.to_lowercase();
+    let hit = |k: usize| {
+        w.chat.mode(k).is_some_and(|md| shows(tab, md, battle_in_all))
+            && w.chat.timed(k).is_some_and(|((l, _), _)| crate::dat::font::strip_codes(l).to_lowercase().contains(&f))
+    };
+    let lines = match m.log_found.borrow().as_ref() {
+        Some((k, found)) if *k == key => return found.clone(),
+        // Only new lines (and lines dropped from the front) since: in a fight a line comes every few frames, and each
+        // searched the whole log again.
+        Some((k, found)) if (&k.2, &k.3, k.4, k.5) == (&key.2, &key.3, key.4, key.5) && k.1 <= key.1 => {
+            let mut lines: Vec<usize> = found.iter().copied().filter(|&n| n >= key.0).collect();
+            lines.extend((k.1.max(key.0)..key.1).filter(|&n| hit(n)));
+            lines
+        }
+        _ => (w.chat.start()..w.chat.len()).filter(|&n| hit(n)).collect(),
+    };
+    let lines = std::rc::Rc::new(lines);
+    *m.log_found.borrow_mut() = Some((key, lines.clone()));
+    lines
+}
+
 /// The selected text of the lines shown on tab `tab`, for Ctrl+C and the menu.
 fn selected(m: &Modern, v: &ChatView, tab: u8, battle_in_all: bool) {
     let sel = m.log_sel.borrow().filter(|s| !s.empty());
@@ -830,16 +851,30 @@ fn full(p: &mut Panels, w: &mut World) {
     };
     let height = (bottom - sh * 0.107 - riders).max(chrome() + 4.0 * row);
     let lines_h = height - chrome();
-    let mut v = view_keep(w, usize::MAX);
-    v.unread = unread(m, w, *p.battle_in_all);
-    // The find (client/mod.rs log_find_events): the lines holding the text, any case.
-    let find = w.log_find.clone();
-    if let Some(f) = find.as_ref().map(|f| f.to_lowercase()) {
-        v.lines.retain(|l| crate::dat::font::strip_codes(l.1).to_lowercase().contains(&f));
-    }
-    let t = p.ctx.input(|i| i.time) as f32;
     let tab = m.chat_tab.get();
     let battle_in_all = *p.battle_in_all;
+    // The find (client/mod.rs log_find_events): the tab's lines holding the text, any case.
+    let find = w.log_find.clone();
+    let found = find.as_deref().map(|f| found_lines(m, w, f, tab, battle_in_all));
+    // Only the lines that can show (each at least a row): the rows scrolled past, a screenful, and the selection's.
+    let need = fl.scroll + (lines_h / row).ceil() as usize + 2;
+    let shows_k = |k: usize| w.chat.mode(k).is_some_and(|md| shows(tab, md, battle_in_all));
+    let mut ks: Vec<usize> = match &found {
+        Some(f) => f.iter().rev().take(need).copied().collect(),
+        None => (w.chat.start()..w.chat.len()).rev().filter(|&k| shows_k(k)).take(need).collect(),
+    };
+    if let Some(s) = m.log_sel.borrow().filter(|s| !s.empty()) {
+        let oldest = ks.last().copied().unwrap_or(w.chat.len());
+        let lo = s.anchor.0.min(s.head.0).max(w.chat.start());
+        match &found {
+            Some(f) => ks.extend(f.iter().copied().filter(|&k| k >= lo && k < oldest)),
+            None => ks.extend((lo..oldest).filter(|&k| shows_k(k))),
+        }
+    }
+    ks.sort_unstable();
+    let mut v = view_of(w, ks);
+    v.unread = unread(m, w, battle_in_all);
+    let t = p.ctx.input(|i| i.time) as f32;
     let mut button = (Rect::NOTHING, false);
     let (mut short, mut hovered) = (None, false);
     let (mut clicked, mut picked) = (None, None);
@@ -876,7 +911,7 @@ fn full(p: &mut Panels, w: &mut World) {
                             Color32::WHITE,
                         ));
                     }
-                    let shown = v.lines.iter().filter(|l| shows(tab, l.3, battle_in_all)).count();
+                    let shown = found.as_ref().map_or(0, |f| f.len());
                     let blink = if (t * 2.0) as i64 % 2 == 0 { "|" } else { "" };
                     ui.painter().text(
                         pos2(fr.min.x + 28.0, fr.center().y),

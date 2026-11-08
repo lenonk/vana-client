@@ -196,8 +196,7 @@ fn tint(w: &World, s: &Screen, id: u16) -> u32 {
 /// FUN_101cc400: our pet is the automaton (its shown name is the block's).
 fn activated(w: &World, side: usize) -> bool {
     let name = auto_name(&w.ext_job[side]);
-    w.my_pet != 0
-        && w.entities.values().any(|e| e.index == w.my_pet && !name.is_empty() && super::monstrosity::name(e) == name)
+    w.my_pet != 0 && !name.is_empty() && w.entity_at(w.my_pet).is_some_and(|(_, e)| super::monstrosity::name(e) == name)
 }
 
 /// pupequip row 2 (FUN_10207670): 0x119 seen and PUP main or sub, else group 7 0x57. automato opens last with the

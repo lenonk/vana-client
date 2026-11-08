@@ -18,24 +18,36 @@ pub struct Seen {
 /// Each caster's light-state slot (render/shadow.rs `state`), freed when it stops casting.
 #[derive(Default)]
 pub struct Slots {
-    by_id: HashMap<u32, u32>,
+    /// Each caster's slot and the last assign it cast in.
+    by_id: HashMap<u32, (u32, u64)>,
+    round: u64,
+    used: Vec<bool>,
 }
 
 impl Slots {
     /// This frame's casters keep their slots; new ones take a free one (fresh); the rest are freed.
     fn assign(&mut self, ids: &[u32]) -> Vec<(u32, bool)> {
-        self.by_id.retain(|id, _| ids.contains(id));
-        let mut used: Vec<bool> = vec![false; MAX_CASTERS];
-        for &s in self.by_id.values() {
-            used[s as usize] = true;
+        // Marked, then kept by the mark (a search of `ids` per kept caster was casters squared a frame).
+        self.round += 1;
+        let round = self.round;
+        for id in ids {
+            if let Some(e) = self.by_id.get_mut(id) {
+                e.1 = round;
+            }
+        }
+        self.by_id.retain(|_, e| e.1 == round);
+        self.used.clear();
+        self.used.resize(MAX_CASTERS, false);
+        for &(s, _) in self.by_id.values() {
+            self.used[s as usize] = true;
         }
         ids.iter()
             .map(|id| match self.by_id.get(id) {
-                Some(&s) => (s, false),
+                Some(&(s, _)) => (s, false),
                 None => {
-                    let s = used.iter().position(|u| !u).unwrap_or(0) as u32;
-                    used[s as usize] = true;
-                    self.by_id.insert(*id, s);
+                    let s = self.used.iter().position(|u| !u).unwrap_or(0) as u32;
+                    self.used[s as usize] = true;
+                    self.by_id.insert(*id, (s, round));
                     (s, true)
                 }
             })

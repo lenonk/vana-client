@@ -301,7 +301,7 @@ fn my_pet(w: &World) -> Option<u32> {
     if i == 0 {
         return None;
     }
-    w.entities.iter().find(|(_, e)| e.index == i).map(|(&id, _)| id)
+    w.entity_at(i).map(|(id, _)| id)
 }
 
 fn bearer_name(w: &World, id: u32) -> (String, bool) {

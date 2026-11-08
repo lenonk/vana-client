@@ -23,6 +23,8 @@ pub const GREY: [u8; 4] = [0x58, 0x58, 0x58, 0x80];
 const MODERN_CORNER: f32 = 24.0;
 
 /// Parsed resources; loaded off the UI thread.
+/// Wrapped texts each generation of GameUi::wrapped holds.
+const WRAP_KEPT: usize = 512;
 /// How long a name plate's raster stays undrawn before it goes (GameUi::touch_image).
 const TEMP_KEEP: std::time::Duration = std::time::Duration::from_secs(30);
 
@@ -347,6 +349,12 @@ pub struct GameUi {
     replaced: Vec<(String, u32, u32, Vec<u8>)>,
     /// A mod image's older contents (image), freed once a frame's batch no longer draws them.
     stale: Vec<String>,
+    /// Wrapped lines by (text, widths, TrueType text): windows wrap the same text every frame, and a wrap measures its
+    /// line again for every word (wrap_part). Two generations, the newest and the one before (WRAP_KEPT each): a full
+    /// generation becomes the older one and the oldest goes, so a frame's texts past one generation's size don't all
+    /// miss at once, as a cache emptied when full would.
+    #[allow(clippy::type_complexity)]
+    wrapped: std::cell::RefCell<[std::collections::HashMap<u64, (String, [u32; 2], bool, Vec<String>)>; 2]>,
     /// Images made for a while (name plates' rasters): when each was last drawn; unseen for TEMP_KEEP, stale.
     temp_seen: std::collections::HashMap<String, std::time::Instant>,
     /// When temp_seen was last looked over.
@@ -474,6 +482,7 @@ impl GameUi {
             style_index: 0,
             replaced: Vec::new(),
             stale: Vec::new(),
+            wrapped: Default::default(),
             temp_seen: Default::default(),
             temp_swept: std::time::Instant::now(),
             style_saved: Default::default(),
@@ -2364,8 +2373,36 @@ impl GameUi {
         out
     }
 
-    /// Words to lines: the first at most `first` wide, the others `rest`.
+    /// Words to lines: the first at most `first` wide, the others `rest` (wrapped once for the same text and widths).
     fn wrap_part(&self, line: &str, first: f32, rest: f32) -> Vec<String> {
+        use std::hash::{Hash, Hasher};
+        let (widths, ttf) = ([first.to_bits(), rest.to_bits()], self.batch.ttf_text());
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (line, widths, ttf).hash(&mut h);
+        let key = h.finish();
+        let same = |e: &(String, [u32; 2], bool, Vec<String>)| e.0 == line && e.1 == widths && e.2 == ttf;
+        let mut c = self.wrapped.borrow_mut();
+        if let Some(e) = c[0].get(&key).filter(|e| same(e)) {
+            return e.3.clone();
+        }
+        // In the older generation: moved to the newest, so what is still wrapped stays.
+        let out = match c[1].remove(&key).filter(|e| same(e)) {
+            Some(e) => e.3,
+            None => {
+                drop(c);
+                let out = self.wrap_words(line, first, rest);
+                c = self.wrapped.borrow_mut();
+                out
+            }
+        };
+        if c[0].len() >= WRAP_KEPT {
+            c[1] = std::mem::take(&mut c[0]);
+        }
+        c[0].insert(key, (line.to_string(), widths, ttf, out.clone()));
+        out
+    }
+
+    fn wrap_words(&self, line: &str, first: f32, rest: f32) -> Vec<String> {
         let mut out = Vec::new();
         let mut cur = String::new();
         let max = |out: &Vec<String>| if out.is_empty() { first } else { rest };

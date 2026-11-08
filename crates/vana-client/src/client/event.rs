@@ -2719,7 +2719,7 @@ fn finish(w: &mut World, live: Box<Live>) {
         }
     }
     for id in &live.st.despawned {
-        w.entities.remove(id);
+        w.forget_entity(*id);
         w.actors.remove(id);
     }
     w.event_mem = live.rt.mem.clone();

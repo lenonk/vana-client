@@ -275,6 +275,19 @@ fn release_options(w: &mut World) {
     }
 }
 
+/// The mods' render.entity looks, borrowed from the frame info (Host::looks).
+pub(in crate::client) struct Looks<'a>(std::cell::Ref<'a, std::collections::HashMap<u32, (String, render::Look)>>);
+
+impl Looks<'_> {
+    pub fn get(&self, id: &u32) -> Option<&render::Look> {
+        self.0.get(id).map(|l| &l.1)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&u32, &render::Look)> {
+        self.0.iter().map(|(id, l)| (id, &l.1))
+    }
+}
+
 /// The mods of this session.
 #[derive(Default)]
 pub struct Host {
@@ -1927,13 +1940,35 @@ impl Host {
     }
 
     /// The player looks mods set (render.look) and their version.
-    pub(in crate::client) fn models(&self) -> (u64, std::collections::HashMap<u32, render::Model>) {
-        let f = self.info.borrow();
-        (f.models_ver, f.models.iter().map(|(id, m)| (*id, m.1)).collect())
+    /// The mods' render.look models' version: it moves when one changes.
+    pub(in crate::client) fn models_ver(&self) -> u64 {
+        self.info.borrow().models_ver
     }
 
-    pub(in crate::client) fn looks(&self) -> std::collections::HashMap<u32, render::Look> {
-        self.info.borrow().looks.iter().map(|(id, l)| (*id, l.1.clone())).collect()
+    /// Entity `id`'s model as a mod set it (render.look).
+    pub(in crate::client) fn model(&self, id: u32) -> Option<render::Model> {
+        self.info.borrow().models.get(&id).map(|m| m.1)
+    }
+
+    /// Entity `id`'s size as a mod set it (render.entity scale; 1 for none).
+    pub(in crate::client) fn look_scale(&self, id: u32) -> f32 {
+        self.info.borrow().looks.get(&id).and_then(|l| l.1.scale).unwrap_or(1.0)
+    }
+
+    /// Entity `id`'s alpha and tint as a mod set them (render.entity), when one did.
+    pub(in crate::client) fn look_shade(&self, id: u32) -> Option<(Option<f32>, Option<[f32; 3]>)> {
+        self.info.borrow().looks.get(&id).map(|l| (l.1.alpha, l.1.tint))
+    }
+
+    /// A mod hides entity `id` (render.entity hidden).
+    pub(in crate::client) fn look_hidden(&self, id: u32) -> bool {
+        self.info.borrow().looks.get(&id).is_some_and(|l| l.1.hidden)
+    }
+
+    /// `f` with the looks mods set (render.entity) by entity, borrowed for the call (a copy every frame was a map of
+    /// strings). Scoped, so the borrow cannot outlive the call and meet a mod's own borrow (a panic).
+    pub(in crate::client) fn with_looks<R>(&self, f: impl FnOnce(&Looks) -> R) -> R {
+        f(&Looks(std::cell::Ref::map(self.info.borrow(), |f| &f.looks)))
     }
 
     /// The modern panels of the hidden pieces, and the panels hidden by name.

@@ -863,11 +863,8 @@ pub(super) fn install(
             if key == w.my_id || key == u32::from(w.my_index) {
                 return self_entity(lua, w).map(Some);
             }
-            let e = w
-                .entities
-                .get(&key)
-                .map(|e| (key, e))
-                .or_else(|| w.entities.iter().find(|(_, e)| u32::from(e.index) == key).map(|(id, e)| (*id, e)));
+            let e =
+                w.entities.get(&key).map(|e| (key, e)).or_else(|| u16::try_from(key).ok().and_then(|i| w.entity_at(i)));
             e.map(|(id, e)| entity(lua, w, id, e)).transpose()
         })?,
     )?;
@@ -899,6 +896,7 @@ pub(super) fn install(
             }
             let mut list: Vec<(&u32, &super::super::Entity)> = w.entities.iter().collect();
             list.sort_by_key(|(_, e)| e.index);
+            let slots = w.party.slots();
             for (id, e) in list {
                 if max.is_some_and(|m| e.pos.distance(w.pos) > m) {
                     continue;
@@ -906,7 +904,7 @@ pub(super) fn install(
                 if kinds.as_ref().is_some_and(|k| !k.iter().any(|k| k == kind_name(e))) {
                     continue;
                 }
-                out.push(entity(lua, w, *id, e)?)?;
+                out.push(entity_in(lua, w, *id, e, &slots)?)?;
             }
             Ok(out)
         })?,
@@ -1768,6 +1766,17 @@ const ELEMENTS: [&str; 8] = ["Fire", "Ice", "Wind", "Earth", "Lightning", "Water
 
 /// An entity as a table: who, where, how it stands.
 pub(super) fn entity(lua: &Lua, w: &World, id: u32, e: &super::super::Entity) -> mlua::Result<Table> {
+    entity_in(lua, w, id, e, &w.party.slots())
+}
+
+/// `entity` with the party's slots worked out once (game.entities: not again for every entity).
+fn entity_in(
+    lua: &Lua,
+    w: &World,
+    id: u32,
+    e: &super::super::Entity,
+    slots: &super::super::party::Slots,
+) -> mlua::Result<Table> {
     let t = lua.create_table()?;
     t.set("id", id)?;
     t.set("index", e.index)?;
@@ -1812,18 +1821,14 @@ pub(super) fn entity(lua: &Lua, w: &World, id: u32, e: &super::super::Entity) ->
         }
         t.set("look", look)?;
     }
-    let slot = w.party.slots().slots.iter().position(|m| m.as_ref().is_some_and(|m| m.id == id));
+    let slot = slots.slots.iter().position(|m| m.as_ref().is_some_and(|m| m.id == id));
     t.set("in_party", slot.is_some_and(|k| k < 6))?;
     t.set("in_alliance", slot.is_some())?;
     t.set("hitbox", e.hitbox)?;
     // Its target: the face target (0x00D / 0x00E facetarget), and that entity's server id when known.
     if e.face != 0 {
         t.set("target_index", e.face)?;
-        let tid = if e.face == w.my_index {
-            Some(w.my_id)
-        } else {
-            w.entities.iter().find(|(_, x)| x.index == e.face).map(|(k, _)| *k)
-        };
+        let tid = if e.face == w.my_index { Some(w.my_id) } else { w.entity_at(e.face).map(|(k, _)| k) };
         t.set("target_id", tid)?;
     }
     // Our pet: its MP% and TP (s2c 0x068).

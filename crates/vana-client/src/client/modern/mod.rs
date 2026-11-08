@@ -113,6 +113,9 @@ pub struct Modern {
     /// time): one unseen for IMAGE_KEEP seconds goes (Modern::texture).
     images: std::cell::RefCell<std::collections::HashMap<String, (Option<egui::TextureHandle>, f64)>>,
     images_pruned: std::cell::Cell<f64>,
+    /// The full log's find: its key (the log's span and edits, the text, the tab) and the lines it found.
+    #[allow(clippy::type_complexity)]
+    log_found: std::cell::RefCell<Option<((usize, usize, u64, String, u8, bool), std::rc::Rc<Vec<usize>>)>>,
     /// Status tooltips' name and description by (status id, small set), read once (hud.rs).
     pub status_tips: std::cell::RefCell<HashMap<(u16, bool), std::rc::Rc<(String, String)>>>,
     /// Macro lines and the spell or ability each names (textcmd::line_action), for greying the macro keys.
@@ -208,6 +211,7 @@ impl Modern {
             border_style: Default::default(),
             images: Default::default(),
             images_pruned: Default::default(),
+            log_found: Default::default(),
             status_tips: Default::default(),
             macro_acts: Default::default(),
             grid: Default::default(),

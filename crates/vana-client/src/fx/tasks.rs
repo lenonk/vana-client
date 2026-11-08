@@ -3148,9 +3148,14 @@ impl Effects {
     /// FUN_10085a50 (hide, once): the actor's non-static clones go, its static ones stop (none live: held here) or
     /// hide their first live element, its tasks pause. FUN_10085a10 (show): undone, and the model's generators start
     /// again (FUN_10085060 replaces their clones).
-    fn model_hide(&mut self, actors: &dyn Actors) {
-        let mut ids: Vec<u32> = actors.models().into_iter().map(|m| m.0).collect();
-        ids.extend(self.hidden_actors.iter().filter(|id| !ids.contains(id)).copied().collect::<Vec<_>>());
+    fn model_hide(
+        &mut self,
+        actors: &dyn Actors,
+        present: &[(u32, Vec<u32>)],
+        by_id: &std::collections::HashMap<u32, &[u32]>,
+    ) {
+        let mut ids: Vec<u32> = present.iter().map(|m| m.0).collect();
+        ids.extend(self.hidden_actors.iter().filter(|id| !by_id.contains_key(id)).copied().collect::<Vec<_>>());
         for id in ids {
             let hide = actors.hidden(id);
             if hide == self.hidden_actors.contains(&id) {
@@ -3202,14 +3207,17 @@ impl Effects {
     }
 
     pub(super) fn model_generators(&mut self, actors: &dyn Actors) {
-        self.model_hide(actors);
+        // Listed once a frame (the hide pass took its own copy) and looked up by id (a search of the list per model).
         let present = actors.models();
+        let by_id: std::collections::HashMap<u32, &[u32]> = present.iter().map(|(id, f)| (*id, f.as_slice())).collect();
+        self.model_hide(actors, &present, &by_id);
         let gone: Vec<u32> = self
             .models
-            .keys()
-            .filter(|id| !present.iter().any(|(p, files)| p == *id && self.models.get(p) == Some(files)))
-            .copied()
+            .iter()
+            .filter(|(id, files)| by_id.get(*id) != Some(&files.as_slice()))
+            .map(|(id, _)| *id)
             .collect();
+        drop(by_id);
         for id in gone {
             self.models.remove(&id);
             for i in 0..self.insts.len() {

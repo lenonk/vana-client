@@ -691,6 +691,39 @@ mod tests {
         assert_eq!((l.pending, l.slide), (0, 0));
     }
 
+    /// A channel tab kept up as lines come and change gives the rows a rebuild gives (needs the game's files).
+    #[test]
+    fn tab_rows_follow_the_log() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let Ok(dll) = std::fs::read(crate::dat::ffximain(&cfg.ffxi_dir())) else { return };
+        let Ok(data) = super::super::game_ui::GameUiData::load(&index, &dll) else { return };
+        let gu = GameUi::new(data);
+        let mut chat = super::super::combat::ChatLog::default();
+        let mut kept = LogWin { width: 200.0, ..Default::default() };
+        let tell = |i: usize| format!("Someone >> a tell number {i} long enough to wrap on a narrow window");
+        let mut last_tell = 0;
+        for i in 0..300 {
+            match i % 7 {
+                0 => {
+                    chat.push_mode(tell(i), [0x80; 4], false, 12, false, None);
+                    last_tell = chat.len() - 1;
+                }
+                1 => chat.push_battle(format!("battle {i}"), [0x80; 4], 20),
+                _ => chat.push_mode(format!("say {i}"), [0x80; 4], false, 9, false, None),
+            }
+            // An earlier tell changed in place (wrapped again, maybe to more rows).
+            if i % 20 == 19 {
+                chat.set_text(last_tell, format!("{} and now changed to wrap to more rows than before", tell(i)));
+            }
+            kept.prepare_tab(&gu, &chat, 4, Route::default());
+            let mut fresh = LogWin { width: 200.0, ..Default::default() };
+            fresh.prepare_tab(&gu, &chat, 4, Route::default());
+            assert_eq!(kept.tab.rows, fresh.tab.rows, "after line {i}");
+        }
+        assert!(kept.tab.rows.len() >= 100);
+    }
+
     /// 23 + (H - 448) / 16 rows; the row moves first, then the view scrolls; pages clamp to the history.
     #[test]
     fn full_log_keys() {
@@ -722,10 +755,66 @@ impl LogWin {
             return;
         }
         let key = (filter, chat.len(), chat.edits(), self.width.to_bits(), route);
-        if self.tab.key == key && !self.tab.rows.is_empty() {
+        // Built for this key (an empty tab too: it was built again every frame).
+        if self.tab.key == key {
             return;
         }
         let limit = if filter == 8 { KEEP } else { 100 };
+        // The same tab, width and route: the new lines join and the edited ones wrap again, as the window's own rows
+        // do (a new line rebuilt the tab from the history's end, the whole history for a quiet channel).
+        let old = self.tab.key;
+        let edited = match old.2 == key.2 {
+            true => Some(Vec::new()),
+            false => chat.edited_since(old.2),
+        };
+        // An edited line held in the tab with no rows yet (it wrapped to none) has no place to go back to: rebuilt.
+        let placed = |rows: &[Row], k: usize| {
+            rows.iter().position(|r| r.3 == k).map(Some).or_else(|| rows.first().filter(|r| r.3 < k).map(|_| None))
+        };
+        let edited = edited.filter(|e| {
+            e.iter().all(|&k| {
+                let (mode, gm) = chat.route(k);
+                k >= old.1 || !tab_shows(filter, &route, mode, gm) || placed(&self.tab.rows, k) != Some(None)
+            })
+        });
+        if old.0 == key.0
+            && old.3 == key.3
+            && old.4 == key.4
+            && old.1 <= key.1
+            && let Some(edited) = edited
+        {
+            for k in edited.into_iter().filter(|&k| k < old.1) {
+                let (mode, gm) = chat.route(k);
+                if !tab_shows(filter, &route, mode, gm) {
+                    continue;
+                }
+                if let Some(Some(at)) = placed(&self.tab.rows, k) {
+                    let end = at + self.tab.rows[at..].iter().take_while(|r| r.3 == k).count();
+                    let new = self.wrap_line(gu, chat, k, self.width);
+                    self.tab.rows.splice(at..end, new);
+                }
+            }
+            for k in old.1.max(chat.start())..chat.len() {
+                let (mode, gm) = chat.route(k);
+                if tab_shows(filter, &route, mode, gm) {
+                    let r = self.wrap_line(gu, chat, k, self.width);
+                    self.tab.rows.extend(r);
+                }
+            }
+            // The lines dropped from the log go; then the oldest whole lines past the newest `limit` rows.
+            let rows = &mut self.tab.rows;
+            let gone = rows.iter().take_while(|r| r.3 < chat.start()).count();
+            rows.drain(..gone);
+            while let Some(first) = rows.first().map(|r| r.3) {
+                let n = rows.iter().take_while(|r| r.3 == first).count();
+                if rows.len() - n < limit {
+                    break;
+                }
+                rows.drain(..n);
+            }
+            self.tab.key = key;
+            return;
+        }
         let mut rows: Vec<Vec<Row>> = Vec::new();
         let mut n = 0;
         for k in (chat.start()..chat.len()).rev() {

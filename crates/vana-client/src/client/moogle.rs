@@ -149,7 +149,7 @@ fn is_moogle(id: u32, e: &super::Entity) -> bool {
 pub(super) fn moogle_actor(w: &World) -> Option<u32> {
     let one = |(id, e): (&u32, &super::Entity)| is_moogle(*id, e).then_some(*id);
     if w.talked_index != 0
-        && let Some(id) = w.entities.iter().filter(|(_, e)| e.index == w.talked_index).find_map(one)
+        && let Some(id) = w.entity_at(w.talked_index).and_then(|(id, e)| one((&id, e)))
     {
         return Some(id);
     }
