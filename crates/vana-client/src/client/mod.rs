@@ -17294,10 +17294,11 @@ impl App {
                     a.once = once;
                     a.ticks += dt * 60.0 * rate;
                     // A leader frame in (0, ours] becomes ours.
-                    if let (Some(&lf), Some(speed)) = (
-                        leads.get(id),
-                        actmotion::find(&extra, &ch, &a.motion).first().map(|x| x.speed * 0.5).filter(|s| *s > 0.0),
-                    ) && lf > 0.0
+                    // The leader first: the chunk search runs only for actors that follow one.
+                    if let Some(&lf) = leads.get(id)
+                        && let Some(speed) =
+                            actmotion::find(&extra, &ch, &a.motion).first().map(|x| x.speed * 0.5).filter(|s| *s > 0.0)
+                        && lf > 0.0
                         && lf <= a.ticks * speed
                     {
                         a.ticks = lf / speed;

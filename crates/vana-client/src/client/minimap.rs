@@ -46,7 +46,7 @@ pub fn prepare(gu: &GameUi, w: &mut World, sw: f32) {
     w.minimap_rect = None;
     w.minimap_frame = None;
     // The bundled Minimap mod's window (panel minimap) asks for it.
-    if w.lua.edge_panel("minimap").is_none() {
+    if !w.lua.has_edge_panel("minimap") {
         w.minimap = None;
         return;
     }

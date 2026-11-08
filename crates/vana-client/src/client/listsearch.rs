@@ -310,23 +310,27 @@ fn normal(s: &str) -> String {
 
 /// Edits between two words, a swap of neighbours counting one (optimal string alignment).
 fn edits(a: &[char], b: &[char]) -> usize {
-    let mut d = vec![vec![0usize; b.len() + 1]; a.len() + 1];
-    for (i, row) in d.iter_mut().enumerate() {
-        row[0] = i;
+    // One flat table (a row a Vec was a.len() + 2 allocations a call, for every row of a list searched).
+    let w = b.len() + 1;
+    let mut d = vec![0usize; (a.len() + 1) * w];
+    let at = |i: usize, j: usize| i * w + j;
+    for i in 0..=a.len() {
+        d[at(i, 0)] = i;
     }
     for j in 0..=b.len() {
-        d[0][j] = j;
+        d[at(0, j)] = j;
     }
     for i in 1..=a.len() {
         for j in 1..=b.len() {
             let cost = usize::from(a[i - 1] != b[j - 1]);
-            d[i][j] = (d[i - 1][j] + 1).min(d[i][j - 1] + 1).min(d[i - 1][j - 1] + cost);
+            let mut v = (d[at(i - 1, j)] + 1).min(d[at(i, j - 1)] + 1).min(d[at(i - 1, j - 1)] + cost);
             if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
-                d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
+                v = v.min(d[at(i - 2, j - 2)] + 1);
             }
+            d[at(i, j)] = v;
         }
     }
-    d[a.len()][b.len()]
+    d[at(a.len(), b.len())]
 }
 
 /// The typo fallback: every query word within an edit or two (by its length) of a name word or its start; the fewer
@@ -369,10 +373,21 @@ pub fn score(name: &str, query: &str) -> Option<i32> {
     if q.is_empty() {
         return None;
     }
-    let forms = [name.to_lowercase(), normal(name)];
+    score_forms(name, &query_forms(&q))
+}
+
+/// A normalised query's forms for score_forms: without its spaces, then as it is.
+fn query_forms(q: &str) -> [String; 2] {
+    [q.replace(' ', ""), q.to_string()]
+}
+
+/// `score` with the query's forms worked out (with and without spaces): one list's rows share them.
+fn score_forms(name: &str, qs: &[String; 2]) -> Option<i32> {
+    let (lower, norm) = (name.to_lowercase(), normal(name));
+    let (lower_tight, norm_tight) = (lower.replace(' ', ""), norm.replace(' ', ""));
     let mut best = None;
-    for f in forms.iter().flat_map(|f| [f.clone(), f.replace(' ', "")]) {
-        for q in [q.clone(), q.replace(' ', "")] {
+    for f in [&lower, &lower_tight, &norm, &norm_tight] {
+        for q in qs.iter().map(String::as_str) {
             let len = f.chars().count() as i32;
             let s = if f.starts_with(&q) {
                 1000 - len
@@ -402,7 +417,7 @@ pub fn score(name: &str, query: &str) -> Option<i32> {
             best = Some(best.map_or(s, |b: i32| b.max(s)));
         }
     }
-    best.or_else(|| typo_score(&normal(name), &q))
+    best.or_else(|| typo_score(&norm, &qs[1]))
 }
 
 fn name(w: &World, kind: Kind, id: u16) -> String {
@@ -439,7 +454,8 @@ pub fn key_of(h: &Hit) -> String {
 /// Recent picks rank up (the newest most) and are marked; best first again, the list's order among equals.
 fn boost(recent: &[String], hits: &mut [Hit]) {
     for h in hits.iter_mut() {
-        if let Some(r) = recent.iter().position(|k| *k == key_of(h)) {
+        let key = key_of(h);
+        if let Some(r) = recent.iter().position(|k| *k == key) {
             h.score += 400 - 15 * r as i32;
             h.recent = true;
         }
@@ -467,6 +483,9 @@ fn remember(w: &mut World, h: &Hit) {
 
 /// The matches for the open window by score (the list's own order among equals).
 fn matches(w: &World, query: &str) -> Vec<Hit> {
+    // The query's forms once for every row (each row worked them out again).
+    let q = normal(query.trim());
+    let qs = (!q.is_empty()).then(|| query_forms(&q));
     if w.command_palette {
         return palette_matches(w, query);
     }
@@ -474,7 +493,7 @@ fn matches(w: &World, query: &str) -> Vec<Hit> {
     // One of the other lists: its rows.
     if let Some(l) = other(w) {
         for (k, e) in (super::modern::SEARCH_LISTS[l].rows)(w).into_iter().enumerate() {
-            if let Some(score) = score(&e.name, query) {
+            if let Some(score) = qs.as_ref().and_then(|qs| score_forms(&e.name, qs)) {
                 let journal = Some(Journal::Row { list: l as u8, k, item: e.item.is_some(), dim: e.dim });
                 out.push(Hit {
                     kind: Kind::Ability,
@@ -499,7 +518,7 @@ fn matches(w: &World, query: &str) -> Vec<Hit> {
         let info = w.item_info.as_ref();
         for &(id, cat) in super::auction::index(w).iter().flat_map(|v| v.iter()) {
             let name = info.and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
-            if let Some(score) = score(&name, query) {
+            if let Some(score) = qs.as_ref().and_then(|qs| score_forms(&name, qs)) {
                 out.push(Hit {
                     kind: Kind::Ability,
                     cat: None,
@@ -521,7 +540,7 @@ fn matches(w: &World, query: &str) -> Vec<Hit> {
     if key_items(w) {
         for (k, (title, items)) in keyitems::all(w).into_iter().enumerate() {
             for (id, name) in items.into_iter().filter(|(id, _)| w.has_key_item(*id)) {
-                if let Some(score) = score(&name, query) {
+                if let Some(score) = qs.as_ref().and_then(|qs| score_forms(&name, qs)) {
                     out.push(Hit {
                         kind: Kind::Ability,
                         cat: Some(k),
@@ -549,7 +568,7 @@ fn matches(w: &World, query: &str) -> Vec<Hit> {
             for (k, i) in rows.into_iter().enumerate() {
                 let Some(e) = f.entries.get(i) else { continue };
                 let name = e.name.trim_start_matches('+').to_string();
-                if let Some(score) = score(&name, query) {
+                if let Some(score) = qs.as_ref().and_then(|qs| score_forms(&name, qs)) {
                     let note = (if k < split { "current" } else { "completed" }).to_string();
                     out.push(Hit {
                         kind: Kind::Ability,
@@ -578,7 +597,7 @@ fn matches(w: &World, query: &str) -> Vec<Hit> {
                 let (journal::Row::Current(i) | journal::Row::Done(i)) = r else { continue };
                 let Some(e) = f.entries.get(i) else { continue };
                 let name = journal::indent(&e.name).0.to_string();
-                if let Some(score) = score(&name, query) {
+                if let Some(score) = qs.as_ref().and_then(|qs| score_forms(&name, qs)) {
                     out.push(Hit {
                         kind: Kind::Ability,
                         cat: None,
@@ -607,7 +626,7 @@ fn matches(w: &World, query: &str) -> Vec<Hit> {
             }
             let n = info.and_then(|c| c.item(s.id)).map(|it| it.name.clone()).unwrap_or_default();
             if out.iter().all(|h: &Hit| h.id != s.id)
-                && let Some(score) = score(&n, query)
+                && let Some(score) = qs.as_ref().and_then(|qs| score_forms(&n, qs))
             {
                 out.push(Hit {
                     kind: Kind::Ability,
@@ -633,7 +652,7 @@ fn matches(w: &World, query: &str) -> Vec<Hit> {
     let mut add = |kind: Kind, cat: Option<usize>, rows: Vec<u16>| {
         for id in rows {
             let n = name(w, kind, id);
-            if let Some(score) = score(&n, query) {
+            if let Some(score) = qs.as_ref().and_then(|qs| score_forms(&n, qs)) {
                 out.push(Hit {
                     kind,
                     cat,

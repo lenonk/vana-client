@@ -587,16 +587,19 @@ impl Ground {
     /// The same face's normal, turned to +y (into the floor; -vt+0x210 *(inf: the sign, from flat ground giving
     /// FUN_100d3750 the identity)*).
     pub fn floor_normal(&self, p: Vec3) -> Option<Vec3> {
-        let (_, i) =
-            self.heights(p.x, p.z).into_iter().filter(|h| h.0 >= p.y - 0.5).min_by(|a, b| a.0.total_cmp(&b.0))?;
+        let (_, i) = self.floor_face(p)?;
         let n = *self.normals.get(i)?;
         Some(if n.y < 0.0 { -n } else { n })
     }
 
+    /// The face under feet at `p` the floor accessors read (the highest no more than 0.5 above them) and its height.
+    pub fn floor_face(&self, p: Vec3) -> Option<(f32, usize)> {
+        self.hits(p.x, p.z).filter(|h| h.0 >= p.y - 0.5).min_by(|a, b| a.0.total_cmp(&b.0))
+    }
+
     /// The point lights of the floor under `p` (ground info +0x20..+0x23, FUN_1017aba0).
     pub fn lights(&self, p: Vec3) -> [u8; 4] {
-        let floor = self.heights(p.x, p.z).into_iter().filter(|h| h.0 >= p.y - 0.5).min_by(|a, b| a.0.total_cmp(&b.0));
-        floor
+        self.floor_face(p)
             .and_then(|(_, i)| self.objs.get(i))
             .and_then(|&o| self.obj_lights.get(o as usize))
             .copied()
@@ -605,23 +608,20 @@ impl Ground {
 
     /// The area 4cc of the floor under `p` (FUN_100a3560: the ground info +0x34), None without a floor.
     pub fn area(&self, p: Vec3) -> Option<u32> {
-        let (_, i) =
-            self.heights(p.x, p.z).into_iter().filter(|h| h.0 >= p.y - 0.5).min_by(|a, b| a.0.total_cmp(&b.0))?;
+        let (_, i) = self.floor_face(p)?;
         self.areas.get(i).copied()
     }
 
     /// The wade height under `p` (FUN_100d4bc0: the floor's type 9 and its object's water, actor +0x174 / +0x178);
     /// None off a type-9 floor (the face `surface` takes).
     pub fn wade(&self, p: Vec3) -> Option<f32> {
-        let (h, i) =
-            self.heights(p.x, p.z).into_iter().filter(|h| h.0 >= p.y - 0.5).min_by(|a, b| a.0.total_cmp(&b.0))?;
+        let (h, i) = self.floor_face(p)?;
         (h - p.y <= 0.4 && self.kinds.get(i) == Some(&9))
             .then(|| self.objs.get(i).and_then(|&o| self.obj_water.get(o as usize)).copied().unwrap_or(0.0))
     }
 
     pub fn surface(&self, p: Vec3) -> (u8, bool) {
-        let floor = self.heights(p.x, p.z).into_iter().filter(|h| h.0 >= p.y - 0.5).min_by(|a, b| a.0.total_cmp(&b.0));
-        match floor {
+        match self.floor_face(p) {
             Some((h, i)) if h - p.y <= 0.4 => {
                 (self.kinds.get(i).copied().unwrap_or(0), self.covers.get(i).copied().unwrap_or(false))
             }
@@ -633,11 +633,9 @@ impl Ground {
     /// FUN_100136a0 / FUN_1017a4f0(eye, 100): a ray from just above the eye 100 down, else from just below it 15
     /// up; the nearest face hit says whether its object is covered (+0xa4 bit 2), which stops weather.
     pub fn covered(&self, eye: Vec3) -> bool {
-        let hits = self.heights(eye.x, eye.z);
-        let down =
-            hits.iter().filter(|h| h.0 >= eye.y - 0.51 && h.0 <= eye.y + 100.0).min_by(|a, b| a.0.total_cmp(&b.0));
-        let up =
-            || hits.iter().filter(|h| h.0 <= eye.y + 0.51 && h.0 >= eye.y - 15.0).max_by(|a, b| a.0.total_cmp(&b.0));
+        let hits = || self.hits(eye.x, eye.z);
+        let down = hits().filter(|h| h.0 >= eye.y - 0.51 && h.0 <= eye.y + 100.0).min_by(|a, b| a.0.total_cmp(&b.0));
+        let up = || hits().filter(|h| h.0 <= eye.y + 0.51 && h.0 >= eye.y - 15.0).max_by(|a, b| a.0.total_cmp(&b.0));
         down.or_else(up).is_some_and(|h| self.covers.get(h.1).copied().unwrap_or(false))
     }
 
@@ -645,11 +643,9 @@ impl Ground {
     /// from 0.51 below it 15 up; the nearest face's object names the list (+0xa8, the MZB offset; 0 none or a miss).
     /// *(inf: door boxes name none; retail links them in lists of their own)*
     pub fn camera_list(&self, eye: Vec3) -> u32 {
-        let hits = self.heights(eye.x, eye.z);
-        let down =
-            hits.iter().filter(|h| h.0 >= eye.y - 0.51 && h.0 <= eye.y + 100.0).min_by(|a, b| a.0.total_cmp(&b.0));
-        let up =
-            || hits.iter().filter(|h| h.0 <= eye.y + 0.51 && h.0 >= eye.y - 15.0).max_by(|a, b| a.0.total_cmp(&b.0));
+        let hits = || self.hits(eye.x, eye.z);
+        let down = hits().filter(|h| h.0 >= eye.y - 0.51 && h.0 <= eye.y + 100.0).min_by(|a, b| a.0.total_cmp(&b.0));
+        let up = || hits().filter(|h| h.0 <= eye.y + 0.51 && h.0 >= eye.y - 15.0).max_by(|a, b| a.0.total_cmp(&b.0));
         down.or_else(up)
             .and_then(|h| self.objs.get(h.1))
             .and_then(|&o| self.obj_vis.get(o as usize))
@@ -660,11 +656,9 @@ impl Ground {
     /// FUN_101811d0: the map sub-key under a point, from the nearest face a ray from 0.51 above it 10 down hits,
     /// else one from 0.51 below it 15 up; 0 when both miss.
     pub fn map_key(&self, p: Vec3) -> u8 {
-        let hits = self.heights(p.x, p.z);
-        let down =
-            hits.iter().filter(|h| h.0 >= p.y - 0.51 && h.0 <= p.y - 0.51 + 10.0).min_by(|a, b| a.0.total_cmp(&b.0));
-        let up =
-            || hits.iter().filter(|h| h.0 <= p.y + 0.51 && h.0 >= p.y + 0.51 - 15.0).max_by(|a, b| a.0.total_cmp(&b.0));
+        let hits = || self.hits(p.x, p.z);
+        let down = hits().filter(|h| h.0 >= p.y - 0.51 && h.0 <= p.y - 0.51 + 10.0).min_by(|a, b| a.0.total_cmp(&b.0));
+        let up = || hits().filter(|h| h.0 <= p.y + 0.51 && h.0 >= p.y + 0.51 - 15.0).max_by(|a, b| a.0.total_cmp(&b.0));
         down.or_else(up).and_then(|h| self.map_keys.get(h.1).copied()).unwrap_or(0)
     }
 
@@ -680,30 +674,26 @@ impl Ground {
     /// Where a character placed at height `y` lands: the first floor below (zone-in points sit mid-air at the
     /// zone line's centre), allowing a small sink; failing that the nearest surface.
     pub fn settle(&self, x: f32, z: f32, y: f32) -> Option<f32> {
-        self.floor(x, z, y, 0.5).or_else(|| {
-            self.heights(x, z).into_iter().map(|(h, _)| h).min_by(|a, b| (a - y).abs().total_cmp(&(b - y).abs()))
-        })
+        self.floor(x, z, y, 0.5)
+            .or_else(|| self.hits(x, z).map(|(h, _)| h).min_by(|a, b| (a - y).abs().total_cmp(&(b - y).abs())))
     }
 
     /// FUN_1017a400: a vertical segment from y - 2 down to y + 50, else from y + 2 up to y - 13, against every
     /// collision face near (x, z); the hit nearest the start wins. None when both miss (y stays).
     pub fn snap(&self, x: f32, z: f32, y: f32) -> Option<f32> {
-        let hits = self.heights(x, z);
-        let down = hits.iter().map(|h| h.0).filter(|&h| h >= y - 2.0 && h < y + 50.0).min_by(|a, b| a.total_cmp(b));
-        down.or_else(|| {
-            hits.iter().map(|h| h.0).filter(|&h| h <= y + 2.0 && h > y - 13.0).max_by(|a, b| a.total_cmp(b))
-        })
+        let hits = || self.hits(x, z).map(|h| h.0);
+        let down = hits().filter(|&h| h >= y - 2.0 && h < y + 50.0).min_by(|a, b| a.total_cmp(b));
+        down.or_else(|| hits().filter(|&h| h <= y + 2.0 && h > y - 13.0).max_by(|a, b| a.total_cmp(b)))
     }
 
     /// The highest face over (x, z) from `top` down to `bottom` (y points down), if any.
     pub fn highest_between(&self, x: f32, z: f32, top: f32, bottom: f32) -> Option<f32> {
-        self.heights(x, z).into_iter().map(|h| h.0).filter(|&h| h >= top && h <= bottom).min_by(|a, b| a.total_cmp(b))
+        self.hits(x, z).map(|h| h.0).filter(|&h| h >= top && h <= bottom).min_by(|a, b| a.total_cmp(b))
     }
 
     /// The height of the face over (x, z) nearest `y`, at most `within` from it.
     pub fn nearest(&self, x: f32, z: f32, y: f32, within: f32) -> Option<f32> {
-        self.heights(x, z)
-            .into_iter()
+        self.hits(x, z)
             .map(|h| h.0)
             .filter(|h| (h - y).abs() <= within)
             .min_by(|a, b| (a - y).abs().total_cmp(&(b - y).abs()))
@@ -711,7 +701,7 @@ impl Ground {
 
     /// The heights of every face over (x, z), top first (diagnostics).
     pub fn floors(&self, x: f32, z: f32) -> Vec<f32> {
-        let mut h: Vec<f32> = self.heights(x, z).into_iter().map(|h| (h.0 * 100.0).round() / 100.0).collect();
+        let mut h: Vec<f32> = self.hits(x, z).map(|h| (h.0 * 100.0).round() / 100.0).collect();
         h.sort_by(|a, b| a.total_cmp(b));
         h.dedup();
         h
@@ -730,23 +720,21 @@ impl Ground {
 
     /// FUN_10162d20 as a vertical ray: the first face below `from_y` down to `to_y` (all faces, both sides).
     fn ray_down(&self, x: f32, z: f32, from_y: f32, to_y: f32) -> Option<(f32, usize)> {
-        self.heights(x, z).into_iter().filter(|&(h, _)| h >= from_y && h <= to_y).min_by(|a, b| a.0.total_cmp(&b.0))
+        self.hits(x, z).filter(|&(h, _)| h >= from_y && h <= to_y).min_by(|a, b| a.0.total_cmp(&b.0))
     }
 
-    /// Heights of the faces over (x, z), with their triangle.
-    fn heights(&self, x: f32, z: f32) -> Vec<(f32, usize)> {
-        self.near(x, z)
-            .filter_map(|i| {
-                let [a, b, c] = self.tris[i];
-                let d = (b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z);
-                if d.abs() < 1e-8 {
-                    return None;
-                }
-                let u = ((x - a.x) * (c.z - a.z) - (c.x - a.x) * (z - a.z)) / d;
-                let v = ((b.x - a.x) * (z - a.z) - (x - a.x) * (b.z - a.z)) / d;
-                (u >= 0.0 && v >= 0.0 && u + v <= 1.0).then(|| (a.y + u * (b.y - a.y) + v * (c.y - a.y), i))
-            })
-            .collect()
+    /// Heights of the faces over (x, z), with their triangle (worked out as read: nothing is collected).
+    fn hits(&self, x: f32, z: f32) -> impl Iterator<Item = (f32, usize)> + '_ {
+        self.near(x, z).filter_map(move |i| {
+            let [a, b, c] = self.tris[i];
+            let d = (b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z);
+            if d.abs() < 1e-8 {
+                return None;
+            }
+            let u = ((x - a.x) * (c.z - a.z) - (c.x - a.x) * (z - a.z)) / d;
+            let v = ((b.x - a.x) * (z - a.z) - (x - a.x) * (b.z - a.z)) / d;
+            (u >= 0.0 && v >= 0.0 && u + v <= 1.0).then(|| (a.y + u * (b.y - a.y) + v * (c.y - a.y), i))
+        })
     }
 
     /// FUN_10169140: the camera's segment test. A segment of 4 or more goes in 1 + trunc(len / 4) equal pieces, tested
@@ -1335,10 +1323,9 @@ mod tests {
         for i in 0..=20 {
             let p = s + (e - s) * (i as f32 / 20.0);
             let hs: Vec<String> = g
-                .heights(p.x, p.z)
-                .iter()
+                .hits(p.x, p.z)
                 .filter(|h| (h.0 - s.y).abs() < 12.0)
-                .map(|&(h, t)| format!("{h:.2}({:.2})", g.normals[t].y))
+                .map(|(h, t)| format!("{h:.2}({:.2})", g.normals[t].y))
                 .collect();
             println!("p {:.2},{:.2}: {}", p.x, p.z, hs.join(" "));
         }

@@ -145,12 +145,12 @@ fn mod_edges(p: &mut Panels, w: &mut World) {
         .iter()
         .filter(|n| !n.starts_with("timers_") && !["skillchains", "minimap"].contains(*n))
     {
-        if w.lua.edge_panel(name).is_none() || w.lua.hides(name) {
+        if !w.lua.has_edge_panel(name) || w.lua.hides(name) {
             hold_layer(p.ctx, name);
         }
     }
     // The timers' and skillchains' panels draw their client views (timers_panel, skillchain_panel).
-    for (mod_id, win) in w.lua.open_windows().into_iter().filter(|(_, x)| {
+    for (mod_id, win) in w.lua.open_windows_where(|x| {
         x.edge && !x.panel.as_deref().is_some_and(|n| n.starts_with("timers_") || n == "skillchains" || n == "minimap")
     }) {
         if win.panel.as_deref().is_some_and(|n| w.lua.hides(n)) {
@@ -1475,10 +1475,10 @@ fn minimap_panel(p: &mut Panels, w: &mut World) {
 /// nothing is tracked, and shows the last complete list until the next one is all in.
 fn widescan_panel(p: &mut Panels, w: &mut World) {
     // Its layer held from the first frame while the minimap mod's window is not in yet, as the built-in tab had it.
-    if w.lua.edge_panel("minimap").is_none() && !hidden(w) {
+    if !w.lua.has_edge_panel("minimap") && !hidden(w) {
         hold_layer(p.ctx, "widescan");
     }
-    if w.lua.edge_panel("minimap").is_none() || hidden(w) {
+    if !w.lua.has_edge_panel("minimap") || hidden(w) {
         w.scan_typing = false;
         return;
     }

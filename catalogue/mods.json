@@ -255,13 +255,13 @@
       "files": [
         {
           "path": "init.lua",
-          "sha256": "4857551a94aca75704464a544b5a9b349679ae3d845e6c620935c52e7c18075c",
-          "size": 3879,
+          "sha256": "5d62553388885a94ad9f7f178ec478d4d35b50804120dcf26e720397accac9aa",
+          "size": 4328,
           "url": "https://raw.githubusercontent.com/lenonk/vana-client/master/crates/vana-client/assets/mods/cast-grid/init.lua"
         },
         {
           "path": "mod.toml",
-          "sha256": "e6c71860fb6463cae7f1a420a040b4ef41165fc57ec27780ba96f176f757dc6c",
+          "sha256": "ddacac11a3f5c51fa4630413f54373c809cf8483ad20f6927eed68f37f4334f2",
           "size": 639,
           "url": "https://raw.githubusercontent.com/lenonk/vana-client/master/crates/vana-client/assets/mods/cast-grid/mod.toml"
         }
@@ -269,7 +269,7 @@
       "id": "cast-grid",
       "kind": "lua",
       "name": "Cast Grid",
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "authors": [],

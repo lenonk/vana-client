@@ -172,7 +172,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     // Edge windows are the edge layer's (extras.rs).
     // The focus panel goes with the target window when an event takes it down (hud.rs).
     let target_down = !super::super::event::keeps_target(w);
-    for (mod_id, win) in w.lua.open_windows().into_iter().filter(|(_, x)| !x.edge) {
+    for (mod_id, win) in w.lua.open_windows_where(|x| !x.edge) {
         // One standing in for a built-in panel takes its id: its place, docking, /uimodes and hiding.
         let id = win.panel.clone().unwrap_or_else(|| format!("mod:{mod_id}:{}", win.id));
         if id == "focus" && target_down {

@@ -3,6 +3,9 @@
 
 local SIZE, GAP = 30, 3
 local last_sig
+-- The chosen spells and the known ones, kept between frames (every spell's resource was read every frame): again on
+-- a settings, job, level or zone change, and once a second for a spell just learned.
+local list, have
 
 local function spells()
   local out = {}
@@ -23,6 +26,10 @@ local function known()
   return out
 end
 
+local function refresh()
+  list, have = nil, nil
+end
+
 local function short(name)
   local base, tier = name:match("^(.-)%s+([IV]+)$")
   base = base or name
@@ -39,8 +46,8 @@ local function draw()
   for _, m in ipairs(game.party()) do
     if m.party == 0 and m.name and m.name ~= "" then members[#members + 1] = m end
   end
-  local list = spells()
-  local have = known()
+  list = list or spells()
+  have = have or known()
   local recasts = game.recasts().spells
   local scr = hud.screen()
   local u = scr.ui_scale
@@ -103,3 +110,7 @@ local function draw()
 end
 
 events.on("frame", draw)
+for _, e in ipairs({ "settings_changed", "job_change", "level_up", "level_down", "zone_change" }) do
+  events.on(e, refresh)
+end
+timer.every(1, function() have = nil end)

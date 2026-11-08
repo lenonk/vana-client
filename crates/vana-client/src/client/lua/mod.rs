@@ -288,6 +288,11 @@ impl Looks<'_> {
     }
 }
 
+/// Window `w` is open on its edge in place of built-in panel `panel` (edge_panel, has_edge_panel, timers_panels).
+fn stands_in(w: &window::Window, panel: &str) -> bool {
+    w.open && w.edge && w.panel.as_deref() == Some(panel)
+}
+
 /// The mods of this session.
 #[derive(Default)]
 pub struct Host {
@@ -1808,9 +1813,26 @@ impl Host {
     /// The timers' sections shown: per section, whether its panel's window is open, and with the client's own rows.
     pub(in crate::client) fn timers_panels(&self) -> [Option<bool>; 3] {
         TIMERS_PANELS.map(|p| {
-            let win = self.edge_panel(p).filter(|_| !self.hides(p))?;
-            Some(win.elems.iter().any(|e| matches!(e, window::Elem::Timers { builtin: true, .. })))
+            if self.all_hidden || self.hides(p) {
+                return None;
+            }
+            // Read in place (edge_panel copies the window).
+            self.vms.iter().rev().filter(|v| v.suspended.is_none()).find_map(|v| {
+                let st = v.st.borrow();
+                let win = st.windows.iter().find(|w| stands_in(w, p))?;
+                Some(win.elems.iter().any(|e| matches!(e, window::Elem::Timers { builtin: true, .. })))
+            })
         })
+    }
+
+    /// Whether an open edge window stands in for a built-in panel (edge_panel, without copying the window).
+    pub(in crate::client) fn has_edge_panel(&self, panel: &str) -> bool {
+        !self.all_hidden
+            && self
+                .vms
+                .iter()
+                .filter(|v| v.suspended.is_none())
+                .any(|v| v.st.borrow().windows.iter().any(|w| stands_in(w, panel)))
     }
 
     /// The open edge window standing in for a built-in panel (the newest mod's).
@@ -1818,9 +1840,11 @@ impl Host {
         if self.all_hidden {
             return None;
         }
-        self.vms.iter().rev().filter(|v| v.suspended.is_none()).find_map(|v| {
-            v.st.borrow().windows.iter().find(|w| w.open && w.edge && w.panel.as_deref() == Some(panel)).cloned()
-        })
+        self.vms
+            .iter()
+            .rev()
+            .filter(|v| v.suspended.is_none())
+            .find_map(|v| v.st.borrow().windows.iter().find(|w| stands_in(w, panel)).cloned())
     }
 
     /// A number slot (target_distance, target_hpp).
@@ -1850,12 +1874,15 @@ impl Host {
         if !self.hud_shown() {
             return Vec::new();
         }
+        // Read in place (every element was copied for this every frame), in the draw order elements() gives.
+        let all = hud::visible(self, |_, e| match e.kind {
+            hud::Kind::Portrait { entity, w, h, look, .. } => Some(hud::Wanted { entity, size: [w, h], look }),
+            _ => None,
+        });
         let mut out: Vec<hud::Wanted> = Vec::new();
-        for (_, e) in hud::elements(self) {
-            if let hud::Kind::Portrait { entity, w, h, look, .. } = e.kind
-                && !out.iter().any(|p| p.entity == entity)
-            {
-                out.push(hud::Wanted { entity, size: [w, h], look });
+        for p in all {
+            if !out.iter().any(|o| o.entity == p.entity) {
+                out.push(p);
             }
         }
         out
@@ -5269,12 +5296,17 @@ impl Host {
     }
 
     pub(super) fn open_windows(&self) -> Vec<(String, window::Window)> {
+        self.open_windows_where(|_| true)
+    }
+
+    /// The open windows `keep` takes (copied: the caller draws them while it changes the world).
+    pub(super) fn open_windows_where(&self, keep: impl Fn(&window::Window) -> bool) -> Vec<(String, window::Window)> {
         let mut out = Vec::new();
         if self.all_hidden {
             return out;
         }
         for vm in self.vms.iter().filter(|v| v.suspended.is_none()) {
-            for win in vm.st.borrow().windows.iter().filter(|w| w.open) {
+            for win in vm.st.borrow().windows.iter().filter(|w| w.open && keep(w)) {
                 out.push((vm.manifest.id.clone(), win.clone()));
             }
         }

@@ -281,29 +281,33 @@ pub(super) fn op_rate(first: Option<&Animation>, ticks: f32) -> f32 {
 }
 
 pub fn find_cached<'a>(cache: &mut FindCache, extra: &'a Extra, ch: &'a Character, name: &str) -> Vec<&'a Animation> {
-    let sig: Vec<usize> = std::iter::once(ch as *const Character as usize)
-        .chain(extra.iter().map(|(_, f)| Arc::as_ptr(f) as usize))
-        .collect();
-    if cache.sig != sig {
-        cache.sig = sig;
+    // The model and files the cache was filled for, compared in place (a list was built every call).
+    let same = cache.sig.len() == extra.len() + 1
+        && cache.sig[0] == ch as *const Character as usize
+        && cache.sig[1..].iter().zip(extra).all(|(s, (_, f))| *s == Arc::as_ptr(f) as usize);
+    if !same {
+        cache.sig.clear();
+        cache.sig.push(ch as *const Character as usize);
+        cache.sig.extend(extra.iter().map(|(_, f)| Arc::as_ptr(f) as usize));
         cache.map.clear();
     }
-    let sources: Vec<&[Animation]> =
-        std::iter::once(ch.animations.as_slice()).chain(extra.iter().map(|(_, f)| f.animations.as_slice())).collect();
-    if let Some(hit) = cache.map.get(name) {
-        return hit.iter().filter_map(|&(s, i)| sources.get(s)?.get(i)).collect();
+    let source = |s: usize| match s {
+        0 => Some(ch.animations.as_slice()),
+        s => extra.get(s - 1).map(|(_, f)| f.animations.as_slice()),
+    };
+    // Keyed by the 3 letters region_chunks reads: idl0 and idl1 find the same chunks.
+    let key = name.get(..3).unwrap_or(name);
+    if let Some(hit) = cache.map.get(key) {
+        return hit.iter().filter_map(|&(s, i)| source(s)?.get(i)).collect();
     }
     let found = find(extra, ch, name);
     let ids = found
         .iter()
         .filter_map(|a| {
-            sources
-                .iter()
-                .enumerate()
-                .find_map(|(s, list)| list.iter().position(|x| std::ptr::eq(x, *a)).map(|i| (s, i)))
+            (0..=extra.len()).find_map(|s| source(s)?.iter().position(|x| std::ptr::eq(x, *a)).map(|i| (s, i)))
         })
         .collect();
-    cache.map.insert(name.to_string(), ids);
+    cache.map.insert(key.to_string(), ids);
     found
 }
 

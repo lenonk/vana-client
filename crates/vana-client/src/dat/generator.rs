@@ -93,11 +93,13 @@ impl Tree {
     /// in child order, then each enclosing folder's; kind 0 = any type, name 0 = the first of the type.
     pub fn find(&self, from: usize, kind: u8, name: [u8; 4]) -> Option<usize> {
         let mut folder = if self.nodes[from].kind == self::kind::FOLDER { Some(from) } else { self.nodes[from].parent };
-        let mut visited = vec![false; self.nodes.len()];
+        // Climbing, the only folder below already searched is the one just left: skipped (no visited list a call).
+        let mut done = None;
         while let Some(f) = folder {
-            if let Some(hit) = self.search(f, kind, name, &mut visited) {
+            if let Some(hit) = self.search(f, kind, name, done) {
                 return Some(hit);
             }
+            done = Some(f);
             folder = self.nodes[f].parent;
         }
         // Chunks outside any folder count as the root's children.
@@ -108,18 +110,15 @@ impl Tree {
             .map(|(i, _)| i)
     }
 
-    fn search(&self, folder: usize, kind: u8, name: [u8; 4], visited: &mut [bool]) -> Option<usize> {
-        if visited[folder] {
-            return None;
-        }
-        visited[folder] = true;
+    fn search(&self, folder: usize, kind: u8, name: [u8; 4], done: Option<usize>) -> Option<usize> {
         for &c in &self.nodes[folder].children {
             let n = &self.nodes[c];
             if matches(n, kind, name) {
                 return Some(c);
             }
             if n.kind == self::kind::FOLDER
-                && let Some(hit) = self.search(c, kind, name, visited)
+                && done != Some(c)
+                && let Some(hit) = self.search(c, kind, name, None)
             {
                 return Some(hit);
             }
@@ -418,6 +417,50 @@ mod tests {
 
     fn read(id: u32) -> Option<Vec<u8>> {
         crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()).ok()?.read(id).ok()
+    }
+
+    /// `find` without its visited list gives what the walk with one gave, from every node of a zone's file, for every
+    /// name and kind there (needs the game's files).
+    #[test]
+    fn find_as_before() {
+        fn old(t: &Tree, from: usize, kind: u8, name: [u8; 4]) -> Option<usize> {
+            fn search(t: &Tree, f: usize, kind: u8, name: [u8; 4], seen: &mut [bool]) -> Option<usize> {
+                if seen[f] {
+                    return None;
+                }
+                seen[f] = true;
+                for &c in &t.nodes[f].children {
+                    if matches(&t.nodes[c], kind, name) {
+                        return Some(c);
+                    }
+                    if t.nodes[c].kind == kind::FOLDER
+                        && let Some(hit) = search(t, c, kind, name, seen)
+                    {
+                        return Some(hit);
+                    }
+                }
+                None
+            }
+            let mut folder = if t.nodes[from].kind == kind::FOLDER { Some(from) } else { t.nodes[from].parent };
+            let mut seen = vec![false; t.nodes.len()];
+            while let Some(f) = folder {
+                if let Some(hit) = search(t, f, kind, name, &mut seen) {
+                    return Some(hit);
+                }
+                folder = t.nodes[f].parent;
+            }
+            t.nodes.iter().position(|n| n.parent.is_none() && n.kind != kind::FOLDER && matches(n, kind, name))
+        }
+        let Some(file) = read(crate::dat::zone::file_id(230)) else { return };
+        let t = Tree::build(&file).unwrap();
+        let names: std::collections::BTreeSet<([u8; 4], u8)> = t.nodes.iter().map(|n| (n.name, n.kind)).collect();
+        for from in (0..t.nodes.len()).step_by(7) {
+            for &(name, k) in names.iter().step_by(5) {
+                for kind in [0, k] {
+                    assert_eq!(t.find(from, kind, name), old(&t, from, kind, name), "from {from} kind {kind} {name:?}");
+                }
+            }
+        }
     }
 
     /// Zone 232 (DAT 332) effe/sea sea1: world, auto-start, one persistent element; op 1 names 'sea1',

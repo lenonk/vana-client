@@ -512,7 +512,7 @@ pub fn prepare(w: &mut World, base: Place) {
     let out = !w.skillchain.folded;
     w.skillchain.slide = if out { (w.skillchain.slide + step).min(1.0) } else { (w.skillchain.slide - step).max(0.0) };
     w.skillchain.frame = None;
-    if w.lua.edge_panel("skillchains").is_none()
+    if !w.lua.has_edge_panel("skillchains")
         || w.lua.hides("skillchains")
         || super::event::active(w)
         || w.map.is_some()

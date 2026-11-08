@@ -434,6 +434,9 @@ pub struct Registry {
     pub key_data: Vec<[f32; 2]>,
     pub key_desc: Vec<[u32; 2]>,
     key_id: HashMap<Ref, u32>,
+    /// `resolve`'s answers by (lib, from, kind, name): the trees never change once loaded, and only a new library can
+    /// make DAT 0 the fallback (add clears them).
+    resolved: std::cell::RefCell<HashMap<(usize, usize, u8, u32), Option<Ref>>>,
     pub keys_dirty: bool,
     /// The zone's point-light table keys by slot (render ZoneGeometry::light_keys).
     pub light_keys: Vec<u32>,
@@ -639,6 +642,7 @@ impl Registry {
             key_data: Vec::new(),
             key_desc: Vec::new(),
             key_id: HashMap::new(),
+            resolved: Default::default(),
             keys_dirty: false,
             light_keys: Vec::new(),
             aspect: 16.0 / 9.0,
@@ -676,6 +680,7 @@ impl Registry {
     }
 
     fn add(&mut self, l: Library) -> usize {
+        self.resolved.borrow_mut().clear();
         let i = self.libs.len();
         self.by_file.insert(l.file_id, i);
         if l.file_id == 0 {
@@ -687,11 +692,16 @@ impl Registry {
 
     /// FUN_100712e0: the file's folder scope, then DAT 0.
     pub fn resolve(&self, lib: usize, from: usize, kind: u8, name: u32) -> Option<Ref> {
-        if let Some(n) = self.libs[lib].find(from, kind, name) {
-            return Some((lib, n));
+        let key = (lib, from, kind, name);
+        if let Some(&r) = self.resolved.borrow().get(&key) {
+            return r;
         }
-        let g = self.global.filter(|&g| g != lib)?;
-        self.libs[g].find_global(kind, name).map(|n| (g, n))
+        let r = self.libs[lib].find(from, kind, name).map(|n| (lib, n)).or_else(|| {
+            let g = self.global.filter(|&g| g != lib)?;
+            self.libs[g].find_global(kind, name).map(|n| (g, n))
+        });
+        self.resolved.borrow_mut().insert(key, r);
+        r
     }
 
     pub fn keyframe(&self, r: Ref) -> Option<&KeyFrame> {

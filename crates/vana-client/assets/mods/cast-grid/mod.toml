@@ -1,5 +1,5 @@
 name = "Cast Grid"
-version = "1.0.0"
+version = "1.0.1"
 description = "A grid of buttons over the party list: a row per member, a column per spell you choose; a click casts it on them (the click-to-cast add-ons)."
 permissions = ["actions"]
 
