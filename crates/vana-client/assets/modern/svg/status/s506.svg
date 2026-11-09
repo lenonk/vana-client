@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="radial-gradient-1" cx="32" cy="32.68" r="27" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff6d0" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#ffd870" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#f0b040" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="linear-gradient-1" x1="32" y1="38.728" x2="32" y2="51.256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8fe0a8"/>
+      <stop offset="0.5" stop-color="#3aa860"/>
+      <stop offset="1" stop-color="#165a30"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="8.583" y1="33.139" x2="32" y2="44.56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f27fb0"/>
+      <stop offset="0.45" stop-color="#ffd6e8"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="55.417" y1="33.139" x2="32" y2="44.56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f27fb0"/>
+      <stop offset="0.45" stop-color="#ffd6e8"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="15.125" y1="18.575" x2="32" y2="44.56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f27fb0"/>
+      <stop offset="0.45" stop-color="#ffd6e8"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-5" x1="48.875" y1="18.575" x2="32" y2="44.56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f27fb0"/>
+      <stop offset="0.45" stop-color="#ffd6e8"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-6" x1="32" y1="9.352" x2="32" y2="44.56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f27fb0"/>
+      <stop offset="0.45" stop-color="#ffd6e8"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+    <radialGradient id="radial-gradient-2" cx="32" cy="41.752" r="7.128" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fffbe0"/>
+      <stop offset="0.6" stop-color="#ffe27a" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#f0a830" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="linear-gradient-7" x1="14.288" y1="11.728" x2="14.288" y2="19.504" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ffe27a"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-8" x1="50.36" y1="8.272" x2="50.36" y2="14.752" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ffe27a"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-9" x1="52.952" y1="22.528" x2="52.952" y2="26.416" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ffe27a"/>
+    </linearGradient>
+  </defs>
+  <title>s506</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M48.248 7.655 C48.862 5.555 51.858 5.555 52.472 7.655 L52.867 9.005 L54.217 9.4 C56.317 10.014 56.317 13.01 54.217 13.624 L52.867 14.019 L52.472 15.369 C52.164 16.423 51.256 16.948 50.351 16.944 C50.75 17.304 51.022 17.812 51.068 18.403 C51.143 19.355 51.168 20.307 51.147 21.259 C52.124 19.84 54.521 20.057 55.063 21.91 L55.165 22.259 L55.514 22.361 C57.613 22.975 57.613 25.969 55.514 26.583 L55.165 26.685 L55.063 27.034 C54.449 29.133 51.455 29.133 50.841 27.034 L50.739 26.685 L50.531 26.625 C50.258 27.947 49.897 29.255 49.454 30.54 C51.599 30.415 53.749 30.555 55.856 30.983 C57.272 31.271 58.032 32.828 57.386 34.122 C56.254 36.389 54.77 38.458 53.013 40.288 C54.533 41.107 55.879 42.1 56.963 43.304 C57.703 44.126 57.718 45.369 56.998 46.208 C51.59 52.518 39.722 53.456 32 53.456 C24.278 53.456 12.41 52.518 7.002 46.208 C6.282 45.369 6.297 44.126 7.037 43.304 C8.093 42.131 9.418 41.13 10.985 40.285 C9.229 38.456 7.745 36.389 6.614 34.122 C5.968 32.828 6.728 31.271 8.144 30.983 C10.251 30.555 12.401 30.415 14.546 30.54 C13.501 27.509 12.914 24.354 12.851 21.181 C12.548 20.924 12.308 20.571 12.177 20.122 L11.635 18.269 L9.782 17.727 C7.683 17.113 7.683 14.119 9.782 13.505 L11.635 12.963 L12.177 11.11 C12.791 9.011 15.785 9.011 16.399 11.11 L16.941 12.963 L18.794 13.505 C20.893 14.119 20.893 17.113 18.794 17.727 L18.788 17.729 C20.696 18.657 22.501 19.793 24.181 21.108 C25.279 16.343 27.305 11.86 30.254 8.013 C31.134 6.866 32.866 6.866 33.746 8.013 C36.695 11.86 38.721 16.343 39.819 21.108 C42.336 19.138 45.134 17.568 48.14 16.502 C48.38 16.416 48.623 16.376 48.861 16.374 C48.587 16.122 48.371 15.787 48.248 15.369 L47.853 14.019 L46.503 13.624 C44.403 13.01 44.403 10.014 46.503 9.4 L47.853 9.005 Z" fill="#0a1118"/>
+      <path id="light" d="M5 30.52 C5 15.607 17.087 3.52 32 3.52 C46.913 3.52 59 15.607 59 30.52 C59 45.433 46.913 57.52 32 57.52 C17.087 57.52 5 45.433 5 30.52 Z" fill="url(#radial-gradient-1)"/>
+      <path id="pad" d="M8.672 44.776 C12.56 40.456 21.2 38.728 32 38.728 C42.8 38.728 51.44 40.456 55.328 44.776 C51.44 49.312 42.8 51.256 32 51.256 C21.2 51.256 12.56 49.312 8.672 44.776 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.3" stroke-linejoin="round"/>
+      <path id="petal_0" d="M8.582 33.139 C14.504 31.937 20.808 33.233 26.2 36.396 C30.013 38.79 31.975 42.059 32 44.56 C30.014 46.081 26.23 46.547 21.996 45.016 C16.183 42.714 11.281 38.545 8.582 33.139 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.2" stroke-linejoin="round"/>
+      <path id="petal_1" d="M55.418 33.139 C52.719 38.545 47.817 42.714 42.004 45.016 C37.77 46.547 33.986 46.081 32 44.56 C32.025 42.059 33.987 38.79 37.8 36.396 C43.192 33.233 49.496 31.937 55.418 33.139 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="1.2" stroke-linejoin="round"/>
+      <path id="petal_2" d="M15.125 18.575 C21.898 20.977 27.529 26.159 31.088 32.686 C33.509 37.461 33.507 41.995 32 44.56 C29.044 44.894 24.901 43.051 21.524 38.898 C17.007 32.991 14.564 25.739 15.125 18.575 Z" fill="url(#linear-gradient-4)" stroke="#0a1118" stroke-width="1.2" stroke-linejoin="round"/>
+      <path id="petal_3" d="M48.875 18.575 C49.436 25.739 46.993 32.991 42.476 38.898 C39.099 43.051 34.956 44.894 32 44.56 C30.493 41.995 30.491 37.461 32.912 32.686 C36.471 26.159 42.102 20.977 48.875 18.575 Z" fill="url(#linear-gradient-5)" stroke="#0a1118" stroke-width="1.2" stroke-linejoin="round"/>
+      <path id="petal_4" d="M32 9.352 C36.968 15.832 39.128 24.256 38.48 32.68 C37.832 38.728 35.024 43.048 32 44.56 C28.976 43.048 26.168 38.728 25.52 32.68 C24.872 24.256 27.032 15.832 32 9.352 Z" fill="url(#linear-gradient-6)" stroke="#0a1118" stroke-width="1.2" stroke-linejoin="round"/>
+      <path id="petal_vein" d="M32 14.32 C33.728 20.8 34.16 27.28 33.512 34.84" fill="none" stroke="#ffffff" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+      <ellipse id="heart_glow" cx="32" cy="41.752" rx="7.128" ry="3.672" fill="url(#radial-gradient-2)"/>
+      <polygon id="sparkle_0" points="14.288,11.728 15.168,14.736 18.176,15.616 15.168,16.496 14.288,19.504 13.408,16.496 10.4,15.616 13.408,14.736" fill="url(#linear-gradient-7)" stroke="#0a1118" stroke-width="0.8" stroke-linejoin="round"/>
+      <polygon id="sparkle_1" points="50.36,8.272 51.093,10.779 53.6,11.512 51.093,12.245 50.36,14.752 49.627,12.245 47.12,11.512 49.627,10.779" fill="url(#linear-gradient-8)" stroke="#0a1118" stroke-width="0.8" stroke-linejoin="round"/>
+      <polygon id="sparkle_2" points="52.952,22.528 53.392,24.032 54.896,24.472 53.392,24.912 52.952,26.416 52.512,24.912 51.008,24.472 52.512,24.032" fill="url(#linear-gradient-9)" stroke="#0a1118" stroke-width="0.8" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

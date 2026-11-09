@@ -1,6 +1,6 @@
 {
   "format": "vana-ui-production-v2",
-  "asset_count": 1227,
+  "asset_count": 1257,
   "reference": "User-approved ornate dark bronze/charcoal UI design",
   "scale": "SVG 1x coordinate system; PNG exports 2x",
   "items": [
@@ -12199,6 +12199,726 @@
         "rect": [
           1368,
           1640,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s490",
+      "svg": "svg/status/s490.svg",
+      "png": "png/status/s490.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          1504,
+          1640,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s491",
+      "svg": "svg/status/s491.svg",
+      "png": "png/status/s491.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          1640,
+          1640,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s492",
+      "svg": "svg/status/s492.svg",
+      "png": "png/status/s492.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          1776,
+          1640,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s493",
+      "svg": "svg/status/s493.svg",
+      "png": "png/status/s493.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          1912,
+          1640,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s494",
+      "svg": "svg/status/s494.svg",
+      "png": "png/status/s494.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          2048,
+          1640,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s496",
+      "svg": "svg/status/s496.svg",
+      "png": "png/status/s496.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          8,
+          1776,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s497",
+      "svg": "svg/status/s497.svg",
+      "png": "png/status/s497.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          144,
+          1776,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s498",
+      "svg": "svg/status/s498.svg",
+      "png": "png/status/s498.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          280,
+          1776,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s499",
+      "svg": "svg/status/s499.svg",
+      "png": "png/status/s499.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          416,
+          1776,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s500",
+      "svg": "svg/status/s500.svg",
+      "png": "png/status/s500.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          552,
+          1776,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s501",
+      "svg": "svg/status/s501.svg",
+      "png": "png/status/s501.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          688,
+          1776,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s502",
+      "svg": "svg/status/s502.svg",
+      "png": "png/status/s502.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          824,
+          1776,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s503",
+      "svg": "svg/status/s503.svg",
+      "png": "png/status/s503.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          960,
+          1776,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s504",
+      "svg": "svg/status/s504.svg",
+      "png": "png/status/s504.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          1096,
+          1776,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s505",
+      "svg": "svg/status/s505.svg",
+      "png": "png/status/s505.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          1232,
+          1776,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s506",
+      "svg": "svg/status/s506.svg",
+      "png": "png/status/s506.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          1368,
+          1776,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s507",
+      "svg": "svg/status/s507.svg",
+      "png": "png/status/s507.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          1504,
+          1776,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s508",
+      "svg": "svg/status/s508.svg",
+      "png": "png/status/s508.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          1640,
+          1776,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s509",
+      "svg": "svg/status/s509.svg",
+      "png": "png/status/s509.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          1776,
+          1776,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s510",
+      "svg": "svg/status/s510.svg",
+      "png": "png/status/s510.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          1912,
+          1776,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s511",
+      "svg": "svg/status/s511.svg",
+      "png": "png/status/s511.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          2048,
+          1776,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s513",
+      "svg": "svg/status/s513.svg",
+      "png": "png/status/s513.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          8,
+          1912,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s577",
+      "svg": "svg/status/s577.svg",
+      "png": "png/status/s577.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          144,
+          1912,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s581",
+      "svg": "svg/status/s581.svg",
+      "png": "png/status/s581.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          280,
+          1912,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s602",
+      "svg": "svg/status/s602.svg",
+      "png": "png/status/s602.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          416,
+          1912,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s603",
+      "svg": "svg/status/s603.svg",
+      "png": "png/status/s603.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          552,
+          1912,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s604",
+      "svg": "svg/status/s604.svg",
+      "png": "png/status/s604.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          688,
+          1912,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s618",
+      "svg": "svg/status/s618.svg",
+      "png": "png/status/s618.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          824,
+          1912,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s625",
+      "svg": "svg/status/s625.svg",
+      "png": "png/status/s625.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          960,
+          1912,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "status/s634",
+      "svg": "svg/status/s634.svg",
+      "png": "png/status/s634.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/status_0@2x.png",
+        "rect": [
+          1096,
+          1912,
           128,
           128
         ]
