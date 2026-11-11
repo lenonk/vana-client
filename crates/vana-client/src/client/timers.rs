@@ -885,8 +885,7 @@ fn recast_rows(w: &World, t: &mut Timers, now: Instant, seen: &mut HashSet<(u8, 
     rows
 }
 
-/// Our own effects with 0x063 end times, in 0x037's order (as the status icons), named by what we cast when it was
-/// ours.
+/// Our own effects with 0x063 end times, shortest first (as the others' rows), named by what we cast when it was ours.
 fn own_rows(w: &World, gu: &GameUi, t: &mut Timers, seen: &mut HashSet<(u8, u32)>) -> Vec<Row> {
     let small = w.game.get(0x99) & 4 != 0;
     let now60 = w.clock.map_or(0.0, |(c, at)| (c as f64 + at.elapsed().as_secs_f64()) * 60.0) as u64 as u32;
@@ -914,6 +913,7 @@ fn own_rows(w: &World, gu: &GameUi, t: &mut Timers, seen: &mut HashSet<(u8, u32)
         let name = name.unwrap_or_else(|| w.battle.as_ref().map(|b| b.status_title(id)).unwrap_or_default());
         rows.push(Row { icon: Icon::Status(id), name, left, total, fills: false });
     }
+    rows.sort_by(|a, b| a.left.total_cmp(&b.left));
     rows
 }
 
