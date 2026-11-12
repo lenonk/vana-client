@@ -66,7 +66,7 @@ function M.follow(e, id, colour, dim, look)
     M.start(e.x, e.y, s, act, label)
     set(id, { colour = dim })
   elseif e.kind == "drag" then
-    -- Over one of our windows (drawn over the HUD) it hides: the window draws its own copy.
+    -- Over one of our windows (drawn over the HUD) it hides: the window draws its copy.
     if e.window then
       M.move(-10000, -10000)
     else

@@ -375,7 +375,7 @@ fn apply(e: &mut Elem, t: &Table) -> mlua::Result<()> {
                     "game" => Some(HudFace::Game),
                     "regular" => Some(HudFace::Regular),
                     "bold" => Some(HudFace::Bold),
-                    // Any other name follows the UI's own face.
+                    // Any other name follows the UI's face.
                     _ => None,
                 };
             }
@@ -739,7 +739,7 @@ pub(super) fn install(lua: &Lua, g: &Table, vm: &super::vm::Vm) -> mlua::Result<
                 .iter_mut()
                 .find(|x| x.id == id)
                 .ok_or_else(|| mlua::Error::runtime(format!("no HUD element {id:?}")))?;
-            // A new picture: its own size unless the fields give one.
+            // A new picture: its size unless the fields give one.
             if let Some((k, i)) = png {
                 let Kind::Image { key, img, w, h, .. } = &mut e.kind else {
                     return Err(mlua::Error::runtime("path is an image's field"));

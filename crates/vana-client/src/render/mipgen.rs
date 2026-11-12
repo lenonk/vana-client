@@ -1,4 +1,4 @@
-//! Mip chains made on the GPU. Level 0 is uploaded as the file's own blocks (BC1 / BC2) or RGBA; compute passes
+//! Mip chains made on the GPU. Level 0 is uploaded as the file's blocks (BC1 / BC2) or RGBA; compute passes
 //! box-filter each lower level in linear light, keep the alpha-tested coverage of level 0 (alpha scaled per level,
 //! the smallest scale reaching level 0's share of texels over the 0.3 cut-off) and BC-encode the levels of BC
 //! textures (bounding box inset by 1/16, nearest palette entry), then copy them in. Jobs run under a texel budget a

@@ -453,7 +453,7 @@ impl Smaa {
     }
 
     /// Anti-aliases `scene` (`size`, in `format`) into the output texture, which it returns. Edges are found on the
-    /// gamma-space values (a plain view); the blend reads and writes through the scene format's own views, as the
+    /// gamma-space values (a plain view); the blend reads and writes through the scene format's views, as the
     /// reference does with sRGB views. The bind groups are remade when `size` or the scene texture changes.
     pub fn run(
         &mut self,

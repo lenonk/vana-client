@@ -1,9 +1,9 @@
-//! Ours (user, 2026-10-27; reworked for issue #75): the next rest tick. The server heals a resting character on its own
+//! Ours (user, 2026-10-27; reworked for issue #75): the next rest tick. The server heals a resting character on its
 //! clock, which no packet tells. A model is learnt per server (config rest_models, by the search address) from every
 //! rest seen and kept moving: the first heal after the rest's start, the interval after each heal (the last one stands
 //! for every later one, so a server whose ticks quicken to a floor is followed), and the period of the server's looks
 //! (LSB heals every 10 s but looks at effects every 3 s, so its ticks land 9, 9, 12 s apart). Each rise in HP or MP
-//! re-anchors the rest's ticks, and one the model can't place starts the anchoring over from it. A stat's own ticks
+//! re-anchors the rest's ticks, and one the model can't place starts the anchoring over from it. A stat's ticks
 //! (Regen, Refresh: from spells, gear, food or songs, no icon needed) are told apart by their repeats. The party window
 //! shows how near the next tick is.
 
@@ -30,7 +30,7 @@ impl Model {
     }
 
     /// Every interval as used (whole seconds when near one: servers count in seconds, networks jitter): one interval,
-    /// their mean, when they are steady (their spread the looks' doing), else each its own.
+    /// their mean, when they are steady (their spread the looks' doing), else each one's.
     fn resolved(&self) -> Vec<f32> {
         if steady(&self.gaps, self.period) {
             let mean = self.gaps.iter().sum::<f32>() / self.gaps.len().max(1) as f32;
@@ -125,7 +125,7 @@ pub enum Shown {
 const SAME: f32 = 2.0;
 /// A rest tick's interval lies here.
 const INTERVAL: (f32, f32) = (2.5, 60.0);
-/// A stat's own ticks repeat its amount this far apart (a look or two: LSB and retail apply them at every 3 s look).
+/// A stat's ticks repeat its amount this far apart (a look or two: LSB and retail apply them at every 3 s look).
 /// A rest tick on the same look adds to it; rest heals grow each tick, so two in a row never match.
 const OWN_GAP: (f32, f32) = (2.0, 7.0);
 /// A rise waits this long before it counts as a tick: an own tick's twin a look later shows what it was.
@@ -135,7 +135,7 @@ fn secs(from: Instant, to: Instant) -> f32 {
     to.saturating_duration_since(from).as_secs_f32()
 }
 
-/// Per frame: a rest starts and ends with status 0x21; a rise in HP or MP during it, other than a stat's own tick,
+/// Per frame: a rest starts and ends with status 0x21; a rise in HP or MP during it, other than a stat's tick,
 /// is a tick.
 pub fn update(w: &mut World) {
     let v = w.vitals.unwrap_or_default();
@@ -198,7 +198,7 @@ impl RestTick {
         }
     }
 
-    /// Whether stat `s`'s rise of `a` is its own tick: the amount it rose by a look or two before (or less, filling it).
+    /// Whether stat `s`'s rise of `a` is its tick: the amount it rose by a look or two before (or less, filling it).
     /// The held amount this one twins was one too, and no longer counts.
     fn own_rise(&mut self, s: usize, now: Instant, a: u32, full: bool) -> bool {
         let like = |b: u32| a == b || (full && a < b);

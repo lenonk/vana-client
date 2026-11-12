@@ -304,7 +304,7 @@ impl Library {
         self.sprites.get_mut(&node)
     }
 
-    /// Loader-thread work: the meshes, sprites and textures the file's own generators name (op 1), so the first
+    /// Loader-thread work: the meshes, sprites and textures the file's generators name (op 1), so the first
     /// frame that emits them does not parse them.
     pub fn prewarm(&mut self, keys: &zone::Keys) {
         let wanted: Vec<(usize, u8, u32)> =
@@ -428,7 +428,7 @@ impl Library {
         sub.into_iter().find(|&i| self.tree.nodes[i].kind == kind && self.tree.nodes[i].name == name)
     }
 
-    /// The whole file from its root (how DAT 0 is searched once a file's own scope runs out).
+    /// The whole file from its root (how DAT 0 is searched once a file's scope runs out).
     pub fn find_global(&self, kind: u8, name: u32) -> Option<usize> {
         let n = fourcc_u32(name);
         self.tree.nodes.iter().position(|x| x.kind == kind && (name == 0 || x.name == n))

@@ -1,5 +1,5 @@
 -- Totals of the worn gear's stats (checkparam and kin), read from each item's description and augments as the item
--- window shows them. Conditional lines are left out; DMG and Delay are a weapon's own, not summed.
+-- window shows them. Conditional lines are left out; DMG and Delay are a weapon's, not summed.
 
 local WIN = "gearstats"
 local SLOTS = { "Main", "Sub", "Range", "Ammo", "Head", "Body", "Hands", "Legs", "Feet", "Neck", "Waist", "Ear", "Ear",

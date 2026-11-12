@@ -406,7 +406,7 @@ pub fn parse_mesh(name: &str, d: &[u8]) -> Result<Vec<MeshPart>> {
 
 /// Poly stream of u16-tagged records: 0x8010 material (46 B, light factor f32 @18), 0x8000 texture name (18 B),
 /// "ST" strip, "T\0" list; colour-only "SC" strip (3 idx, u32 colour, n-1 idx) and "C\0" list are
-/// skipped; 0xFFFF ends it. Corners carry their own UV.
+/// skipped; 0xFFFF ends it. Corners carry their UV.
 fn parse_polys(name: &str, p: &[u8]) -> Result<Vec<Group>> {
     let corner = |o: usize| Corner { vertex: u16_at(p, o), uv: [f32_at(p, o + 2), f32_at(p, o + 6)] };
     let tri = |o: usize| -> [Corner; 3] {
@@ -580,7 +580,7 @@ pub fn root_turn(t: Vec3) -> Vec3 {
 }
 
 /// A posed bone: model-space rotation and translation, and the scale accumulated down the chain, which its
-/// vertices and points take in the bone's own frame (FUN_100339b0 pass 2).
+/// vertices and points take in the bone's frame (FUN_100339b0 pass 2).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BoneXf {
     pub q: Quat,
@@ -645,7 +645,7 @@ pub fn pose_held(skel: &Skeleton, anims: &[(&Animation, f32)], grips: &[(u16, u1
         held[i] = held[parent] || grips.iter().any(|&(c, _)| c == parent);
         world.push(if held[i] { BoneXf::IDENTITY } else { chain(&world, i) });
     }
-    // Pass 1: the carry bone on the grip (its own scale kept), then its subtree in order.
+    // Pass 1: the carry bone on the grip (its scale kept), then its subtree in order.
     for &(c, g) in &grips {
         world[c] = BoneXf { q: world[g].q, t: world[g].t, s: world[c].s };
     }

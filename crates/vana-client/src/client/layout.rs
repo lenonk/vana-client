@@ -1010,7 +1010,7 @@ pub(super) fn set_row(w: &mut World, k: usize) -> bool {
 }
 
 /// The mouse (winhits.rs): an rmlo window or bankmenu as the generic window; the furniture list's rows as the item
-/// list (hover moves the row, a click on it is Enter, a right click Escape). The dressing windows have their own.
+/// list (hover moves the row, a click on it is Enter, a right click Escape). The dressing windows have theirs.
 pub fn pointer(
     w: &mut World,
     gu: &super::game_ui::GameUi,
@@ -1183,7 +1183,7 @@ fn cell_outline(out: &mut Vec<crate::render::LineVertex>, grid: &Grid, floor: u8
 }
 
 /// The overlay while a piece is held (FUN_101cf110, drawn with ZENABLE off): a wall piece shows every wall slot blue
-/// and its own red-pink; a floor piece the free floor cells blue, for a stackable one the free tops green, and its
+/// and its red-pink; a floor piece the free floor cells blue, for a stackable one the free tops green, and its
 /// footprint red-pink where it fits (on the floor, or on a top) or grey.
 pub fn overlay(w: &World) -> Vec<crate::render::LineVertex> {
     let mut out = Vec::new();

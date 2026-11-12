@@ -2,9 +2,9 @@
 
 The `ui.skin` namespace changes how the modern UI looks: its sprites (bars, icons, job icons, buttons, list rows,
 markers ...), its palette colours and its window frames. Every built-in panel draws with them, so a skin changes the
-whole interface at once, and your mod's own windows (which use the same kit) change with it. Changes last while your
+whole interface at once, and your mod's windows (which use the same kit) change with it. Changes last while your
 mod is loaded; when it unloads, the interface looks as it did. If two mods change the same thing, the last call wins,
-and a mod giving a thing back only takes away its own change.
+and a mod giving a thing back only takes away its change.
 
 Every function that changes something needs the `ui.native` permission. To move, scale, fade or hide the built-in
 panels instead, see [ui.native](ui.native.md#modern-panels).
@@ -37,7 +37,7 @@ ui.skin.sprite(name, path)
 
 Replaces one of the modern UI's sprites with a PNG from your mod's folder. The sprite keeps its size on screen and its
 nine-slice insets (the borders of a sprite that stretches, such as a bar or a row), so the PNG only has to be drawn at
-the sprite's proportions: `ui.skin.list().sprites[name]` gives its size in logical pixels, and the pack's own art is
+the sprite's proportions: `ui.skin.list().sprites[name]` gives its size in logical pixels, and the pack's art is
 twice that. A bar is drawn as two sprites, `gauges/<kind>_empty` and `gauges/<kind>_full` (the full one cut at the
 bar's value).
 
@@ -59,7 +59,7 @@ bar's value).
 **Example**
 
 ```lua
--- Your own job icons.
+-- Your job icons.
 for _, job in ipairs({"war", "mnk", "whm", "blm", "rdm", "thf"}) do
   ui.skin.sprite("jobs/" .. job, "jobs/" .. job .. ".png")
 end
@@ -109,7 +109,7 @@ out stays the pack's.
 The border PNG is laid out as the pack's: a square that stands for the frame's `size` (`ui.skin.list().frames`), whose
 corners (`corner` logical pixels square) are drawn as they are, and whose middle strips between them are tiled along
 the edges. Leave its inside transparent: the gradient shows through it. Frames apply in the pack's border style
-(Settings > Interface); the other border styles draw their own lines.
+(Settings > Interface); the other border styles draw their lines.
 
 **Parameters**
 

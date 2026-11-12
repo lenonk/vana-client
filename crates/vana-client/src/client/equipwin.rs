@@ -719,7 +719,7 @@ pub(super) const MODERN_ROWS: usize = 12;
 /// The bags searched, in this order: the inventory and the wardrobes, the satchel, sack and case, the moogle's.
 const ALL_BAGS: [u8; 16] = [0, 8, 10, 11, 12, 13, 14, 15, 16, 5, 6, 7, 1, 2, 4, 9];
 
-/// In our own Mog House with its moogle (FUN_101dae10's rule for the Safe, Storage, Locker and Safe 2).
+/// In our Mog House with its moogle (FUN_101dae10's rule for the Safe, Storage, Locker and Safe 2).
 fn at_moogle(w: &World) -> bool {
     w.myroom.is_some() && w.zone.is_some_and(super::items::moogle_zone) && w.mh_owner == 0
 }

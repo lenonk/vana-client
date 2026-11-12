@@ -1848,7 +1848,7 @@ forms = [
       { name = "slot", type = "enum", options = ["head", "body", "hands", "legs", "feet", "main", "sub", "range"] },
       { name = "item", type = "item", also = ["none", "own"] } ] },
   { args = "copy [name]", help = "Copies a player's look (your target's)." },
-  { args = "reset", help = "Your own look back." },
+  { args = "reset", help = "Your look back." },
 ]
 "#;
     let info: LuaInfo = toml::from_str(toml).unwrap_or_default();

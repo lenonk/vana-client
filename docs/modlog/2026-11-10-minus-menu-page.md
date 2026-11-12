@@ -4,7 +4,7 @@ Issue lenonk/vana-client#171. Bindings read from Steven's FFXiMain.dll (30261102
 
 - On retail '-' opens the main menu on the page it was closed on and, pressed again with the menu up, turns to the
   other page and back; it never closes the menu (the issue's report of retail). Each page comes back on the row it
-  last had, as its own window's cursor *(inf: the two pages are two windows, each with its own cursor memory, as
+  last had, as its window's cursor *(inf: the two pages are two windows, each with its cursor memory, as
   `menu_mem` already models)*. The modern Command Menu has one page: there '-' still closes it (ours).
 - Key function 0x18 (context mask 0x0004): slot 0 = 0x100c (flag 0x10: Ctrl or Alt held, not in Key Assignment;
   DIK 0x0c, the main row's '-'), slot 1 = 0x804a (flag 0x80: no Ctrl / Alt; DIK 0x4a, the numpad's '-'). Slot 0 is

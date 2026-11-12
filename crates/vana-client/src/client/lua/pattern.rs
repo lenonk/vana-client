@@ -30,7 +30,7 @@ struct State<'a> {
     deadline: Option<Instant>,
 }
 
-/// How a call fails: our own error (raised at the caller's line, as luaL_error), a bad argument (luaL_argerror: it
+/// How a call fails: our error (raised at the caller's line, as luaL_error), a bad argument (luaL_argerror: it
 /// names the function as called), or one passed on as it came (a replacement function's error, memory).
 enum Fail {
     Raise(String),
@@ -76,7 +76,7 @@ impl<'a> State<'a> {
         self.charge(1)
     }
 
-    /// `n` units of work; past the deadline the call stops as the VM's own hook would stop it.
+    /// `n` units of work; past the deadline the call stops as the VM's hook would stop it.
     fn charge(&mut self, n: usize) -> R<()> {
         self.work += n;
         if self.work >= CHECK_EVERY {
@@ -685,7 +685,7 @@ fn gsub(lua: &Lua, a: &Args) -> R<(Value, i64)> {
     let anchor = p.first() == Some(&b'^');
     let p = if anchor { &p[1..] } else { p };
     let mut ms = State::new(s, p, deadline(lua));
-    // Lua's own buffer counts against the mod's memory limit; ours is Rust's, so it is held to what is left of it.
+    // Lua's buffer counts against the mod's memory limit; ours is Rust's, so it is held to what is left of it.
     let mut out = Out { buf: Vec::new(), cap: super::vm::MEMORY.saturating_sub(lua.used_memory()) };
     let (mut at, mut last, mut n, mut changed) = (0usize, None::<usize>, 0i64, false);
     while n < max_s {
@@ -789,7 +789,7 @@ fn add_value(lua: &Lua, ms: &mut State, out: &mut Out, s: usize, e: usize, repl:
 mod tests {
     use mlua::{Lua, Value};
 
-    /// The same calls through Lua's own string library and through ours give the same results and the same errors.
+    /// The same calls through Lua's string library and through ours give the same results and the same errors.
     #[test]
     fn same_as_lua() {
         let ours = Lua::new();
@@ -1000,7 +1000,7 @@ mod tests {
         }
     }
 
-    /// The message of Lua's own error, without its position (and inside a "bad argument" its reason).
+    /// The message of Lua's error, without its position (and inside a "bad argument" its reason).
     fn core(e: &str) -> String {
         let first = e.lines().next().unwrap_or("");
         let msg = first.split_once("case:1: ").map_or(first, |x| x.1);

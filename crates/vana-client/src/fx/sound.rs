@@ -342,7 +342,7 @@ mod tests {
         assert!(sea.is_some_and(|(_, v)| (119..=121).contains(&v)), "{plays:?}");
     }
 
-    /// East Ronfaure (DAT 201): f_ro/effe/sep1 skw1..3 loop along their own Sph chains (op 0x6b names kaw1 / kaw2 /
+    /// East Ronfaure (DAT 201): f_ro/effe/sep1 skw1..3 loop along their Sph chains (op 0x6b names kaw1 / kaw2 /
     /// kaw3): in the gate stream (kaw3) only se 2028 plays, at full volume; on the east river (kaw2) only se 2004.
     #[test]
     fn stream_chains() {

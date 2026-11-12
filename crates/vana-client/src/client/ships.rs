@@ -1,5 +1,5 @@
 //! Ships (0x00E SubKind 4 -> actor kind 5, the XiModelActor; MODLOG "Ship actors"): the boats
-//! and airships seen from the docks, the overhead airships, the pirate ship. One MMB from the ship's own DAT, placed
+//! and airships seen from the docks, the overhead airships, the pirate ship. One MMB from the ship's DAT, placed
 //! where the server first put it and then moved only by that file's sequences: states 0x12..0x19 play `seq0`..`seq7`
 //! (DAT_1032d42c) from the server's stamp, caught up when more than 10 s late (FUN_10097a80 / FUN_100c4730).
 

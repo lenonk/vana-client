@@ -4,7 +4,7 @@ The tables the API hands to mods, or takes from them, that more than one functio
 
 ## Player
 
-Your own character, as `game.player()` returns it. Fields that need data from the server are nil until it has arrived.
+Your character, as `game.player()` returns it. Fields that need data from the server are nil until it has arrived.
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -45,7 +45,7 @@ end
 
 ## Entity
 
-A character, NPC or monster in the zone, from `game.entity`, `game.entities`, `game.target` and `game.entity_by_tag`. Your own character is an Entity too (with `me = true`); a few fields differ for it, as noted.
+A character, NPC or monster in the zone, from `game.entity`, `game.entities`, `game.target` and `game.entity_by_tag`. Your character is an Entity too (with `me = true`); a few fields differ for it, as noted.
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -66,10 +66,10 @@ A character, NPC or monster in the zone, from `game.entity`, `game.entities`, `g
 | `master` | `integer` | For a pet or trust, its master's index; 0 for none. |
 | `trust` | `boolean` | It is a trust (an alter ego called into a party). |
 | `radar` | `integer?` | The compass radar's colour for it (`0xRRGGBB`; monsters included), nil while the radar does not show it. The minimap's dots. |
-| `me` | `boolean?` | true for your own character; nil for everyone else. |
+| `me` | `boolean?` | true for your character; nil for everyone else. |
 | `race` | `integer?` | Its race number; nil when unknown. |
-| `model` | `integer?` | The model id of an NPC or monster; 0 for one drawn from a look. nil for your own entity. |
-| `look` | `table?` | A character-style look: the model ids `{face, head, body, hands, legs, feet, main, sub, range}` (all integers). nil when it has none; your own is the look your model was built from (before any `render.look`). With `race` added, it is what `res.model_files` takes. |
+| `model` | `integer?` | The model id of an NPC or monster; 0 for one drawn from a look. nil for your entity. |
+| `look` | `table?` | A character-style look: the model ids `{face, head, body, hands, legs, feet, main, sub, range}` (all integers). nil when it has none; yours is the look your model was built from (before any `render.look`). With `race` added, it is what `res.model_files` takes. |
 | `in_party` | `boolean` | It is in your party. true for yourself. |
 | `in_alliance` | `boolean` | It is in your party or alliance. true for yourself. |
 | `hitbox` | `number` | Its model radius as the server gives it, in yalms. |
@@ -78,7 +78,7 @@ A character, NPC or monster in the zone, from `game.entity`, `game.entities`, `g
 | `walks` | `boolean` | Its model can walk: a person's look, or a model with a walk or run motion (a moogle, a monster). False for an object, even one with a skeleton (a survival guide's book has 36 bones), for a model-less entity (a ??? point, a door), and until its model is loaded. |
 | `target_index` | `integer?` | The index of what it is targeting (for yourself: your target's index); nil when none. |
 | `target_id` | `integer?` | That target's server id, when it is known; nil otherwise. |
-| `pet` | `boolean?` | true for your own pet; nil for anything else. |
+| `pet` | `boolean?` | true for your pet; nil for anything else. |
 | `mpp` | `integer?` | Your pet only: its MP percent. |
 | `tp` | `integer?` | Your pet only: its TP. |
 | `pet_target` | `integer?` | Your pet only: the server id of what it fights, when it has a target. |
@@ -115,7 +115,7 @@ A party or alliance member, from `game.party()`. Members in another zone are lis
 | `sub_level` | `integer` | Support job level. |
 | `leader` | `boolean` | The member leads its party. |
 | `alliance_leader` | `boolean` | The member leads the alliance. |
-| `buffs` | `integer[]` | The status effect ids the server sent for the member (use `game.buffs()` for your own). |
+| `buffs` | `integer[]` | The status effect ids the server sent for the member (use `game.buffs()` for yours). |
 | `hp_max` | `integer?` | The max HP the party window goes by: yours from your stats, a member's as last seen at 100 % HP (HP / HP % when that no longer fits). nil when not known. |
 
 ```lua
@@ -195,7 +195,7 @@ The definition of a mod window, the second argument of `ui.window(id, spec)`. Th
 | --- | --- | --- |
 | `title` | `string?` | The window's title. Default `""`. |
 | `width` | `number?` | The window's width: points in the modern UI, the menu layout's pixels in the classic UI. None or 0: the default width (366 in the classic UI). |
-| `help` | `string?` | The help line shown while the element under the cursor has no `tip` of its own. |
+| `help` | `string?` | The help line shown while the element under the cursor has no `tip`. |
 | `hud` | `boolean?` | true: the window never takes the keys (a click on it still acts). Default false. |
 | `frame` | `boolean?` | false: drawn without a frame. Default true. |
 | `x` | `number?` | The window's left edge in the classic UI. Used only together with `y`. |

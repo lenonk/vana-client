@@ -46,7 +46,7 @@ fn line(m: &Modern, frame: &str) -> Color32 {
     }
 }
 
-/// The accent drawn on the line (the Gilt rules, the corner marks): gold, or the frame's own colour when it has one.
+/// The accent drawn on the line (the Gilt rules, the corner marks): gold, or the frame's colour when it has one.
 fn accent(m: &Modern, frame: &str) -> Color32 {
     match frame {
         "window_focused" | "window_alert" => line(m, frame),
@@ -173,7 +173,7 @@ pub fn window(m: &Modern, frame: &str, r: Rect) -> Shape {
 }
 
 /// An edge window's frame in the current style: `ext` runs past the screen's edge on the anchored side, whose corners
-/// `round` leaves square. None in the pack style (the edge windows draw their own there).
+/// `round` leaves square. None in the pack style (the edge windows draw theirs there).
 pub fn edge(m: &Modern, ext: Rect, round: CornerRadius) -> Option<Shape> {
     let style = m.border_style.get();
     (style != Style::Pack).then(|| Shape::Vec(shapes(m, "window_normal", ext, round, style)))

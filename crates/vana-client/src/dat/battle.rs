@@ -48,7 +48,7 @@ pub struct Who {
     pub named: bool,
     /// u32 @0x24 bit 30 (FUN_10089320): plural verb forms.
     pub plural: bool,
-    /// 0x00D u32 @0x20 bit 15 clear (our own: the race): [his/her] (7f 90 / 91).
+    /// 0x00D u32 @0x20 bit 15 clear (ours: the race): [his/her] (7f 90 / 91).
     pub female: bool,
     /// Ours (the mods' battle filters, filters.battle): the name drawn in this `1e` colour code, 0 none.
     pub colour: u8,
@@ -62,7 +62,7 @@ impl Who {
     }
 }
 
-/// What the codes read: the two actors, our own name and work[5] (message object +0xc50).
+/// What the codes read: the two actors, our name and work[5] (message object +0xc50).
 #[derive(Clone, Debug, Default)]
 pub struct Ctx {
     pub actor: Option<Who>,
@@ -565,7 +565,7 @@ impl BattleText {
                                 out.extend([0x1e, 1]);
                             }
                         }
-                        // 0x36 / 0x45 (FUN_100be760): a key item (num / work, num read as work here) with its own article,
+                        // 0x36 / 0x45 (FUN_100be760): a key item (num / work, num read as work here) with its article,
                         // "the" for key item types 0 / 1, else a / an / some by the entry's mode; named in `1e 03`.
                         Some(0x36 | 0x45) => {
                             use super::names::NameSource;

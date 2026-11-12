@@ -43,7 +43,7 @@ pub fn synced(w: &World) -> Option<&super::party::Member> {
     w.party.party().find(|m| m.flags & 0x100 != 0)
 }
 
-/// FUN_102048f0: a pending prompt of its own is dropped, the window closes, title slot 2 cleared.
+/// FUN_102048f0: its pending prompt is dropped, the window closes, title slot 2 cleared.
 pub fn close(w: &mut World) {
     if matches!(w.confirm, Some((super::Confirm::Sync { .. }, _))) {
         w.confirm = None;

@@ -95,7 +95,7 @@ end)
 | `"party"` | The party list and the alliance lists, with their members' status icons. |
 | `"alliance"` | The alliance lists only. |
 | `"target"` | The target window. |
-| `"buffs"` | Your own status icons. |
+| `"buffs"` | Your status icons. |
 | `"compass"` | The compass (in the modern UI, the location panel). |
 | `"minimap"` | The minimap. |
 | `"cast"` | The cast bar. |
@@ -138,10 +138,10 @@ the modern UI.
 | `"check"` | no | yes | A player's /check. |
 | `"timers"`, `"minimap"`, `"regime"` | yes | no | The edge windows: Timers, the minimap, the training regime window. |
 
-**Replacing a panel.** Hide it, then draw your own HUD elements with `anchor` set to its name: they stand where the
+**Replacing a panel.** Hide it, then draw your HUD elements with `anchor` set to its name: they stand where the
 panel was (its last rect). **Adding to a panel.** HUD elements draw under the panels, so an element anchored to a
 shown panel goes beside it (`{anchor = "target", y = -24}` above the target window), and follows it as the player
-moves it. The panel's own place is the player's
+moves it. The panel's place is the player's
 to set; `ui.native.place` overrides it while your mod runs.
 
 ## `ui.native.windows`
@@ -356,7 +356,7 @@ ui.native.hide(piece, hidden?)
 ```
 
 Hides one piece of the game's HUD (see [HUD pieces](#hud-pieces)), or in the modern UI a [panel](#modern-panels)
-by name, while your mod is loaded, for example to replace it with your own. It shows again when your mod unloads, or
+by name, while your mod is loaded, for example to replace it with yours. It shows again when your mod unloads, or
 when you call `ui.native.hide(piece, false)`. If several mods hide the same piece, it stays hidden until every one of
 them has shown it again. A piece and a panel of the same name are one: `"party"` (the piece) hides the alliance
 parties too, `"alliance1"` only that one.
@@ -422,7 +422,7 @@ end
 ui.native.slot(slot, value?)
 ```
 
-Puts your values in a slot of a built-in panel. The panel draws them as its own text, in both UIs, in its own font,
+Puts your values in a slot of a built-in panel. The panel draws them as its text, in both UIs, in its font,
 place and colours, so they look as the rest of it does. The value stays until you change it, empty it with `nil`, or
 your mod unloads. If two mods fill one slot, the last call wins; a mod's `nil` only empties a slot it filled.
 
@@ -431,7 +431,7 @@ your mod unloads. If two mods fill one slot, the last call wins; a mod's `nil` o
 | `"clock"` | `{earth, moon_name, moon, next_day, next_minutes}`, the table [`game.clock`](game.md#gameclock) returns | Beside the game's clock: Earth time, the moon's percent and the next day (the modern location panel puts it on one line, the moon's name in its tooltip). |
 | `"target_distance"` | `number`, in yalms | The target window: left of the HP gauge in the classic UI (targets with a gauge), beside the name in the modern one. Shown with one decimal. |
 | `"target_hpp"` | `number`, a percent | The classic target window's right edge, on the gauge's row, in the HP colour. The modern one always shows the percent. |
-| `"battle_rows"` | a list of up to 8 rows | The modern battle menu, above its commands, as the menu's own rows: the action's icon and name (or `label`), `reason` in its tooltip. The cursor rides them with the commands. Enter or a click picks the action through Magic or Abilities and its list, as the player would, and the target prompt starts on `target` (a party member's name) when given; a row with a `group` (spell ids) opens a submenu of them with Right or Enter. Each row: `{kind = "spell" or "ability", id, target, reason, label, group}` (`id` a spell id or a `res.ability` id). The [`suggestions`](events.md#suggestions) event's rows come in this shape. Not drawn in the classic UI. |
+| `"battle_rows"` | a list of up to 8 rows | The modern battle menu, above its commands, as the menu's rows: the action's icon and name (or `label`), `reason` in its tooltip. The cursor rides them with the commands. Enter or a click picks the action through Magic or Abilities and its list, as the player would, and the target prompt starts on `target` (a party member's name) when given; a row with a `group` (spell ids) opens a submenu of them with Right or Enter. Each row: `{kind = "spell" or "ability", id, target, reason, label, group}` (`id` a spell id or a `res.ability` id). The [`suggestions`](events.md#suggestions) event's rows come in this shape. Not drawn in the classic UI. |
 
 The target slots show on whatever is targeted, so set them as the target changes: every frame is simplest.
 
@@ -467,11 +467,11 @@ ui.native.place(panel, place?)
 ```
 
 Moves, scales or fades one of the modern UI's [panels](#modern-panels) while your mod is loaded. Given an `x` or a
-`y`, the panel stands there and the player's drag no longer moves it (its own place stays saved for when your mod
+`y`, the panel stands there and the player's drag no longer moves it (its place stays saved for when your mod
 gives it back). A `scale` grows or shrinks it about its `origin`, the corner that stays put; clicks and the wheel work
 on it at that size. A panel at the right or bottom of the screen grows best from its bottom right.
 `alpha` fades it (0 does not draw it at all). Call it again with other values to change them, and with `nil` to give
-the panel back. If two mods place one panel, the last call wins; a mod's `nil` only takes away its own place.
+the panel back. If two mods place one panel, the last call wins; a mod's `nil` only takes away its place.
 
 **Parameters**
 
@@ -484,8 +484,8 @@ the panel back. If two mods place one panel, the last call wins; a mod's `nil` o
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `x` | `number` | the panel's own | Its left edge in window pixels; negative counts from the right edge (`-400`: 400 pixels in from it). |
-| `y` | `number` | the panel's own | Its top edge in window pixels; negative counts from the bottom edge. |
+| `x` | `number` | the panel's | Its left edge in window pixels; negative counts from the right edge (`-400`: 400 pixels in from it). |
+| `y` | `number` | the panel's | Its top edge in window pixels; negative counts from the bottom edge. |
 | `scale` | `number` | `1` | Its size, 0.25 to 4. |
 | `origin` | `string` | `"top_left"` | The point it scales about: `"top_left"`, `"top_right"`, `"bottom_left"`, `"bottom_right"` or `"center"`. |
 | `alpha` | `number` | `1` | Its opacity, 0 to 1. |
@@ -504,7 +504,7 @@ the panel back. If two mods place one panel, the last call wins; a mod's `nil` o
 ```lua
 -- A bigger target window, a little see-through, growing up and left from where it stands.
 ui.native.place("target", {scale = 1.4, origin = "bottom_right", alpha = 0.85})
--- Or at a point of your own: 100 pixels in from the left, 200 down.
+-- Or at a point you choose: 100 pixels in from the left, 200 down.
 ui.native.place("target", {x = 100, y = 200, scale = 1.4})
 ```
 

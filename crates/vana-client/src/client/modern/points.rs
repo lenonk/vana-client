@@ -245,7 +245,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
 }
 
 /// ut_menu as a column, quest00 beside it (Unity Information's lines and chat setting, or the two weeks), quest01's
-/// ranking under its rows; the area list (row 3) is a panel of its own.
+/// ranking under its rows; the area list (row 3) is a separate panel.
 fn unity_panel(p: &mut Panels, w: &mut World) {
     let Some(gu) = p.gu else { return };
     let Some(v) = unity::look(w, gu) else { return };

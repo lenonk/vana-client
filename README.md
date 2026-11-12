@@ -38,7 +38,7 @@ Playable on a local LSB server. Working today:
 - Login, the lobby, character creation (with the original creator scenes), character select and the new-character
   openings
 - Zones with GPU skinning, compressed textures with mipmaps, lighting, sky, fog and weather, plus settings beyond
-  retail: lamps that give off light of their own, character shadows, ambient occlusion, colour grading and
+  retail: lamps that give off light, character shadows, ambient occlusion, colour grading and
   anti-aliasing
 - Players, NPCs and monsters with their motions, collision (characters, doors, lifts) and name plates with their
   icons (GM, bazaar, New Adventurer, mentor, linkshell and the rest)
@@ -144,7 +144,7 @@ This writes the username and a generated password to `account.json`.
 ## Configuration
 
 Settings are in `config.json` in the config folder: `~/.config/vana-client` on Linux, `%APPDATA%\vana-client` on
-Windows and `~/Library/Application Support/vana-client` on macOS. The client's own data (the game files by default,
+Windows and `~/Library/Application Support/vana-client` on macOS. The client's data (the game files by default,
 mods, `known_servers.json` and the log, `vana-client.log`, with the run before it as `vana-client.prev.log`) is in the
 data folder: `~/.local/share/vana-client` on Linux, and the same folder as the config on Windows and macOS. The file
 is created on first save, and most options can be changed from the in-game Config menus. The fields you may need to set by hand:
@@ -180,7 +180,7 @@ XInput layout:
 | Left stick / right stick | Move / camera (the camera's invert rows in Mouse/Cam. apply to the stick) |
 | LB / L1 | Autorun; in a window with tabs (modern), the previous tab |
 | RB / R1 | The software keyboard (with Config > Misc. 4 > Software Keyboard on); with the windows hidden, a screenshot; in a window with tabs (modern), the next tab |
-| LT / L2, RT / R2 | In the field: open or close the Ctrl / Alt macro palette (the other trigger swaps; held, it opens on its own); in it the d-pad picks the macro and the set, A runs it, B closes. In a window: held, the d-pad pages lists; both held, left / right switch the item bag. In a Geo- spell's target prompt: held, the d-pad moves the spot it lands on |
+| LT / L2, RT / R2 | In the field: open or close the Ctrl / Alt macro palette (the other trigger swaps; held, it opens by itself); in it the d-pad picks the macro and the set, A runs it, B closes. In a window: held, the d-pad pages lists; both held, left / right switch the item bag. In a Geo- spell's target prompt: held, the d-pad moves the spot it lands on |
 | L3 | Rest, or lock on with a target; on the map, back to where you were when it opened |
 | R3 | First / third person |
 | Back / Select | Hide or show the windows |
@@ -252,7 +252,7 @@ no code from the original client. To use it you need the game files from Square 
 
 vana-client is released under the [MIT License](LICENSE).
 
-Bundled third-party files keep their own licenses: the Fira Sans, Inter and JetBrains Mono fonts are under the SIL
+Bundled third-party files keep their licenses: the Fira Sans, Inter and JetBrains Mono fonts are under the SIL
 Open Font License (the texts are beside them in `crates/vana-client/assets/fonts`), and SMAA's area and search textures in
 `crates/vana-client/src/render/smaa` are under MIT (Jimenez et al., the text is beside them). The game's files are Square Enix's and are not
 covered by this license.

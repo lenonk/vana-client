@@ -30,7 +30,7 @@ const PAGE_W: f32 = 400.0;
 const ROW_H: f32 = 30.0;
 const LINE: f32 = 24.0;
 
-/// The page shows: Status open with none of its own windows over it.
+/// The page shows: Status open with none of its windows over it.
 fn shown(w: &World) -> bool {
     w.modern
         && w.status.is_some()

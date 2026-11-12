@@ -88,7 +88,7 @@ impl Overlays {
         };
         let _ = std::fs::create_dir_all(&self.cache);
         self.prune(id, &stem);
-        // A name of this writer's own: threads or clients building the same file never share one.
+        // A name of this writer's: threads or clients building the same file never share one.
         static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let tmp = self.cache.join(format!("{stem}.{}-{n}.tmp", std::process::id()));
@@ -134,7 +134,7 @@ struct Raw<'a> {
     key: (Vec<[u8; 4]>, [u8; 4], u8, Vec<u8>, usize),
 }
 
-/// Chunks with keys: the folder path, the 4cc, the kind, a texture's own name (D3s data + 1, 16 bytes: what the game
+/// Chunks with keys: the folder path, the 4cc, the kind, a texture's name (D3s data + 1, 16 bytes: what the game
 /// looks textures up by) and the n-th such chunk. None when it is not a well-formed chunk container.
 fn raw(b: &[u8]) -> Option<Vec<Raw<'_>>> {
     let (mut out, mut at, mut stack) = (Vec::new(), 0, Vec::new());
@@ -164,7 +164,7 @@ fn raw(b: &[u8]) -> Option<Vec<Raw<'_>>> {
 }
 
 /// A D3s chunk holds its image: a sane size and at least half a byte a pixel (DXT1's) after the 57-byte header. A
-/// broken one (a size field wrapped past 8 MB left an 80-byte stub in our own pack) is passed over, so the next mod's
+/// broken one (a size field wrapped past 8 MB left an 80-byte stub in our pack) is passed over, so the next mod's
 /// or the stock image stays.
 fn image_ok(chunk: &[u8]) -> bool {
     let p = chunk.get(16..).unwrap_or_default();
@@ -263,7 +263,7 @@ mod tests {
         assert!(merge(b"not a dat", &[high]).is_none());
     }
 
-    /// A mod's image too small for its own size is passed over: the next mod's (or stock) stays.
+    /// A mod's image too small for its size is passed over: the next mod's (or stock) stays.
     #[test]
     fn broken_image_skipped() {
         let tex = |n: u8, w: u32, h: u32, len: usize| {
@@ -281,7 +281,7 @@ mod tests {
         assert_eq!(merge(&stock, &[high]).unwrap(), stock);
     }
 
-    /// Two configs (other mods) and several threads resolving one id over one cache each read their own build whole.
+    /// Two configs (other mods) and several threads resolving one id over one cache each read their build whole.
     #[test]
     fn shared_cache_builds_stay_readable() {
         let dir = std::env::temp_dir().join(format!("vana-overlay-test-{}", std::process::id()));

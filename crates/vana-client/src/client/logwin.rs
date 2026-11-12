@@ -124,7 +124,7 @@ pub fn mode_bit(mode: u8) -> Option<u8> {
 }
 
 /// Window 2's place from window 1's frame (FUN_10161c70): 0xb4 1 above it (same x, its bottom on window 1's top),
-/// 2 to its right (bottoms aligned); `w` and `h` its own size.
+/// 2 to its right (bottoms aligned); `w` and `h` its size.
 pub fn second_rect(mode: u32, w1: [f32; 4], w: f32, h: f32) -> [f32; 4] {
     if mode == 2 { [w1[0] + w1[2], w1[1] + w1[3] - h, w, h] } else { [w1[0], w1[1] - h, w, h] }
 }
@@ -262,7 +262,7 @@ impl Spool {
     }
 }
 
-/// FUN_101626e0's state, shared by the retail log and the modern chat window (each counting the rows of its own
+/// FUN_101626e0's state, shared by the retail log and the modern chat window (each counting the rows of its
 /// wrapping): +0x34 open ticks, +0x3c slide counter (20 a line still to slide in), +0x48 its speed (1 / 20), the
 /// wrapped lines newer than the displayed one (+0x2c, the bottom row), +0x31 visible lines, +0x30 lines to draw, +0x2e
 /// the slide offset (16 a row), the frame height (6 + 16 a line) and its fade.
@@ -621,7 +621,7 @@ impl LogWin {
             return;
         }
         let limit = if filter == 8 { KEEP } else { 100 };
-        // The same tab, width and route: the new lines join and the edited ones wrap again, as the window's own rows
+        // The same tab, width and route: the new lines join and the edited ones wrap again, as the window's rows
         // do (a new line rebuilt the tab from the history's end, the whole history for a quiet channel).
         let old = self.tab.key;
         let edited = match old.2 == key.2 {
@@ -1199,7 +1199,7 @@ impl LogWin {
     }
 }
 
-/// A wrapped line whose first `st` bytes are a timestamp, drawn in its own colour.
+/// A wrapped line whose first `st` bytes are a timestamp, drawn in its colour.
 fn stamped(gu: &mut GameUi, line: &str, st: usize, x: f32, y: f32, colour: [u8; 4], stamp: [u8; 4]) {
     if st == 0 {
         gu.text(line, x, y, 0, colour);

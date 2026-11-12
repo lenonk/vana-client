@@ -374,7 +374,7 @@ pub fn connect_with_key(host: &str, port: u16, want: Fingerprint) -> Result<TlsS
 }
 
 /// Keeps what `seen` teaches about `key` after a handshake that passed `was` (the pin read when it began). The auth
-/// and profile connections run on their own threads, and trust-server can run meanwhile: the store (or this run's
+/// and profile connections run on separate threads, and trust-server can run meanwhile: the store (or this run's
 /// pin) is re-read under a lock and, if its pin changed since `was`, the certificate is judged by the new pin instead
 /// (a later fixed pin is never overwritten by a connection that started before it). A pin that can't be written is
 /// kept for this run and the player told once; the next run learns it again.

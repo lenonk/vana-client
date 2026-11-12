@@ -1,5 +1,5 @@
 //! The modern Social pages in the command window: the Party menu, Search and Linkshell, drawn from retail's menus
-//! (their rows named by their own label sprites, retail's disabled rows and swaps) over client/partymenu.rs,
+//! (their rows named by their label sprites, retail's disabled rows and swaps) over client/partymenu.rs,
 //! searchmenu.rs and linkshell.rs, which keep every rule and key. A window opened over another shows beside it.
 
 use super::super::game_ui::GameUi;
@@ -44,7 +44,7 @@ pub(super) fn column(ui: &mut Ui, m: &super::Modern, gu: &GameUi, v: &MenuWin, f
     ui.vertical(|ui| {
         ui.set_width(COL_W);
         let t = title(gu, v);
-        // The panel already carries the page's name; a window's own title shows when it adds something.
+        // The panel already carries the page's name; a window's title shows when it adds something.
         if !t.is_empty()
             && !matches!(
                 t.as_str(),
@@ -220,7 +220,7 @@ struct Person {
     zone: String,
 }
 
-/// A search record as a row (FUN_1020a740's cells in words): `icon` the row's own (the search's status icon, the link
+/// A search record as a row (FUN_1020a740's cells in words): `icon` the row's (the search's status icon, the link
 /// list's shell item), `alt` the other job view (Num+).
 fn person(
     w: &World,
@@ -917,7 +917,7 @@ fn link_list(p: &mut Panels, w: &mut World, gu: &GameUi) {
     }
 }
 
-/// Level Sync (levelsync.rs keeps its rules and keys): the party's members as people rows, Level Sync's own status
+/// Level Sync (levelsync.rs keeps its rules and keys): the party's members as people rows, Level Sync's status
 /// icon on the synced one, grey under level 10 or anonymous.
 fn level_sync(p: &mut Panels, w: &mut World, gu: &GameUi) {
     let Some(l) = w.levelsync.as_ref() else { return };
@@ -1225,7 +1225,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     }
     let Some(gu) = p.gu else { return };
     let m = p.m;
-    // The area picker opened by Unity or an event: beside the window, else in its place (Search shows it in its own).
+    // The area picker opened by Unity or an event: beside the window, else in its place (Search shows it in its window).
     if let Some(a) = w.arealist.clone().filter(|_| w.searchmenu.is_none()) {
         let screen = p.ctx.content_rect();
         let at = m

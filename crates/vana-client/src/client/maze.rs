@@ -641,7 +641,7 @@ fn rune_sprite(gu: &mut GameUi, element: u8, shape: u8, x: f32, y: f32, rot: u8,
     }
 }
 
-/// Whether a placed rune covers a cell of its own element (FUN_101fe0b0's mode 4).
+/// Whether a placed rune covers a cell of its element (FUN_101fe0b0's mode 4).
 pub(super) fn bonus(w: &World, g: &[i8; 25], p: &Placed) -> bool {
     let (Some((e, _)), cells) = (rune(w, p.rune), cells_at(w, p.rune, p.col, p.row, p.rot)) else { return false };
     (0..25).any(|c| cells >> (24 - c) & 1 != 0 && g[c] == e as i8)

@@ -296,7 +296,7 @@ impl PadCfg {
         self.store(self.maps());
     }
 
-    /// Stores the rumble option. Retail's own setting (padmode000) stops deciding it once config.json has maps, so
+    /// Stores the rumble option. Retail's setting (padmode000) stops deciding it once config.json has maps, so
     /// the maps are stored with it.
     pub fn set_rumble(&mut self, on: bool) {
         if let Some(s) = self.set.as_mut() {
@@ -433,7 +433,7 @@ mod tests {
         assert_eq!(alt[29], -1);
     }
 
-    /// config.json's combination map counts on its own, whatever the main map's source.
+    /// config.json's combination map counts alone, whatever the main map's source.
     #[test]
     fn combination_override_alone() {
         let cfg = crate::config::Config { gamepad_padexsin: "3".into(), ..Default::default() };

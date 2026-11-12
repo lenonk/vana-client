@@ -92,7 +92,7 @@ pub fn frame(w: &mut World) {
         if !w.actors.get(&id).is_some_and(|a| a.character.is_some()) || event::bound(w, id) {
             continue;
         }
-        // With nothing waiting, a call that would change nothing is not queued (each touches its own state bit).
+        // With nothing waiting, a call that would change nothing is not queued (each touches its state bit).
         if !w.effects.equip_waiting(id) {
             let calls = if invisible(w, id) {
                 [EquipCall::Kill, EquipCall::Glow { n: 0, on: false }, EquipCall::Glow { n: 1, on: false }]
@@ -111,7 +111,7 @@ pub fn frame(w: &mut World) {
 }
 
 /// FUN_100973f0's model colour, only while no task holds the actor (actor +0x84 == 0). InvisFlag: 0x27808080 on our
-/// own model, alpha 0 on another's (not retail: a party member keeps 0x27, the user's call 2026-10-25), and +0x128 bit
+/// model, alpha 0 on another's (not retail: a party member keeps 0x27, the user's call 2026-10-25), and +0x128 bit
 /// 7 set. Without it: that bit clears to 0x80808080, and any colour with alpha left goes back to 0x80808080.
 fn colour(w: &mut World, id: u32) {
     if w.effects.holds(id) {
@@ -131,7 +131,7 @@ fn colour(w: &mut World, id: u32) {
     (a.alpha, a.rgb, a.fade) = (alpha, [OPAQUE; 3], None);
 }
 
-/// FUN_100c83c0, a new status motion on an entity's own actor: mounted (0x55) hides every weapon, a chair (0x3f..0x53)
+/// FUN_100c83c0, a new status motion on an entity's actor: mounted (0x55) hides every weapon, a chair (0x3f..0x53)
 /// nothing; else wep0 / wep1 shown and wep2 hidden (byte 0) for model kind 0 (a PC, or an equipped look with PetFlag
 /// @0x28 bit 6), a monster (+0x120 bit 13: kinds 1 / 2 / 7, Fomors' kind 6), an actor bound by an event, or a trust
 /// (+0x12c bit 22).

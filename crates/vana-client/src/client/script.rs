@@ -1,5 +1,5 @@
 //! Scripted input for test drives: synthetic egui events fed in before each frame, so the client's
-//! own input handling runs without OS-level injection. Steps are separated by ';':
+//! input handling runs without OS-level injection. Steps are separated by ';':
 //! `wait:SECS`, `until:PHASE[,SECS]` (go on after SECS anyway; login, title, lobby, event, world; also `cam:TAG` while an event shot plays and
 //! `msg:ID` while that event message is open, `noevent` while none runs), `type:TEXT`, `preedit:TEXT` / `ime:TEXT` (an
 //! IME's composition and committed text), `user`, `pass`,
@@ -8,7 +8,7 @@
 //! SECS until the client reaches PHASE; event prompts), `every:KEY,SECS` (press KEY every SECS alongside the
 //! steps that follow; `every:off` stops it), `act:NAME` for keys egui cannot name (numpad*; `act:wheel:N` turns the wheel), `copy` /
 //! `paste:TEXT` (what egui-winit makes of Ctrl+C / Ctrl+V), and `follow:PATH`: lines
-//! appended to PATH later each run as a script of their own, until a line `end`.
+//! appended to PATH later each run as a separate script, until a line `end`.
 
 use anyhow::{Result, anyhow, bail};
 use std::path::PathBuf;

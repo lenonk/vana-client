@@ -6,7 +6,7 @@
 
 local BOX, MAX_ZOOM = 0.7, 8
 local open = false
--- What the box shows: the map pixel at its centre (the map's own coordinates) and how many map pixels it spans; the
+-- What the box shows: the map pixel at its centre (the map's coordinates) and how many map pixels it spans; the
 -- map and screen it was set for.
 local view, seen
 local drag
@@ -133,7 +133,7 @@ events.on("settings_changed", apply)
 apply()
 
 -- Where the box is and what it shows, for mods that mark the map (Map Notes): its screen box, the map pixel at its
--- centre and the span (the map's own coordinates), the image's origin; nil while it is shut.
+-- centre and the span (the map's coordinates), the image's origin; nil while it is shut.
 mods.provide("view", function()
   local m = open and view and game.map()
   if not m then return nil end

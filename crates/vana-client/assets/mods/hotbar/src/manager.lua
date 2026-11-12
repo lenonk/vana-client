@@ -1,10 +1,10 @@
 -- The macro manager window.
 --
 --   Library  a main job's macros as tiles, dragged onto the bars: new, edit, copy, delete, and the palette.
---   Config   the hotkey modifier of each bar, the key row, and a slot's own key (changes apply at once).
+--   Config   the hotkey modifier of each bar, the key row, and a slot's key (changes apply at once).
 --   Builder  (New, Edit: in the window's place until Save or Cancel) one macro: an action of a type (spell, job
 --            ability, weapon skill, pet command, item, equipment, system command) and its target build the first
---            line (or the player's own line in its place); lines typed under it run after it. A "Macro" is typed
+--            line (or the player's line in its place); lines typed under it run after it. A "Macro" is typed
 --            only. A row that opens a list in the game's menu (Rune Enchantment, Phantom Roll...) opens that list.
 
 local data = require("src.data")
@@ -30,7 +30,7 @@ local DROP, building = "dropdown", false
 local layout, leave_builder
 
 -- The library rows as shown (ids, in order) and the builder's state: the entry edited (nil: a new one), the action
--- kind (nil: a macro of typed lines), the action picked ({name}), its target, the player's own line in place of the
+-- kind (nil: a macro of typed lines), the action picked ({name}), its target, the player's line in place of the
 -- built one (nil: the built one), the search results, the opener whose list is shown ({list, name}), and the slot it
 -- was opened from ({bar, slot, main, sub}: the saved macro goes on it), if any.
 local lib_ids = {}
@@ -331,15 +331,15 @@ local function target_choices()
   return choices
 end
 
--- The line field shows the player's own line, else the one the pick builds.
+-- The line field shows the player's line, else the one the pick builds.
 local function refresh_line()
   if E.group then
-    ui.update(WIN, "line", { label = "Line it builds (none: each member builds its own)", text = "" })
+    ui.update(WIN, "line", { label = "Line it builds (none: each member builds one)", text = "" })
     return
   end
   ui.update(WIN, "line", {
     label = not E.kind and "Line it builds (none: a macro's lines are typed below)"
-      or E.line and "Its own line (clear it for the built one)" or "Line it builds (type your own to change it)",
+      or E.line and "Its line (clear it for the built one)" or "Line it builds (type over it to change it)",
     text = E.line or built_line() or "",
   })
 end
@@ -442,7 +442,7 @@ local function set_kind(kind)
   refresh_preview()
 end
 
--- Opens the builder on a library entry (`id`), or on a new macro: blank, or `macro` (a slot's own macro) as typed
+-- Opens the builder on a library entry (`id`), or on a new macro: blank, or `macro` (a slot's macro) as typed
 -- lines. `slot` ({bar, slot, main, sub}) is where Save puts it.
 function open_builder(id, slot, macro)
   if not S.mj then
@@ -532,7 +532,7 @@ local function pick(index)
     return
   end
   local name = data.trim(ui.get(WIN, "name").text)
-  -- The name follows the pick until the player types their own.
+  -- The name follows the pick until the player types one.
   if name == "" or name == E.auto_name then
     ui.update(WIN, "name", { text = e.title or e.name })
     E.auto_name = e.title or e.name
@@ -598,7 +598,7 @@ local function toggle_group()
   refresh_preview()
 end
 
--- The line field typed in: the player's own line, or (cleared, or the built one again) none.
+-- The line field typed in: the player's line, or (cleared, or the built one again) none.
 local function line_edited(text)
   if not E.kind then return end
   text = data.trim(text)
@@ -653,7 +653,7 @@ local function refresh_keys()
     text = #c == 0 and "No key clashes." or ("Clash: " .. table.concat(c, "; ")),
     colour = #c == 0 and { 160, 200, 160 } or { 240, 120, 100 },
   })
-  -- The chosen bar's slots: each one's key, its own or its bar's.
+  -- The chosen bar's slots: each one's key, the slot's or its bar's.
   local bars = math.min(settings.get("bars"), data.MAX_BARS)
   local slots = math.min(settings.get("slots"), data.MAX_SLOTS)
   K.bar = math.min(K.bar, bars)
@@ -664,7 +664,7 @@ local function refresh_keys()
   local rows = {}
   for i = 1, slots do
     local own = keys.get_slot(K.bar, i)
-    rows[i] = { tostring(i), keys.hint_or(K.bar, i), own and "Its own" or "The bar's",
+    rows[i] = { tostring(i), keys.hint_or(K.bar, i), own and "The slot's" or "The bar's",
       colour = own and { 232, 210, 156 } or nil }
   end
   ui.update(WIN, "kslots", { rows = rows, at = K.slot })
@@ -701,15 +701,15 @@ local function spec(drop, build)
           tip = "One slot for all of them: pressing it opens a list over it to pick one (Up / Down, Enter)." },
         { type = "text", id = "picked", text = "" },
         { type = drop, id = "target", label = "Target", items = { "<t> Current target" }, at = 1 },
-        { type = "input", id = "line", label = "Line it builds (type your own to change it)", text = "", max = 256,
-          tip = "What the macro runs first. Type your own line in its place if the built one is not right; clear "
+        { type = "input", id = "line", label = "Line it builds (type over it to change it)", text = "", max = 256,
+          tip = "What the macro runs first. Type your line in its place if the built one is not right; clear "
             .. "it for the built one again." },
         { type = "input", id = "name", label = "Name", text = "", max = 32 },
         { type = "input", id = "label", label = "Button text (blank = from the name)", text = "", max = 14 },
         { type = "input", id = "extra", label = "Lines after it (| between lines, optional)", text = "", max = 1024,
           tip = 'Example: /p Casting <t> | /wait 2 | /echo done' },
         { type = "text", id = "preview", text = "" },
-        { type = "text", id = "tip", text = "Waits: /wait 2 on its own line, or <wait 2> at the end of one.",
+        { type = "text", id = "tip", text = "Waits: /wait 2 alone on a line, or <wait 2> at the end of one.",
           dim = true },
         { type = "buttons", id = "bbtn", items = { "Save", "Cancel" } },
       },
@@ -739,7 +739,7 @@ local function spec(drop, build)
       { type = "text", id = "clash", text = "", page = TAB_CONFIG },
       { type = "buttons", id = "kbtn", items = { "Reset to defaults" }, page = TAB_CONFIG },
       { type = "separator", page = TAB_CONFIG },
-      { type = "text", id = "kslottext", text = "A slot's own key (any key, with Ctrl, Alt or Shift) takes the place of "
+      { type = "text", id = "kslottext", text = "A slot's key (any key, with Ctrl, Alt or Shift) takes the place of "
         .. "its bar's:", page = TAB_CONFIG },
       { type = "choice", id = "kbar", label = "Bar", items = { "1" }, at = 1, page = TAB_CONFIG },
       { type = "list", id = "kslots", rows = {}, height = 6, page = TAB_CONFIG,

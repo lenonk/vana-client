@@ -1,4 +1,4 @@
-//! The client's own process for mods (`process` permission): CPU affinity and scheduling priority, for every thread.
+//! The client's process for mods (`process` permission): CPU affinity and scheduling priority, for every thread.
 
 use super::api::need;
 use mlua::{Lua, Table};

@@ -231,7 +231,7 @@ local function set_group(f, s, fam)
     for _, g in ipairs(group) do s.group[#s.group + 1] = g[1].id end
     s.label = fam
   else
-    -- One spell left castable: the row casts it (a held row's own may have gone on recast).
+    -- One spell left castable: the row casts it (a held row's may have gone on recast).
     if #group == 1 then s.id = group[1][1].id end
     s.group, s.label = {}, nil
   end
@@ -312,7 +312,7 @@ local function rune_fencer(f, out)
   local foe = t and t.name or "monster"
   local tanking = t ~= nil and t.hitting_me == true
   local ranks = t and t.ranks
-  -- Its own element: resisted most, by a clear margin; its weakness: resisted least, below 0.
+  -- Its element: resisted most, by a clear margin; its weakness: resisted least, below 0.
   local own, weak
   if ranks then
     local top, low = -math.huge, math.huge

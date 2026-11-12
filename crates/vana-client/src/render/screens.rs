@@ -47,7 +47,7 @@ pub struct TitleState {
 }
 
 /// FUN_10119fb0's two gold rings for press counter `c` of `n` ticks: (scale, alpha 0..128, blend word) of each ring
-/// that shows; k = 0 uses the cell's own blend, k = 1 alpha blend 0x44 and trails (N - M) / 2 ticks.
+/// that shows; k = 0 uses the cell's blend, k = 1 alpha blend 0x44 and trails (N - M) / 2 ticks.
 pub fn press_rings(n: f32, c: f32) -> Vec<(f32, u32, u32)> {
     let m = 0.625 * n;
     let d = (n - m) / 2.0;
@@ -111,7 +111,7 @@ pub fn title_screen(lobby: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &Titl
         }
     }
 
-    // The modern layer draws its own help bar.
+    // The modern layer draws its help bar.
     if !st.modern {
         text.extend(push_help_frame(&mut b, lobby, style, w, h));
     }
@@ -336,7 +336,7 @@ fn shape_fit_count(lib: &SpriteLib, s: &[u8], max: f32) -> usize {
 /// FUN_101c9fa0: a name in up to two (three) lines of `max` px at (x, y), as the target window draws it. Cut to 24
 /// bytes; one line (at y + 6 when `centre`) when it fits and has no ':'; otherwise broken after the first ':' before
 /// the fit, else at the last ' ', '-', '@', ''' or ':' from fit + 1 down to fit / 4, else at the fit. `split` (no
-/// gauge): the rest goes on as its own name one line down, 4 in and 4 narrower; else the rest is fitted with the
+/// gauge): the rest goes on as its name one line down, 4 in and 4 narrower; else the rest is fitted with the
 /// ellipsis (FUN_101c9d50).
 pub fn push_wrapped_name(
     b: &mut UiBatch,
@@ -416,7 +416,7 @@ pub fn frame_rect(m: &Menu, w: f32, h: f32, fx: f32, fy: f32) -> (f32, f32, f32,
 }
 
 /// Draws a menu window as FUN_101144b0 does for an unscaled menu: the window-style frame over the
-/// frame rect, then the window's own sprite (its first cell, the background, is skipped).
+/// frame rect, then the window's sprite (its first cell, the background, is skipped).
 /// Returns the window position.
 /// FUN_10234680: a list's scroll bar ("menu    scroll" 0..3 in 0x80808080) at (x, y), h tall, when total > visible
 /// (window draw 0x10117e97): the top cap, the thumb (x + 1, y + 4 + off) 6 x len, the track, the bottom cap;
@@ -951,7 +951,7 @@ pub fn push_name_plate(
         };
         sizes.push(size);
     }
-    // Pass 2: the pen from -W / 2; icons in their own colour with alpha 0x80 (no pulse).
+    // Pass 2: the pen from -W / 2; icons in their colour with alpha 0x80 (no pulse).
     let (x0, py) = ((x - total * sx * 0.5).round(), y.round());
     let mut pen = 0.0f32;
     for (i, (g, [w, h])) in glyphs.iter().zip(sizes).enumerate() {

@@ -273,7 +273,7 @@ mod tests {
     }
 
     /// FUN_100a0b90's forms: /wave 10; salute 2 + nation; /hurray bare-handed 0x4e; /jobemote WAR (Param 0) 0x88; /aim
-    /// without a ranged weapon fails; seated emotes from their own tables.
+    /// without a ranged weapon fails; seated emotes from their tables.
     #[test]
     fn emote_indices() {
         assert_eq!(emote_index(8, 0, 0, 6), Ok(Some(10)));

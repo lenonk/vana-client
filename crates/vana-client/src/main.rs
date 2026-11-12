@@ -31,7 +31,7 @@ mod unrar_isnt {
         0x0a00
     }
 
-    /// `bool IsWindows11OrGreater()`: UnRAR's own stub answers false.
+    /// `bool IsWindows11OrGreater()`: UnRAR's stub answers false.
     #[unsafe(export_name = "_Z20IsWindows11OrGreaterv")]
     pub extern "C" fn is_windows_11_or_greater() -> bool {
         false
@@ -261,7 +261,7 @@ enum Cmd {
         #[arg(long)]
         size: Option<String>,
     },
-    /// Save the images (IMG chunks) of the game's own DAT files (never a mod's) as PNGs: every image of the given ids, or
+    /// Save the images (IMG chunks) of the game's DAT files (never a mod's) as PNGs: every image of the given ids, or
     /// with --random N one image each from N random files that hold any; --file reads any DAT by path (a mod's too).
     TexDump {
         #[arg(value_parser = parse_num)]
@@ -910,7 +910,7 @@ enum Cmd {
     },
     /// Render a zone offscreen to a PNG. Coordinates are game units (Y points down).
     ZoneShot {
-        /// The scene number (0x00A's scene): the zone id below 256; from 256 the zone-in's own (Western Adoulin
+        /// The scene number (0x00A's scene): the zone id below 256; from 256 the zone-in's (Western Adoulin
         /// 256 is 700, file 83891).
         zone: u32,
         #[arg(long)]
@@ -1917,7 +1917,7 @@ fn main() -> Result<()> {
                 let mut data = c.data.to_vec();
                 dat::zone::decode_mmb(&keys, &mut data);
                 let Ok(mesh) = dat::zone::parse_mmb(&data) else { continue };
-                // The MMB's own name, or the chunk's (effect files name them there).
+                // The MMB's name, or the chunk's (effect files name them there).
                 if mesh.name != name && String::from_utf8_lossy(&c.name).trim_end_matches(['\0', ' ']) != name {
                     continue;
                 }
@@ -2729,7 +2729,7 @@ fn flyover_shot(
                 println!("env {name} (title 0x2f override)");
             }
             Op::Weather { tag: t, ticks } => {
-                // Inferred: a new weather object replaces the override with the zone's own keys.
+                // Inferred: a new weather object replaces the override with the zone's keys.
                 tag = t.clone();
                 env_override = None;
                 println!("weather {t} over {ticks}");
@@ -3050,7 +3050,7 @@ fn weather_sweep(out: &std::path::Path, zones: u32, ticks: u32) -> Result<()> {
             for k in sched.keys() {
                 uses.entry(format!("sched op {k:#04x}")).or_default().insert(zone);
             }
-            // The run: only tags under the zone's own top `weat` start through set_weather.
+            // The run: only tags under the zone's top `weat` start through set_weather.
             let (mut skipped, mut missing, mut no_attach, mut left) = (String::new(), String::new(), String::new(), 0);
             if top_weat.is_some_and(|w| folders.iter().any(|&f| tree.nodes[f].parent == Some(w))) {
                 let mut fx = fx::Effects::new();

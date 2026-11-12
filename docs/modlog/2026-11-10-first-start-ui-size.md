@@ -21,7 +21,7 @@ logging in.
 - The rule *(ours)*: the reference is a 24-inch 1080-line screen (299 mm tall), where 1:1 menus and 60 % read well.
   A smaller screen is seen from nearer, so its UI grows by g = sqrt(299 / height mm). Retail's menus get UI pixels of
   that size: f = 1080 / (lines * g) of the window, the nearest of Settings' Menu Size steps (95 %, 90 % ... down to 512
-  lines), the window's own from 97.5 % up. The modern layer: 60 * g over the system's scale (it follows that scale
+  lines), the window's from 97.5 % up. The modern layer: 60 * g over the system's scale (it follows that scale
   already), in steps of 5, never below 60 or above 150. Without an EDID size retail's menus follow the system's scale
   (f = 1 / scale) and the modern layer keeps 60.
 - Examples: 24-inch 1080p 296 mm, unchanged; 32-inch 1440p 393 mm, menus 85 %, 60 %; 7-inch 1280x800 handheld, 75 %,

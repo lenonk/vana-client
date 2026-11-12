@@ -111,7 +111,7 @@ commands.register("errand", function(cmd, ...)
   end
 end)
 
--- Job ids by abbreviation, from the game's own names.
+-- Job ids by abbreviation, from the game's names.
 local function job_id(s)
   s = (s or ""):upper()
   if s == "NONE" or s == "-" then return 0 end

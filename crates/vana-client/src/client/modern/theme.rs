@@ -42,7 +42,7 @@ const FRAME_MASK: &str = "frames/window_normal_border";
 /// Emphasis beside egui's Proportional (Fira Sans) and Monospace (JetBrains Mono): titles and names; the bars' labels.
 pub const STRONG: &str = "strong";
 pub const LABEL: &str = "label";
-/// Party-list names out of the zone: their own face, kept whatever the interface's is.
+/// Party-list names out of the zone: their face, kept whatever the interface's is.
 pub const NAME: &str = "name";
 
 #[derive(Deserialize, Default)]
@@ -139,7 +139,7 @@ pub struct Sprite {
     pub atlas: Vec2,
 }
 
-/// A window frame for any size: its border on a texture of its own (transparent inside), the interior's vertical
+/// A window frame for any size: its border on a separate texture (transparent inside), the interior's vertical
 /// gradient (top to bottom), its logical size, corner insets and the interior's inset.
 pub struct Frame {
     pub border: TextureHandle,
@@ -182,7 +182,7 @@ fn crop(img: &([usize; 2], Vec<u8>), r: [u32; 4]) -> Vec<u8> {
     (y..y + h).flat_map(|row| img.1[row * stride + x * 4..row * stride + (x + w) * 4].iter().copied()).collect()
 }
 
-/// A window frame for the game UI's own pass (the retail windows' frames while Modern is on): the border image
+/// A window frame for the game UI's pass (the retail windows' frames while Modern is on): the border image
 /// (transparent inside), its corner as a share of its side, the interior's top and bottom colours, and the interior's
 /// inset as a share of the side.
 pub struct FrameImage {
@@ -476,7 +476,7 @@ fn cjk_font() -> Option<Arc<FontData>> {
 
 /// The bundled fonts: Fira Sans for the interface (egui's Proportional), Fira Sans SemiBold for titles (STRONG), Inter
 /// Bold Italic for the bars' labels and the party's names (LABEL), Inter SemiBold for names out of the zone (NAME),
-/// JetBrains Mono for logs (Monospace); egui's own fonts stay behind them for missing glyphs, then a system Japanese
+/// JetBrains Mono for logs (Monospace); egui's fonts stay behind them for missing glyphs, then a system Japanese
 /// font (`CJK`).
 pub fn install_fonts(ctx: &Context) {
     install_fonts_with(ctx, None);

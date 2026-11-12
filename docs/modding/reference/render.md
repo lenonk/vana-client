@@ -36,7 +36,7 @@ end
 render.entity(id, look?) -> nothing
 ```
 
-Sets how one entity (a player, NPC, monster, or your own character) is drawn while your mod is loaded, or clears your
+Sets how one entity (a player, NPC, monster, or your character) is drawn while your mod is loaded, or clears your
 mod's look for it when `look` is `nil`. Each call replaces the entity's whole look: fields you leave out go back to
 how the game draws it.
 
@@ -74,7 +74,7 @@ end
 ```
 
 A look is kept by server id, so it applies again whenever that entity is drawn, until you clear it. When two mods set
-a look for the same entity, the latest call wins; `render.entity(id, nil)` only removes a look your own mod set, and
+a look for the same entity, the latest call wins; `render.entity(id, nil)` only removes a look your mod set, and
 the other mod's earlier look does not come back.
 
 ## `render.look`
@@ -84,7 +84,7 @@ render.look(id, look?) -> nothing
 ```
 
 Draws a player-style character with other parts while your mod is loaded: another race or face, or other gear
-models. The parts you leave out stay the character's own, and they follow its own changes (a gear swap shows in the
+models. The parts you leave out stay the character's, and they follow its changes (a gear swap shows in the
 slots you did not set). The model is built again whenever the look changes, as a gear change does. `game.entity()`
 and `game.player()` still give the real look. Monsters, NPCs drawn from one model and characters in costume are not
 changed. The newest mod's look wins for an entity.
@@ -148,7 +148,7 @@ but not the menus.
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `id` | `string` | yes | The pass's name (your mod's own; another mod's `"blur"` is a different pass). |
+| `id` | `string` | yes | The pass's name (your mod's; another mod's `"blur"` is a different pass). |
 | `wgsl` | `string` | no, default `nil` | The shader source (below); `nil` removes the pass. Removing a pass that does not exist does nothing. |
 
 **Returns** nothing.

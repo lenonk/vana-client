@@ -156,7 +156,7 @@ impl Dictionary {
         Ok(Dictionary { groups, by_id, jobs: None, places: None, titles: Default::default() })
     }
 
-    /// FUN_101bc100: a block's text (the language byte is ignored: the client's own dictionary answers). Kinds 7..0x12
+    /// FUN_101bc100: a block's text (the language byte is ignored: the client's dictionary answers). Kinds 7..0x12
     /// are items, 0x13.. key items (00 bytes replaced by FF: 8 / 0xc / 0x10 / 0x14 id 0, 9.. lo only, 0xa.. hi only),
     /// id 0 the group's title; else a phrase (id 0 the group's title). None: unknown (the line ends there).
     pub fn resolve(&self, b: [u8; 4], names: Option<&dyn NameSource>) -> Option<String> {

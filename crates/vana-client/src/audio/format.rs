@@ -36,7 +36,7 @@ pub struct Header {
     pub length: u32,
     pub loop_start: Option<u32>,
     pub data: usize,
-    /// bgw 0x2c: the track's own volume level; spw 0x28 (used when flags bit 7 is set).
+    /// bgw 0x2c: the track's volume level; spw 0x28 (used when flags bit 7 is set).
     pub volume: u8,
     /// spw 0x29 (0x80 own volume, 0x20 fade in, 0x08 fixed volume); 0 for music.
     pub flags: u8,

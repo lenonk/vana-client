@@ -265,7 +265,7 @@ Reload. The mod asks for the `actions` permission: a line in the chat log says s
 it, and your target changes.
 
 The `actions` permission lets a mod act while it handles your input, such as a command you typed or a click in its
-window. A mod that acts on its own (from a timer or an event) needs `automation` instead. See
+window. A mod that acts by itself (from a timer or an event) needs `automation` instead. See
 [guide.md](guide.md#permissions).
 
 ## When something goes wrong

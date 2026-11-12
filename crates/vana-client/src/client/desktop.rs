@@ -17,7 +17,7 @@ fn data_home() -> Result<PathBuf> {
     dirs::data_dir().context("no data directory")
 }
 
-/// The client's own copy, which the entries start.
+/// The client's copy, which the entries start.
 fn home_exe() -> PathBuf {
     crate::config::data_dir().join("vana-client")
 }

@@ -26,7 +26,7 @@ pub fn wrap(a: f32) -> f32 {
     }
 }
 
-/// The MT19937 helpers' value mappings (FUN_1006afd0 / FUN_1006b020 / FUN_1006afb0 / FUN_1006af90) over our own
+/// The MT19937 helpers' value mappings (FUN_1006afd0 / FUN_1006b020 / FUN_1006afb0 / FUN_1006af90) over our
 /// generator *(inf: retail's sequence is not reproduced; only the mappings are)*.
 pub struct Rng(u64);
 

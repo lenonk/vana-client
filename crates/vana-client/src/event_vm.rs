@@ -3599,7 +3599,7 @@ mod tests {
         assert_eq!((rt.mem.m[1], rt.mem.m[2]), (0b100, 0x300));
     }
 
-    /// Op 0x5f subs 0 / 1 (FUN_100b72c0): two bytes, to the host with the thread's own actor (its +0x124 bit 29).
+    /// Op 0x5f subs 0 / 1 (FUN_100b72c0): two bytes, to the host with the thread's actor (its +0x124 bit 29).
     #[test]
     fn scheduler_guard_subs() {
         let code = vec![0x5f, 0x01, 0x5f, 0x00, 0x21, 0x00];

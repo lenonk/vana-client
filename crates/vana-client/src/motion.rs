@@ -218,7 +218,7 @@ mod tests {
     }
 
     /// FUN_1001ad00: half way through a 40-frame cycle at speed 1 (20 in frames / speed, 40 of our ticks), a 20-frame
-    /// cycle at speed 2 starts half way through its own (5 of its 10 frames / speed) plus 16 ticks at rate 1 (4 more).
+    /// cycle at speed 2 starts half way through its cycle (5 of its 10 frames / speed) plus 16 ticks at rate 1 (4 more).
     #[test]
     fn cycle_sync_keeps_the_fraction() {
         let t = super::cycle_sync(20.0, 40.0, 20.0, 2.0, 1.0, 16.0);

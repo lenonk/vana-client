@@ -1,5 +1,5 @@
 //! Our Settings and Extras pages (not retail). Settings holds what retail set in the Windows "FINAL FANTASY XI
-//! Config" tool before starting (registry names 0000..0043, read by FUN_10016c30) plus our own display options;
+//! Config" tool before starting (registry names 0000..0043, read by FUN_10016c30) plus our display options;
 //! Extras holds the gameplay additions (the add-ons' features), each off until turned on. Both are drawn as the
 //! Config pages are (FUN_101144b0 over windowps 465: bullets, fontshp text, the buttons, markers and
 //! sliders of conf2win / conf3win), at the pages' place in game and centred in the lobby. Both have several pages,
@@ -72,7 +72,7 @@ impl Settings {
             timers_dock: c.timers_dock,
             minimap_dock: c.minimap_dock,
             minimap_size: c.minimap_size,
-            // The game's own volumes (Gameplay page, config 10 / 9; the lobby's 0xa8): set by the opener.
+            // The game's volumes (Gameplay page, config 10 / 9; the lobby's 0xa8): set by the opener.
             music: 100,
             effects: 100,
             retail_aspect: c.retail_aspect,
@@ -405,7 +405,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [SRow] 
     const EFFECTS: &[SRow] = &[
         row(
             "Lamp Lights",
-            "Baked keeps the lamplight painted onto the walls, as retail. Real makes the lamps give off light of their own (not retail).",
+            "Baked keeps the lamplight painted onto the walls, as retail. Real makes the lamps give off light (not retail).",
             LampLights,
             &[(0, "Baked"), (1, "Real")],
             Now,
@@ -566,7 +566,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [SRow] 
         ),
         row(
             "UI Setup",
-            "Each character and job keeps its own modern windows. Reset puts this one's back where they started; From \
+            "Each character and job keeps its modern windows. Reset puts this one's back where they started; From \
              copies another's places, modes and chat window settings. Pick one, then press Enter or click (not retail).",
             ResetPlaces,
             &[(0, "As Moved"), (1, "Reset")],
@@ -611,7 +611,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [SRow] 
             Now,
         ),
     ];
-    // A page holds 7 rows; the controls' (the gamepad, mouse look) have their own.
+    // A page holds 7 rows; the controls' (the gamepad, mouse look) have theirs.
     const GAMEPAD: &[SRow] = &[
         row(
             "Gamepad",
@@ -655,7 +655,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [SRow] 
     const TIMERS_MODERN: &[SRow] = &[];
     // The modern UI places the minimap and the timers as edge windows.
     const MAPS_MODERN: &[SRow] = &[];
-    // A page holds 7 rows: what touches battle has its own.
+    // A page holds 7 rows: what touches battle has its page.
     const EXTRA_BATTLE: &[SRow] = &[];
     const EXTRA_MISC: &[SRow] = &[];
     match kind {
@@ -754,10 +754,10 @@ pub struct SettingsUi {
     /// The modern Mods page's cursor (stop, button) and a removal being asked (pack, Yes on the cursor).
     pub m_mods: (usize, usize),
     pub m_remove: Option<(usize, bool)>,
-    /// Extras: the Lua mods' pages after our own, and their changes for the app to apply (mod, key, value).
+    /// Extras: the Lua mods' pages after ours, and their changes for the app to apply (mod, key, value).
     pub mod_pages: Vec<ModPage>,
     pub mod_changes: Vec<(String, String, serde_json::Value)>,
-    /// Mods' settings shown on our own Extras tabs: (mod, row).
+    /// Mods' settings shown on our Extras tabs: (mod, row).
     tab_rows: Vec<(String, ModRow)>,
 }
 
@@ -814,7 +814,7 @@ impl SettingsUi {
         }
     }
 
-    /// The mods' Extras pages: rows that name one of our tabs go there, the rest make the mod's own page.
+    /// The mods' Extras pages: rows that name one of our tabs go there, the rest make the mod's page.
     pub fn set_mod_pages(&mut self, pages: Vec<ModPage>) {
         self.tab_rows.clear();
         self.mod_pages.clear();
@@ -843,7 +843,7 @@ impl SettingsUi {
         }
     }
 
-    /// The Lua mod page on screen (Extras, past our own pages).
+    /// The Lua mod page on screen (Extras, past our pages).
     fn mod_page(&self) -> Option<&ModPage> {
         if self.kind != Kind::Extras {
             return None;
@@ -1396,7 +1396,7 @@ impl SettingsUi {
         let mut hand = None;
         for (i, r) in self.rows().iter().enumerate() {
             let hy = y + Self::TOP + PITCH * i as f32;
-            // The bullet (465 cell 2, drawn at its own place (20, 27) on the page) moved to the heading.
+            // The bullet (465 cell 2, drawn at its place (20, 27) on the page) moved to the heading.
             if let Some(b) = gu.cell_bounds("menu    windowps", 465, 2) {
                 gu.sprite_cells("menu    windowps", 465, 2..3, x + 20.0 - b[0], hy + 2.0 - b[1], N);
             }
@@ -1793,7 +1793,7 @@ impl SettingsUi {
         m.active(c, j).unwrap_or(m.enabled)
     }
 
-    /// Mod `k` switched on or off as its page shows it: a Lua mod kept per character or job switches this one's own,
+    /// Mod `k` switched on or off as its page shows it: a Lua mod kept per character or job switches this one's,
     /// and starts or stops at once (in game). False when there is nothing to switch yet (ModRef::switch).
     fn set_mod(&mut self, k: usize, on: bool) -> bool {
         let was = self.mod_on(k);
@@ -2128,7 +2128,7 @@ impl SettingsUi {
 }
 
 /// A blank Config page button: conf2win's 88-px "ON" (windowps 105) or conf3win's 64-px "Log" (379) without its
-/// caption, over the dark copy at (+2, +2) that the windows' own sprites bake in under each button (comwin 12 and
+/// caption, over the dark copy at (+2, +2) that the windows' sprites bake in under each button (comwin 12 and
 /// windowps 465: buttonto cells coloured (1, 1, 1, 169), alpha blended) and the additive body needs; other widths
 /// stretch 105's two buttonto cells.
 pub(super) fn button(gu: &mut GameUi, r: [f32; 4], tint: u32) {
@@ -2229,7 +2229,7 @@ mod tests {
         assert!(ui.ui_enter(None) && ui.dirty && ui.s.copy_ui == Some(0));
     }
 
-    /// A bundled mod's rows on our Extras tabs stand at their places; its other rows make its own page; a choice there
+    /// A bundled mod's rows on our Extras tabs stand at their places; its other rows make its page; a choice there
     /// goes to the app as the mod's change.
     #[test]
     fn mod_rows_on_our_tabs() {
@@ -2383,7 +2383,7 @@ mod tests {
 
     /// DAT Packs: ON / OFF mark a pack; Move carries it with Up / Down, Enter places it, Escape puts the order back.
     /// Lua mods are on the Mods page only, and the packs' moves step over them.
-    /// The Mods page's ON / OFF for a Lua mod kept per job shows and switches this job's own (#218).
+    /// The Mods page's ON / OFF for a Lua mod kept per job shows and switches this job's (#218).
     #[test]
     fn mods_page_scoped() {
         use crate::config::ModRef;

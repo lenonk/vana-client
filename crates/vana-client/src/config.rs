@@ -53,12 +53,12 @@ fn regime_dir() -> PathBuf {
 }
 
 /// A character's training regime state (client/regime.rs): a folder per server ("127.0.0.1-54002", its search
-/// address) and a file per character, so a same-named character on another server has its own.
+/// address) and a file per character, so a same-named character on another server has its file.
 pub fn regime_path(server: &str, name: &str) -> PathBuf {
     regime_dir().join(server).join(name_file(name))
 }
 
-/// Where earlier builds kept a character's regime (by name alone), read when the server's own file is not there yet;
+/// Where earlier builds kept a character's regime (by name alone), read when the server's file is not there yet;
 /// with FFXI_CONFIG, the data dir's by-name file too.
 pub fn regime_legacy_paths(name: &str) -> Vec<PathBuf> {
     let mut v = vec![regime_dir().join(name_file(name))];
@@ -94,7 +94,7 @@ pub fn whats_new_path() -> PathBuf {
     }
 }
 
-/// The client's log: in the data dir, or beside an FFXI_CONFIG copy (test runs keep their own).
+/// The client's log: in the data dir, or beside an FFXI_CONFIG copy (test runs keep theirs).
 pub fn log_path() -> PathBuf {
     match std::env::var_os("FFXI_CONFIG") {
         Some(p) => PathBuf::from(p).with_file_name("vana-client.log"),
@@ -114,7 +114,7 @@ pub(crate) fn config_path() -> PathBuf {
         .unwrap_or_else(|| app_dir(dirs::config_dir()).join("config.json"))
 }
 
-/// Menu Size's steps of a `window` after the window's own, as (fraction, size): 95 %, 90 % ... while the height stays
+/// Menu Size's steps of a `window` after the window's, as (fraction, size): 95 %, 90 % ... while the height stays
 /// 512 or more (the v5 tool). Settings lists them; a first start (client/screen.rs) picks one.
 pub fn ui_steps(window: [u32; 2]) -> Vec<(f32, [u32; 2])> {
     let [w, h] = window;
@@ -137,7 +137,7 @@ pub fn ui_step_moved(old: [u32; 2], new: [u32; 2], ui: [u32; 2]) -> Option<[u32;
 }
 
 /// A login that worked: the server, the account (the Square Enix ID for PlayOnline), PlayOnline's member ID, and its
-/// own Remember password with the password(s) sealed for that server and account (secret.rs), and its own Trust this
+/// Remember password with the password(s) sealed for that server and account (secret.rs), and its Trust this
 /// computer with the server's trust token, sealed the same way.
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -224,7 +224,7 @@ pub struct Config {
     /// Party and alliance rows show TP (retail config 0xae bit 0, default off; ours on, as the add-ons do).
     pub party_tp: bool,
     /// Per-window opacity the player set (no row for it yet), by window: a modern panel's id, a mod's window
-    /// ("mod:<mod>:<window>") or a mod's HUD window ("hud:<mod>:<window>"). It wins over a mod's own.
+    /// ("mod:<mod>:<window>") or a mod's HUD window ("hud:<mod>:<window>"). It wins over a mod's.
     #[serde(default)]
     pub window_opacity: std::collections::BTreeMap<String, f32>,
     /// Not retail (Settings' Lamp Lights): real point lights at the zones' lamps in place of their baked lamplight
@@ -245,7 +245,7 @@ pub struct Config {
     /// in config.json by hand.
     pub gm_window: bool,
     /// The version whose change notes were last shown (client/notes.rs): a newer client shows the notes since. A
-    /// config from before the notes has none, so its first newer build shows that build's own.
+    /// config from before the notes has none, so its first newer build shows that build's.
     #[serde(default)]
     pub notes_seen: String,
     /// The Timers (the bundled Timers mod's windows): the classic window's dock (0 left, 1 right, 2 top), its drawer
@@ -261,12 +261,12 @@ pub struct Config {
     pub minimap_size: u32,
     pub minimap_span: f32,
     /// The HUD maps' opacity and the minimap marker's shading, 0..1: the last the Map Overlay mod gave (client option
-    /// map_opacity), kept so it holds while the mod is off. No Settings row: the mod's own page sets it.
+    /// map_opacity), kept so it holds while the mod is off. No Settings row: the mod's page sets it.
     pub map_overlay_opacity: f32,
     /// Ours: resting's ticks as learnt per server (by its search address, "ip-port"; client/resttick.rs).
     pub rest_models: std::collections::BTreeMap<String, RestModel>,
     /// The drawn cursor's size (config 0021 off) in percent of retail's pixels on screen; 0 = auto (grows with the
-    /// window height from 720). Not retail: it was sized for 640 x 480. The .ani cursors keep their own size.
+    /// window height from 720). Not retail: it was sized for 640 x 480. The .ani cursors keep their size.
     pub cursor_size: u32,
     /// A key press hides the mouse cursor until the mouse moves (retail, FUN_10125f70(0)); off keeps it shown (ours).
     pub keys_hide_cursor: bool,
@@ -294,7 +294,7 @@ pub struct Config {
     /// (client/screen.rs).
     #[serde(skip)]
     pub first_start: bool,
-    /// FFXiMain's own options by config id (the in-game and lobby Config menus).
+    /// FFXiMain's options by config id (the in-game and lobby Config menus).
     pub game: crate::gamecfg::GameConfig,
     /// DAT overlays (not retail; dat::overlay): folders under mods_dir(), highest priority first.
     pub mods: Vec<ModRef>,
@@ -443,7 +443,7 @@ impl ModRef {
         }
     }
 
-    /// Whether it runs for this character and job: its own switch, else `enabled`; none while a scope's job or
+    /// Whether it runs for this character and job: its switch, else `enabled`; none while a scope's job or
     /// character is not known yet.
     pub fn active(&self, character: Option<&str>, job: Option<&str>) -> Option<bool> {
         if !self.per_character && !self.per_job {
@@ -453,7 +453,7 @@ impl ModRef {
         Some(self.on.get(&k).copied().unwrap_or(self.enabled))
     }
 
-    /// Switched on or off for this character and job: its own switch with a scope; without one, or in the lobby (no
+    /// Switched on or off for this character and job: its switch with a scope; without one, or in the lobby (no
     /// character yet), `enabled`, which every one never switched follows. In game before a Per Job mod's job is known
     /// there is nothing to switch: false.
     pub fn switch(&mut self, character: Option<&str>, job: Option<&str>, on: bool) -> bool {
@@ -502,7 +502,7 @@ pub fn catalogue_dir() -> PathBuf {
     app_dir(dirs::cache_dir()).join("catalogue")
 }
 
-/// Config-tool values with our defaults (FFXiMain's own default in the comment where it differs).
+/// Config-tool values with our defaults (FFXiMain's default in the comment where it differs).
 pub const TOOL_DEFAULTS: &[(&str, u32)] = &[
     ("0000", 1),    // MIP mapping (FFXiMain 0)
     ("0001", 1280), // window width (FFXiMain 640, the tool 800)
@@ -636,7 +636,7 @@ impl Config {
                 Self::default()
             }),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self { first_start: true, ..Self::default() },
-            // There but unreadable: not a first start, so nothing saves over it on its own.
+            // There but unreadable: not a first start, so nothing saves over it unprompted.
             Err(e) => {
                 log::error!("{}: {e}; the defaults used", path.display());
                 Self::default()
@@ -811,7 +811,7 @@ impl Config {
 mod tests {
     use super::*;
 
-    /// A mod kept per job switches each job's own; one never switched follows `enabled`; per character and job keys
+    /// A mod kept per job switches each job's; one never switched follows `enabled`; per character and job keys
     /// both; the job not known yet decides nothing.
     #[test]
     fn mod_scopes() {

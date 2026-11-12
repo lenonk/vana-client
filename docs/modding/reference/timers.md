@@ -2,8 +2,8 @@
 
 Rows in the Timers mod's windows: a name, a countdown and a gauge, in one of its three sections (recasts, buffs,
 debuffs), optionally under a group heading. The calls go to the Timers mod's service (`mods.call("timers", ...)` with
-your mod's id): without the Timers mod running they do nothing. A mod's rows show even when the Timers mod's own
-tracking is off. Each mod has its own rows, known by name; they show at the Timers mod's next refresh (a quarter of a
+your mod's id): without the Timers mod running they do nothing. A mod's rows show even when the Timers mod's
+tracking is off. Each mod has its rows, known by name; they show at the Timers mod's next refresh (a quarter of a
 second at most). No permission is needed.
 
 ```lua

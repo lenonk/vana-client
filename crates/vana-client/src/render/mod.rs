@@ -85,7 +85,7 @@ pub fn adapter_names(instance: &wgpu::Instance, surface: Option<&wgpu::Surface>)
         .filter(|a| surface.is_none_or(|s| a.is_surface_supported(s)))
         .map(|a| a.get_info().name)
         .collect();
-    // One per card: each backend (Vulkan, GL, ...) lists it, with its own driver part ("... (RADV NAVI21)", "...
+    // One per card: each backend (Vulkan, GL, ...) lists it, with its driver part ("... (RADV NAVI21)", "...
     // (radeonsi, navi21, ...)"); the first (the preferred backend's) stays.
     let mut seen = std::collections::HashSet::new();
     names.retain(|n| seen.insert(n.split(" (").next().unwrap_or(n).trim().to_string()));
@@ -453,7 +453,7 @@ pub struct ZoneRenderer {
     cull: Option<cull::Cull>,
     cull_pipes: [wgpu::ComputePipeline; 2],
     cull_layout: wgpu::BindGroupLayout,
-    /// Ours (the Lamp Lights setting): each zone instance's own light slots and world sphere, the light slots
+    /// Ours (the Lamp Lights setting): each zone instance's light slots and world sphere, the light slots
     /// written over them now (instance -> slots), and lamps waiting for the streamed geometry (set_lamps).
     inst_lights: Vec<[u32; 4]>,
     spheres: Vec<[f32; 4]>,
@@ -564,7 +564,7 @@ pub struct ZoneRenderer {
     /// Ship model actors (client/ships.rs) by entity.
     model_actors: HashMap<u32, ModelGeo>,
     /// Zone instances standing in for a sub-area (instance, link, as built), the link hidden now, and how many of
-    /// `light_keys` are the zone's own.
+    /// `light_keys` are the zone's.
     links: Vec<(u32, u32, Instance)>,
     hidden: u32,
     /// Layout mode's top-down view hides the link-999 placements (show_link999).
@@ -596,7 +596,7 @@ pub struct ZoneRenderer {
     pub retail_reach: f32,
 }
 
-/// A sub-area's scenery (FUN_101787c0 loads it into zone slot 1): its own buffers and draws, its textures in the
+/// A sub-area's scenery (FUN_101787c0 loads it into zone slot 1): its buffers and draws, its textures in the
 /// slots after the zone's; drawn once all of it is on the GPU.
 struct SubGeometry {
     vertices: wgpu::Buffer,
@@ -608,15 +608,15 @@ struct SubGeometry {
     tex_base: usize,
     link: u32,
     shown: bool,
-    /// Ours (Lamp Lights, a sub-area only): each instance's own light slots and world sphere, and the lamp slots
+    /// Ours (Lamp Lights, a sub-area only): each instance's light slots and world sphere, and the lamp slots
     /// written over them now.
     inst_lights: Vec<[u32; 4]>,
     spheres: Vec<[f32; 4]>,
     lamp_patch: HashMap<u32, [u32; 4]>,
 }
 
-/// A ship's model (FUN_100c4c20 -> FUN_101844c0, drawn as furniture is): its own buffers, one instance that moves with
-/// the actor, and its own textures (slot 0 white), since the shared list is cut back by sub-areas and furniture; drawn
+/// A ship's model (FUN_100c4c20 -> FUN_101844c0, drawn as furniture is): its buffers, one instance that moves with
+/// the actor, and its textures (slot 0 white), since the shared list is cut back by sub-areas and furniture; drawn
 /// once they and their mips are up and while the actor shows.
 struct ModelGeo {
     vertices: wgpu::Buffer,
@@ -847,7 +847,7 @@ pub struct ActorGpu {
     /// vec4s each in model space: position (w 1 = set) and normal (w 1 = set), in SkinMesh's order; missing ones
     /// draw skinned.
     pub cloth: Vec<[f32; 4]>,
-    /// Its cloth's particle state on the GPU (render/cloth.rs), its own: a clone starts without.
+    /// Its cloth's particle state on the GPU (render/cloth.rs), one per actor: a clone starts without.
     cloth_state: cloth::ClothState,
     /// The last mip job of its textures; drawn once the GPU has it.
     mips: u64,
@@ -856,7 +856,7 @@ pub struct ActorGpu {
     /// Its box's screen rect this frame (NDC x0, y0, x1, y1; FUN_100c63d0's), so a faded actor's passes cover only
     /// it; none: the whole screen.
     pub screen: Option<[f32; 4]>,
-    /// Casts lamp shadows this frame (ours: only our own character does; render/lampshadow.rs).
+    /// Casts lamp shadows this frame (ours: only our character does; render/lampshadow.rs).
     pub lamp_caster: bool,
     /// A lamp map takes this actor in this frame (render/lampshadow.rs): the sun's map leaves it out while one of
     /// those lamps is lit and near (zone.wgsl vs_skinned_sun_lamped).
@@ -1017,7 +1017,7 @@ impl ZoneRenderer {
         self.scenery_wire.as_ref().filter(|_| self.wireframe).map(|w| &w[c])
     }
 
-    /// A skinned actor's shine group: the shared uniform slots and its own vertices.
+    /// A skinned actor's shine group: the shared uniform slots and its vertices.
     fn shine_group<'a>(&self, gpu: &Gpu, skin: &'a Skinned) -> &'a wgpu::BindGroup {
         skin.shine.get_or_init(|| {
             gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1314,7 +1314,7 @@ impl ZonePipes {
         // Scenery: front faces clockwise as D3D's; normal placements cull CCW (back), mirrored ones CW (front).
         // Bit-31 models: SRCALPHA / INVSRCALPHA, depth tested (LESSEQUAL) but not written, ZBIAS 8 *(inf: as a constant
         // depth bias of -8)*.
-        // `furn`: furniture's own pass (FUN_101844c0) sets neither ZWRITEENABLE nor ZBIAS, so its blended meshes keep
+        // `furn`: furniture's pass (FUN_101844c0) sets neither ZWRITEENABLE nor ZBIAS, so its blended meshes keep
         // the actor pass's depth writes and bias 0 (batch 7 item 23).
         let make_scenery_z = |fragment: &str, blend: bool, cull: Option<wgpu::Face>, wire: bool, furn: bool| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -1874,7 +1874,7 @@ impl ZonePipes {
                     cache: None,
                 })
             });
-        // Culling binds the globals (camera, voyage, door parts) at group 0 and its own buffers at group 3.
+        // Culling binds the globals (camera, voyage, door parts) at group 0 and its buffers at group 3.
         let cull_layout = cull::layout(device);
         let cull_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("cull"),
@@ -1926,7 +1926,7 @@ impl ZonePipes {
 
 /// Point-light table entries (DAT_105ecae8: 256).
 pub const LIGHTS: usize = 256;
-/// Ours: how far past an instance's bounding sphere a lamp's light is offered to it (set_lamps; the light's own range
+/// Ours: how far past an instance's bounding sphere a lamp's light is offered to it (set_lamps; the light's range
 /// cuts it in the shader).
 const LAMP_REACH: f32 = 16.0;
 
@@ -2201,7 +2201,7 @@ impl ZoneGeometry {
                 if indices.is_empty() || model.vertices.is_empty() {
                     continue;
                 }
-                // Type 3: every triangle unrolled to its own corners, each with its tangent (FUN_10169d10).
+                // Type 3: every triangle unrolled to its corners, each with its tangent (FUN_10169d10).
                 if let Some(slot) = bumped
                     .as_ref()
                     .map(|b| b[mi])
@@ -2760,7 +2760,7 @@ impl ZoneRenderer {
     }
 
     /// Ours (the Lamp Lights setting, client/lamps.rs): the lamps' lights (position, table slot) go into the free light
-    /// slots of the zone instances near them, nearest first; an empty list puts the instances' own back. Waits for a
+    /// slots of the zone instances near them, nearest first; an empty list puts the instances' back. Waits for a
     /// streamed zone's geometry.
     pub fn set_lamps(&mut self, gpu: &Gpu, lamps: &[(Vec3, u32)]) {
         self.lamps_wanted = Some(lamps.to_vec());
@@ -2781,7 +2781,7 @@ impl ZoneRenderer {
                     && lamps.iter().any(|(p, _)| p.distance(Vec3::new(s[0], s[1], s[2])) - s[3] < LAMP_REACH)
             })
             .count();
-        // A sub-area's instances (its own buffer) take them the same way.
+        // A sub-area's instances (its buffer) take them the same way.
         if let Some(sub) = &mut self.sub {
             let snext = lamp_slots(&sub.inst_lights, &sub.spheres, &lamps);
             let put = |i: u32, l: &[u32; 4]| {
@@ -2939,7 +2939,7 @@ impl ZoneRenderer {
         }
     }
 
-    /// Mog House furniture replaces the set before it: each model file is its own geometry with its own textures
+    /// Mog House furniture replaces the set before it: each model file is its geometry with its textures
     /// (names repeat across files), drawn once all of the set's textures are up.
     pub fn set_furniture(
         &mut self,
@@ -3941,7 +3941,7 @@ impl ZoneRenderer {
             pass.set_bind_group(1, &self.textures[0], &[]);
             pass.draw(0..3, 0..1);
         }
-        // The zone's own scenery draws from its culled instances when it is culled, only runs that may show.
+        // The zone's scenery draws from its culled instances when it is culled, only runs that may show.
         let shown = self.cull.as_ref().map(|c| c.runs_shown(vp, camera.eye, self.clip)).unwrap_or_default();
         let (zone_inst, zone_args) = match &self.cull {
             Some(c) => (&c.out, Some((c, &c.args, shown.as_slice()))),
@@ -4511,7 +4511,7 @@ fn faded_rect(screen: Option<[f32; 4]>, w: u32, h: u32) -> Option<[u32; 4]> {
 impl ZoneRenderer {
     /// Actors with the refraction pass (scheduler ops 0x48 / 0x49), in the given order (farthest first, retail's sorted
     /// list): per actor the scene so far is copied whole (FUN_10025870 into DAT_10456e6c), then its batches, its shine
-    /// and the refraction pass (FUN_1002dc10 -> FUN_10025330) sampling that copy at the pixel's own screen point shifted
+    /// and the refraction pass (FUN_1002dc10 -> FUN_10025330) sampling that copy at the pixel's screen point shifted
     /// by (L P11, L P22) / w. Without a copyable target they draw plainly.
     pub fn render_refraction(
         &mut self,
@@ -4527,7 +4527,7 @@ impl ZoneRenderer {
         self.render_refraction_at(gpu, encoder, color, color_tex, depth, camera, aspect, actors, 0);
     }
 
-    /// render_refraction from uniform slot `base` on: one actor at a time among the effects, each its own slot.
+    /// render_refraction from uniform slot `base` on: one actor at a time among the effects, each its slot.
     pub fn render_refraction_at(
         &mut self,
         gpu: &Gpu,
@@ -4615,7 +4615,7 @@ impl ZoneRenderer {
                     pass.draw(range.clone(), 0..1);
                 }
             }
-            // Its shine in a slot from the top of the shine buffer (render's own take the bottom).
+            // Its shine in a slot from the top of the shine buffer (render's take the bottom).
             if let Some(s) = a.shine
                 && let Some(tex) = self.shine_tex.get(&s.key)
             {
@@ -4807,7 +4807,7 @@ pub fn render_pngs_post(
         (std::env::var("FFXI_BENCH").ok().and_then(|v| v.parse::<u32>().ok()), frames.first())
     {
         renderer.lighting = *lighting;
-        // With timestamps, the GPU's own time for render() too (one pair a frame, up to 2048 frames).
+        // With timestamps, the GPU's time for render() too (one pair a frame, up to 2048 frames).
         let ts = gpu
             .device
             .features()

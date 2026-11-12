@@ -2,7 +2,7 @@
 --   1. the reference is the set's best piece per slot at the level cap (75 or 99): a curated list where one exists,
 --      else the best-scoring piece in the whole item list the job and race can wear at the cap;
 --   2. each slot gets the owned piece, wearable now, that gives the most of that reference's weighted stats (its share);
---   3. below MIN_SHARE (nothing close to it) the slot takes the owned piece the set's own weights score highest;
+--   3. below MIN_SHARE (nothing close to it) the slot takes the owned piece the set's weights score highest;
 --   4. separately, "worth getting": the best piece by the same rule from every item wearable at this level, if it
 --      beats the owned pick.
 -- Weapons (main, sub, range) are picked only in sets that swap them (mages' idle and casting sets); the others keep
@@ -59,7 +59,7 @@ local function value(s, key)
   return v
 end
 
--- A piece's own score for a set (caps not applied).
+-- A piece's score for a set (caps not applied).
 function M.score(s, set)
   local t = 0
   for k, w in pairs(set.weights) do t = t + w * value(s, k) end
@@ -244,7 +244,7 @@ function M.build(ctx, set, set_name)
     end
   end
 
-  -- The owned picks: the most of the reference, else the set's own best.
+  -- The owned picks: the most of the reference, else the set's best.
   local by_score = M.best_by_score(owned, set)
   local out = { slots = {}, score = 0 }
   local used = {}

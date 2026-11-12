@@ -14,7 +14,7 @@ local KIND = { [3] = "spell", [7] = "ws", [9] = "ability" }
 local FINISH = { [3] = true, [4] = true, [5] = true, [6] = true, [11] = true, [13] = true, [14] = true, [15] = true }
 local START = { [7] = true, [8] = true, [9] = true, [10] = true, [12] = true }
 -- The refusals the server's request path sends for each kind (LSB): its controllers and action states, the target
--- check every kind goes through (12 already claimed, 155, 446) and the game scripts' own checks (onMagicCastingCheck,
+-- check every kind goes through (12 already claimed, 155, 446) and the game scripts' checks (onMagicCastingCheck,
 -- onAbilityCheck, onItemCheck: "You cannot learn...", "while medicated", "requires a pet" and the rest).
 -- A spell's carry its id, except the target check's and its recast's 18 (an interrupt's 16 too): none. Weapon
 -- skills' carry none. An ability's carry none or its param. An item's carry none or the item id, except a scroll's

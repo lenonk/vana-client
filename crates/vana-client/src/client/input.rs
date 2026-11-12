@@ -482,7 +482,7 @@ impl Input {
         };
         // A controller's stick bytes (FUN_10005a40 +0x250..+0x253, client/gamepad.rs) count as the compact stick of
         // the same axis, the larger one winning; not while typing. A window does not stop them: the sticks never drive
-        // windows (the d-pad does). The camera's 6 / 7 leave them out: the camera reads them with its own sense
+        // windows (the d-pad does). The camera's 6 / 7 leave them out: the camera reads them with its sense
         // (device_stick).
         let pad_stick = match id {
             _ if self.typing => 0.0,

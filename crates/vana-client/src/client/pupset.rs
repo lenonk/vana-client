@@ -1,5 +1,5 @@
 //! Puppetmaster automaton customization (MODLOG "Automaton customization"): pupequip's "Automaton" row (FUN_10207670)
-//! opens statpup, automato (head, frame, 12 attachments), BLU's bluinven / bluehelp fed by their own rows, and pupsibor
+//! opens statpup, automato (head, frame, 12 attachments), BLU's bluinven / bluehelp fed by their rows, and pupsibor
 //! (Refine by Type), sending c2s 0x102.
 
 use super::World;

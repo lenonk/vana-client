@@ -20,7 +20,7 @@ pub enum Kind {
     Emote,
     /// Weapon-skill files (FUN_100d22a0 kind 6), put on by the effect system.
     Skill,
-    /// An effect file whose scheduler plays its own motions (op 0x05, Pollen's wz00), while that task runs.
+    /// An effect file whose scheduler plays its motions (op 0x05, Pollen's wz00), while that task runs.
     Effect,
     /// The riding files (FUN_100d2800, tag 7) while on a chocobo or mount.
     Ride,
@@ -578,7 +578,7 @@ fn status_motion_posed(w: &World, id: u32, ch: &Character, posed: Option<f32>) -
         w.entities.get(&id).map_or((0, 0.0), |e| (e.motion.status, e.ratio))
     };
     // FUN_1008c6c0 blanks the status motion (+0x7d8) when a death's scheduler starts, and FUN_100c8bb0 online picks
-    // that blank for 2 / 3 rather than "cor" (unless vtable +0x200). The death scheduler's own motions lay a body
+    // that blank for 2 / 3 rather than "cor" (unless vtable +0x200). The death scheduler's motions lay a body
     // down (ded, then cor0); a `sdep` one (a trust, a death-flagged entity) has none, so a released trust stays on its
     // feet while it vanishes. Ours: the stand the blank leaves playing, not a walk from a still-sliding position.
     let (status, ratio) = sdep_stand(status, ratio, id != w.my_id && super::combat::sdep(w, id));
@@ -648,7 +648,7 @@ pub(super) fn update(w: &mut World, dt: f32) {
         }
         let base = status_motion(w, id, &ch);
         let put_away = super::fishrod::put_away(w, id);
-        // FUN_100c83c0: a new status motion on an entity's own actor (+0x7d8), once it plays (FUN_100cd920 finds it).
+        // FUN_100c83c0: a new status motion on an entity's actor (+0x7d8), once it plays (FUN_100cd920 finds it).
         let a = &w.actors[&id];
         let held = super::combat::no_react(w, id) || super::fishrod::is_rod(id) || put_away;
         if !held && a.status_motion != base && !find(&a.extra, &ch, &base).is_empty() {
@@ -903,7 +903,7 @@ mod tests {
     use super::*;
 
     /// Event op 0x50: a scheduler stopped at tick 30 starts no later motion and is no longer busy; its looping motion
-    /// plays on, a counted one ends on its own.
+    /// plays on, a counted one ends by itself.
     #[test]
     fn scheduler_stop_keeps_current() {
         let m = |name: &str, at: u32, count: u8| sched::Motion {

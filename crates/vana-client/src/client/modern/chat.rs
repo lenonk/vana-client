@@ -1,7 +1,7 @@
 //! The modern chat window: the log's lines in their colours (in-line codes applied as the font does), filter tabs,
 //! timestamps as the log has them, the chat line while typing, the Enter key cap while a message waits for a key, and
 //! its settings (the font size) behind the button at the tabs' right. It grows and shrinks by the retail log's rule
-//! (logwin::LogAnim) on its own rows.
+//! (logwin::LogAnim) on its rows.
 
 use super::super::combat::is_battle;
 use super::super::{World, cfgapply, event, fep};
@@ -12,7 +12,7 @@ use egui::{Color32, FontId, Id, Order, Rect, Sense, Ui, Vec2, pos2, vec2};
 use std::sync::OnceLock;
 
 /// The tabs: retail's full log's (FUN_10138700 / FUN_101299f0; MODLOG "The full log's tabs"): every line, then each
-/// channel's chat modes, our own echo with the others' (Shout with Yell, Party with the trusts').
+/// channel's chat modes, our echo with the others' (Shout with Yell, Party with the trusts').
 pub const TABS: [(&str, &[u8]); 11] = [
     ("All", &[]),
     ("Say", &[1, 9]),
@@ -83,7 +83,7 @@ pub fn colour(c: [u8; 4]) -> Color32 {
     Color32::from_rgba_unmultiplied(k(c[2]), k(c[1]), k(c[0]), k(c[3]))
 }
 
-/// The colours of `1e 00..10` (FFXiMain's table; 0 = the line's own).
+/// The colours of `1e 00..10` (FFXiMain's table; 0 = the line's).
 fn codes() -> &'static [u32; 17] {
     static T: OnceLock<[u32; 17]> = OnceLock::new();
     T.get_or_init(|| {
@@ -114,7 +114,7 @@ fn icons(painter: &egui::Painter, m: &Modern, line: &str, g: &egui::Galley, at: 
 }
 
 /// A log line as coloured runs after its timestamp: `1e xx` sets the colour (the 17-entry table below 0x11, the colour
-/// ids above, 0 the line's own), `1f xx` a mode's colour; the auto-translate brackets are green / red braces.
+/// ids above, 0 the line's), `1f xx` a mode's colour; the auto-translate brackets are green / red braces.
 pub fn line_job(stamp: (&str, Color32), line: &str, base: [u8; 4], font: &FontId, wrap: f32) -> LayoutJob {
     let mut job = LayoutJob::default();
     job.wrap.max_width = wrap;
@@ -157,7 +157,7 @@ pub fn line_job(stamp: (&str, Color32), line: &str, base: [u8; 4], font: &FontId
                 flush(&mut job, &mut run, cur);
                 job.append(ICON_SPACE, 0.0, TextFormat::simple(font.clone(), Color32::TRANSPARENT));
             }
-            // The game's own glyphs as Unicode; the other private-use characters have no face here.
+            // The game's glyphs as Unicode; the other private-use characters have no face here.
             c => run.extend(crate::dat::font::plain_char(c)),
         }
     }
@@ -695,7 +695,7 @@ pub(super) fn candidates(ui: &mut Ui, m: &Modern, cands: &[String], sel: usize, 
 
 /// What the rule gives the window this frame (logwin::LogAnim): its height in rows over its chrome (eased; below 0 the
 /// chrome itself folding away), the rows to draw from the displayed one up, the rows newer than it, and the slide in
-/// 16ths of a row (retail's typing row left out: the chat line takes its own row).
+/// 16ths of a row (retail's typing row left out: the chat line takes its row).
 #[derive(Clone, Copy, Debug)]
 pub struct Shown {
     pub rows: f32,

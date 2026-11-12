@@ -51,7 +51,7 @@ pub(super) fn gu(lua: &Lua) -> mlua::Result<&super::super::game_ui::GameUi> {
     Ok(unsafe { &*p })
 }
 
-/// A language's name tables: the world's own, else loaded once on a thread (none until they are in).
+/// A language's name tables: the world's, else loaded once on a thread (none until they are in).
 fn names_in(w: &World, lang: crate::dat::items::Lang) -> Option<std::sync::Arc<crate::dat::names::Names>> {
     use crate::dat::names::Names;
     use std::sync::{Arc, Mutex};
@@ -175,7 +175,7 @@ pub(super) fn unhooked(lua: &Lua, t: &Table) -> mlua::Result<Table> {
         let out = lua.create_table()?;
         copies.insert(t.to_pointer() as usize, out.clone());
         let mut src = Some(t.clone());
-        // The table, then its __index tables in turn (a few: a class chain); its own fields first.
+        // The table, then its __index tables in turn (a few: a class chain); its fields first.
         for _ in 0..8 {
             let Some(s) = src.take() else { break };
             for pair in s.pairs::<Value, Value>() {
@@ -281,7 +281,7 @@ pub(super) fn install(
     }
     g.set("log", log)?;
 
-    // require: the mod's own files (a.b -> a/b.lua or a/b/init.lua), loaded once.
+    // require: the mod's files (a.b -> a/b.lua or a/b/init.lua), loaded once.
     let src = vm.src.clone();
     let loaded = lua.create_table()?;
     g.set(
@@ -1984,7 +1984,7 @@ fn model_height(w: &World, id: u32) -> Option<f32> {
     w.actors.get(&id).filter(|a| a.character.is_some()).map(|a| -a.top)
 }
 
-/// Our own character as an entity (the entity map holds the others only).
+/// Our character as an entity (the entity map holds the others only).
 /// Our facing (what 0x015 sends and the model shows), as entity headings are: radians, 0 east, pi / 2 south.
 fn my_heading(w: &World) -> f32 {
     super::super::event::rad_of(w.net.me.lock().map_or(0, |m| m.dir))
@@ -2813,7 +2813,7 @@ pub(super) fn mod_id(lua: &Lua) -> mlua::Result<String> {
     lua.globals().get::<Table>("mod")?.get::<String>("id")
 }
 
-/// Sets or (None) clears a window's opacity from this mod (per-window opacity); the key is the mod's own window.
+/// Sets or (None) clears a window's opacity from this mod (per-window opacity); the key is the mod's window.
 pub(super) fn set_opacity(lua: &Lua, key: &str, opacity: Option<f32>) {
     let Some(info) = lua.app_data_ref::<std::rc::Rc<std::cell::RefCell<super::state::FrameInfo>>>().map(|f| f.clone())
     else {

@@ -158,7 +158,7 @@ pub(super) fn cat_rows(menu: &str) -> &'static [(u16, Cat)] {
 }
 
 /// A category row's name (the windows draw them as sprites): spell types 1 White .. 8 Trust, ability types 4 traits,
-/// 1 abilities, 3 weapon skills, 2 pet commands, 0x14 Monster Skills (Monstrosity's own words in its windows).
+/// 1 abilities, 3 weapon skills, 2 pet commands, 0x14 Monster Skills (Monstrosity's words in its windows).
 pub(super) fn cat_label(menu: &str, cat: Cat) -> &'static str {
     let mon = menu.starts_with("menu    mp_");
     match cat {
@@ -243,7 +243,7 @@ pub(super) fn ability_kind(ty: u8) -> u8 {
 }
 
 /// The list a sub-list type opens from (Job Abilities for runes and rolls, Pet Commands for Blood Pacts); 0 for a
-/// category's own list and Monstrosity's.
+/// category's list and Monstrosity's.
 pub(super) fn ability_parent(ty: u16) -> u16 {
     match ABILITY_TYPES.get(ty as usize).map_or(0, |t| t.0 as u16) {
         0x14 => 0,
@@ -1051,7 +1051,7 @@ pub fn num_plus(w: &mut World) {
     if win.sort_focus.is_some() {
         win.sort_focus = None;
     } else if !win.rows.is_empty() {
-        // The sort window's own cursor starts on child 1 (inferred).
+        // The sort window's cursor starts on child 1 (inferred).
         win.sort_focus = Some(1);
     } else {
         return;

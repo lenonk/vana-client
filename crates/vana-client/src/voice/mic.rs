@@ -29,7 +29,7 @@ impl Drop for Mic {
 }
 
 /// Microphones as (cpal id, description): the default host's inputs that are not outputs too (PipeWire lists every
-/// sink as recordable, ALSA its duplex plugins), monitors or its own default entry; all its inputs when that leaves
+/// sink as recordable, ALSA its duplex plugins), monitors or its default entry; all its inputs when that leaves
 /// none.
 pub fn devices() -> Vec<(String, String)> {
     let Ok(devs) = cpal::default_host().input_devices() else { return Vec::new() };

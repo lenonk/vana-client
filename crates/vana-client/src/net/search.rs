@@ -17,7 +17,7 @@ const FIXED: &[u8; 16] = b"0s=m<1IZ2zBCc8{~";
 /// A slot older than 30 s fails (FUN_100e0d50).
 const TIMEOUT: Duration = Duration::from_secs(30);
 
-/// FUN_100e1790 at map login: the session word every request carries and the "more" packet built once (its own salt).
+/// FUN_100e1790 at map login: the session word every request carries and the "more" packet built once (its salt).
 struct Session {
     word: u32,
     more: Vec<u8>,
@@ -665,7 +665,7 @@ fn ah_exchange(s: &mut TcpStream, wire: u8, payload: &[u8], extra: u16, more: bo
     }
 }
 
-/// [`ah_query`] on its own thread.
+/// [`ah_query`] on a separate thread.
 pub fn ah_spawn(addr: (Ipv4Addr, u16), wire: u8, payload: Vec<u8>, extra: u16) -> mpsc::Receiver<Result<AhReply>> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
@@ -678,7 +678,7 @@ pub fn ah_spawn(addr: (Ipv4Addr, u16), wire: u8, payload: Vec<u8>, extra: u16) -
     rx
 }
 
-/// [`query`] on its own thread; the result comes through the channel.
+/// [`query`] on a separate thread; the result comes through the channel.
 pub fn spawn(addr: (Ipv4Addr, u16), cond: Cond) -> mpsc::Receiver<Result<Reply>> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
@@ -763,7 +763,7 @@ mod tests {
         (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
     }
 
-    /// A request decrypted with its own salt: (length, header and payload up to dlen, session word, salt). The original
+    /// A request decrypted with its salt: (length, header and payload up to dlen, session word, salt). The original
     /// client leaves stale memory in the padding before the session word (so its MD5 differs from ours).
     fn request_fields(b: &[u8]) -> (usize, Vec<u8>, u32, u32) {
         let mut b = b.to_vec();

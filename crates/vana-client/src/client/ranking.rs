@@ -1,6 +1,6 @@
 //! The Fishing Ranking (op 0xb3, FUN_100bbaf0; Selbina and Chenon's contest NPCs). A request (DAT_10480aa8) starts
 //! a kind 2 transfer (FUN_100a3310: the c2s 0x04B / s2c 0x04D transfer of servmes.rs, one at a time): command 1
-//! fetches the ranking table in 0xb4-byte pieces (five 36-byte entries) after a header and our own entry, 10..13 send
+//! fetches the ranking table in 0xb4-byte pieces (five 36-byte entries) after a header and our entry, 10..13 send
 //! one bodiless request whose result byte is the answer. The script reads the result and our entry, then opens
 //! "menu    ranking" (DAT_10664444, FUN_10209b90) on the table.
 
@@ -30,7 +30,7 @@ const WHITE: u32 = 0x8080_8080;
 
 /// The request (DAT_10480aa8, FUN_100a2fd0): command, result (0 pending, 1 done, negative failed or the server's
 /// refusal), the value (the ranking's type, 1..7), the table's timestamp, size and bytes in order, the header word
-/// (+0x18, the entry count) and our own entry (+0x1c).
+/// (+0x18, the entry count) and our entry (+0x1c).
 #[derive(Clone, Debug)]
 pub struct Request {
     cmd: u8,

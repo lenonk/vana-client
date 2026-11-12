@@ -1,6 +1,6 @@
 //! Keeps the screen awake while a game controller plays: pad input never reaches the idle timer on many desktops,
 //! so without this the screen blanks mid-fight. The hold lasts `HOLD` after the pad's last input, then the desktop's
-//! own timeout applies again.
+//! timeout applies again.
 
 use std::time::{Duration, Instant};
 
@@ -154,7 +154,7 @@ mod linux {
         Portal(OwnedObjectPath),
     }
 
-    /// The bus calls run on a thread of their own, so a slow or missing bus never stalls a frame.
+    /// The bus calls run on a separate thread, so a slow or missing bus never stalls a frame.
     pub fn spawn() -> mpsc::Sender<bool> {
         let (tx, rx) = mpsc::channel::<bool>();
         let spawned = std::thread::Builder::new().name("keep-awake".into()).spawn(move || {

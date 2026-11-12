@@ -84,6 +84,6 @@ actions.cast(spell, target?) -> nil
 
 ## Permissions
 
-Reading the game, drawing and your own windows need no permission. Everything that acts in the game or reaches
+Reading the game, drawing and your windows need no permission. Everything that acts in the game or reaches
 outside it does; the player grants it on the mod's Extras page. Each function's **Needs** line names its permission,
 and [the guide's permissions section](../guide.md#permissions) lists them all.

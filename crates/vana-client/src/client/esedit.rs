@@ -355,7 +355,7 @@ fn list_key(w: &mut World, key: egui::Key) {
     }
 }
 
-/// mcrmogc (FUN_10136300): child 1 -> container 0, 2 -> 1, 3 -> 2, the others their own number; Enter shows it.
+/// mcrmogc (FUN_10136300): child 1 -> container 0, 2 -> 1, 3 -> 2, the others their number; Enter shows it.
 fn mogc_key(w: &mut World, gu: &GameUi, key: egui::Key, o: u16) {
     use egui::Key as K;
     match key {
@@ -514,7 +514,7 @@ pub(super) fn set_row(w: &mut World, k: usize) -> bool {
     moved
 }
 
-/// mcrmogc's pick without its window: the list on container `c` (child 1 -> 0, 2 -> 1, 3 -> 2, the others their own).
+/// mcrmogc's pick without its window: the list on container `c` (child 1 -> 0, 2 -> 1, 3 -> 2, the others theirs).
 pub(super) fn set_container(w: &mut World, c: u8) {
     if let Some(e) = ed_mut(w).filter(|e| e.container != c) {
         (e.container, e.scroll, e.cursor, e.mogc) = (c, 0, 0, None);

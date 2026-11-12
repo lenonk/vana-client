@@ -1,12 +1,12 @@
 //! The remembered password (not retail: PlayOnline kept it) and a login server's trust token. Sealed with
-//! ChaCha20-Poly1305 under a random key in its own file (owner-only, apart from the config, so a shared or copied config
+//! ChaCha20-Poly1305 under a random key in its file (owner-only, apart from the config, so a shared or copied config
 //! carries neither), bound to the server and account it was saved for, and to which of the two it is.
 
 use anyhow::{Context, Result, anyhow};
 use ring::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, NONCE_LEN, Nonce, UnboundKey};
 use std::path::PathBuf;
 
-/// The key file: in the data dir, or beside an FFXI_CONFIG copy (test runs keep their own).
+/// The key file: in the data dir, or beside an FFXI_CONFIG copy (test runs keep theirs).
 fn key_path() -> PathBuf {
     match std::env::var_os("FFXI_CONFIG") {
         Some(p) => PathBuf::from(p).with_file_name("secret.key"),
@@ -41,7 +41,7 @@ fn key() -> Result<[u8; 32]> {
 }
 
 /// What a sealed text is bound to: a password to its server and account (as it always was), a trust token to them
-/// under its own prefix, so neither opens as the other.
+/// under its prefix, so neither opens as the other.
 fn aad(token: bool, server: &str, account: &str) -> Vec<u8> {
     let kind = if token { "trust\0" } else { "" };
     format!("{kind}{server}\0{account}").into_bytes()

@@ -1,4 +1,4 @@
-//! An upscaled texture pack from the game's own images (not retail; a mod made by us):
+//! An upscaled texture pack from the game's images (not retail; a mod made by us):
 //! `tex-export` saves every stock IMG chunk once (by content) as a PNG with a manifest of where each one goes;
 //! an upscaler (Upscayl) enlarges that folder; `tex-pack` rebuilds each file with its images at the new size as DXT,
 //! into a mod folder laid out like the game (dat/overlay.rs merges its images by name).

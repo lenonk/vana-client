@@ -41,7 +41,7 @@ M.SETS = {
     weights = merge(MELEE, { ma = 3, kick = 3, counter = 1.5, sk_h2h = 0.9 }) },
   TP_Pet = { label = "TP - with pet", when = "engaged with a pet out", caps = { haste = 25 },
     weights = merge(MELEE, { ["pet.acc"] = 0.6, ["pet.att"] = 0.4, ["pet.haste"] = 4 }) },
-  WS = { label = "Weapon skill", when = "any weapon skill without its own set",
+  WS = { label = "Weapon skill", when = "any weapon skill without its set",
     weights = { wsd = 8, att = 0.6, acc = 0.6, str = 0.8, dex = 0.6, tpb = 0.02, crit = 1, da = 2, ta = 3 } },
   Waltz = { label = "Waltz", when = "Curing Waltz", weights = { waltz = 10, chr = 1, vit = 0.5 } },
   Steps = { label = "Steps", when = "a step", weights = { stepacc = 3, acc = 2, haste = 2 } },
@@ -52,7 +52,7 @@ M.SETS = {
   Midshot = { label = "Ranged - midshot", when = "during a ranged attack",
     weights = { racc = 1.2, ratt = 1, agi = 0.8, stp = 4, crit = 2, doubleshot = 5, tripleshot = 7, trueshot = 2,
       sk_archery = 1, sk_marks = 1, sk_throw = 1 } },
-  RangedWS = { label = "Ranged weapon skill", when = "a ranged weapon skill without its own set",
+  RangedWS = { label = "Ranged weapon skill", when = "a ranged weapon skill without its set",
     weights = { wsd = 8, ratt = 1, racc = 1, agi = 1, str = 0.5, tpb = 0.02 } },
   -- Casting
   Precast = { label = "Fast Cast", when = "before every spell", caps = { fc = 80 }, weights = { fc = 10, quickcast = 3 } },
@@ -66,7 +66,7 @@ M.SETS = {
   NaSpells = { label = "Status removal", when = "-na spells, Erase", weights = { healing = 2, fc = 3, haste = 3, cursna = 5 } },
   Divine = { label = "Divine magic", when = "Banish, Holy, Repose",
     weights = { divine = 1.5, mnd = 1, macc = 1, mab = 2, mdmg = 0.3 } },
-  Enhancing = { label = "Enhancing magic", when = "enhancing magic without its own set",
+  Enhancing = { label = "Enhancing magic", when = "enhancing magic without its set",
     weights = { enhancing = 2, enhdur = 6, fc = 2, haste = 2, mnd = 0.2 } },
   Stoneskin = { label = "Stoneskin", when = "Stoneskin", weights = { mnd = 2, enhancing = 1, ["ja:stoneskin"] = 10 } },
   Phalanx = { label = "Phalanx", when = "Phalanx", weights = { enhancing = 2, phalanx = 10, enhdur = 2 } },
@@ -146,7 +146,7 @@ M.SETS = {
   Steal = { label = "Steal", when = "Steal, Despoil", weights = { steal = 8, despoil = 8, ["ja:steal"] = 8 } },
 }
 
--- Ability sets: an ability's own gear ("Boost"+5 on the item scores as ja:boost). Each one is a set named by the
+-- Ability sets: an ability's gear ("Boost"+5 on the item scores as ja:boost). Each one is a set named by the
 -- ability; jobs list the ones their gear enhances.
 M.ABILITY_SETS = {
   WAR = { "Berserk", "Warcry", "Aggressor", "Tomahawk", "Mighty Strikes", "Blood Rage", "Restraint" },
@@ -237,7 +237,7 @@ M.SKILL_STAT = { hand_to_hand = "sk_h2h", dagger = "sk_dagger", sword = "sk_swor
   great_katana = "sk_gkatana", club = "sk_club", staff = "sk_staff", archery = "sk_archery",
   marksmanship = "sk_marks", throwing = "sk_throw" }
 
--- A weapon skill's own set from its facts (ws.lua): physical, ranged or magical weights plus its modifiers.
+-- A weapon skill's set from its facts (ws.lua): physical, ranged or magical weights plus its modifiers.
 function M.ws_set(id, ws, name)
   local w
   if ws.kind == "magic" then
@@ -253,7 +253,7 @@ function M.ws_set(id, ws, name)
   return { label = name or ("Weapon skill " .. id), when = name or "this weapon skill", ws = id, weights = w }
 end
 
--- The weapon skills (ids) a job has its own sets for: every one ws.lua lists for the job.
+-- The weapon skills (ids) a job has its sets for: every one ws.lua lists for the job.
 function M.ws_ids(job, wslist)
   local out = {}
   for id, ws in pairs(wslist) do
@@ -320,7 +320,7 @@ function M.spell_sets(spell, blu)
   return { pre, mid }
 end
 
--- The sets a job ability wears: its own set if the job has one, else a family's.
+-- The sets a job ability wears: its set if the job has one, else a family's.
 function M.ability_sets(name, job_sets)
   if job_sets[name] then return { name } end
   if name:find("Waltz$") or name:find("^Curing Waltz") or name == "Divine Waltz" then return { "Waltz" } end

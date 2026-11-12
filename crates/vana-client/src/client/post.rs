@@ -667,7 +667,7 @@ pub(super) fn picker_rows(w: &World) -> Vec<crate::inventory::Slot> {
     w.inv.viewed(super::items::INVENTORY).into_iter().filter(|s| s.index != 0 && s.id != 0).collect()
 }
 
-/// FUN_1012e1a0: NoDelivery (0x2000) without CanSendAccount (0x10) grey; CanSendAccount only to our own account;
+/// FUN_1012e1a0: NoDelivery (0x2000) without CanSendAccount (0x10) grey; CanSendAccount only to our account;
 /// equipped grey. The augment rule (Ex by augment) and the equipped linkshell are not checked here.
 fn picker_tint(w: &World, s: &crate::inventory::Slot, on_account: bool) -> u32 {
     use crate::inventory::{TINT_DIM, TINT_WHITE};

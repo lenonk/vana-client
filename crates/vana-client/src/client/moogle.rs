@@ -1,5 +1,5 @@
-//! The moogle menus (s2c 0x02E, FUN_10097af0 -> FUN_101d6110): "menu    myroom" in one's own Mog House, "menu    mogext"
-//! by a nomad moogle, their storage menus (FUN_10145e70) and Change Jobs. Gardening's own mode is not done yet.
+//! The moogle menus (s2c 0x02E, FUN_10097af0 -> FUN_101d6110): "menu    myroom" in one's Mog House, "menu    mogext"
+//! by a nomad moogle, their storage menus (FUN_10145e70) and Change Jobs. Gardening's mode is not done yet.
 
 use super::World;
 use super::game_ui::GameUi;
@@ -209,7 +209,7 @@ fn request(w: &mut World, main: u8, sub: u8) {
     }
     let moogle = moogle_actor(w);
     log::debug!("job change ({main}, {sub}), moogle {moogle:?}");
-    // FUN_10062e20(0x13ae, 'main', us, moogle): actor1 is our own actor (FUN_10081550 on 0x1047d600), so the
+    // FUN_10062e20(0x13ae, 'main', us, moogle): actor1 is our actor (FUN_10081550 on 0x1047d600), so the
     // effect plays on us, with the moogle as its target.
     if let Some(id) = moogle {
         w.effects.on_event_scheduler(DANCE_FILE, DANCE, Who::Actor(w.my_id), Who::Actor(id));

@@ -63,7 +63,7 @@ local function cost_of(r)
   return 0, ""
 end
 
--- Abilities, weapon skills and pet commands we can use now: not traits, Monstrosity moves (in their own list) or the
+-- Abilities, weapon skills and pet commands we can use now: not traits, Monstrosity moves (in their list) or the
 -- rows that only open a sub-list (Phantom Roll; its rolls are listed themselves); pet commands only with a pet.
 local function abilities_by_tab()
   local out = { [2] = {}, [3] = {}, [4] = {} }

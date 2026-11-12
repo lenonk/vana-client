@@ -198,7 +198,7 @@ fn swaps(w: &World, name: &str) -> Vec<(u16, usize)> {
     }
 }
 
-/// The help line (slot 1) where the window sets its own: Find Member / Invite (0xe 0x10 / 0xf), Lv. Sync Off (0xe
+/// The help line (slot 1) where the window sets one: Find Member / Invite (0xe 0x10 / 0xf), Lv. Sync Off (0xe
 /// 0x2a3), prtyjoin's question (group 10 0x00 / 0x01 with the name, FUN_10206350).
 fn help(gu: &GameUi, w: &World, win: &Win) -> Option<String> {
     if find_child(win.name) == Some(win.sel) {
@@ -227,7 +227,7 @@ pub fn update(w: &mut World) {
     }
 }
 
-/// The top window closes (FUN_10205660 and the windows' own close hooks): prty5us sends a changed language mask; the
+/// The top window closes (FUN_10205660 and the windows' close hooks): prty5us sends a changed language mask; the
 /// bottom one closes the search results and the party-list cursor and brings the main menu back.
 fn close_top(w: &mut World) {
     let Some(m) = w.partymenu.as_mut() else { return };
@@ -380,7 +380,7 @@ fn enter(w: &mut World, name: &'static str, sel: u16) {
         (PRTY1, 5) | (PRTY2, 6) | (PRTY3 | PRTY7, 11) => request(w),
         (PRTY1, 6) | (PRTY2, 7) | (PRTY3 | PRTY7, 12) => super::search::run_requests(w),
         (PRTY1, 3) => super::textcmd::config_flag(w, 6, !conf(w, 6)),
-        // Languages: the mask from config 0x98 (none: the client language's own), sent once on the first show.
+        // Languages: the mask from config 0x98 (none: the client language's), sent once on the first show.
         (PRTY1, 4) => {
             let mut mask = w.game.get(0x98);
             if mask == 0 {
@@ -402,7 +402,7 @@ fn enter(w: &mut World, name: &'static str, sel: u16) {
         (PRTY2, 5) | (PRTY3 | PRTY7, 10) => pick_hidden(w, Pick::Focus),
         (PRTY3 | PRTY7, 4) => pick(w, Pick::Leader),
         (PRTY3 | PRTY7, 5) => pick(w, Pick::Kick),
-        // FUN_100e9090: 0x070 only with our own leader flag (GAttr 4 party, 8 alliance).
+        // FUN_100e9090: 0x070 only with our leader flag (GAttr 4 party, 8 alliance).
         (PRTY3 | PRTY7, 6) if w.party.own_flags & 4 != 0 => packet(w, 0x070, vec![0, 0, 0, 0]),
         (PRTY3, 7) => push(w, PRTY4),
         (PRTY7, 7) => packet(w, 0x06F, vec![5, 0, 0, 0]),
@@ -602,7 +602,7 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
     }
 }
 
-/// The top window's help (slot 1, its own where it sets one) and title (frame string 1, group 0xd).
+/// The top window's help (slot 1, its where it sets one) and title (frame string 1, group 0xd).
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     let Some(top) = w.partymenu.as_ref().filter(|m| !m.hidden).and_then(|m| m.stack.last()) else { return };
     let [h, title] = gu.focus_text(top.name, top.sel);

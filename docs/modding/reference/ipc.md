@@ -26,7 +26,7 @@ The message arrives as the [`ipc_message`](#the-ipc_message-event) event.
 ipc.send(text, character?)
 ```
 
-Sends `text` to the same mod in every other game window on this computer, or only to the window playing `character`. The window that sends does not receive its own message.
+Sends `text` to the same mod in every other game window on this computer, or only to the window playing `character`. The window that sends does not receive its message.
 
 **Parameters**
 

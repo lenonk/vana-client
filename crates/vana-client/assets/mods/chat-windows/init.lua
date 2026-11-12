@@ -1,4 +1,4 @@
--- Chat windows (the chat window add-ons): one channel's lines in a window of its own with a line to answer in, and
+-- Chat windows (the chat window add-ons): one channel's lines in a separate window with a line to answer in, and
 -- a search over every line of the session.
 
 local CHANNELS = {

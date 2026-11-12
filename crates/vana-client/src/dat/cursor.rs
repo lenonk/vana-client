@@ -66,7 +66,7 @@ fn png(img: &[u8]) -> Result<(u32, u32, Vec<u8>)> {
 }
 
 /// A DIB as in icon files: BITMAPINFOHEADER whose height covers the XOR image and the AND mask, palette for <= 8 bpp,
-/// rows bottom-up padded to 4 bytes. 32 bpp carries its own alpha; otherwise the AND mask's set bits are transparent.
+/// rows bottom-up padded to 4 bytes. 32 bpp carries its alpha; otherwise the AND mask's set bits are transparent.
 fn dib(img: &[u8], w0: u32, h0: u32) -> Result<(u32, u32, Vec<u8>)> {
     let (Some(hdr), Some(w), Some(h2), Some(bpp)) = (u32_at(img, 0), u32_at(img, 4), u32_at(img, 8), u16_at(img, 14))
     else {

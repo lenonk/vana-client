@@ -7,7 +7,7 @@ use super::game_ui::GameUi;
 use crate::audio::Ui as Se;
 use crate::gamecfg::Values;
 
-/// Under-the-choice markers (FUN_1018f4a0 / FUN_1018f510 and the pages' own).
+/// Under-the-choice markers (FUN_1018f4a0 / FUN_1018f510 and the pages').
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Mark {
     /// windowps 387 at (x + 37, y + 4): two 88-px buttons.
@@ -318,7 +318,7 @@ const OUR_ROWS: [(u16, &str); 2] = [(EXTRAS, "Extras"), (SETTINGS, "Settings")];
 const OUR_Y: f32 = 214.0;
 const OUR_PITCH: f32 = 16.0;
 
-/// The rows' rects relative to configwi's window (16, y, 88 x 16, as its own rows).
+/// The rows' rects relative to configwi's window (16, y, 88 x 16, as its rows).
 fn our_rows() -> impl Iterator<Item = (u16, &'static str, [f32; 4])> {
     OUR_ROWS.iter().enumerate().map(|(i, &(id, label))| (id, label, [16.0, OUR_Y + OUR_PITCH * i as f32, 88.0, 16.0]))
 }
@@ -589,7 +589,7 @@ impl ConfigUi {
                 egui::Key::ArrowDown if w.cursor == bottom => Some(SETTINGS),
                 egui::Key::ArrowDown if w.cursor == SETTINGS => Some(first),
                 egui::Key::ArrowUp if w.cursor == SETTINGS => Some(bottom),
-                // The row under the list wraps both ways (the first row has no up link of its own).
+                // The row under the list wraps both ways (the first row has no up link).
                 egui::Key::ArrowUp if w.cursor == first => Some(SETTINGS),
                 egui::Key::Enter if w.cursor == SETTINGS => {
                     out.sounds.push(Se::Select);
@@ -989,7 +989,7 @@ pub fn draw_page(ui: &ConfigUi, w: &Win, top: bool, gu: &mut GameUi, v: &Values,
             _ => {}
         }
     }
-    // Our rows: a blank button of the list's (windowps 105's cells) with its name in fontshp, as the list's own.
+    // Our rows: a blank button of the list's (windowps 105's cells) with its name in fontshp, as the list's.
     if w.name == "configwi" {
         for (id, label, r) in our_rows() {
             let on = id == w.cursor;
@@ -1002,7 +1002,7 @@ pub fn draw_page(ui: &ConfigUi, w: &Win, top: bool, gu: &mut GameUi, v: &Values,
             }
         }
     }
-    // Ours on Mouse/Cam.: Camera Keys under First-Person Camera, drawn as the page's own groups.
+    // Ours on Mouse/Cam.: Camera Keys under First-Person Camera, drawn as the page's groups.
     if w.name == "conf7" {
         const N: u32 = 0x8080_8080;
         if let Some(b) = gu.cell_bounds("menu    windowps", 465, 2) {

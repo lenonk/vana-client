@@ -399,7 +399,7 @@ fn keys(w: &World) -> Option<crate::dat::battle::Keys> {
 
 pub(super) fn who(w: &World, id: u32) -> Option<Who> {
     if id == w.my_id {
-        // Our own gender from the race (inf: retail reads 0x40db0): 2, 4, 6 and 7 are female.
+        // Our gender from the race (inf: retail reads 0x40db0): 2, 4, 6 and 7 are female.
         return Some(Who {
             name: super::monstrosity::my_name(w).to_string(),
             pc: true,
@@ -420,7 +420,7 @@ pub(super) fn who(w: &World, id: u32) -> Option<Who> {
 
 /// s2c 0x05A (LAB_100a06e0): dropped for emote 0x61+ or a caster / target not here. The caster plays it (FUN_100a0b90)
 /// unless busy with one, not idle / sitting / seated, or Mode 1; /aim failing prints group 9 0x66 instead. The line
-/// (file 7025, emote * 2 + no target) in mode 7 for our own untargeted emote, else 0x0f, unless Mode 2 or the Emotes
+/// (file 7025, emote * 2 + no target) in mode 7 for our untargeted emote, else 0x0f, unless Mode 2 or the Emotes
 /// filter (config 0x32 bit 3), and dropped for a caster on the block list (FUN_100a1a00 kind 2). Not done: the pet
 /// copying the motion, trusts copying it.
 pub(super) fn on_emote(w: &mut World, caster: u32, target: u32, emote: u16, param: u16, mode: u8) {
@@ -662,7 +662,7 @@ fn condense_targets(w: &mut World, bt: &battle::BattleText, m: &Msg, lines: &[(S
     else {
         return false;
     };
-    // A possessive ("X's attacks"): each name keeps its own ("Lnxcsfix's and Aurelie's"), not the plural's "X'".
+    // A possessive ("X's attacks"): each name keeps its possessive ("Lnxcsfix's and Aurelie's"), not the plural's "X'".
     let mut name = target_name(&target);
     if template.contains(&format!("{NAME}'")) {
         template = template.replacen(&format!("{NAME}'"), NAME, 1);
@@ -1101,7 +1101,7 @@ fn msg_target_status(w: &World, m: &BattleMessage) -> Option<u8> {
     w.entities.get(&m.target).map(|e| e.motion.status)
 }
 
-/// FUN_100c33d0: every queued message steps on its own; a due one runs its effect (file 0xaf0 + id `main` on the
+/// FUN_100c33d0: every queued message steps independently; a due one runs its effect (file 0xaf0 + id `main` on the
 /// caster's model, FUN_100a9700) and prints.
 pub(super) fn message_queue(w: &mut World, dt: f32) {
     let mut due = Vec::new();
@@ -1186,7 +1186,7 @@ pub struct Casting {
     pub skill: bool,
     pub id: u16,
     pub start: Instant,
-    /// The spell's base cast time (the record's; the caster's own speed is not sent): none for a skill.
+    /// The spell's base cast time (the record's; the caster's speed is not sent): none for a skill.
     pub secs: Option<f32>,
 }
 
@@ -1447,7 +1447,7 @@ pub(super) fn fx_release(w: &mut World, id: u32) {
     }
 }
 
-/// FUN_100cdd60 for op 0x25 / 0x21: none when the reactor is dead, riding, in its own no-reaction hold or the level
+/// FUN_100cdd60 for op 0x25 / 0x21: none when the reactor is dead, riding, in its no-reaction hold or the level
 /// is 0; standing "dfi?" / "dbi?" (side 0 by where the other actor stands, 1 front, 2 back), moving "dfm?" unless side
 /// 2 ("dbm?"); an overlay at amount x {0.25, 0.5, 1.0}[level] with the op's rate, count, blend-in and fade.
 pub(super) fn react_op(w: &mut World, r: &crate::fx::React) {
@@ -1514,7 +1514,7 @@ pub(super) fn sdep(w: &World, id: u32) -> bool {
 /// session state too. The server prints the defeat (0x029 #97 / #20).
 /// FUN_1008c6c0: the scheduler an applied status change runs: a model-id actor leaving battle `bton`, engaging
 /// `ntob`; a death the pick's (death_scheduler; its ded? / cor? are die()'s, so the task's motions are off), or
-/// `sdep` with its own motions (vtable +0x298). Not done: fishing.
+/// `sdep` with its motions (vtable +0x298). Not done: fishing.
 pub(super) fn status_schedulers(
     fx: &mut crate::fx::Effects,
     actors: &std::collections::HashMap<u32, Actor>,
@@ -1700,7 +1700,7 @@ pub(super) fn start_attack(
     ))
 }
 
-/// FUN_100cde70 / FUN_100cdf00 for ops 0x5a / 0x5b: none while the reactor is in its own no-reaction hold or riding;
+/// FUN_100cde70 / FUN_100cdf00 for ops 0x5a / 0x5b: none while the reactor is in its no-reaction hold or riding;
 /// standing `gdi?` / `pyi?`, moving `gdm?` / `pym?`, no fallback between them; an overlay at amount 1.0 with the op's
 /// rate, count, blend-in and fade (no level, no direction, no dead check).
 pub(super) fn guard_op(w: &mut World, g: &crate::fx::Guard) {
@@ -1737,7 +1737,7 @@ pub(super) fn guard_op(w: &mut World, g: &crate::fx::Guard) {
 
 /// Death: the actor's death scheduler (dead, or the op 0xac pick's) plays "ded?" for its op length, then the corpse
 /// loop takes over; a picked one without a motion (the Ghrah's `1ead`) plays none.
-/// The death's motion from the death scheduler's plan; `sdep` plays its own through fx.
+/// The death's motion from the death scheduler's plan; `sdep` plays its through fx.
 pub(super) fn die(actor: &mut Actor, sdep: bool) {
     let Some(ch) = actor.character.clone() else { return };
     if sdep {
@@ -2045,7 +2045,7 @@ struct Facts {
     invitable: bool,
     /// +0x140 bit 3 (0x00D flags3 bit 1): recruiting party members.
     recruiting: bool,
-    /// FUN_1012aed0: one of our own trusts.
+    /// FUN_1012aed0: one of our trusts.
     our_trust: bool,
     /// FUN_1013eff0: the treasure pool holds items.
     treasure: bool,
@@ -2096,7 +2096,7 @@ fn shown(f: &Facts, c: u8) -> Option<u8> {
         cmd::TRADE => (f.target.is_some() && !npc && !on_team(f.team, false, false)).then_some(c),
         // Cases 10 / 11: Quarry / Scout / Sprint on a Conflict team (Sprint becomes Scout with Petra: not parsed).
         0x16..=0x18 => on_team(f.team, true, true).then_some(c),
-        // Case 12: Release on our own trust.
+        // Case 12: Release on our trust.
         cmd::RELEASE => f.our_trust.then_some(c),
         // Case 13: Request to join a target that is recruiting.
         0x1b => (f.target.is_some() && f.recruiting).then_some(c),
@@ -2598,7 +2598,7 @@ mod tests {
             entries: vec![("the Wild Rabbit".into(), 50), ("the Orc".into(), 48), ("Raven".into(), 45)],
         };
         assert_eq!(targets_text(&g), "The Wild Rabbit, the Orc, and Raven take 50, 48, and 45 points of damage.");
-        // A status by id: no number in the line; a possessive keeps each name's own.
+        // A status by id: no number in the line; a possessive keeps each name's.
         let ctx = Ctx { work: [0, 68, 0, 0, 0], ..ctx };
         let t =
             render(&bt, 285, Relation::Other, &ctx, &Default::default())[0].0.replacen(&format!("{NAME}'"), NAME, 1);

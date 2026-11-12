@@ -776,7 +776,7 @@ impl View {
 mod tests {
     use super::{SIGNING_KEY, asset_name, newer, signed_by, signed_text, thousands};
 
-    /// Each platform asks for its own asset; only the published ones carry the release names.
+    /// Each platform asks for its asset; only the published ones carry the release names.
     #[test]
     fn asset_for_this_platform() {
         let want = if cfg!(all(target_os = "linux", target_arch = "x86_64")) {

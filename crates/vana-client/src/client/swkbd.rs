@@ -250,7 +250,7 @@ fn scale(sw: f32) -> f32 {
     (sw * 0.35 / 334.0).round().max(1.0)
 }
 
-/// FUN_101aedc0's placement, as the window's own top left (`kh` its height): below the macro editor, above the
+/// FUN_101aedc0's placement, as the window's top left (`kh` its height): below the macro editor, above the
 /// comment editor, above the log window (its bottom 2 px over the log's top, or 34 px over its bottom while it has no
 /// lines), above the chat line (32 more), else (32, 200).
 fn place(gu: &GameUi, w: &World, kh: f32, sh: f32) -> (f32, f32) {

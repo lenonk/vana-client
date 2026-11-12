@@ -33,7 +33,7 @@ impl Blend {
             _ => Blend::Alpha,
         }
     }
-    /// A draw call's blend word: A bits 0-1, B bits 2-3, D bits 6-7 (0 = use the cell's own).
+    /// A draw call's blend word: A bits 0-1, B bits 2-3, D bits 6-7 (0 = use the cell's).
     pub fn from_word(w: u32) -> Self {
         Self::from_ps2((w & 3) as u8, (w >> 2 & 3) as u8, (w >> 6 & 3) as u8)
     }
@@ -163,7 +163,7 @@ fn glyph_cell(c: &Cell) -> bool {
 /// A sprite's caption read from its glyph cells (none when it has no caption glyph or one it cannot read): its runs
 /// of text with their left, line top and colour, the cells at (x, y) scaled (sx, sy) and tinted. Shadow-pass cells
 /// (alpha under 100) are left out.
-/// A glyph cell's opaque columns in its own pixels (first, one past the last), so gaps are measured between the
+/// A glyph cell's opaque columns in its pixels (first, one past the last), so gaps are measured between the
 /// letters, not their cells' padding; the whole cell when its sheet is not at hand. Cached per cell.
 fn ink(images: &HashMap<String, UiImage>, c: &Cell) -> (f32, f32) {
     type Key = (String, [u16; 2], [u16; 2]);
@@ -340,7 +340,7 @@ fn settle(text: &str) -> String {
     for token in text.split(' ') {
         let chars: Vec<char> = token.chars().collect();
         let marks: Vec<usize> = (0..chars.len()).filter(|&i| matches!(chars[i], GAP_SPLIT | GAP_JOIN)).collect();
-        // Punctuation settles its own gaps.
+        // Punctuation settles its gaps.
         let forced = |i: usize| -> Option<bool> {
             let (prev, next) = (i.checked_sub(1).map(|k| chars[k]), chars.get(i + 1).copied());
             match (prev, next) {
@@ -612,7 +612,7 @@ impl UiBatch {
     }
 
     /// A cell's texture placed at (x, y) over w x h texels, tiled (FUN_1011c910 / FUN_1011b870,
-    /// used for window frame pieces): screen size is (w * sx, h * sy); the cell's own corners are ignored.
+    /// used for window frame pieces): screen size is (w * sx, h * sy); the cell's corners are ignored.
     pub fn push_cell_rect(
         &mut self,
         ui: &UiFile,
@@ -654,7 +654,7 @@ impl UiBatch {
     }
 
     /// One cell through a 2x2 matrix about (x, y): screen = (x + a cx + b cy, y + c cx + d cy) (FUN_1011c880), with a
-    /// blend word (0: the cell's own).
+    /// blend word (0: the cell's).
     pub fn push_cell_affine_blend(
         &mut self,
         ui: &UiFile,

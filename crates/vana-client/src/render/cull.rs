@@ -46,8 +46,8 @@ struct RunBox {
     moves: bool,
 }
 
-/// A placement's distance rule (FUN_1017c9c0, doors FUN_10183da0) as cs_cull_vis takes it: its own distance squared,
-/// and 0 = within the zone's draw distance D, 1 = within its own distance times K, 2 (a door group's) = within both.
+/// A placement's distance rule (FUN_1017c9c0, doors FUN_10183da0) as cs_cull_vis takes it: its distance squared,
+/// and 0 = within the zone's draw distance D, 1 = within its distance times K, 2 (a door group's) = within both.
 pub fn reach(own: Option<f32>, door: bool) -> [f32; 2] {
     match own {
         Some(k) => [k * k, if door { 2.0 } else { 1.0 }],
@@ -166,7 +166,7 @@ fn planes(view_proj: Mat4) -> [Vec4; 6] {
 }
 
 impl RunBox {
-    /// Could any of its placements be drawn: its geometry box (a little larger, so the GPU's own test decides at the
+    /// Could any of its placements be drawn: its geometry box (a little larger, so the GPU's test decides at the
     /// edges) inside the frustum, and its origins within reach of the draw distance (`dk`: D, K; D 0 = none) and of
     /// its bands.
     fn maybe_visible(&self, planes: &[Vec4; 6], eye: Vec3, dk: [f32; 2]) -> bool {

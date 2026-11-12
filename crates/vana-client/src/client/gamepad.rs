@@ -164,7 +164,7 @@ pub fn read(map: &PadMap, alt: &PadMap, dev: &Device, mode: u8, modes: (bool, bo
     } else if mode == 1 {
         (v[4], v[5], v[2], v[3]) = (v[2], v[3], 0.0, 0.0);
     }
-    // Retail zeroes each stick axis under 42 on its own, which snaps a turning stick onto the axes. Ours: a round dead
+    // Retail zeroes each stick axis under 42 separately, which snaps a turning stick onto the axes. Ours: a round dead
     // zone, both axes of a stick zeroed while its push is under it.
     let dead = dead * 127.0;
     for (x, y) in [(0, 1), (2, 3)] {
@@ -301,7 +301,7 @@ pub struct Settings {
     /// The pad rumbles (padmode000's second flag, "Enable Force Feedback": DAT_10455c39).
     pub rumble: bool,
     pub source: Source,
-    /// config.json holds a map of its own (either): Use Retail Settings has something to clear.
+    /// config.json holds a map (either): Use Retail Settings has something to clear.
     pub saved: bool,
 }
 
@@ -309,7 +309,7 @@ pub struct Settings {
 /// values, whose padmode000 also says whether the pad is on ([0]: off, FUN_10002840 leaves the maps empty) and plays in
 /// the background ([4]) and rumbles ([1]); else FFXiPadConfig's XInput layout. config gamepad off always turns it
 /// off, and so does gamepad_rumble the rumble.
-/// A config.json gamepad_padexsin of its own is used whatever the main map's source.
+/// A config.json gamepad_padexsin is used whatever the main map's source.
 pub fn settings(cfg: &Config, retail: Option<&crate::padreg::Retail>) -> Settings {
     let mut s = settings_of(cfg, retail);
     if !cfg.gamepad_padexsin.trim().is_empty() {
@@ -732,7 +732,7 @@ impl Gamepad {
         };
         let shift = egui::Modifiers { shift: keys.contains(&KeyCode::ShiftRight), ..Default::default() };
         let event = |k: KeyCode, pressed: bool, repeat: bool| {
-            // The modifier markers are modifiers only, not keys of their own.
+            // The modifier markers are modifiers only, not keys themselves.
             if matches!(k, KeyCode::ShiftRight | KeyCode::ControlRight | KeyCode::AltRight) {
                 return None;
             }
@@ -830,7 +830,7 @@ mod tests {
         assert_eq!(pad.ff_level, 0);
     }
 
-    /// Retail's padmode000 turns the rumble off with its second flag, as the pad with its first; config's own maps
+    /// Retail's padmode000 turns the rumble off with its second flag, as the pad with its first; config's maps
     /// leave it to config.json.
     #[test]
     fn rumble_setting() {
@@ -903,7 +903,7 @@ mod tests {
         assert_eq!(read(&z, &alt, &dev(&[], &full), 0, (false, false), DEAD).1[2], 0.0);
     }
 
-    /// Slot 25 takes the movement stick as the d-pad (its own d-pad bits dropped), over slot 26 and the modes; the
+    /// Slot 25 takes the movement stick as the d-pad (its d-pad bits dropped), over slot 26 and the modes; the
     /// alternate map changes buttons, never axes; slot 31 steps only through the modes a map allows.
     #[test]
     fn stick_slots_and_modes() {

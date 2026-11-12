@@ -1,4 +1,4 @@
-//! The Lua mods' HUD elements in the modern UI, drawn as the modern layer draws its own (on the layer under its
+//! The Lua mods' HUD elements in the modern UI, drawn as the modern layer draws its elements (on the layer under its
 //! panels, where the built-in map overlay stood): text in the UI's faces, rects with rounded corners, the pack's
 //! gauges, icons, PNGs, maps with our arrow. A mod's element looks as a built-in one does. Text in the game's font is
 //! the game UI's (lua/hud.rs), as the classic UI draws every element.

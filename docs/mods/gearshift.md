@@ -1,4 +1,4 @@
-# Gearshift: GearSwap, LuAshitacast, Ashitacast and Spellcast files, and its own set builder
+# Gearshift: GearSwap, LuAshitacast, Ashitacast and Spellcast files, and its set builder
 
 Gearshift is a bundled mod that changes your gear around your actions from the job files you already have. It reads
 **GearSwap** job files, **LuAshitacast** profiles, **Ashitacast** XML profiles (v4, and v3 / LegacyAC files) and
@@ -18,7 +18,7 @@ Gear Swapping and Set Builder settings switch it off whatever the window says.
 - **For your level:** each slot's reference is the best piece for the set at the level cap (75 or 99: the Level Cap
   setting, Auto by your level): from public gear guides where they list one (src/build/bis.lua names its sources),
   else the best-scoring piece in the whole item list. Your pick is the piece you hold that gives the most of that piece's kind of stats; if
-  nothing you hold is at least a quarter alike, the set's own stat weights pick. "Worth getting" names a piece wearable
+  nothing you hold is at least a quarter alike, the set's stat weights pick. "Worth getting" names a piece wearable
   at your level that would do better. The sets follow your level, so level sync needs nothing.
 - **The window:** the job's sets, each set's score against the best for your level and the cap's best in slot, and per
   slot the piece, how alike it is ("Match"), the best in slot and what is worth getting. Pick a slot to compare the
@@ -75,7 +75,7 @@ Files a GearSwap file `include`s are looked for in the same GearSwap folders.
   `ignore`, `displaced`, `remove`, `augment`, `augpath`, `augrank`, `augtrial`), `command`, `echo`, `setvar`,
   `clearvar`, `change`, `gearlock`, `registerbuff`, `clearbuff`, `cancel`, `override`. The rules evaluate as
   Ashitacast's do, odd cases included (string `!=` in a rule never matches, `*` in an advanced rule multiplies);
-  what only hangs or crashes Ashitacast (a negative number, a division by zero, a set that is its own baseset) does
+  what only hangs or crashes Ashitacast (a negative number, a division by zero, a set that is its baseset) does
   what was meant, and `fastcast` / `snapshot` shorten the wait after an action as documented. A v3 file
   (`idlegear`, `premagic`, `buffactive` and so on) is read through Ashitacast's v3 import rules.
 - **Spellcast files:** an action's command line (`/ma`, `/ja`, `/ws`, `/pet`, `/nin`, `/so`, `/ra` and their long

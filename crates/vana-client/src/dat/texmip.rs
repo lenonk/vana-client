@@ -203,7 +203,7 @@ pub mod reference {
         out
     }
 
-    /// Levels for an image: its own DXT data as level 0 (BC1 / BC2, kept exact) with re-encoded smaller levels, or
+    /// Levels for an image: its DXT data as level 0 (BC1 / BC2, kept exact) with re-encoded smaller levels, or
     /// RGBA levels. BC needs both sides a multiple of 4; other sizes go RGBA.
     pub fn levels(rgba: &[u8], w: u32, h: u32, dxt: Option<(bool, &[u8])>) -> Levels {
         let chain = rgba_chain(rgba, w, h);

@@ -110,7 +110,7 @@ impl Flyover {
         (self.tick, self.next_at, self.cursor, self.shot, self.cross, self.done) = (0.0, 0.0, 0, None, None, false);
     }
 
-    /// Starts at full brightness: the nation movies have no fade op (the creator's own 'ffin' fades them in).
+    /// Starts at full brightness: the nation movies have no fade op (the creator's 'ffin' fades them in).
     pub fn unfaded(mut self) -> Self {
         self.fade = ([1.0; 3], [1.0; 3], 0.0, 0.0);
         self
@@ -145,7 +145,7 @@ impl Flyover {
                     self.next_at = now + wait as f32;
                 }
                 // The lobby clock starts at 12:30 (FUN_1023b3f0); 0x7d sets it, 0x7e applies a title
-                // 0x2f block, 0x7c switches to the zone's own keys for a weather.
+                // 0x2f block, 0x7c switches to the zone's keys for a weather.
                 Op::Time(t) => self.minute = hour_of(t) * 60.0,
                 Op::Env(name) => self.env = self.data.envs.iter().find(|e| e.0 == name).map(|e| e.1),
                 Op::Weather { tag, .. } => {

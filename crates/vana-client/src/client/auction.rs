@@ -1444,7 +1444,7 @@ fn sort_kind(cat: u8) -> u8 {
     }
 }
 
-/// wepsort (FUN_101daa10) / armsort (FUN_101dabd0): Reset List, two sorts of their own, By Level, Job, Race; then the
+/// wepsort (FUN_101daa10) / armsort (FUN_101dabd0): Reset List, two sorts specific to each, By Level, Job, Race; then the
 /// list again and the window closed.
 fn sort_pick(w: &mut World, a: &mut Auction, name: &str, sel: u16) {
     let arm = name == ARMSORT;

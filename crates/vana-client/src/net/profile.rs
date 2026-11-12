@@ -40,7 +40,7 @@ pub fn line_checksum(s: &str) -> String {
 
 const B64: &[u8; 64] = b"TSG8IncW3HFKokOg79qzeCmZs2yBYEQVAUxR5rbwi4P@jMDLtpvad0f_J1hlN6uX";
 
-/// polcore's base64: its own alphabet, standard bit order, a short group padded with the zero digit `T` (or not at all).
+/// polcore's base64: its alphabet, standard bit order, a short group padded with the zero digit `T` (or not at all).
 pub fn b64(bytes: &[u8], padded: bool) -> String {
     let mut out = String::new();
     for c in bytes.chunks(3) {
@@ -303,7 +303,7 @@ pub fn change_my_status(c: &Cred, slot: Option<u8>, open: Option<u8>) -> Result<
     ok(request(c, 4, 5, &sealed(b))?, "ChangeMyStatus").map(|_| ())
 }
 
-/// ProfFileHead (0x198): target (0 our own files), path, offset, length.
+/// ProfFileHead (0x198): target (0 our files), path, offset, length.
 fn file_head(target: u64, path: &str, offset: u32, length: u32) -> Vec<u8> {
     let mut b = vec![0u8; 0x198];
     b[8..16].copy_from_slice(&target.to_le_bytes());
@@ -426,7 +426,7 @@ impl MsgHeader {
     }
 }
 
-/// A message's data. polcore's own encoding (slots 0x110 / 0x10f) is not known; ours is the title (<= 50) and the text
+/// A message's data. polcore's encoding (slots 0x110 / 0x10f) is not known; ours is the title (<= 50) and the text
 /// (<= 300) as Shift-JIS, each ending in NUL *(ours, not retail's: retail clients' messages will not read right)*.
 pub fn encode_body(title: &[u8], text: &[u8]) -> Vec<u8> {
     let mut b = title[..title.len().min(50)].to_vec();
@@ -465,7 +465,7 @@ pub enum Irc {
     Closed(String),
 }
 
-/// The IRC session (3.4) on its own thread; dropping the sender ends it with QUIT.
+/// The IRC session (3.4) on a separate thread; dropping the sender ends it with QUIT.
 pub struct IrcLink {
     pub events: mpsc::Receiver<Irc>,
     /// Held for its Drop: dropping it ends the session with QUIT.

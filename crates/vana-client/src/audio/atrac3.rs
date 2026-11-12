@@ -1,4 +1,4 @@
-//! ATRAC3 decoder ported from FFXiMain's own: setup FUN_102bf950 / FUN_102c2c20, frame FUN_102bfb30 ->
+//! ATRAC3 decoder ported from FFXiMain's: setup FUN_102bf950 / FUN_102c2c20, frame FUN_102bfb30 ->
 //! FUN_102c44e0, sound unit FUN_102c4640 (gain, tonal FUN_102c4bc0, spectrum FUN_102c4fc0, mantissas
 //! FUN_102c4da0), IMDCT + gain FUN_102c2f40, joint stereo FUN_102c4970, QMF FUN_102c3960. Tables are
 //! copied from the DLL (addresses on each).

@@ -264,7 +264,7 @@ fn release_options(w: &mut World) {
 }
 
 /// A mod window's canvas (element `i`, `id`) as last drawn, in window pixels: its origin, the part of it shown (min x,
-/// min y, max x, max y), the pixels per point (a canvas's own units are points), whether it was on top under the
+/// min y, max x, max y), the pixels per point (a canvas's units are points), whether it was on top under the
 /// pointer, and when.
 struct CanvasAt {
     m: String,
@@ -368,7 +368,7 @@ pub struct Host {
     lobby_screen: Option<&'static str>,
     lobby: lobby::Shared,
     /// A recording asked for (taken by the app), and the file being recorded, as the app sets it.
-    /// A mod's recording asked for: (the mod, its file and frames a second, or None to stop its own).
+    /// A mod's recording asked for: (the mod, its file and frames a second, or None to stop its recording).
     pub(in crate::client) record_req: Option<(String, Option<(std::path::PathBuf, u32)>)>,
     /// The recording running: its mod and file.
     pub(in crate::client) recording: std::rc::Rc<std::cell::RefCell<Option<(String, std::path::PathBuf)>>>,
@@ -579,9 +579,9 @@ fn changes(a: &Snap, b: &Snap) -> Vec<(&'static str, Vec<serde_json::Value>)> {
     out
 }
 
-/// Mods built into the client (assets/mods): our own features on the mod API (docs/lua-mods.md 7.4). Each is (id,
+/// Mods built into the client (assets/mods): our features on the mod API (docs/lua-mods.md 7.4). Each is (id,
 /// mod.toml, files).
-/// Our own features on the mod API (docs/extras-as-mods.md): id, mod.toml, files.
+/// Our features on the mod API (docs/extras-as-mods.md): id, mod.toml, files.
 #[cfg(test)]
 macro_rules! bundled {
     ($($id:literal $([$($file:literal),*])?),* $(,)?) => {
@@ -658,7 +658,7 @@ fn folder_of(mods: &Path, id: &str) -> PathBuf {
         .unwrap_or(named)
 }
 
-/// The mods' folders; a test run's own (`mods` beside its FFXI_CONFIG copy) when it has one, so test mods never sit
+/// The mods' folders; a test run's (`mods` beside its FFXI_CONFIG copy) when it has one, so test mods never sit
 /// among the user's.
 fn mods_dir() -> PathBuf {
     crate::config::mods_dir()
@@ -811,7 +811,7 @@ impl Host {
             .and_then(|v| v.as_array())
             .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
             .unwrap_or_default();
-        // A bundled mod is the client's own code: it has what it asks for.
+        // A bundled mod is the client's code: it has what it asks for.
         let bundled = matches!(src, vm::Source::Bundled(_));
         let granted: Vec<String> = m.permissions.iter().filter(|p| bundled || given.contains(p)).cloned().collect();
         let missing: Vec<String> = m.permissions.iter().filter(|p| !granted.contains(p)).cloned().collect();
@@ -1624,7 +1624,7 @@ pub(super) enum From {
     /// A mod's key bind the player pressed: the mod's command runs as the player's input, but /lua grant, revoke,
     /// run, set and watch do not.
     Bind { mods: bool },
-    /// A mod's own line (commands.run, actions): runs as the mod's own, and as the player's input only when the mod ran
+    /// A mod's line (commands.run, actions): runs as the mod's, and as the player's input only when the mod ran
     /// it on the player's input (a hotbar slot clicked runs another mod's command as the player would).
     Mod { mods: bool, input: bool },
 }
@@ -2179,7 +2179,7 @@ impl Host {
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::client) struct CmdInfo {
     pub name: String,
-    /// The mod's id and name ("" and "Mods" for the client's own).
+    /// The mod's id and name ("" and "Mods" for the client's).
     pub id: String,
     pub owner: String,
     pub help: String,
@@ -2214,7 +2214,7 @@ fn help_lines(list: &[CmdInfo], cmd: &str, args: &[&str], out: &mut Vec<(String,
         out.push((format!("{cmd} <mod or command>: its commands. Mods: {names}."), INFO));
         return;
     }
-    // A mod (by id or name) first: a mod with a command of its own name (Gearshift's //gearshift) lists them all.
+    // A mod (by id or name) first: a mod with a command of the same name (Gearshift's //gearshift) lists them all.
     let of: Vec<&CmdInfo> =
         list.iter().filter(|c| !c.id.is_empty() && (c.owner.to_ascii_lowercase() == want || c.id == want)).collect();
     if of.is_empty()
@@ -2352,7 +2352,7 @@ mod tests {
         );
         assert_eq!(text(&["auction", "desk"]).len(), 3);
         assert_eq!(text(&["hotbar"]).len(), 3);
-        // A mod with a command of its own name: the mod's commands, all of them.
+        // A mod with a command of the same name: the mod's commands, all of them.
         let gear = vec![
             info("gearshift", "gearshift", "Gearshift", &[("", "Shows the file.")]),
             info("gs", "gearshift", "Gearshift", &[("<command>", "GearSwap's.")]),
@@ -2760,7 +2760,7 @@ mod tests {
     }
 
     /// A drag on a mod's canvas over another of its windows' canvases: the drag events say where on screen and which
-    /// window is under the pointer; that canvas gets drag_over, then the drop on the release (not its own canvas).
+    /// window is under the pointer; that canvas gets drag_over, then the drop on the release (not its canvas).
     #[test]
     fn canvas_drag_onto_canvas() {
         let mut host = Host::default();
@@ -2794,7 +2794,7 @@ mod tests {
             screen: None,
             over: None,
         };
-        // Within its own canvas: nothing crosses.
+        // Within its canvas: nothing crosses.
         let mut ev = vec![drag(1, 50.0)];
         assert!(host.canvas_drags("t", "a", &mut ev).is_empty() && host.ui_events.is_empty());
         assert_eq!(ev[0].json()["window"], serde_json::Value::Null);
@@ -2980,7 +2980,7 @@ mod tests {
     }
 
     /// Gearshift with a fake game: a GearSwap file and a LuAshitacast profile each wear their precast gear before a
-    /// Cure's action packet and their midcast gear after it, in one batch; the client's own packet is dropped.
+    /// Cure's action packet and their midcast gear after it, in one batch; the client's packet is dropped.
     #[test]
     fn gearshift_swaps_around_a_cast() {
         let host = Host::default();
@@ -3774,7 +3774,7 @@ return "acxml flow ok"
         assert_eq!(got, "ok");
     }
 
-    /// Chat Alerts: a tell, our name and a chosen word call; our own lines, other people's names and a second call
+    /// Chat Alerts: a tell, our name and a chosen word call; our lines, other people's names and a second call
     /// within a second do not.
     #[test]
     fn chat_alerts_calls() {
@@ -3963,8 +3963,8 @@ return "acxml flow ok"
     }
 
     /// Pending Actions: a melee round or another spell's finish while a spell waits is not its answer, nor a message
-    /// that is not one of the spell's refusals (akreao/vana-client#243); the spell's own start, finish and
-    /// refusals are, and each kind matches its own ids. The game scripts' checks ("You cannot learn...") and the
+    /// that is not one of the spell's refusals (akreao/vana-client#243); the spell's start, finish and
+    /// refusals are, and each kind matches its ids. The game scripts' checks ("You cannot learn...") and the
     /// target check's refusals refuse too.
     #[test]
     fn pending_actions_match_the_ask() {
@@ -4005,7 +4005,7 @@ return "acxml flow ok"
             ask(3, 1)
             act(1, 0x746b6174) act(4, 2) act(8, 0x6f737073, 1) act(8, 0x6f736163, 2)
             assert(state() == "waiting")
-            -- Melee-side chatter of ours (71 with no spell id, experience) is no refusal; its own start answers.
+            -- Melee-side chatter of ours (71 with no spell id, experience) is no refusal; its start answers.
             H.battle_message(5, 9, 71, 0, 0) H.battle_message(5, 5, 8, 300, 0)
             assert(state() == "waiting")
             act(8, 0x6f736163, 1)
@@ -4027,13 +4027,13 @@ return "acxml flow ok"
             ask(7, 32) act(11, 999) assert(state() == nil)
             ask(7, 32) H.battle_message(5, 9, 192, 0, 0) assert(state() == "refused")
             T = T + 10 state()
-            -- An item: its category alone; 62 only with no id or its own.
+            -- An item: its category alone; 62 only with no id or its id.
             item() act(1, 0) assert(state() == "waiting")
             act(9, 0) assert(state() == nil)
             item() H.battle_message(5, 9, 62, 4113, 0) assert(state() == "waiting")
             H.battle_message(5, 9, 62, 4112, 0) assert(state() == "refused")
             T = T + 10 state()
-            -- The scripts' own checks: a scroll the player cannot learn yet (95, naming the spell it teaches), a
+            -- The scripts' checks: a scroll the player cannot learn yet (95, naming the spell it teaches), a
             -- medicated player's potion (111 with the item id, not another's), the 0 a stun sends with the item id
             -- (not a bare 0).
             item() H.battle_message(5, 5, 95, 1, 0) assert(state() == "refused")
@@ -4913,7 +4913,7 @@ return "acxml flow ok"
     }
 
     /// Hotbars' Builder: Rune Enchantment opens its runes, as the game's menu does (a search finds them too); the
-    /// line it builds can be replaced with the player's own, kept with the entry.
+    /// line it builds can be replaced with the player's, kept with the entry.
     #[test]
     fn hotbar_builder_sub_lists_and_own_line() {
         let host = Host::default();
@@ -4955,7 +4955,7 @@ return "acxml flow ok"
             H("manager", { kind = "select", id = "found", index = 1 })
             line = ui.get("manager", "line").text
             assert(line == '/ja "Tenebrae" <me>', line)
-            -- Its own line, saved with the entry and run in place of the built one.
+            -- Its line, saved with the entry and run in place of the built one.
             H("manager", { kind = "change", id = "line", text = '/ja "Tenebrae" <stpc>' })
             H("manager", { kind = "press", id = "bbtn", index = 1 })
             local e = data.library("RUN")[1].entry
@@ -5070,8 +5070,8 @@ return "acxml flow ok"
         vm.lua.load(script).exec().unwrap_or_else(|e| panic!("{e}"));
     }
 
-    /// The Timers mod's own tracking: LSB's durations (the examples the client's engine was tested with), the charge
-    /// rule, the luopan, a Slow landing on a monster, and our own effects shortest first.
+    /// The Timers mod's tracking: LSB's durations (the examples the client's engine was tested with), the charge
+    /// rule, the luopan, a Slow landing on a monster, and our effects shortest first.
     #[test]
     fn timers_mod_tracking() {
         let host = Host::default();
@@ -5193,7 +5193,7 @@ return "acxml flow ok"
             local mob = secs[3][1]
             assert(mob.name == "Valkurm Emperor" and mob.rows[1].name == "Slow", tostring(mob and mob.name))
             assert(math.abs(mob.rows[1].left - 180) < 1 and mob.rows[1].total == 180)
-            -- Our own effects, shortest first.
+            -- Our effects, shortest first.
             local own = secs[2][1]
             local order = {}
             for _, r in ipairs(own.rows) do order[#order + 1] = r.name end
@@ -5215,7 +5215,7 @@ return "acxml flow ok"
             assert(#R.sections(false)[2][1].rows == 1)
             R.remove("countdowns", 5)
             assert(#R.sections(false)[2] == 0)
-            -- Copies of one status (maneuvers) each keep their own gauge.
+            -- Copies of one status (maneuvers) each keep their gauge.
             buffs = { { id = 300, remaining = 20 }, { id = 300, remaining = 60 } }
             R.sections(true)
             local man = R.sections(true)[2][1].rows
@@ -5283,7 +5283,7 @@ return "acxml flow ok"
             .unwrap();
     }
 
-    /// The Skillchain mod's own tracking: LSB's chain rules and data, a Burning Blade opening Liquefaction on a
+    /// The Skillchain mod's tracking: LSB's chain rules and data, a Burning Blade opening Liquefaction on a
     /// monster, Naji's Flat Blade closing it into Fusion (the proc's chain), and the view of it with the party's chains.
     #[test]
     fn skillchain_mod_tracking() {
@@ -5447,7 +5447,7 @@ return "acxml flow ok"
             -- Protect's family takes Protectra.
             local p = function(id, name, mp, area) return { id = id, name = name, skill = 34, mp = mp, targets = 1, area = area } end
             assert(R.family(p(44, "Protect II", 28, false)) == "Protect" and R.family(p(125, "Protectra", 9, true)) == "Protect")
-            -- LSB's resistance ranks moved with the mod (data/resistances.txt): a monster's own over its species'.
+            -- LSB's resistance ranks moved with the mod (data/resistances.txt): a monster's over its species'.
             local F = require("facts")
             assert(table.concat(F.ranks_of(100, " Wild Rabbit "), ",") == "-2,-1,-2,-1,-3,-3,-1,-3")
             assert(F.ranks_of(100, "No Such Monster") == nil)
@@ -5755,7 +5755,7 @@ return "acxml flow ok"
         assert!(manifest::parse("[settings.e]\ntype = \"int\"\ntab = \"Nope\"", "t").is_err());
     }
 
-    /// Per-window opacity: a mod's for its own windows (ui.window, ui.opacity, hud.opacity), cleared by it alone; the
+    /// Per-window opacity: a mod's for its windows (ui.window, ui.opacity, hud.opacity), cleared by it alone; the
     /// player's wins.
     #[test]
     fn window_opacity() {
@@ -5858,7 +5858,7 @@ return "acxml flow ok"
         vm.lua.load("assert(getmetatable(setmetatable({}, {__index = {}})))").exec().unwrap();
     }
 
-    /// require and the mod's own files stay in its folder: no leading dot, no link below the folder.
+    /// require and the mod's files stay in its folder: no leading dot, no link below the folder.
     #[cfg(unix)]
     #[test]
     fn mod_files_stay_in_the_folder() {
@@ -5985,7 +5985,7 @@ return "acxml flow ok"
             };
             assert!(matches!(v, Value::Function(_)), "{}.{} is documented but not bound", f.ns, f.name);
         }
-        // Every global table but Lua's own is a namespace of ours, documented or not.
+        // Every global table but Lua's is a namespace of ours, documented or not.
         const STD: [&str; 7] = ["_G", "table", "string", "math", "utf8", "coroutine", "os"];
         let namespaces: Vec<String> = g
             .pairs::<String, Value>()
@@ -5996,7 +5996,7 @@ return "acxml flow ok"
         for ns in namespaces {
             let ns = ns.as_str();
             let t: Table = g.get(ns).unwrap();
-            // Sub-tables (ui.native) are namespaces of their own.
+            // Sub-tables (ui.native) are separate namespaces.
             for pair in t.pairs::<String, Value>() {
                 let (name, v) = pair.unwrap();
                 if let Value::Table(sub) = v {
@@ -6337,14 +6337,14 @@ fn mod_page(
                 c,
                 SCOPE_CHARACTER,
                 "Per Character",
-                "On: the Mods page's switch for this mod is each character's own. A \
+                "On: the Mods page's switch for this mod is each character's. A \
              character never switched follows it as it was (not retail).",
             ),
             (
                 j,
                 SCOPE_JOB,
                 "Per Job",
-                "On: the Mods page's switch for this mod is each job's own (with Per Character, \
+                "On: the Mods page's switch for this mod is each job's (with Per Character, \
              each character's job's). A job never switched follows it as it was (not retail).",
             ),
         ]
@@ -6623,7 +6623,7 @@ impl Host {
     }
 
     /// The loaded mod `id` names: the Mods page names a mod by its folder, the rest by its manifest id, and the two
-    /// may differ (a manifest's id is its own); the folder first.
+    /// may differ (a manifest picks its id); the folder first.
     fn named(&self, id: &str) -> Option<usize> {
         let by_folder = self.vms.iter().position(|v| v.dir.file_name().is_some_and(|f| f == id));
         by_folder.or_else(|| self.vms.iter().position(|v| v.manifest.id == id))
@@ -7052,7 +7052,7 @@ pub(super) fn window_click(w: &mut World, mod_id: &str, win_id: &str, click: sup
 
 impl Host {
     /// A window's events: a canvas drag's get where on screen it is, and it crosses the mod's other canvases (they
-    /// get drag_over and drag_out, and the drop on the release: returned, to follow the window's own events).
+    /// get drag_over and drag_out, and the drop on the release: returned, to follow the window's events).
     fn canvas_drags(
         &mut self,
         mod_id: &str,
@@ -7310,14 +7310,12 @@ fn permission_text(p: &str) -> (&'static str, &'static str) {
             ("Allow game actions", "Casting, items, equipment and the like when you use its commands or windows.")
         }
         "automation" => {
-            ("Allow automation", "Game actions on its own: casting, targeting, moving, trading, answering NPCs.")
+            ("Allow automation", "Game actions by itself: casting, targeting, moving, trading, answering NPCs.")
         }
         "packets.read" => ("Allow reading packets", "Sees every packet the server sends and the client sends."),
-        "packets.write" => ("Allow changing packets", "Changes, blocks and sends packets of its own."),
+        "packets.write" => ("Allow changing packets", "Changes, blocks and sends packets."),
         "input.capture" => ("Allow taking input", "Takes keys and the mouse from the game and presses keys."),
-        "files.shared" => {
-            ("Allow shared files", "Reads and writes files outside its own folder, in the shared mod data.")
-        }
+        "files.shared" => ("Allow shared files", "Reads and writes files outside its folder, in the shared mod data."),
         "net" => ("Allow network", "Connects to the internet (web requests, sockets)."),
         "exec" => ("Allow running programs", "Starts programs on this computer."),
         "clipboard" => ("Allow reading the clipboard", "Reads the text you copied."),

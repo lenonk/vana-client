@@ -484,7 +484,7 @@ pub(super) fn draw_list(gu: &mut GameUi, cands: &[Cand], sel: usize, x: f32, lin
     let first = sel / ROWS * ROWS;
     for (k, c) in cands.iter().enumerate().skip(first).take(ROWS) {
         let mut t = c.text.clone();
-        // The text from x + 6 (inf: retail cuts at the width - 15 from its own start).
+        // The text from x + 6 (inf: retail cuts at the width - 15 from its start).
         if gu.text_width(&t) > w - 12.0 {
             while !t.is_empty() && gu.text_width(&format!("{t}...")) > w - 12.0 {
                 t.pop();

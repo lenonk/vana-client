@@ -472,7 +472,7 @@ log would print, with the names and numbers you pass filled in.
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `actor` | `integer` or `string` | none | Who acts: a server id (our own id gives our name; another id must be an entity the client knows, or no name is filled in), or a name, used as a player's name. |
+| `actor` | `integer` or `string` | none | Who acts: a server id (our id gives our name; another id must be an entity the client knows, or no name is filled in), or a name, used as a player's name. |
 | `target` | `integer` or `string` | none | Who it is done to, as `actor`. |
 | `values` | `integer[]` | none | The numbers the message fills in, in order (at most 5 are used). For a `battle_message`, its `param1`, `param2`. For an action's result, as the game fills it: the action's `param`, the result's `value`, its `proc.value`, its `react.value`, its `bit` (a move's or spell's name comes from these). |
 

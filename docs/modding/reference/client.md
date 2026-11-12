@@ -159,7 +159,7 @@ drawn. A switch stays set while your mod is loaded: when the mod that set it las
 | `clear_colour` | `{r, g, b}` or `false` | 0..255 each | `false` | The scene's background colour in place of the zone's; `false` (or `nil`) gives the zone's back. |
 | `ambient` | `{r, g, b}` or `false` | 0..255 each | `false` | The ambient light in place of the zone's; `false` (or `nil`) gives the zone's back. |
 | `minimap_span` | `number` | 48..512 | the player's zoom (160 at first) | The minimap's zoom: how many map pixels it shows across (the Minimap mod sets it from the wheel over its map). It is kept, and not put back when the mod unloads. |
-| `map_opacity` | `number` | 0..1 | `0.6` | How opaque the HUD maps are where a mod gives no `alpha` of its own, and how strongly the minimap's marker is shaded (as the map overlay's). The Map Overlay mod sets it from its Map Overlay Opacity setting. It is the player's choice: it is kept, not put back when the mod unloads, and the client remembers it across sessions, so it holds while the Map Overlay mod is off. |
+| `map_opacity` | `number` | 0..1 | `0.6` | How opaque the HUD maps are where a mod gives no `alpha`, and how strongly the minimap's marker is shaded (as the map overlay's). The Map Overlay mod sets it from its Map Overlay Opacity setting. It is the player's choice: it is kept, not put back when the mod unloads, and the client remembers it across sessions, so it holds while the Map Overlay mod is off. |
 | `move_lock` | `boolean` | | `true` | `false`: we can move while using an ability or drawing our weapon would normally hold us in place. |
 | `all_maps` | `boolean` | | `false` | `true`: every map can be opened without its key item. |
 | `dead_commands` | `boolean` | | `false` | `true`: text commands work while K.O. |
@@ -373,7 +373,7 @@ end)
 ```
 
 Queued: the recording starts after the mod phase. Only one recording runs at a time: your mod starting a new one ends
-its own running one, and another mod's raises the error above. If the recording cannot start (for example `ffmpeg` is
+its running one, and another mod's raises the error above. If the recording cannot start (for example `ffmpeg` is
 not installed), nothing is recorded, `client.recording()` stays `nil`, and a red line in the chat log gives the reason.
 
 ## `client.stop_recording`

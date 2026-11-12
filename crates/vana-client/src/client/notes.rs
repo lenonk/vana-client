@@ -139,7 +139,7 @@ pub struct Span {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Block {
-    /// A release's own heading: its tag and date.
+    /// A release's heading: its tag and date.
     Release(String, String),
     Heading(u8, Vec<Span>),
     /// A paragraph (depth 0) or a list item's text (its list depth), with the item's bullet on its first paragraph.
@@ -519,7 +519,7 @@ struct Line {
     strip: bool,
 }
 
-/// The game font's in-line colours: bold white (1e 01), code green (1e 02, the item names'), back to the line's own.
+/// The game font's in-line colours: bold white (1e 01), code green (1e 02, the item names'), back to the line's.
 fn coded(spans: &[Span]) -> String {
     use crate::dat::font::colour_code;
     let mut s = String::new();
@@ -640,7 +640,7 @@ mod tests {
 
     #[test]
     fn markdown_into_blocks() {
-        let md = "## What's new in 1.0.7\n\n### Updates\n- **Each platform** updates to `its own` build.\n  - nested one\n\nA paragraph\nwrapped.\n\n| Download | For |\n|---|---|\n| `a` | Linux |\n\n```\nchmod +x a\n```\n";
+        let md = "## What's new in 1.0.7\n\n### Updates\n- **Each platform** updates to `its` build.\n  - nested one\n\nA paragraph\nwrapped.\n\n| Download | For |\n|---|---|\n| `a` | Linux |\n\n```\nchmod +x a\n```\n";
         let b = parse(md);
         let s = |t: &str| Span { text: t.into(), bold: false, code: false };
         assert_eq!(b[0], Block::Heading(2, vec![s("What's new in 1.0.7")]));
@@ -653,7 +653,7 @@ mod tests {
                 spans: vec![
                     Span { text: "Each platform".into(), bold: true, code: false },
                     s(" updates to "),
-                    Span { text: "its own".into(), bold: false, code: true },
+                    Span { text: "its".into(), bold: false, code: true },
                     s(" build.")
                 ]
             }
@@ -664,7 +664,7 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[1][1], vec![s("Linux")]);
         assert_eq!(b[6], Block::Code(vec!["chmod +x a".into()]));
-        // The release heading stands for the body's own.
+        // The release heading stands for the body's.
         let all = blocks(&[Note { tag: "v1.0.7".into(), date: "2026-11-06".into(), body: md.into() }]);
         assert_eq!(all[0], Block::Release("1.0.7".into(), "2026-11-06".into()));
         assert_eq!(all[1], Block::Heading(3, vec![s("Updates")]));

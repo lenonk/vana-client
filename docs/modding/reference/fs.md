@@ -2,8 +2,8 @@
 
 `fs` reads and writes files in the mod's data folder: `mod-data/<mod id>/files` in the client's data folder (on Linux
 `~/.local/share/vana-client/mod-data/<mod id>/files`). Every write goes there. Reads (`fs.read`, `fs.exists`,
-`fs.list`) also see the files that came with the mod, in its own folder, as a read-only fallback: the data folder
-first, then the mod's own files, so a mod can ship default data and save the user's copy over it. A path whose first
+`fs.list`) also see the files that came with the mod, in its folder, as a read-only fallback: the data folder
+first, then the mod's files, so a mod can ship default data and save the user's copy over it. A path whose first
 part is `shared` (`"shared/notes.txt"`) is in the shared area instead, a folder every mod with the `files.shared`
 permission can read and write. The calls work anywhere (also in the lobby and in filters) and take effect at once.
 
@@ -16,7 +16,7 @@ fs.write("config.json", json.encode(cfg))   -- always saved in the data folder
 
 Paths are relative and use `/` (a `\` works too). A leading `/` and `.` parts are ignored, so `"/a/./b.txt"` is
 `"a/b.txt"`. A path with a `..` part raises "outside the mod's folder", and one with a `:` in a part raises "not a
-relative path". A path through a symbolic link (or a Windows junction), in the data folder or in the mod's own files,
+relative path". A path through a symbolic link (or a Windows junction), in the data folder or in the mod's files,
 raises "a link, which could lead outside the mod's folder"; the data folder itself may be one. Errors from the system
 come as "<path>: <reason>".
 
@@ -40,7 +40,7 @@ fs.read(path) -> string?
 ```
 
 Reads a whole file. It looks in the data folder (or the shared area) first; when the file is not there, it reads the
-mod's own file at the same path.
+mod's file at the same path.
 
 **Parameters**
 
@@ -66,7 +66,7 @@ else
 end
 ```
 
-Files read as they are, text or binary, from the data folder and from the mod's own folder alike.
+Files read as they are, text or binary, from the data folder and from the mod's folder alike.
 
 ## `fs.write`
 
@@ -135,7 +135,7 @@ end)
 fs.exists(path) -> boolean
 ```
 
-Whether a file or folder with this path is in the data folder (or the shared area) or among the mod's own files.
+Whether a file or folder with this path is in the data folder (or the shared area) or among the mod's files.
 
 **Parameters**
 
@@ -163,7 +163,7 @@ end
 fs.list(path?) -> string[]
 ```
 
-The names in a folder, sorted, with a `/` at the end of each folder's name. The data folder's names and the mod's own
+The names in a folder, sorted, with a `/` at the end of each folder's name. The data folder's names and the mod's
 are merged (each name once). For a path under `shared/`, only the shared area is listed.
 
 **Parameters**
@@ -224,7 +224,7 @@ fs.remove(path)
 ```
 
 Removes a file, or a folder with everything in it, from the data folder (or the shared area). Nothing there is not
-an error. The mod's own files are never removed.
+an error. The mod's files are never removed.
 
 **Parameters**
 
@@ -279,5 +279,5 @@ fs.write(tmp, json.encode(storage.account))
 fs.rename(tmp, "save.json")
 ```
 
-Only files in the data folder can be moved: to copy one of the mod's own files there, `fs.write` what `fs.read`
+Only files in the data folder can be moved: to copy one of the mod's files there, `fs.write` what `fs.read`
 returns.

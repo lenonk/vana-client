@@ -67,7 +67,7 @@ impl FxLibs {
 }
 
 /// The effects engine in a lobby scene (select, creator): the zone's generators and the weather 'suny' start with
-/// the zone (FUN_10242cd0, FUN_10239720), the sky's clouds among them. Its own GPU side: ids are per registry.
+/// the zone (FUN_10242cd0, FUN_10239720), the sky's clouds among them. Its GPU side: ids are per registry.
 pub struct LobbyFx {
     fx: crate::fx::Effects,
     gpu: Option<crate::render::effects::EffectsGpu>,
@@ -307,7 +307,7 @@ impl SelectScene {
         self.data.slots[i].point.map_or((HEAD, false), |p| (p, true))
     }
 
-    /// FUN_10237a80. `force` (the refresh) only while the camera's own slot has no point read yet.
+    /// FUN_10237a80. `force` (the refresh) only while the camera's slot has no point read yet.
     fn glide(&mut self, cursor: usize, force: bool) {
         let (old, new) = (self.cam_slot, cursor % SLOTS);
         if (!force && old == new) || (force && (!self.used(old) || self.latched[old])) {

@@ -493,7 +493,7 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
     }
 }
 
-/// The bars: the read window's rows' own strings.
+/// The bars: the read window's rows' strings.
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     if let Some((_, frnd, c)) = &w.polmail.read {
         let [help, title] = gu.focus_text(if *frnd { FRND } else { RCV }, *c);

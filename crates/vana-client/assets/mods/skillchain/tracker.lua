@@ -1,5 +1,5 @@
 -- Each monster's resonance as the action results show the party's skills land, by LSB's GetSkillChainEffect: an
--- opener leaves its properties for 10 s, a chain its own for 1 s less per link, and a closer counts from 3 s after
+-- opener leaves its properties for 10 s, a chain its properties for 1 s less per link, and a closer counts from 3 s after
 -- the last. Plus the skills each party member was seen using, who each monster last went for, and what chains the
 -- party can make with all it has.
 
@@ -44,7 +44,7 @@ local function skill_of(a)
   if a.category == 4 and SC.data().blue[id] then return { kind = "blue", id = id } end
 end
 
--- The party (our own six), by id.
+-- The party (our six), by id.
 local function party_ids()
   local out = {}
   for _, m in ipairs(game.party()) do

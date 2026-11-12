@@ -619,7 +619,7 @@ fn state_gate(w: &mut World, flags: u16) -> bool {
         }
         return false;
     }
-    // Flag 0x10: refusal indices 0 / 0xd / 3 of table 0x103763b0 (skipped for the full log's own commands, which ours
+    // Flag 0x10: refusal indices 0 / 0xd / 3 of table 0x103763b0 (skipped for the full log's commands, which ours
     // does not have).
     if flags & flag::UI_FREE != 0 {
         let line = if w.full_log.is_some() {
@@ -646,7 +646,7 @@ pub fn run(w: &mut World, line: &str, mode: Mode) {
     // Macro lines carry the same auto-translate phrase blocks as a submitted chat line.
     let macro_line = (mode == Mode::Macro).then(|| super::fep::outgoing(w, line.to_string()));
     let line = macro_line.as_deref().unwrap_or(line);
-    // Ours (docs/lua-mods.md): //anything, /lua and the mods' own commands go to the mods.
+    // Ours (docs/lua-mods.md): //anything, /lua and the mods' commands go to the mods.
     if line.starts_with('/') && w.lua.takes(line) {
         w.lua.type_line(line);
         return;
@@ -660,7 +660,7 @@ pub fn run(w: &mut World, line: &str, mode: Mode) {
     run_unfiltered(w, &filtered, mode);
 }
 
-/// A line past the mods' dispatch and typed filters: a mod's own action lines start here.
+/// A line past the mods' dispatch and typed filters: a mod's action lines start here.
 pub(super) fn run_unfiltered(w: &mut World, line: &str, mode: Mode) {
     let line = line.trim();
     if line.is_empty() {
@@ -948,7 +948,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             if super::items::open_daf70(w, c, c == 5, false) { Ok(()) } else { Err(()) }
         }
         // /bank2 (FUN_1007e440): without Safe 2 (s2c 0x067 @0x27 bit 0) group 7 0xa8, counted as done.
-        // FUN_1007e490 / FUN_1007e560 (/mailbox, /deliverybox, /sendpost): one's own Mog House, not visiting (0xbc),
+        // FUN_1007e490 / FUN_1007e560 (/mailbox, /deliverybox, /sendpost): one's Mog House, not visiting (0xbc),
         // the status gate, the job-change cooldown, the moogle home (0x48); then c2s 0x04D PostOpen / DeliOpen.
         id::LASTSYNTH => {
             let a: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -975,7 +975,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             super::post::open_cmd(w, if cid == id::MAILBOX { 0xe } else { 0xd });
             Ok(())
         }
-        // FUN_1007e630 (/layout): a Mog House of one's own, the status gate, the job-change cooldown, a furnished room
+        // FUN_1007e630 (/layout): one's Mog House, the status gate, the job-change cooldown, a furnished room
         // (7 0x47), not open to visitors or asked to be (SE 0004), the moogle home (7 0x48); the moogle's line 0x36.
         id::LAYOUT => {
             if !w.room_flag || w.myroom.is_none() {
@@ -1344,7 +1344,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             act(w, (w.my_id, w.my_index), 0x18, param);
             Ok(())
         }
-        // FUN_1007f500: config 0x99 bit 0, battle music for our own engagement only (else client::party_battle too).
+        // FUN_1007f500: config 0x99 bit 0, battle music for our engagement only (else client::party_battle too).
         id::BATTLEBGM => {
             let cur = bit(w, 0x99, 0);
             toggle(w, only_on_off(args), cur, |w, on| cfg_bit(w, 0x99, 0, on), [0xf2, 0xf3]);
@@ -1778,7 +1778,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             Ok(())
         }
         // FUN_1007ede0: the job master stars shown / hidden (config 0x99 bit 8 set = hidden); a change sends c2s 0x11B
-        // {u8 show} and 9 0x143 / 0x144. No word toggles from our own job master flag.
+        // {u8 show} and 9 0x143 / 0x144. No word toggles from our job master flag.
         id::JOBMASTERDISP => {
             let show = match arg(1) {
                 Some("on") => true,
@@ -1874,7 +1874,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         }
         id::RECAST => recast(w, args),
         id::CLOCK => clock(w, args),
-        // FUN_10080340 (/servmes, /smes): a transfer unless one runs; no line of its own.
+        // FUN_10080340 (/servmes, /smes): a transfer unless one runs; prints no line.
         id::SERVMES => {
             super::servmes::start(w);
             Ok(())
@@ -2271,7 +2271,7 @@ pub(super) fn log9(w: &mut World, id: usize) {
 }
 
 /// FUN_1007b390: /equip slot (unequip, group 9 0x44 "Equipment removed.") or /equip slot item [bag] (0x43 "Equipment
-/// changed."), both through FUN_101327d0 (its own refusals 7 0x8b / 0x98 / 0x99); gate 0x46; already worn or not found:
+/// changed."), both through FUN_101327d0 (its refusals 7 0x8b / 0x98 / 0x99); gate 0x46; already worn or not found:
 /// nothing; a locked item (+8) or a failed equip: 7 0x8e. Not done: the equipment-message setting (FUN_100e48d0).
 fn equip(w: &mut World, args: &[String]) -> Done {
     if !status_gate(w, 0x46) {

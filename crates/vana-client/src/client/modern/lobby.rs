@@ -26,7 +26,7 @@ impl Modern {
         }
     }
 
-    /// The title's buttons on retail's own rects (`buttons`: the rect in UI pixels, the label, lit, enabled); their
+    /// The title's buttons on retail's rects (`buttons`: the rect in UI pixels, the label, lit, enabled); their
     /// mouse stays the title's (client/mod.rs hits the same rects).
     pub fn title_buttons(
         &mut self,
@@ -751,7 +751,7 @@ fn pick_row(ui: &mut Ui, m: &Modern, text: &str, on: bool, live: bool) -> egui::
 }
 
 /// A step's choices: the race's name (group 6), Face / Hair as the stats line words, the size, job and nation rows'
-/// own captions.
+/// captions.
 fn step_rows(gu: &GameUi, step: usize) -> Vec<String> {
     let n = creator::STEPS.get(step).map_or(0, |s| s.1);
     let caption = |k: usize| gu.child_caption(creator::STEPS[step].0, k as u16 + 1).filter(|c| !c.is_empty());

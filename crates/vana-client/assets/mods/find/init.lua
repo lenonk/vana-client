@@ -72,7 +72,7 @@ commands.register("find", function(...)
       end
     end
   end
-  -- The system message mode's colour, as the client's own lines.
+  -- The system message mode's colour, as the client's lines.
   if #names == 0 then
     chat.add("/find " .. what .. ": (none)", { colour = 0x8b })
     return

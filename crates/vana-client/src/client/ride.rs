@@ -36,7 +36,7 @@ impl Model {
 }
 
 /// FUN_1008b460's states for a rider: on a mount the rider waits hidden for it (state 0 -> 0xe, at most 150 updates),
-/// riding, then leaving (states 0xf / 0x10: `coff` on both, the animal unlinked where it stood). Our own rider first
+/// riding, then leaving (states 0xf / 0x10: `coff` on both, the animal unlinked where it stood). Our rider first
 /// comes to a stand (`Stopping`, state 0xf's FUN_100d65b0 wait).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Phase {
@@ -174,7 +174,7 @@ pub fn update(w: &mut World, dt: f32) {
             keep.insert(id);
             continue;
         }
-        // A bound actor rides by its event status (FUN_1008e9a0 takes +0x174), on op 0x7e's animal or its own.
+        // A bound actor rides by its event status (FUN_1008e9a0 takes +0x174), on op 0x7e's animal or its mount.
         let bound = super::event::pose(w, id).is_some();
         let m = if bound {
             let st = super::event::event_status(w, id);
@@ -272,12 +272,12 @@ pub fn update(w: &mut World, dt: f32) {
         .map(|(id, _)| *id)
         .collect();
     for id in gone {
-        // Into state 0xf our own actor gets FUN_100a6070(0): autorun and /follow end (the "Follow canceled." line), so
+        // Into state 0xf our actor gets FUN_100a6070(0): autorun and /follow end (the "Follow canceled." line), so
         // the stand comes even with no key held *(inf: +0xee, which must not be 3 / 4 / 5, read as the status)*.
         if id == w.my_id && !matches!(w.my_motion.status, 3..=5) {
             w.autorun = false;
         }
-        // State 0xf: our own rider with its animal waits until a `?hi` stand plays (FUN_100d65b0(0)).
+        // State 0xf: our rider with its animal waits until a `?hi` stand plays (FUN_100d65b0(0)).
         let animal = w.actors.get(&(ANIMAL | id)).is_some_and(|a| a.character.is_some());
         if id == w.my_id && animal && !standing(w, id) {
             if let Some(r) = w.rides.get_mut(&id) {
@@ -310,7 +310,7 @@ pub fn update(w: &mut World, dt: f32) {
 }
 
 /// State 0xf: a mount's rider goes to colour 0x00808080; `coff` on both (the rider's from its riding files, which stay
-/// on until it ends); unlinked, the rider's own names back. The animal stays where it stood. Without a loaded animal or a
+/// on until it ends); unlinked, the rider's names back. The animal stays where it stood. Without a loaded animal or a
 /// `coff`, the ride ends at once.
 fn leave(w: &mut World, id: u32) {
     let animal_id = ANIMAL | id;
@@ -399,7 +399,7 @@ pub fn self_move(w: &mut World, id: u32, ticks: f32, speed: f32) {
     }
 }
 
-/// A leaving animal's own place.
+/// A leaving animal's place.
 pub fn left_at(w: &World, animal: u32) -> Option<(Vec3, Vec3)> {
     match w.rides.get(&(animal & !ANIMAL))?.phase {
         Phase::Leaving { pos, forward, .. } => Some((pos, forward)),

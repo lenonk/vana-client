@@ -1,5 +1,5 @@
 -- The Fields / Grounds of Valor page in force and its kills, in the training regime's edge window (beside the
--- Timers). Learnt passively, nothing is sent for it: the Field Manual / Grounds Tome event's own traffic (its start's
+-- Timers). Learnt passively, nothing is sent for it: the Field Manual / Grounds Tome event's traffic (its start's
 -- params[7], the page answer s2c 0x05C, our end option c2s 0x05B, the 0x02A confirmation, the Review answer), the
 -- kill credits (battle message 558), completion (559) and repeats (643); the labels from the zone dialogue's regime
 -- block. The server re-sends nothing at login, so the state is kept in storage.character; kills seen with no page

@@ -445,7 +445,7 @@ pub fn open_map(w: &mut World, gu: &GameUi, mode: usize, sw: f32, sh: f32) -> bo
         e.alpha = 0;
     }
     request(w);
-    // FUN_101e8c00: the start marker: the player's region, else the zone's own entry, else the middle.
+    // FUN_101e8c00: the start marker: the player's region, else the zone's entry, else the middle.
     let (_, regions, default) = t.counts[mode];
     let mut rid = region_of(w, mode, zone);
     if rid == -1 {
@@ -568,7 +568,7 @@ impl CnqMap {
     }
 }
 
-/// FUN_101e9110: conquer1's contents for region id `id` (r = id - 5): precise in the player's own region standing in
+/// FUN_101e9110: conquer1's contents for region id `id` (r = id - 5): precise in the player's region standing in
 /// a named conquest zone, else coarse.
 fn fill_conquer1(w: &World, id: i32, player_region: i32) -> Conquer1 {
     let d = &w.conquest;

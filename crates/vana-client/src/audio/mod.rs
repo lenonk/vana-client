@@ -286,8 +286,8 @@ impl Audio {
         self.se_at(id, 127, self.event_ui);
     }
 
-    /// A chat `<call>` sound (FUN_100380f0): volume = DAT_10351710 x 127, its own level (event op 0x69 mask 0x10), not
-    /// the interface sounds'. At 0 retail still starts it, silent; ours skips it. It plays under a handle of its own
+    /// A chat `<call>` sound (FUN_100380f0): volume = DAT_10351710 x 127, its level (event op 0x69 mask 0x10), not
+    /// the interface sounds'. At 0 retail still starts it, silent; ours skips it. It plays under a separate handle
     /// (ours), so its task can wait for it (`call_heard`).
     pub fn play_call(&mut self, id: u32) {
         if self.call_level <= 0.0 || self.status.voices.load(std::sync::atomic::Ordering::Relaxed) >= self.max_se {
@@ -455,7 +455,7 @@ impl Audio {
     }
 
     /// Event op 0x5c 0xb1 (FUN_100378b0(DAT_10463940)): the track last started plays again when the mixer has none.
-    /// Ours skips it while a change is under way, which starts its own track, and while its last restart is still
+    /// Ours skips it while a change is under way, which starts its track, and while its last restart is still
     /// loading.
     pub fn restart_music(&mut self) {
         if self.music_playing()
@@ -679,7 +679,7 @@ pub fn title_choice(option: u32, installed: u32, t: u32) -> (u32, usize, bool) {
     (id, seq, single)
 }
 
-/// The sound effects read lately, up to SE_BUDGET bytes (the least recently played go first: a voice keeps its own
+/// The sound effects read lately, up to SE_BUDGET bytes (the least recently played go first: a voice keeps its
 /// Arc, so dropping one here never cuts a sound short); a file found missing stays known as missing.
 #[derive(Default)]
 struct SeCache {

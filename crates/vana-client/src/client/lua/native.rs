@@ -1,4 +1,4 @@
-//! The game's own windows for mods (docs/lua-mods.md 4.10 "Native windows"): which are open, the interface and HUD
+//! The game's windows for mods (docs/lua-mods.md 4.10 "Native windows"): which are open, the interface and HUD
 //! pieces hidden, the game config by id. Changing anything needs ui.native.
 
 use super::World;

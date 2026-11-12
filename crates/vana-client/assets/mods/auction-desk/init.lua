@@ -1,4 +1,4 @@
--- //ahbuy, //ahsell, //ahlist at the auction house (the auction helper add-ons). The game's own questions follow
+-- //ahbuy, //ahsell, //ahlist at the auction house (the auction helper add-ons). The game's questions follow
 -- each bid and sale, as the auction windows ask them.
 
 local function say(t) chat.add("Auction Desk: " .. t) end

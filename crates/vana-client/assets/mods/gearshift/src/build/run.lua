@@ -400,7 +400,7 @@ end
 -- ---- Actions ----
 
 local busy_until = 0
--- An action wore its own sets: the status set goes back on once it ends.
+-- An action wore its sets: the status set goes back on once it ends.
 local restore = false
 
 -- Wearing the sets: the settings, and the player turned it on in the window (nothing moves after an update until

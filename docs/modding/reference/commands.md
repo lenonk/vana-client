@@ -1,6 +1,6 @@
 # `commands`
 
-The mod's own text commands, and running lines as if the player typed them. `commands.register` adds a command the
+The mod's text commands, and running lines as if the player typed them. `commands.register` adds a command the
 player types in the chat line as `//name` or `/name` (in a macro or a key bind too); `commands.run` runs any line, a
 game command or a mod's. Commands are read in the world only: in the lobby, nothing typed reaches a mod. Registering
 needs no permission; running a game command does (see [commands.run](#commandsrun)).

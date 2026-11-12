@@ -33,7 +33,7 @@ pub fn areas(bit: u8) -> &'static [u16] {
     }
 }
 
-/// FUN_10097bc0: on 2F the sent MyRoomExitBit; on 1F it only when it is the house's own.
+/// FUN_10097bc0: on 2F the sent MyRoomExitBit; on 1F it only when it is the house's.
 pub fn exit_bit(r: &MyRoom) -> u8 {
     if r.floor != 0 {
         return r.exit_bit;

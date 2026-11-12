@@ -39,7 +39,7 @@ impl SubPacket {
         let end = (o + len).min(self.data.len());
         let bytes = &self.data[o.min(end)..end];
         let bytes = &bytes[..bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len())];
-        // The game's text is Shift-JIS (with its own glyph pairs and auto-translate blocks).
+        // The game's text is Shift-JIS (with its glyph pairs and auto-translate blocks).
         crate::dat::font::decode_sjis(bytes)
     }
 }
@@ -414,7 +414,7 @@ mod tests {
         assert_eq!(s.server_seq, 6);
     }
 
-    /// A codec of plain 8-bit codes (each byte its own code), so the test needs no FFXiMain.dll.
+    /// A codec of plain 8-bit codes (each byte its code), so the test needs no FFXiMain.dll.
     fn plain_codec() -> Codec {
         let mut table = vec![0u8; 2048];
         for b in 0..=255u8 {

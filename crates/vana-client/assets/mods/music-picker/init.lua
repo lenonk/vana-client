@@ -1,4 +1,4 @@
--- Music by choice (the music add-ons): //music <track> holds a track; in battle the zone's own day or night music, or
+-- Music by choice (the music add-ons): //music <track> holds a track; in battle the zone's day or night music, or
 -- silence; while mounted, silence.
 
 local ENGAGED, MOUNTED = 1, 5

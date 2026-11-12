@@ -650,7 +650,7 @@ fn restore(w: &mut World, s: &Sub) {
     lock(w, s.saved_lock && back.is_some(), "prompt closed");
 }
 
-/// The prompt's own picks (FUN_101587f0 with +0xc4 set): F1 / F7 us when allowed, F2..F6 / F11 / F12 party slots
+/// The prompt's picks (FUN_101587f0 with +0xc4 set): F1 / F7 us when allowed, F2..F6 / F11 / F12 party slots
 /// when party / alliance members are allowed.
 pub fn sub_self(w: &mut World) {
     if w.prompt.as_ref().is_some_and(|s| s.inc & 0x200 != 0) {
@@ -722,7 +722,7 @@ pub fn set(w: &mut World, t: Option<u32>) {
     }
 }
 
-/// FUN_10151f20: the player's own target inputs (Tab, Escape, a mouse pick) do nothing while locked; only the
+/// FUN_10151f20: the player's target inputs (Tab, Escape, a mouse pick) do nothing while locked; only the
 /// lock toggle and the server move a locked target. A sub-target prompt bypasses the lock (+0xc4 set).
 pub fn picks_allowed(w: &World) -> bool {
     !w.locked || sub_up(w)
@@ -948,7 +948,7 @@ pub fn click(w: &mut World, picked: Option<u32>, left: bool, drag: bool, double:
     true
 }
 
-/// FUN_10083620 / FUN_10083f20: the nearest candidate in front of the character (its own frame, local forward
+/// FUN_10083620 / FUN_10083f20: the nearest candidate in front of the character (its frame, local forward
 /// >= 0) within 50 units (distance^2 < 2500), optionally of some kinds.
 fn nearest(w: &World, keep: impl Fn(u32, &super::Entity) -> bool) -> Option<u32> {
     let hidden = super::event::hidden(w);
@@ -1103,7 +1103,7 @@ pub fn slot_target(w: &World, slot: usize) -> Option<u32> {
 
 /// The pad's field d-pad up / down (key functions 0x27 / 0x28, table 0x10371ee0, FUN_10158b60 -> FUN_10203920). None
 /// leaves the pick as it is. Field +0x60 is Sub::inc, every bit with no prompt. FUN_10203920 steps DAT_106643dc, which
-/// every pick of a party member sets to its slot (FUN_10203520), so the pick's own slot is where it starts; the slot
+/// every pick of a party member sets to its slot (FUN_10203520), so the pick's slot is where it starts; the slot
 /// it lands on is not checked against the prompt's exclusions (FUN_10082fa0 reads only the id).
 pub fn party_pad_step(w: &World, down: bool) -> Option<u32> {
     let inc = w.prompt.as_ref().map_or(u32::MAX, |s| s.inc);
@@ -1431,7 +1431,7 @@ mod tests {
         assert_eq!(assist_rule(me, me, 0x0106_5013, false, true, auto), None);
     }
 
-    /// `<lastst>` resolves us by our own index, anyone else by the entity's, and nobody gone.
+    /// `<lastst>` resolves us by our index, anyone else by the entity's, and nobody gone.
     #[test]
     fn last_subtarget_index_rule() {
         assert_eq!(last_subtarget_index(7, 1, 0x405, Some(0x406)), Some((7, 0x406)));

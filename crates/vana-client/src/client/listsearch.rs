@@ -1,6 +1,6 @@
 //! Type-to-search in the magic and ability windows (not retail; the modern layer's, docs/modern-ui.md): typing while
 //! a category window or a list is open searches the names; from a category window every list behind it. A pick goes
-//! through retail's own keys (the category, the row, Enter), so every check and the target prompt still apply.
+//! through retail's keys (the category, the row, Enter), so every check and the target prompt still apply.
 //! The command palette (Ctrl+Space in the field, modern) is the same search over everything the action menu reaches:
 //! spells, abilities, usable items and the menu's commands; a pick opens what the menu would and acts through it.
 
@@ -465,7 +465,7 @@ fn boost(recent: &[String], hits: &mut [Hit]) {
 }
 
 /// The hits for the open window, best first: recent picks first among matches (boost), then the scores, then the list's
-/// own order.
+/// order.
 pub fn hits(w: &World, query: &str) -> Vec<Hit> {
     let mut out = matches(w, query);
     boost(&w.recent_picks, &mut out);
@@ -482,7 +482,7 @@ fn remember(w: &mut World, h: &Hit) {
     w.recent_save = true;
 }
 
-/// The matches for the open window by score (the list's own order among equals).
+/// The matches for the open window by score (the list's order among equals).
 fn matches(w: &World, query: &str) -> Vec<Hit> {
     // The query's forms once for every row (each row worked them out again).
     let q = normal(query.trim());

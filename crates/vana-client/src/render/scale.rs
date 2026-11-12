@@ -1,4 +1,4 @@
-//! Background resolution: the 3D scene drawn offscreen at its own size, then scaled to the window in one pass
+//! Background resolution: the 3D scene drawn offscreen at its size, then scaled to the window in one pass
 //! (Config-tool values 0003 / 0004; the UI and text stay at window size). Downscaling averages the destination
 //! pixel's footprint, upscaling is Catmull-Rom. With anti-aliasing on (config `antialias`, not retail) SMAA
 //! (render/smaa.rs) runs on the scene first whenever it is not being downscaled (downscaling is already

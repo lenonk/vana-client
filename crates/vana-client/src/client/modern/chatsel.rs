@@ -121,7 +121,7 @@ pub fn wash(p: &egui::Painter, m: &Modern, g: &Galley, at: Pos2, (s, e): (usize,
 }
 
 /// The lines' mouse this frame (`resp` their area's): a drag selects from the press; a click clears; a right click
-/// opens the menu. Returns whether the press was a plain click on no selection (the lines' own click then counts).
+/// opens the menu. Returns whether the press was a plain click on no selection (the lines' click then counts).
 pub fn log_mouse(m: &Modern, resp: &egui::Response, drawn: &Drawn) -> bool {
     let ctx = &resp.ctx;
     if resp.drag_started_by(egui::PointerButton::Primary)

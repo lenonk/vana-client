@@ -12,7 +12,7 @@ local members, combos    -- kept a half second (they need the ability lists)
 local members_at = -math.huge
 local shown = nil        -- the lines last sent
 local made = false
--- An older client knows no lines element: it draws its own view in the bare window, as before.
+-- An older client knows no lines element: it draws its view in the bare window, as before.
 local legacy = false
 
 local function level_tone(c)

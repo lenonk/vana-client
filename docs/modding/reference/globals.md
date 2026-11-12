@@ -64,7 +64,7 @@ vana-client.log only.
 require(name) -> any
 ```
 
-Loads another Lua file from the mod's own folder and returns what it returned. A dot in `name` stands for a folder:
+Loads another Lua file from the mod's folder and returns what it returned. A dot in `name` stands for a folder:
 `require("lib.util")` loads `lib/util.lua`, or `lib/util/init.lua` when that is what exists. Names are always taken from
 the mod's top folder, whichever file calls `require`. Each name is loaded once; later calls return the same value.
 
@@ -249,10 +249,10 @@ The `fs` functions take paths relative to the mod's data folder; they do not nee
   started; standard Lua's is the process's CPU time), so differences of it time things. There is no `io`, `package` or `debug`; `dofile` and `loadfile` are absent;
   `load` accepts source text only; `string.dump` is absent; `collectgarbage("count")` gives the mod's memory in KB and
   the other options do nothing.
-- Each mod has its own Lua state with up to 64 MB of memory.
+- Each mod has its Lua state with up to 64 MB of memory.
 - One call into the mod that runs past 100 ms is stopped with the error "ran past its time budget"; a mod that keeps
   raising errors (20 within a minute) is suspended until it is reloaded. `string.find`, `match`, `gmatch` and `gsub`
-  count their matching against the same budget (the client's own matcher, with Lua 5.4's results and error messages),
+  count their matching against the same budget (the client's matcher, with Lua 5.4's results and error messages),
   so a pattern that backtracks for too long is stopped the same way.
 - `setmetatable` refuses a metatable with a `__gc` field ("setmetatable: __gc finalizers are not allowed (they would
   run outside the time budget)"): Lua runs finalizers where no budget can stop them.

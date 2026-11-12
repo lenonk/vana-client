@@ -12,7 +12,7 @@ local RACES = {
   mithra = 7, galka = 8,
 }
 local SLOTS = { head = 4, body = 5, hands = 6, legs = 7, feet = 8, main = 0, sub = 1, range = 2 }
--- bare: the game's own defaults for an empty armour slot (head 0, the rest 8); no weapon is 0
+-- bare: the game's defaults for an empty armour slot (head 0, the rest 8); no weapon is 0
 local BARE = { head = 0, body = 8, hands = 8, legs = 8, feet = 8, main = 0, sub = 0, range = 0 }
 local ORDER = { "race", "face", "head", "body", "hands", "legs", "feet", "main", "sub", "range" }
 

@@ -200,7 +200,7 @@ impl Screen {
     }
 
     /// A zone-in that carries a login event: the scene stays black until the event fades it in. Retail starts the
-    /// zone's own fade-in (file 30904 `fdi0`, op 0x0f to 0x80 over 30 ticks) only when the 0x00A has no EventNum
+    /// zone's fade-in (file 30904 `fdi0`, op 0x0f to 0x80 over 30 ticks) only when the 0x00A has no EventNum
     /// (FUN_10093db0 sets the fade state to 1 only then), so the colour multiply stays at the black the zone change
     /// left it at; the event's `fdi1` (0x0f to 0x80 over 60 ticks, from the colour now) brings the picture in. Ours
     /// draws the zone fade separately (World::fade) and starts each zone at 1.0, so the hold is set here.
@@ -209,7 +209,7 @@ impl Screen {
         self.login_black = true;
     }
 
-    /// The login event ended (or never ran) without a 0x0f of its own: fade in as `fdi0` would (ours; retail has no
+    /// The login event ended (or never ran) without a 0x0f: fade in as `fdi0` would (ours; retail has no
     /// such fallback, its opening scripts all fade in).
     pub fn release_black(&mut self) {
         if std::mem::take(&mut self.login_black) {
@@ -252,7 +252,7 @@ impl Screen {
     }
 
     /// Scheduler op 0x04 / 0x81 in a task an event's scheduler started (main's `cut1`..: fx/tasks.rs): the path
-    /// plays from now as this runner's own 0x04 does.
+    /// plays from now as this runner's 0x04 does.
     pub fn fx_camera(&mut self, index: &DatIndex, c: crate::fx::EventCamera) {
         let four = |v: [u8; 4]| String::from_utf8_lossy(&v).trim_end_matches('\0').to_string();
         if let Some(f) = self.file(index, c.file) {
@@ -474,9 +474,9 @@ pub struct Msg {
     pub page: usize,
     /// Pages already written to the log (FUN_10131e30 writes each as it opens).
     pub logged: usize,
-    /// msg+4 from a 1f code; 0 (no colour of its own, no indent) without one.
+    /// msg+4 from a 1f code; 0 (no colour, no indent) without one.
     pub mode: Option<u8>,
-    /// An s2c 0x03B line's speaker (its UniqueNo); None for the event's own messages.
+    /// An s2c 0x03B line's speaker (its UniqueNo); None for the event's messages.
     pub actor: Option<u32>,
 }
 
@@ -859,7 +859,7 @@ impl LiveHost<'_> {
         let _ = self.w.net.commands.send(c);
     }
 
-    /// Where an actor is drawn now: its VM body when bound, else its own position.
+    /// Where an actor is drawn now: its VM body when bound, else its position.
     fn drawn_at(&self, id: u32) -> Option<Vec3> {
         if let Some(p) = self.st.poses.get(&id) {
             return Some(p.pos);
@@ -1108,7 +1108,7 @@ impl Host for LiveHost<'_> {
                     p.end_in(8.0);
                 }
             }
-            // FUN_100b72c0 subs 0 / 1: the thread's own actor (+0x124 bit 29 = sub).
+            // FUN_100b72c0 subs 0 / 1: the thread's actor (+0x124 bit 29 = sub).
             Effect::Op { op: 0x5f, sub: Some(s @ (0 | 1)), actor, .. } => {
                 let id = self.wid(actor);
                 if s == 1 {
@@ -1292,7 +1292,7 @@ impl Host for LiveHost<'_> {
                 }
             }
             // FUN_100bb180 sub 1: the event actor's event status +0x174 = val@2, which a bound actor poses with (5 / 0x55
-            // ride on its own ChocoboIndex / mount id, ride.rs).
+            // ride on its ChocoboIndex / mount id, ride.rs).
             Effect::Op { op: 0xac, sub: Some(1), actor, args } => {
                 let id = self.wid(actor);
                 if let Some(s) = Self::arg_int(&args, 0).filter(|_| !self.st.status_lock.contains(&id)) {
@@ -2554,14 +2554,14 @@ fn close_msg(st: &mut State, w: &mut World) {
     }
 }
 
-/// The post-event request of our own character (FUN_100ac9c0 sets +0x1f8 = 300 / +0x1fa; FUN_1008d280 sends
+/// The post-event request of our character (FUN_100ac9c0 sets +0x1f8 = 300 / +0x1fa; FUN_1008d280 sends
 /// 0x016 when it runs out, then every 600 ticks) until a full 0x00D about us arrives.
 fn self_request(w: &mut World, ticks: f32) {
     let Some(left) = &mut w.self_lock else { return };
     *left -= ticks;
     if *left < 0.0 {
         *left = 600.0;
-        log::info!("event: asking for our own character (index {})", w.my_index);
+        log::info!("event: asking for our character (index {})", w.my_index);
         let _ = w.net.commands.send(NetCommand::CharReq(w.my_index));
     }
 }
@@ -2653,14 +2653,14 @@ fn motion_files(op: u8, file: i32, id: u32, a: &super::Actor) -> Vec<u32> {
     }
 }
 
-/// FUN_10089a60, each frame on our own character: its place (+4, facing +0x14) follows its model. Bound in an event it
+/// FUN_10089a60, each frame on our character: its place (+4, facing +0x14) follows its model. Bound in an event it
 /// waits unless (DAT_1046df04 | Mode) & 4, so the model the event moved is where we stand once it ends.
 fn keep_pose(w: &mut World, p: Pose) {
     (w.pos, w.step_hist, w.step_ticks, w.step_to, w.draw_pos) = (p.pos, [p.pos; 4], 0.0, p.pos, p.pos);
     w.yaw = super::player_yaw(p.yaw);
 }
 
-/// FUN_100ac9c0 / FUN_100bb750 / FUN_1008d710: the bound actors go back to their own transforms and status
+/// FUN_100ac9c0 / FUN_100bb750 / FUN_1008d710: the bound actors go back to their transforms and status
 /// bits, event motions and looks end, deferred despawns happen.
 fn finish(w: &mut World, live: Box<Live>) {
     w.screen.release_black();
@@ -2729,7 +2729,7 @@ fn finish(w: &mut World, live: Box<Live>) {
         w.actors.remove(id);
     }
     w.event_mem = live.rt.mem.clone();
-    // FUN_100ae3f0 (0x100ae8a2), only when the zone's own reset hasn't run yet (a zone-in cutscene): the ambient and
+    // FUN_100ae3f0 (0x100ae8a2), only when the zone's reset hasn't run yet (a zone-in cutscene): the ambient and
     // the world effects fade back to full over 30 ticks. After the zone reset an event's end restores nothing, so a
     // script has to put back what it lowered (batch 6 item 18).
     if !std::mem::replace(&mut w.sound_reset, true) {
@@ -2849,7 +2849,7 @@ pub fn position_ack(w: &mut World, mode: u8) {
     }
 }
 
-/// Where the running event draws us (the VM bodies are a draw override; our own position stays).
+/// Where the running event draws us (the VM bodies are a draw override; our position stays).
 pub fn own_pose(w: &World) -> Option<Vec3> {
     pose(w, w.my_id).map(|p| p.pos)
 }
@@ -3075,7 +3075,7 @@ impl<'a> HideRule<'a> {
     }
 
     fn entity(&self, w: &World, id: u32, e: &super::Entity) -> bool {
-        // FUN_1008e4d0: /hidetrust (config 0x99 bit 5) takes the model of every trust outside our own party (its plate
+        // FUN_1008e4d0: /hidetrust (config 0x99 bit 5) takes the model of every trust outside our party (its plate
         // and targeting go with it; the radar dot stays).
         let trust = w.game.get(0x99) & 0x20 != 0 && e.marks.trust && !w.party.party().any(|m| m.index == e.index);
         let hide = match self.script {
@@ -3241,7 +3241,7 @@ pub(super) fn set_choice(w: &mut World, k: usize) -> bool {
 }
 
 /// The open message, for the event message window.
-/// The event's own message first; with none, the oldest s2c 0x03B line (both feed the same queues in retail; ours
+/// The event's message first; with none, the oldest s2c 0x03B line (both feed the same queues in retail; ours
 /// shows the event's first *(inf)*).
 pub fn message(w: &mut World) -> Option<&mut Msg> {
     if w.event.as_ref().is_some_and(|l| l.st.msg.is_some()) {
@@ -3315,7 +3315,7 @@ pub fn loose_key(w: &mut World) {
 }
 
 /// FUN_10127ea0: both event message queues emptied (after fishing's mode-3 sends, at an event's end, leaving the
-/// field). Ours: the 0x03B lines; an event's own message ends with its event.
+/// field). Ours: the 0x03B lines; an event's message ends with its event.
 pub fn cancel_queues(w: &mut World) {
     w.loose_msgs.clear();
 }
@@ -3392,7 +3392,7 @@ pub fn option_item(w: &World) -> Option<(u16, Option<[u8; 24]>, u8)> {
 }
 
 pub fn key(w: &mut World, key: egui::Key) {
-    // A 0x03B line shown during the event (no choice and no message of the event's own): Enter pages it.
+    // A 0x03B line shown during the event (no choice and no message of the event's): Enter pages it.
     if key == egui::Key::Enter && loose_waits(w) && w.event.as_ref().is_none_or(|l| l.st.choice.is_none()) {
         loose_key(w);
         return;
@@ -3522,7 +3522,7 @@ pub fn talk_with(w: &mut World, target: u32, param: u32) -> bool {
         super::textcmd::refuse(w, 0x4b);
         return false;
     }
-    // LAB_101d6040: the Mog House door is the client's own; it opens the exit menu or the prompt.
+    // LAB_101d6040: the Mog House door is the client's; it opens the exit menu or the prompt.
     if target == super::myroom::DOOR_ID && w.myroom.is_some() {
         super::open_mogdoor(w);
         return true;
@@ -3701,7 +3701,7 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
     // msg+0xc10: FUN_100ad5e0 / FUN_100ad660 get the speaker entity's name, else sName; 0x027 none.
     let msg_name = if t.packet == 0x027 { String::new() } else { entity.clone().unwrap_or_else(|| t.name.clone()) };
     // The "%s : " prefix (FUN_100abbb0; MesNum bit 15 none). 0x027: String1's, or with String2 / Flags 1 the NPC's
-    // own name (a PC: String2); bit 15 set: String2 when set and Flags 2.
+    // name (a PC: String2); bit 15 set: String2 when set and Flags 2.
     let prefix = match t.packet {
         0x027 if named && (!t.name2.is_empty() || t.flags & 1 != 0) => {
             if t.actor >> 24 != 0 {
@@ -3766,7 +3766,7 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
 }
 
 /// An s2c 0x017 Mes with Attr bit 3: "%x,%x,%x,%x,%x,%x,%x," read as source, number and num[0..5]; the line's
-/// own text starts past that prefix as "%02hx,%04hx,%08lx x5," would print it (FUN_100fd910).
+/// text starts past that prefix as "%02hx,%04hx,%08lx x5," would print it (FUN_100fd910).
 pub struct CodedChat<'a> {
     pub source: u16,
     pub id: u16,
@@ -3900,7 +3900,7 @@ mod tests {
     }
 
     /// A login event holds the scene black; `fdi1` (0x0f to 0x80 over 60 ticks) fades it in from there, and an event
-    /// that ends without a fade of its own gets one.
+    /// that ends without a fade gets one.
     #[test]
     fn login_event_holds_black_until_its_fade() {
         let mut sc = Screen::default();
@@ -3971,7 +3971,7 @@ mod tests {
         );
     }
 
-    /// Op 0x82's regions are RID records by 4cc: Lower Jeuno's e6t0 / e6t1 hold their own centres.
+    /// Op 0x82's regions are RID records by 4cc: Lower Jeuno's e6t0 / e6t1 hold their centres.
     #[test]
     fn region_ops() {
         let cfg = crate::config::Config::load();

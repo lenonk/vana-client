@@ -2,7 +2,7 @@
 
 local checked = {}
 
--- The heading from us toward a point: x east, z with north negative (the client's own face math).
+-- The heading from us toward a point: x east, z with north negative (the client's face math).
 local function heading_to(me, p)
   local h = math.atan(-(p.z - me.pos.z), p.x - me.pos.x)
   return h % (2 * math.pi)

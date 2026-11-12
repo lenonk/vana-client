@@ -1,5 +1,5 @@
 //! The angler's model (MODLOG "Fishing"): fishing motion files while at a fishing status (FUN_100d2a10), the
-//! status's scheduler on the model and the rod (FUN_1008c6c0), and the rod as its own actor (entity +0xa4,
+//! status's scheduler on the model and the rod (FUN_1008c6c0), and the rod as its actor (entity +0xa4,
 //! FUN_1008f740) at the angler's place, playing the angler's status motion and fishing schedulers.
 
 use super::fishing::fishing_status;

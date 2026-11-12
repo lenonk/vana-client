@@ -1,6 +1,6 @@
 //! The battle menu's suggestion rows (not retail; docs/modern-ui.md "Recommendations"): the Suggestions mod picks
 //! them (its rules over the game's state) and fills the battle_rows slot; the modern battle menu shows them above its
-//! commands, rides them with its cursor and opens a row's spell family as a submenu. It never acts on its own.
+//! commands, rides them with its cursor and opens a row's spell family as a submenu. It never acts by itself.
 
 use super::World;
 

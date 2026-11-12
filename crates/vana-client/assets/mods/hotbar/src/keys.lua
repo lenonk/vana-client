@@ -1,4 +1,4 @@
--- Hotkeys for the bars: a modifier per bar plus one key row shared by all bars, unless a slot has a key of its own
+-- Hotkeys for the bars: a modifier per bar plus one key row shared by all bars, unless a slot has a separate key
 -- (any combination, or none). Defaults: bar 1 = 1..0, bar 2 = Ctrl+1..0, bar 3 = Alt+1..0.
 -- The choices live in storage.account.keys (string keys only: saved tables
 -- come back with text keys).
@@ -101,7 +101,7 @@ local function row()
   return ROWS[index_of(M.ROW_LABELS, M.get_row())]
 end
 
--- A slot's own key: a combination such as "ctrl+q", "" for none, nil when it takes the bar's.
+-- A slot's key: a combination such as "ctrl+q", "" for none, nil when it takes the bar's.
 function M.get_slot(bar, slot)
   local t = store().slots
   local v = type(t) == "table" and t[bar .. "." .. slot] or nil

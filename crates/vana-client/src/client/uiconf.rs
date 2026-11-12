@@ -1,6 +1,6 @@
 //! The modern UI's setup per character and main job (not retail): its window places (each display's), folded edge
 //! windows, mode presets, chat window settings and favourites, kept in <data>/ui/config/<World>-<Name>/<JOB>.json
-//! (beside an FFXI_CONFIG copy for test runs). The config's own fields hold the one in use. A job new to a character
+//! (beside an FFXI_CONFIG copy for test runs). The config's fields hold the one in use. A job new to a character
 //! starts as the job it comes from (the character's last one, at a login), favourites aside: they are a job's spells
 //! and abilities, as the hotbar's bars are (which it keeps by job itself). A character's first job takes the config's
 //! fields as they were.
@@ -161,7 +161,7 @@ fn read(p: &Path) -> Option<UiConfig> {
     let text = std::fs::read(p).ok()?;
     let mut u: UiConfig =
         serde_json::from_slice(&text).map_err(|e| log::warn!("ui config {}: {e}", p.display())).ok()?;
-    // The config's own fix-ups on load (Config::load), for a file written before them.
+    // The config's fix-ups on load (Config::load), for a file written before them.
     u.modes.split_timers();
     Some(u)
 }
@@ -232,7 +232,7 @@ fn switch_in(root: &Path, cfg: &mut Config, h: &mut Held, to: (String, String)) 
                 put(cfg, h, &src, false);
             }
             let mut u = take(cfg, h);
-            // A new job's actions are its own (as its hotbar): the favourites start empty.
+            // A new job's actions are its alone (as its hotbar): the favourites start empty.
             if source.is_some() {
                 u.favourites.clear();
                 put(cfg, h, &u, true);
@@ -291,7 +291,7 @@ pub fn label(all: &[(String, String)], (character, job): &(String, String)) -> S
 }
 
 /// Another character's or job's setup copied into the one in use: places, modes and the chat window's settings, not
-/// the favourites (this job's own). The one in use itself (a list from before a job change) is left alone.
+/// the favourites (this job's). The one in use itself (a list from before a job change) is left alone.
 pub fn copy_from(cfg: &mut Config, w: &mut World, from: &(String, String)) {
     if w.ui_profile.as_ref().is_some_and(|p| p.is(from)) {
         return;
@@ -355,7 +355,7 @@ mod tests {
     }
 
     /// A character's first job takes the config as it was, favourites too; a new job then starts as the job it came
-    /// from without favourites, and each job keeps its own when switched back.
+    /// from without favourites, and each job keeps its favourites when switched back.
     #[test]
     fn new_jobs_copy_the_last() {
         let root = root("copy");
@@ -369,7 +369,7 @@ mod tests {
         let whm = nine.saved(&root, "WHM");
         assert!(whm.favourites.is_empty() && nine.favourites.is_empty());
         assert_eq!(whm.folded.get("minimap"), Some(&true));
-        // WHM's own change stays WHM's.
+        // WHM's change stays WHM's.
         cfg.modern_folded.insert("minimap".into(), false);
         nine.favourites = vec!["m:2".into()];
         nine.to(&root, &mut cfg, "WAR");

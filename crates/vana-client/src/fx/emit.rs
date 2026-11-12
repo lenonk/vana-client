@@ -78,7 +78,7 @@ fn needs_no_resource(k: u8) -> bool {
 
 /// FUN_1004d920: builds one element from the instance's emission stream, or None when op 1's resource does not
 /// resolve (retail returns without emitting).
-/// `me`: whether the instance's actor1 / actor2 is our own player (emission op 0x82).
+/// `me`: whether the instance's actor1 / actor2 is our player (emission op 0x82).
 /// Generator +0xdf bit 1 (asm 0x10047e42..0x10047f13): set at its start only for these door parts, whose lighting then
 /// skips the parent branch of FUN_100467e0.
 fn lit_parent_off(file: u32, name: [u8; 4]) -> bool {
@@ -283,7 +283,7 @@ fn emit_ops(
     let count = inst.emitted;
     let gen_dist = inst.dist;
     let key = |reg: &mut Registry, op: &Op| reg.key_ref(lib, from, op.u32(2));
-    // Op 0x94: this stream's point list is the parent generator's op 0x4e / 0x4f list (its own scope).
+    // Op 0x94: this stream's point list is the parent generator's op 0x4e / 0x4f list (its scope).
     let parent_vtx = if stream.iter().any(|o| o.code == 0x94) {
         parent.and_then(|p| p.src).and_then(|(pl, pn)| {
             let name = reg.libs[pl].generator(pn)?.streams[1].iter().find(|o| matches!(o.code, 0x4e | 0x4f))?.u32(2);
@@ -858,7 +858,7 @@ fn emit_ops(
     Some(Spawn { elem: e, cpu, children, parts, sound })
 }
 
-/// FUN_10048740 steps 2-3: the generator's own stream. Returns false when this frame's emission is skipped
+/// FUN_10048740 steps 2-3: the generator's stream. Returns false when this frame's emission is skipped
 /// (distance or view gate).
 pub fn generator_stream(reg: &mut Registry, inst: &mut Instance, f: &Frame) -> bool {
     let x = if inst.life > 0.0 { (1.0 - (inst.life - inst.elapsed) / inst.life).min(1.0) } else { 0.0 };

@@ -14,7 +14,7 @@ sub set fills a blue one. Clearing a slot of a sub set the main set fills blanks
 ## On the bars
 
 - **Keys:** bar 1 takes `1`..`0`, `-`, `=`; bar 2 the same with Ctrl, bar 3 with Alt. The manager's Config page picks
-  each bar's modifier and the key row (number row, function keys or the numpad), and any slot's own key. A slot shows
+  each bar's modifier and the key row (number row, function keys or the numpad), and any slot's key. A slot shows
   its key in its corner.
 - **Click** a slot to run it; **right-click** to clear it or open the manager; **drag** a slot onto another to swap
   them (in the sub set when either comes from it).
@@ -26,14 +26,14 @@ macros unless a bar uses them.
 
 ## Macros
 
-Each line runs as typed. `/wait 2` on its own line waits two seconds; `<wait 2>` at the end of a line waits after it.
+Each line runs as typed. `/wait 2` alone on a line waits two seconds; `<wait 2>` at the end of a line waits after it.
 A macro still running ignores a second press.
 
 ## The library, the Builder and the palette
 
 Each main job has a **library** of macros (`//hb`, Library: New, Edit, Copy, Delete). The Library page shows them as
 tiles: click one to choose it, right-click to edit it, drag it onto a slot of the bars to put it there. A slot can
-name a library macro instead of holding its own copy, so editing the macro changes every slot (main or sub set) that
+name a library macro instead of holding its copy, so editing the macro changes every slot (main or sub set) that
 names it.
 
 The **Builder** makes one. New or Edit opens it in the window's place; Save keeps the macro in the library and
@@ -56,14 +56,14 @@ Escape or a click elsewhere closes it. While you edit a group, the list shows it
 out); search to add more, of any type. The Target menu sets every member's target. Groups are optional: one slot per
 rune still works as before.
 
-**Line it builds** shows the macro's first line (`/ja "Ignis" <me>`). Type your own line there to run it instead,
+**Line it builds** shows the macro's first line (`/ja "Ignis" <me>`). Type your line there to run it instead,
 for anything the Builder gets wrong; the slot keeps the picked action's icon and recast when your line names none.
 Clear the field to go back to the built line.
 
 The **palette** (`//hb palette`, or Palette on the Library page) shows the main job's library as tiles on the screen;
 drag its background to move it. Drag a tile onto a slot of the bars to put that macro there; click one to edit it.
 
-The manager's **Config** page sets each bar's modifier and key row, and a slot's own key.
+The manager's **Config** page sets each bar's modifier and key row, and a slot's key.
 
 The macros are kept in `mod-data/hotbar/files/macros.json`:
 

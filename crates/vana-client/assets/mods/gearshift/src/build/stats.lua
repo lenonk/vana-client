@@ -1,4 +1,4 @@
--- Item stats from the item's own description and augment lines, as the item window shows them: "DEF:45 STR+5
+-- Item stats from the item's description and augment lines, as the item window shows them: "DEF:45 STR+5
 -- Accuracy+10 Haste+3%". A "Word:" prefix starts a context for what follows: a pet's (Pet:, Avatar:, Wyvern:,
 -- Automaton:, Luopan:) goes to that pet, any other (Set:, Latent effect:, weather, days, Unity Ranking...) is set
 -- aside as conditional. Each signed number takes the longest known phrase that ends just before it.

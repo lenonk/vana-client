@@ -68,7 +68,7 @@ commands.register("macros", function(cmd, which)
   end
 end)
 
--- Once at the start, on the first frame that knows the job and has the macros (the palette's own book loads with them).
+-- Once at the start, on the first frame that knows the job and has the macros (the palette's book loads with them).
 local first
 first = events.on("frame", function()
   if jobs() and game.macros() then

@@ -121,7 +121,7 @@ pub struct Shop {
     /// Set Prices: no shopmain, no reach; moneyctr's (step, max, value) while a price is typed.
     bazaar: bool,
     money: Option<(u32, u32, u32)>,
-    /// A bazaar's list: the seller (UniqueNo, ActIndex); no shopmain, its own reach.
+    /// A bazaar's list: the seller (UniqueNo, ActIndex); no shopmain, its reach.
     seller: Option<(u32, u16)>,
     /// The bazaar row being bought (+0x12) and its unit price with the tax (DAT_1066347c).
     busy_row: usize,
@@ -1284,7 +1284,7 @@ pub(in crate::client) fn native_list(w: &World) -> Option<(&'static str, Vec<ser
         View::Sell => ("sell", sell_rows(w).iter().map(slot).collect()),
         // The wanted list's first row is its header.
         View::Wanted => ("wanted", std::iter::once(json!({})).chain(wanted(w).iter().map(|g| json!({"item": g.item, "count": g.count, "price": g.price & 0x7fff_ffff}))).collect()),
-        // A guild buys at its own list's prices; the bazaar shows the prices set on it (locked 0x19).
+        // A guild buys at its list's prices; the bazaar shows the prices set on it (locked 0x19).
         View::Inv(filter) => (
             "sell",
             inv_rows(w, filter)
@@ -1309,7 +1309,7 @@ pub(in crate::client) fn native_list(w: &World) -> Option<(&'static str, Vec<ser
 }
 
 /// The bars: the list's title "Shop" / "Guild Shop" (group 0xd 0xc / 0xd), help 0xe 0x2f buy, 0x30 sell, 0x33 the
-/// wanted list; itemctrl's and the confirm's own.
+/// wanted list; itemctrl's and the confirm's.
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     let Some(s) = &w.shop else { return };
     let focus = |name: &str, child: u16, bars: &mut super::hudtop::BarText| {

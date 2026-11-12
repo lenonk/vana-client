@@ -138,7 +138,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     act(w, gu, mouse);
 }
 
-/// The mouse's clicks through the module's own setters and keys: a click moves the cursor and is Enter.
+/// The mouse's clicks through the module's setters and keys: a click moves the cursor and is Enter.
 fn act(w: &mut World, gu: &GameUi, mouse: Mouse) {
     let enter = |w: &mut World| macroedit::key(w, gu, egui::Key::Enter);
     social::act(w, gu, mouse.menu, macroedit::set_menu, |w, gu| macroedit::key(w, gu, egui::Key::Enter));
@@ -551,7 +551,7 @@ fn held_palette(p: &mut Panels, w: &World) {
     );
 }
 
-/// The storage the slot editor lists (mcrmogc's rows: child 1 -> container 0, 2 -> 1, 3 -> 2, the others their own).
+/// The storage the slot editor lists (mcrmogc's rows: child 1 -> container 0, 2 -> 1, 3 -> 2, the others theirs).
 const STORES: [(u16, u8); 16] = [
     (1, 0),
     (2, 1),

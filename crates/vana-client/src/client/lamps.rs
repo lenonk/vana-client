@@ -20,7 +20,7 @@ pub struct Lamp {
     pub colour: u32,
 }
 
-/// No data light to copy: the lamp's own light (render/effects.rs LAMP_WGSL).
+/// No data light to copy: the lamp's light (render/effects.rs LAMP_WGSL).
 pub const OWN: u32 = 0xffff;
 
 #[derive(Default)]
@@ -182,7 +182,7 @@ mod tests {
         let mut f = [2u8, 0, 0, 0];
         offer(&l, Vec3::new(74.0, -65.0, 276.0), &mut f);
         assert_eq!(f, [2, 12, 0, 0]);
-        // No data light in the zone: each lamp its own light, with its glow's colour.
+        // No data light in the zone: each lamp its light, with its glow's colour.
         let own = build(&glows, &[], 10, ray);
         assert_eq!(own.len(), 3);
         assert!(own.iter().all(|l| l.template == OWN && l.colour == 0x80604020));

@@ -1,5 +1,5 @@
 # Ours: the GM window's grouping, warnings and form fields per GM command, from each command's usage line and
-# arguments (facts of its interface; no description text is copied: the server may send its own). Columns, tab
+# arguments (facts of its interface; no description text is copied: the server may send its descriptions). Columns, tab
 # separated: command, group, danger (1), an empty column, then fields as label~kind~optional(1) joined by |. A
 # command the server lists but this file doesn't gets plain fields from its cmdprops type string, in Debug & scripts.
 addabytime	unlocks	0		minutes~number~0|player~player~1

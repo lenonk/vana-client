@@ -283,7 +283,7 @@ mod reply_tests {
         }
     }
 
-    /// LSB's refusal and one server's own wording both give the version to ask as; the one sent alone gives none.
+    /// LSB's refusal and one server's wording both give the version to ask as; the one sent alone gives none.
     #[test]
     fn asked_version_from_refusals() {
         let v3 = LOADER_VERSION;

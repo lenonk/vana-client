@@ -1,4 +1,4 @@
--- Gear swapping from players' own files: a GearSwap job file (gearswap/ in this mod's data folder, named as GearSwap
+-- Gear swapping from players' files: a GearSwap job file (gearswap/ in this mod's data folder, named as GearSwap
 -- names them), a LuAshitacast profile (ashitacast/<Name>_<Id>/<JOB>.lua or ashitacast/<Name>_<JOB>.lua) or an
 -- Ashitacast XML profile (the same names, .xml), loaded for the main job, all run around the action packets we send:
 -- the gear before an action, the action, the gear after it, in one batch. Or a Spellcast XML file (spellcast/), run
@@ -15,7 +15,7 @@ builder_window.install()
 -- The set builder's background work, one coroutine for the session.
 timer.after(0, function() builder.worker() end)
 
--- A file of the player's own runs instead of the set builder.
+-- A file the player wrote runs instead of the set builder.
 local function file_loaded()
   return gs.loaded() or lac.loaded() or acxml.loaded() or spellcast.loaded()
 end

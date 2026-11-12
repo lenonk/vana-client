@@ -519,7 +519,7 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool, shift: bool) ->
     let shown = listed_at(w, direct);
     let rows = shown.len();
     if matches!(w.win, Some(Win::Items { store: Some(_), .. })) {
-        // The modern storage view has its own keys.
+        // The modern storage view has its keys.
         if !super::modern::storage_key(w, key, shift) {
             store_key(w, &info, key, page, alt);
         }
@@ -1425,7 +1425,7 @@ pub fn open_bin(w: &mut World, from_menu: bool) -> bool {
 }
 
 /// FUN_101daf70(c, need_satchel, nomad): Satchel, Sack, Case, the wardrobes. Gate 0x44 (the job
-/// change cooldown is not tracked); a missing Satchel (ItemNum < 30) fails silently. At the moogle in our own Mog
+/// change cooldown is not tracked); a missing Satchel (ItemNum < 30) fails silently. At the moogle in our Mog
 /// House of a residential zone (with the moogle's line 0x2e), or by a nomad moogle in a MogZoneFlag zone; else the
 /// Safe / Storage / Locker rows stay grey. Opens anywhere.
 pub fn open_daf70(w: &mut World, c: u8, need_satchel: bool, nomad: bool) -> bool {
@@ -2038,7 +2038,7 @@ fn draw_storage(
     let ilist = ItemList { rows: tinted(&inv, false), scroll, cursor };
     upload_icons(gu, info, blist.visible().iter().chain(ilist.visible()).map(|r| r.id));
     let free = b.qty.is_none() && b.sortw.is_none() && b.stora.is_none();
-    // FUN_101dcb40 for the bank side; the inventory side's own list draws it the same way (inferred).
+    // FUN_101dcb40 for the bank side; the inventory side's list draws it the same way (inferred).
     if free {
         let (n, c) = if b.on_bank { (banks.len(), b.bank) } else { (inv.len(), b.side) };
         draw_count(gu, n, w.inv.sizes[c as usize], sw, sh);

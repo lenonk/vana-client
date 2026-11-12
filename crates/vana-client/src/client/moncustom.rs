@@ -1050,7 +1050,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     rects
 }
 
-/// The mouse: the generic handler on the focused window, list rows as the list's own (a row moves the cursor, a click
+/// The mouse: the generic handler on the focused window, list rows as the list's (a row moves the cursor, a click
 /// on it is Enter).
 pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
     let Some(s) = w.moncustom.clone() else { return };
@@ -1195,7 +1195,7 @@ mod tests {
         let mut p = [0u16; 12];
         assert!(equip_rule(&cur, &mut p, 1, 5, cost, 20));
         assert_eq!(p[1], 5);
-        // The same instinct on its own slot removes it.
+        // The same instinct on its slot removes it.
         let mut p = [0u16; 12];
         assert!(equip_rule(&cur, &mut p, 0, 3, cost, 20));
         assert_eq!(p[0], 0xffff);

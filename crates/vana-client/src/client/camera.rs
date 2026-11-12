@@ -51,7 +51,7 @@ pub struct State {
     /// First person (DAT_10475578) and its eased look offsets (pitch, yaw).
     pub first: bool,
     fp: (f32, f32),
-    /// Our own model's fade (actor +0x167): out in first person, 0.0625 a tick.
+    /// Our model's fade (actor +0x167): out in first person, 0.0625 a tick.
     pub self_alpha: f32,
     started: bool,
     /// Path mode (DAT_10456d70): the look's last four points (+0xbc, newest first), how many were recorded (+0xf0, a
@@ -72,7 +72,7 @@ pub struct State {
     pub battle: Option<f32>,
     battle_on: bool,
     normal: f32,
-    /// The drawn eye's distance over the camera's own (a mod's scale, held in by what lies behind; 0 unset): the
+    /// The drawn eye's distance over the camera's (a mod's scale, held in by what lies behind; 0 unset): the
     /// camera itself always runs at retail's distances.
     out: f32,
 }
@@ -237,7 +237,7 @@ impl Shake {
 
 /// Retail frames from our frame time: once 2 ticks (the stock divisor, DAT_104568fc +0x30) have gathered, one frame
 /// of the whole ticks gathered (FUN_10014cf0: whole, at least the divisor). Above 30 fps that is every second or
-/// third frame of ours with 2; below, every frame with 3 or more. `cap` is the consumer's own limit (the shake's 8);
+/// third frame of ours with 2; below, every frame with 3 or more. `cap` is the consumer's limit (the shake's 8);
 /// ticks past it are dropped, as retail's are. *(Retail's count is a 4-frame average.)*
 pub fn retail_frame(acc: &mut f32, dt: f32, cap: f32) -> Option<f32> {
     *acc += dt * 60.0;
@@ -390,7 +390,7 @@ pub fn ride(w: &mut World, dy: f32) {
 /// 22841..22915 before 23490..23561), so both eyes the view is drawn between get (A) (the hold is up) and the tail now,
 /// never one drawn inside a wall or under the floor.
 fn collide_direct(w: &mut World, before: [Vec3; 2]) {
-    // The locked branch collides its own eye every frame.
+    // The locked branch collides its eye every frame.
     if w.locked {
         return;
     }

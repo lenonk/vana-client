@@ -1,4 +1,4 @@
-//! The Lua mods' windows in the modern UI (docs/lua-mods.md 4.10): each open window a panel of its own, its place kept
+//! The Lua mods' windows in the modern UI (docs/lua-mods.md 4.10): each open window a separate panel, its place kept
 //! as `mod:<mod>:<window>`, its elements the kit's controls. Keys are the window model's (client/lua/window.rs); the
 //! mouse goes back to it as clicks.
 

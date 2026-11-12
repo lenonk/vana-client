@@ -1,4 +1,4 @@
-//! The network for mods (docs/lua-mods.md 4.15, the `net` permission): HTTP(S) requests on their own threads, each
+//! The network for mods (docs/lua-mods.md 4.15, the `net` permission): HTTP(S) requests on separate threads, each
 //! answer handed to the mod's callback in a later mod phase, and opening a URL in the browser.
 
 use super::api::{need, next_id, state};

@@ -93,7 +93,7 @@ fn fill(w: &World, b: &Storage, g: usize) -> (usize, usize) {
     })
 }
 
-/// A row's colour by retail's rules for its own part (`c`) against the other side's.
+/// A row's colour by retail's rules for its part (`c`) against the other side's.
 fn tint(w: &World, b: &Storage, bank_side: bool, c: u8, dest: u8, s: &Slot) -> u32 {
     let Some(info) = w.item_info.as_ref() else { return TINT_DIM };
     let st = if bank_side { Storage { bank: c, side: dest, ..*b } } else { Storage { bank: dest, side: c, ..*b } };
@@ -382,7 +382,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                     });
                 });
                 // The pane takes a row dragged from the other one: outlined teal where the drop is taken, red where
-                // it is not (the dragged row's own pane takes nothing).
+                // it is not (the dragged row's pane takes nothing).
                 let pane = col.response.rect.expand(4.0);
                 let drop = ui.interact(pane, egui::Id::unique(("storage drop", bank_side)), Sense::hover());
                 if let Some(h) = held.filter(|h| h.bank_side != bank_side) {
@@ -521,7 +521,7 @@ fn sort_manual(w: &mut World, bank_side: bool) {
 
 /// Manual Sort's pick on row `k` of its pane: the first holds the row, the second puts it at that row (retail's
 /// FUN_101f0b30: the same row splits one off a stack, a row of the same item takes the stack). Rows keep to their
-/// own part of a merged bag.
+/// part of a merged bag.
 fn manual_pick(w: &mut World, bank_side: bool, k: usize) {
     let Some((b, ..)) = view(w) else { return };
     let row = if bank_side {

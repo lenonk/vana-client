@@ -11,7 +11,7 @@ const REF_MM: f32 = 299.0;
 const REF_LINES: f32 = 1080.0;
 const REF_SCALE: f32 = 60.0;
 
-/// What an EDID says of its screen: the image size in mm (the panel's own way round) and the preferred resolution.
+/// What an EDID says of its screen: the image size in mm (the panel's way round) and the preferred resolution.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Edid {
     pub mm: [f32; 2],
@@ -146,7 +146,7 @@ fn edid_of(_: &MonitorHandle) -> Option<Edid> {
 /// A first start's UI sizes.
 #[derive(Debug, PartialEq)]
 pub struct FirstSizes {
-    /// Menu Size (0037 / 0038): one of Settings' steps of the window, None for the window's own.
+    /// Menu Size (0037 / 0038): one of Settings' steps of the window, None for the window's.
     pub menu: Option<[u32; 2]>,
     /// Interface Size, percent.
     pub interface: u32,

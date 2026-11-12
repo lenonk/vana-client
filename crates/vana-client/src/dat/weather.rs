@@ -141,7 +141,7 @@ fn turn_dir(a: [u8; 4], b: [u8; 4], w: u8, t: f32) -> [u8; 4] {
 
 type Keys = BTreeMap<String, Vec<(u32, Env)>>;
 
-/// Weather tag -> keys (minute of day, env), from the zone DAT's `weat` folder; the area environments' own keys
+/// Weather tag -> keys (minute of day, env), from the zone DAT's `weat` folder; the area environments' keys
 /// by area 4cc (`<zone>/<id>/<tag>` or `<zone>/<id>/weat/<tag>`, FUN_10180380 / FUN_10183780).
 pub struct ZoneWeather {
     pub keys: Keys,

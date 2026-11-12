@@ -37,7 +37,7 @@ pub fn focused(w: &World) -> bool {
 }
 
 /// The generic keys (links 1 <-> 2), Enter SE 0002 then: child 1 the price list (FUN_102107d0 on the price source),
-/// child 2 the editor once our own message came (s2c 0x0CA MyFlag), else SE 0004 too; Escape SE 0003 and close.
+/// child 2 the editor once our message came (s2c 0x0CA MyFlag), else SE 0004 too; Escape SE 0003 and close.
 pub fn key(w: &mut World, key: egui::Key) {
     use egui::Key as K;
     let Some(sel) = w.bazaar.as_ref().map(|b| b.sel) else { return };
@@ -168,7 +168,7 @@ impl Wares {
         (self.recs, self.from) = (Box::new([None; 81]), (0, 0));
     }
 
-    /// FUN_100e0300: a record counts with an item, its own index, a count and a price.
+    /// FUN_100e0300: a record counts with an item, its index, a count and a price.
     pub fn get(&self, i: usize) -> Option<&Ware> {
         self.recs.get(i)?.as_ref().filter(|r| r.item != 0 && r.index as usize == i && r.count != 0 && r.price != 0)
     }
@@ -236,7 +236,7 @@ pub fn on_closed(w: &mut World, name: String) {
     }
 }
 
-/// s2c 0x109 (LAB_100e0430): unless it is our own bazaar, file 7031 line 0x5d with the record's item, the count and the
+/// s2c 0x109 (LAB_100e0430): unless it is our bazaar, file 7031 line 0x5d with the record's item, the count and the
 /// buyer; the record's count goes down when it is the bazaar we browse (LSB never fills that index).
 pub fn on_sold(w: &mut World, count: u32, owner: u16, name: String, index: u8) {
     let item = w.wares.recs.get(index as usize).and_then(|r| r.as_ref()).map_or(0, |r| r.item);
@@ -258,7 +258,7 @@ pub fn on_sold(w: &mut World, count: u32, owner: u16, name: String, index: u8) {
 mod tests {
     use super::*;
 
-    /// FUN_100e0300's validity (an item, its own index, a count and a price) and FUN_100fd710's tax (at least 1).
+    /// FUN_100e0300's validity (an item, its index, a count and a price) and FUN_100fd710's tax (at least 1).
     #[test]
     fn wares_records_and_tax() {
         let mut s = Wares::default();

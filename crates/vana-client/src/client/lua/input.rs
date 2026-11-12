@@ -448,7 +448,7 @@ pub(in crate::client) fn drive_events(w: &mut World, events: Vec<egui::Event>, p
 }
 
 /// A key going down, repeating or up: the mods' filters, then their binds. `mods` overrides the window's modifiers
-/// (a drive's events carry their own).
+/// (a drive's events carry theirs).
 fn key_edge(w: &mut World, code: K, down: bool, repeat: bool, mods: Option<ModifiersState>) -> bool {
     let st = w.lua.input.clone();
     let taken = {

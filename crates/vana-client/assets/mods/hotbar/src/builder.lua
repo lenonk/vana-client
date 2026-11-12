@@ -134,7 +134,7 @@ local ABILITY_KIND = { ja = 1, pet = 2, ws = 3 }
 local DEFAULT_TARGET = { ja = "me", pet = "t", ws = "t" }
 
 -- The rows that open a sub-list instead of acting (Rune Enchantment, Phantom Roll, Blood Pact: Rage, Ready...), by the
--- kind of the rows in their list: { [kind] = { name, kind = the opener's own kind } }. /ja cannot use an opener; the
+-- kind of the rows in their list: { [kind] = { name, kind = the opener's kind } }. /ja cannot use an opener; the
 -- rows of its list are what a macro names (/ja "Ignis" <me>).
 local openers_by_kind
 

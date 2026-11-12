@@ -88,7 +88,7 @@ timer.cancel(id)
 ```
 
 Stops a timer. An id that matches no timer (a `timer.after` that already fired, for example) does nothing. A handler
-may cancel its own timer.
+may cancel its timer.
 
 **Parameters**
 

@@ -212,7 +212,7 @@ pub enum ReplyBody {
     Records(usize),
 }
 
-/// One transaction on its own connection (0x1001f0f0's states): the plain handshake and its token, the header
+/// One transaction on a separate connection (0x1001f0f0's states): the plain handshake and its token, the header
 /// (keystream reset) and body (continued), the reply header (reset) and body (continued). `server` is the address a
 /// reply cached, else the host is resolved.
 pub fn transact<S: Stream>(

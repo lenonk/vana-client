@@ -382,7 +382,7 @@ fn members(path: &Path) -> Result<Vec<(String, u64)>> {
 }
 
 /// Per target path, the member that fills it and its size. A DAT's deepest copy wins (a sub-pack over the main tree);
-/// a root file's shallowest (the pack's own cursors, not the alternatives in its folders).
+/// a root file's shallowest (the pack's cursors, not the alternatives in its folders).
 fn plan(members: &[(String, u64)]) -> HashMap<String, (String, usize, u64)> {
     let mut out: HashMap<String, (String, usize, u64)> = HashMap::new();
     for (m, size) in members {
@@ -693,7 +693,7 @@ mod tests {
         assert_eq!(normalise("ROMX/1/1.DAT"), None);
     }
 
-    /// A sub-pack's DAT (deeper in the archive) replaces the main tree's; a root cursor keeps the pack's own.
+    /// A sub-pack's DAT (deeper in the archive) replaces the main tree's; a root cursor keeps the pack's.
     #[test]
     fn sub_pack_wins() {
         let m = vec![

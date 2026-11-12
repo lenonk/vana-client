@@ -516,7 +516,7 @@ fn spell_name(w: &World, id: u16) -> String {
     w.names.as_ref().and_then(|n| n.spell(id as u32)).unwrap_or_default()
 }
 
-/// A row list window: its frame and the hand on the cursor row while focused; rows' own sprites are not drawn.
+/// A row list window: its frame and the hand on the cursor row while focused; rows' sprites are not drawn.
 fn list_window(
     gu: &mut GameUi,
     name: &str,

@@ -1,4 +1,4 @@
--- The game's own macro palette: back up and wipe (or restore) the set you are on.
+-- The game's macro palette: back up and wipe (or restore) the set you are on.
 --
 --   //hb wipestock     asks first, saves a backup, then clears the current set's 20 macros
 --   //hb restorestock  puts the backup of the current set back

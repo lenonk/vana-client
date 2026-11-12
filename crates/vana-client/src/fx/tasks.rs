@@ -565,8 +565,8 @@ impl Effects {
 
     /// The actor's destructor (FUN_100c5c00 -> FUN_10082b10, its caster and target links): every scheduler task and
     /// generator clone linked to it goes with it (the links' callbacks FUN_10057cf0 delete the task, FUN_10054380 ->
-    /// FUN_100543a0 the clone and its elements at once, no burst); a generator run as its own template only forgets
-    /// it and runs on (the attach modes then give the identity, 0x1003c5f0); starts waiting on its own files go. Its
+    /// FUN_100543a0 the clone and its elements at once, no burst); a generator run as its template only forgets
+    /// it and runs on (the attach modes then give the identity, 0x1003c5f0); starts waiting on its files go. Its
     /// dolls go with it (their link at +0xc4, vtable 0x1032f91c +0x10 / +0x14 = FUN_100abd50 / FUN_100abd70, deletes
     /// the doll), and with each doll what is linked to it.
     pub fn forget_actor(&mut self, id: u32) {
@@ -862,10 +862,10 @@ impl Effects {
     }
 
     /// Op 0x2c's Afb. FUN_100ce480(actor1, 0x54, name & 0xffffff): the actor's motion list (+0x7e4) newest first, then
-    /// its own resources (vtable +0x400 / +0x1dc), each file to its root, matched on 3 letters. Failing those vtable
+    /// its resources (vtable +0x400 / +0x1dc), each file to its root, matched on 3 letters. Failing those vtable
     /// +0x1e8 (FUN_100ceb00): the first Afb of any name from each mesh's folder up (the part files), then in the model
-    /// file. The scheduler's own file is never searched (unlike op 0x05's motions), and nothing puts an effect file on
-    /// the +0x7e4 list (FUN_100d4410's callers are the actor's own loaders), so an Afb that sits only in a mob-move
+    /// file. The scheduler's file is never searched (unlike op 0x05's motions), and nothing puts an effect file on
+    /// the +0x7e4 list (FUN_100d4410's callers are the actor's loaders), so an Afb that sits only in a mob-move
     /// effect file is not found: the files our op 0x05 put on the actor (`owned_motions`) are left out. Err while a
     /// file is still loading.
     fn find_afb(&mut self, actor: u32, name: u32, actors: &dyn Actors) -> Result<Option<super::trail::Afb>, ()> {
@@ -1223,7 +1223,7 @@ impl Effects {
         let outer = self.stepping.first().copied();
         self.stepping.push(i);
         // Inside an `init`'s first step a task stepped at once sees its wanted sub-animation too (kept over a file
-        // retry); one that steps later (ops 0x30, 0x5c, 0x76 / 0x77, 0x84) sees the model's own.
+        // retry); one that steps later (ops 0x30, 0x5c, 0x76 / 0x77, 0x84) sees the model's.
         t.init_sub = t.init_sub.or(self.sub_now);
         self.run_ready(i, &mut t, actors);
         // Once a frame: the frame's step is still to come for a start before it or a slot past its running task.
@@ -1366,7 +1366,7 @@ impl Effects {
                 }
                 Flow::Next
             }
-            // The caster's own scheduler, call-and-wait, no global fallback.
+            // The caster's scheduler, call-and-wait, no global fallback.
             0x3c => {
                 let Some(id) = t.a1.id() else { return Flow::Next };
                 match self.find_on_actor(id, op.name(), actors, Parts::Last, false) {
@@ -1558,7 +1558,7 @@ impl Effects {
                 }
                 Flow::Next
             }
-            // FUN_10057fb0 case 0x1d: the lift move; its own duration @6 is unused (the packet's end time sets it).
+            // FUN_10057fb0 case 0x1d: the lift move; its duration @6 is unused (the packet's end time sets it).
             0x1d => {
                 if let Some(actor) = t.a1.id() {
                     let name = self.reg.libs[t.res.0].tree.nodes[t.res.1].name;
@@ -1574,7 +1574,7 @@ impl Effects {
             0xb3 if !actors.bells() => Flow::Next,
             0x0a | 0x0b | 0x53 | 0x4a | 0xb3 => {
                 let mut who = if matches!(op.code, 0x0a | 0xb3) { t.a1 } else { t.a2 };
-                // Op 0x53 (all.c 67094): the action target nearest our own actor (actor1 with no player).
+                // Op 0x53 (all.c 67094): the action target nearest our actor (actor1 with no player).
                 if op.code == 0x53
                     && let Some(a) = &t.action
                 {
@@ -1716,7 +1716,7 @@ impl Effects {
             // On the actor a doll stands for (case 5, all.c 64927).
             0x05 if t.motions => {
                 if let Some(id) = self.doll_of(t.a1).id() {
-                    // A motion in the scheduler's own file plays from there: that file goes on the actor first.
+                    // A motion in the scheduler's file plays from there: that file goes on the actor first.
                     let (lib, raw) = (t.res.0, op.name().to_le_bytes());
                     let has = |n: u32| self.reg.libs[lib].find(t.res.1, kind::MOTION, n).is_some();
                     let in_file = if raw[3] == b'?' {
@@ -2048,7 +2048,7 @@ impl Effects {
                 Flow::Next
             }
             // FUN_10057000 case 4 / 0x81 (0x1005908c): the camera path 4cc @8 (resource kind 6) for dur x speed. Only an
-            // event's tasks move the cutscene camera; the event's own scheduler is client/event.rs's to play.
+            // event's tasks move the cutscene camera; the event's scheduler is client/event.rs's to play.
             0x04 | 0x81 => {
                 if t.event && !t.event_root {
                     let file = self.reg.libs[t.res.0].file_id;
@@ -2066,7 +2066,7 @@ impl Effects {
             // FUN_10057000 cases 0x0f / 0x72 / 0x0e: the scene multiply, the additive screen flash and the feedback
             // blur, a global task each (a new one ends the last at its target).
             // Cases 0x10 (crossfade, FUN_1005f020) and 0xb0 (FUN_1003bd70: the camera task playing path u32 @8 ends) in an
-            // event's task; the event's own scheduler's are the runner's.
+            // event's task; the event's scheduler's are the runner's.
             0x10 => {
                 if t.event && !t.event_root {
                     self.event_crosses.push(op.dur.max(1) as f32 * t.speed);
@@ -2079,7 +2079,7 @@ impl Effects {
                 }
                 Flow::Next
             }
-            // An event's own scheduler's fade is client/event.rs's runner's (played twice, the second started at the
+            // An event's scheduler's fade is client/event.rs's runner's (played twice, the second started at the
             // first's target: a cut).
             0x0f | 0x51 if t.event_root => Flow::Next,
             0x0f | 0x51 | 0x72 | 0x0e => {
@@ -3246,7 +3246,7 @@ impl Effects {
     }
 
     pub(super) fn model_generators(&mut self, actors: &dyn Actors) {
-        // Listed once a frame (the hide pass took its own copy) and looked up by id (a search of the list per model).
+        // Listed once a frame (the hide pass took its copy) and looked up by id (a search of the list per model).
         let present = actors.models();
         let by_id: std::collections::HashMap<u32, &[u32]> = present.iter().map(|(id, f)| (*id, f.as_slice())).collect();
         self.model_hide(actors, &present, &by_id);
@@ -3335,7 +3335,7 @@ impl Effects {
     }
 
     /// The shine drives' frame (FUN_10060680, FUN_1005e870): a drive whose task is gone ends there (U / V snap to the
-    /// target, the overlay goes if still its own, the colour stays where it was).
+    /// target, the overlay goes if still the drive's, the colour stays where it was).
     fn step_shine(&mut self, dt: f32, live: &[u64]) {
         use crate::fx::ShineKind;
         for mut d in std::mem::take(&mut self.shine_drives) {
@@ -3729,7 +3729,7 @@ mod tests {
         std::mem::take(&mut fx.fades)
     }
 
-    /// FUN_1005f6c0: another scheduler's op 0x88 on the actor keeps a drive from writing; the lock's own passes.
+    /// FUN_1005f6c0: another scheduler's op 0x88 on the actor keeps a drive from writing; the lock's passes.
     #[test]
     fn color_lock() {
         use crate::fx::ColorOp::*;
@@ -5146,7 +5146,7 @@ mod damage_number_tests {
             let mut seen = Vec::new();
             for _ in 0..300 {
                 fx.tick(&f, &super::skillchain_tests::Pair);
-                // The task's own instances carry the number; mis0's op 0x3c burst of mis1 runs without one.
+                // The task's instances carry the number; mis0's op 0x3c burst of mis1 runs without one.
                 for x in fx.insts.iter().flatten() {
                     let n = String::from_utf8_lossy(&x.name).into_owned();
                     if x.parent_elem.is_none() && !seen.contains(&n) {

@@ -223,7 +223,7 @@ pub fn key(w: &mut World, key: egui::Key) {
         }
         return;
     }
-    // flistmai (FUN_101ebc80): Up / Down wrap, Enter acts with its own SE 0002, Escape back to commenu.
+    // flistmai (FUN_101ebc80): Up / Down wrap, Enter acts with its SE 0002, Escape back to commenu.
     if let Some(c) = ui.main {
         match key {
             K::ArrowUp | K::ArrowDown => {

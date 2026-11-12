@@ -171,7 +171,7 @@ impl Drop for Slot {
     }
 }
 
-/// An actor's own cloth state. A clone (another actor of the model) starts without one and takes its own.
+/// An actor's cloth state. A clone (another actor of the model) starts without one and then gets one.
 #[derive(Default)]
 pub struct ClothState(Option<Slot>);
 
@@ -317,7 +317,7 @@ impl ClothGpu {
         if block as usize + m.words.len() > self.uploaded {
             return false;
         }
-        // A slot from another renderer's buffer (our own actor keeps its model across a zone load) is not ours: take
+        // A slot from another renderer's buffer (our actor keeps its model across a zone load) is not ours: take
         // a new one, which starts with the snap to the skin.
         if st.0.as_ref().is_none_or(|s| s.len != m.state || !Arc::ptr_eq(&s.free, &self.free)) {
             st.0 = Some(self.alloc(m.state));
@@ -454,7 +454,7 @@ impl ClothGpu {
         let mut pass =
             encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("cloth"), timestamp_writes: None });
         pass.set_bind_group(0, &group, &[]);
-        // The particles' writes are a dispatch of their own: they see every step's.
+        // The particles' writes are a separate dispatch: they see every step's.
         pass.set_pipeline(&self.step);
         pass.dispatch_workgroups(groups, 1, 1);
         pass.set_pipeline(&self.out);
@@ -966,7 +966,7 @@ mod tests {
         assert!(ok, "gpu {:?}\nnudged cpu {:?}", sci(&e), sci(&n));
     }
 
-    /// Run on their own, the two drift apart by rounding (a sweep's inside / outside test can flip), never visibly.
+    /// Run separately, the two drift apart by rounding (a sweep's inside / outside test can flip), never visibly.
     #[test]
     fn steps_stay_with_the_cpu() {
         let Some(e) = run(false) else {

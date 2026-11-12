@@ -344,7 +344,7 @@ pub struct MapWin {
     party_asked: bool,
     /// Requests for the caller: packets and prompts.
     pub outs: Vec<Out>,
-    /// Wide Scan: map0 item 2 enabled (FUN_101f7c00: s2c 0x119 seen, our own zone's map), its list, results kept for
+    /// Wide Scan: map0 item 2 enabled (FUN_101f7c00: s2c 0x119 seen, our zone's map), its list, results kept for
     /// this map session (scanlist +0x66), the scan origin (world x / z at the scan), tracking at open and the tracked
     /// ring's pixel (record +0x694, taken at open).
     scan_ok: bool,
@@ -854,7 +854,7 @@ impl MapWin {
     }
 
     /// FUN_101fb4b0: the rows and their markers from the results (rebuilt every frame while the list shows; ours only
-    /// when what they come from changed): PCs (not ourselves) with their own name, NPCs and monsters named from the
+    /// when what they come from changed): PCs (not ourselves) with their name, NPCs and monsters named from the
     /// zone NPC list by index & 0x3ff; those without a name or outside the narrowed circle are left out.
     pub(super) fn rebuild_scan(&mut self, w: &World) {
         let Some(s) = self.scan.as_mut().filter(|s| !s.hidden) else { return };
@@ -1546,7 +1546,7 @@ impl MapWin {
                 gu.shape_text(&self.region.grid(px as i32, py as i32), 16.0, 49.0, 0x8080_8080, false);
             }
         }
-        // The tracked target's ring (keytops3 105, centred by its own bounds).
+        // The tracked target's ring (keytops3 105, centred by its bounds).
         if let Some((px, py)) = self.tracked.filter(|_| level == 0.0) {
             gu.sprite(
                 "menu    keytops3",
@@ -2519,7 +2519,7 @@ pub struct Overlay {
     texture: Option<String>,
     shade: Option<Shade>,
     rx: Option<Receiver<ShadedLoaded>>,
-    /// The decoded image (size, pixels), kept for the modern layer's own texture.
+    /// The decoded image (size, pixels), kept for the modern layer's texture.
     image: Option<([usize; 2], Arc<Vec<u8>>)>,
 }
 

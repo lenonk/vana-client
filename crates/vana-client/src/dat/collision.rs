@@ -85,7 +85,7 @@ pub fn parse(p: &[u8]) -> Result<Collision> {
         bail!("MZB collision has no grid");
     }
     // The zone spans byte 0x0c x byte 0x0e by byte 0x0d x byte 0x0f units in 4-unit cells (0x0e / 0x0f are 40 in most
-    // zones, 20 in Horlais Peak or Yughott Grotto); each cell's list names its own cell, which confirms the width.
+    // zones, 20 in Horlais Peak or Yughott Grotto); each cell's list names its cell, which confirms the width.
     let scale = |n: usize, s: u8| n * if s == 0 { 40 } else { s as usize } / 4;
     let (w, h) = (scale(p[0x0c] as usize, p[0x0e]), scale(p[0x0d] as usize, p[0x0f]));
     // A u32 a cell: a grid larger than the chunk is a bad file, not gigabytes of cells to allocate.
@@ -178,7 +178,7 @@ pub fn parse(p: &[u8]) -> Result<Collision> {
 
 impl Collision {
     /// FUN_10173c10 -> FUN_10171930 / FUN_10167ad0: every '_' RID record gets a box (its pos, yaw and |size|) linked
-    /// into the grid cells under it, after their own entries. Object flags bit 1 (resolved late), y range pos.y -/+
+    /// into the grid cells under it, after their entries. Object flags bit 1 (resolved late), y range pos.y -/+
     /// size.y / 2; box triangles carry no surface bits *(inf: RID u32 @0x30 bits 6 / 8 are 0 in the zones seen)*.
     pub fn add_door_boxes(&mut self, regions: &[super::zone::Region]) {
         const CORNERS: [[f32; 3]; 8] = [
@@ -273,7 +273,7 @@ impl Collision {
     }
 
     /// The zone's collision with a sub-area's merged in (FUN_10167be0): its faces join the zone's grid cells after
-    /// the zone's own, and zone objects standing in for sub-area `link` drop out (the walks skip +0xbc == the
+    /// the zone's, and zone objects standing in for sub-area `link` drop out (the walks skip +0xbc == the
     /// loaded id, FUN_10182700).
     pub fn merged(&self, sub: &Collision, link: u32) -> Collision {
         let (w, h) = self.grid;
@@ -292,7 +292,7 @@ impl Collision {
         };
         for (src, skip) in [(self, Some(link)), (sub, None)] {
             let base = out.objects.len() as u32;
-            // The camera lists are the zone's (a sub-area's offsets name its own MZB; interiors carry none).
+            // The camera lists are the zone's (a sub-area's offsets name its MZB; interiors carry none).
             out.objects.extend(
                 src.objects.iter().map(|o| Object { vis: if skip.is_some() { o.vis } else { 0 }, ..o.clone() }),
             );

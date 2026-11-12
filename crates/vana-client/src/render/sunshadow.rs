@@ -83,7 +83,7 @@ struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
     var dark = 0.0;
     for (var y = -1; y <= 1; y++) {
         for (var x = -1; x <= 1; x++) {
-            // Bilinear over the tap's four texels, each compared and faded by how far the surface lies below its own
+            // Bilinear over the tap's four texels, each compared and faded by how far the surface lies below its
             // caster's feet (a filtered comparison would mix a high caster's edge into the cleared texels beside it,
             // unfaded). The world's y points down, so the drop is the surface's y less the feet's.
             let f = (uv + vec2<f32>(f32(x), f32(y)) * texel) * dim - 0.5;

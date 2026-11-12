@@ -743,7 +743,7 @@ mod tests {
         assert_eq!((s.len, s.sum), (2, 0));
     }
 
-    /// FFXiMain.dll goes to that install's copy, never over the game folder's own.
+    /// FFXiMain.dll goes to that install's copy, never over the game folder's.
     #[test]
     fn ffximain_to_the_install_copy() {
         let root = Path::new("/games/FINAL FANTASY XI");

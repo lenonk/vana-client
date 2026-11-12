@@ -2,7 +2,7 @@
 
 Handlers for the client's events. `events.on` gives the client a function to call each time an event happens: when
 HP changes, a zone loads, a chat line arrives, and so on (every event and its arguments is in the
-[event list](#contents) below). Handlers run once a frame during the mod phase, each as its own coroutine, so a
+[event list](#contents) below). Handlers run once a frame during the mod phase, each as its coroutine, so a
 handler may `sleep` without holding up the game or other handlers. No permission is needed to watch events.
 
 ```lua
@@ -357,7 +357,7 @@ end)
 
 ## `buff_gain`
 
-We gained a status effect. With two copies of the same effect, each copy raises its own event.
+We gained a status effect. With two copies of the same effect, each copy raises its event.
 
 | Argument | Type | Description |
 | --- | --- | --- |
@@ -467,7 +467,7 @@ end)
 
 ## `battle_message`
 
-A battle message arrived on its own (not as part of an action). `res.message` turns it into the log's text.
+A battle message arrived by itself (not as part of an action). `res.message` turns it into the log's text.
 
 | Argument | Type | Description |
 | --- | --- | --- |

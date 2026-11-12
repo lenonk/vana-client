@@ -89,7 +89,7 @@ pub struct StatusView {
     pub cursor: Option<usize>,
 }
 
-/// A party or alliance row as retail's (FUN_10202530 / FUN_10202720): ours first, from our own vitals.
+/// A party or alliance row as retail's (FUN_10202530 / FUN_10202720): ours first, from our vitals.
 #[derive(Clone)]
 pub struct PartyRow {
     pub slot: usize,
@@ -1296,7 +1296,7 @@ fn where_view(p: Look, w: &World) -> Option<WhereView> {
     })
 }
 
-/// The party window's rows (ours first, from our own vitals; the others from the roster, slots 1..5) and the
+/// The party window's rows (ours first, from our vitals; the others from the roster, slots 1..5) and the
 /// alliances' (slots 6..17), the latter hidden while a window retail hides them under is up.
 fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2]) {
     let slots = w.party.slots();

@@ -1,6 +1,6 @@
 -- LuAshitacast profiles, run as LuAshitacast runs them: the file returns the profile; its Handle* functions run
 -- around every action packet we send (typed, macro or menu alike) and HandleDefault on the send tick while no action
--- is under way; gFunc.Equip / EquipSet fill a buffer sent when the handler returns; gData answers in its own names.
+-- is under way; gFunc.Equip / EquipSet fill a buffer sent when the handler returns; gData answers in its names.
 
 local core = require("src.core")
 local compat = require("src.compat")

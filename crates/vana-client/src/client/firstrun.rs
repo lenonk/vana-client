@@ -1,5 +1,5 @@
-//! First start without game files (not retail: retail's installer was its own program). The title and login are
-//! drawn from the DATs, so until they exist a small window of our own asks to download the free retail client from
+//! First start without game files (not retail: retail's installer was its program). The title and login are
+//! drawn from the DATs, so until they exist a small window of ours asks to download the free retail client from
 //! Square Enix, installs its game files, brings them up to date and deletes what it downloaded, or to point at game
 //! files already on disk.
 
@@ -89,7 +89,7 @@ pub struct FirstRun {
     game_dir: PathBuf,
     stage: Arc<Mutex<Stage>>,
     progress: Arc<Progress>,
-    /// The folder picker's answer (it runs on its own thread so the window keeps drawing).
+    /// The folder picker's answer (it runs on a separate thread so the window keeps drawing).
     picked: Arc<Mutex<Option<Option<PathBuf>>>>,
     /// The picker open, and what its answer is for.
     picking: Option<Pick>,

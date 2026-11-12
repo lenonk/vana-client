@@ -1,7 +1,7 @@
 //! SDL2's GameController API as gamepad.rs's fallback on Linux, used when gilrs fails or finds no pad. DroidDeck
 //! (Steam in proot on Android) fakes /dev/input/eventN with plain files and hooks open / read / ioctl / poll, but not
 //! epoll: gilrs's epoll_ctl on a pad gets EPERM and Gilrs::new fails. SDL reads the same nodes without epoll.
-//! SDL runs with no window of its own (the pad events only), so it never takes the focus or the signals.
+//! SDL runs with no window (the pad events only), so it never takes the focus or the signals.
 
 use super::gamepad::Pad;
 use sdl2::controller::{Axis, Button, GameController};

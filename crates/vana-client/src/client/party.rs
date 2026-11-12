@@ -79,7 +79,7 @@ pub struct Roster {
     recs: Vec<Member>,
     /// Record indices in display order (FUN_100e9a70), position 0 always record 0.
     order: Vec<usize>,
-    /// G+0x97f8: our own GAttr, from a 0x0DD / 0x0E2 about us.
+    /// G+0x97f8: our GAttr, from a 0x0DD / 0x0E2 about us.
     pub own_flags: u32,
     /// G+0x9816 bit 0: a 0x0C8 has come (the order is rebuilt only after it).
     seen_table: bool,
@@ -270,7 +270,7 @@ impl Roster {
         self.order.iter().map(|&i| (i, &self.recs[i])).filter(|(_, r)| r.id != 0)
     }
 
-    /// Mode 0: only our own party ((flags ^ own) & 3 == 0).
+    /// Mode 0: only our party ((flags ^ own) & 3 == 0).
     pub fn party(&self) -> impl Iterator<Item = &Member> {
         let own = self.own_flags;
         self.members().filter(move |r| (r.flags ^ own) & 3 == 0)

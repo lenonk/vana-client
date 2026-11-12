@@ -1,4 +1,4 @@
--- How characters draw on our screen only (the renamer and name plate add-ons): renames by name, our own name plate
+-- How characters draw on our screen only (the renamer and name plate add-ons): renames by name, our name plate
 -- hidden, our size. Applied twice a second to what is in range.
 
 local styled = {}  -- server id -> true while we style it

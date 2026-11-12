@@ -107,7 +107,7 @@ pub struct TimerRow {
     pub fills: bool,
 }
 
-/// A lines element's colour: the UI's text, muted, gold or bronze, or its own.
+/// A lines element's colour: the UI's text, muted, gold or bronze, or a custom one.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Tone {
     #[default]
@@ -324,7 +324,7 @@ pub struct TargetRow {
     pub tag: String,
 }
 
-/// A canvas drawing command, in the canvas's own units.
+/// A canvas drawing command, in the canvas's units.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Cmd {
     Line {
@@ -1090,7 +1090,7 @@ impl Window {
         match key {
             K::ArrowUp | K::ArrowDown => {
                 let down = key == K::ArrowDown;
-                // A list moves its own cursor until its end.
+                // A list moves its cursor until its end.
                 if let Some(Elem::List { rows, at, top, height, .. }) = self.elems.get_mut(self.at) {
                     let inside = if down { *at + 1 < rows.len() } else { *at > 0 };
                     if inside {
@@ -2093,7 +2093,7 @@ pub(super) fn icon(gu: &mut GameUi, w: Option<&super::World>, i: Icon, x: f32, y
         }
         Icon::Spell(_) | Icon::Ability(_) => {
             let Some(w) = w else { return };
-            // The modern UI's art for the spell, as its own lists draw it.
+            // The modern UI's art for the spell, as its lists draw it.
             if w.modern
                 && i.picture(w)
                     .and_then(super::super::modern::action_art)
@@ -2400,7 +2400,7 @@ mod tests {
     }
 
     /// The help under the cursor is a list row's tip (a spell's description) as the cursor moves down the list; a
-    /// row without one shows the list's own tip.
+    /// row without one shows the list's tip.
     #[test]
     fn list_row_tip_in_help() {
         let mut w = Window::new("w");

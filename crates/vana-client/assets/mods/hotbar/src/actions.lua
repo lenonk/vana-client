@@ -96,7 +96,7 @@ function M.recast(a, recasts)
   return left, total > 0 and math.min(1, left / total) or 1
 end
 
--- Whether we can use it now, apart from its recast (shaded on its own): a weapon skill needs 1000 TP, a pet command a
+-- Whether we can use it now, apart from its recast (shaded separately): a weapon skill needs 1000 TP, a pet command a
 -- pet, a spell what the magic list asks (builder.castable) and its MP. Nil `a` (a macro with no known action) counts
 -- as usable.
 function M.usable(a, me)

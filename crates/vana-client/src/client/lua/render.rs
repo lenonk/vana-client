@@ -11,7 +11,7 @@ pub(in crate::client) struct Look {
     pub name: Option<String>,
     /// RGBA, 0..255.
     pub name_colour: Option<[u8; 4]>,
-    /// 0..1, at most the model's own.
+    /// 0..1, at most the model's.
     pub alpha: Option<f32>,
     /// RGB multipliers.
     pub tint: Option<[f32; 3]>,
@@ -26,7 +26,7 @@ impl Look {
     }
 }
 
-/// The parts of a player-style look a mod sets (render.look); the others stay the entity's own.
+/// The parts of a player-style look a mod sets (render.look); the others stay the entity's.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(in crate::client) struct Model {
     pub race: Option<u8>,

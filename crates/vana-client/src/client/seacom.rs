@@ -20,7 +20,7 @@ pub struct Store {
     sent: [String; 3],
     pub kind: u8,
     sent_kind: u8,
-    /// +0x19: our own message came (s2c 0x0CA with MyFlag; the bazaar store only).
+    /// +0x19: our message came (s2c 0x0CA with MyFlag; the bazaar store only).
     pub own_in: bool,
     /// DAT_104df770 +0x136a4 past 0: a zone was entered since the character's login (zone_in).
     entered: bool,
@@ -61,7 +61,7 @@ fn store(w: &mut World, mode: u8) -> &mut Store {
     if mode == 0 { &mut w.bazaar_msg } else { &mut w.seacom }
 }
 
-/// FUN_101ddae0(msg, 1): our own s2c 0x0CA message (MyFlag) cut into three lines of 40, trailing spaces trimmed, into
+/// FUN_101ddae0(msg, 1): our s2c 0x0CA message (MyFlag) cut into three lines of 40, trailing spaces trimmed, into
 /// the bazaar store's lines and its last-sent copy.
 pub fn own_message(w: &mut World, raw: &[u8]) {
     let lines: [String; 3] = std::array::from_fn(|k| {

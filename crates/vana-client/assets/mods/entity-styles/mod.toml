@@ -28,7 +28,7 @@ help = "Draws your character larger or smaller, on your screen only."
 help = "Shows a character or monster under another name, on your screen only."
 args = "<name> as <new name>"
 forms = [
-  { args = "<name>", help = "Gives it its own name back." },
+  { args = "<name>", help = "Gives it its name back." },
 ]
 
 [commands.renames]

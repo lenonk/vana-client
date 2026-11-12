@@ -266,7 +266,7 @@ mod tests {
     #[test]
     fn backward_jump_stops() {
         assert_eq!(plain(b"A\xFA\x40\x84\xFB", &[]), b"AA");
-        // A jump onto itself (offset -4 from p + 1 is the code's own start).
+        // A jump onto itself (offset -4 from p + 1 is the code's start).
         assert_eq!(plain(b"AB\xFA\x40\x84\xFC", &[]), b"AB");
     }
 

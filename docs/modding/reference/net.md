@@ -68,7 +68,7 @@ Starts an HTTP or HTTPS request on a background thread and returns at once. When
 | `headers` | `table` | none | Request headers, as `{ ["Name"] = "value" }`. |
 | `timeout` | `number` | `30` | Seconds the whole request may take, kept between 1 and 300. |
 
-**Returns** `integer`: an id for this request. The callback is not given it, and a request cannot be cancelled; keep the id only if you want to tell your own requests apart.
+**Returns** `integer`: an id for this request. The callback is not given it, and a request cannot be cancelled; keep the id only if you want to tell your requests apart.
 
 The callback's `res` table has either the first three fields or `error`:
 
@@ -218,7 +218,7 @@ When the endpoint cannot be opened, `close` runs with `"<name>: <reason>"`.
 net.listen(port, handlers, options?) -> integer, integer
 ```
 
-Starts a TCP server that other programs can connect to. The port is taken right away (an error is raised if it is in use); connections are accepted in the background, and each one gets its own id and calls the same handlers.
+Starts a TCP server that other programs can connect to. The port is taken right away (an error is raised if it is in use); connections are accepted in the background, and each one gets its id and calls the same handlers.
 
 **Parameters**
 

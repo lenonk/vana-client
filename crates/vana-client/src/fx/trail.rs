@@ -354,7 +354,7 @@ mod tests {
     }
 
     /// After-image census for gaps item 127 over every DAT (by hand: `cargo test --release afb_census -- --ignored
-    /// --nocapture`): each file's op 0x2c names against its own Afbs, and whether the file is a model's (a skeleton
+    /// --nocapture`): each file's op 0x2c names against its Afbs, and whether the file is a model's (a skeleton
     /// chunk 0x29) or carries motions (0x2b).
     #[test]
     #[ignore]

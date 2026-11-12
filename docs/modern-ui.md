@@ -229,7 +229,7 @@ Milestone 1:
   place) and ranks first among the matches (+400, less the older it is), marked "recent". Live: Potion over
   Hi-Potion for "potion" until Hi-Potion was picked, then Hi-Potion first, marked, and saved.
 - Search in every list (2026-11-05, user: "type to search ... on every list box"; modern/search.rs): the same
-  typing, field, hits, keys and recent picks in the other lists, each pick going through the list's own cursor and
+  typing, field, hits, keys and recent picks in the other lists, each pick going through the list's cursor and
   Enter (what a click on the row does). Storage searches every bag the view can show (the bag as each hit's note;
   a pick shows its bag and moves the stack across); the Equipment list; shops (buy, sell, Set Prices, a bazaar);
   the synthesis crystals, history and picker; the trade picker; the Delivery Box's picker; the auction's item list,
@@ -239,7 +239,7 @@ Milestone 1:
   Concierge, the Fishing Ranking, the block list, gardening and layout lists; Set Spells, the automaton's parts and
   the mannequin's storage. Left out: menus of commands (the main menu, the battle menu, the moogle's, Region Info,
   the party menu), the key assignment lists (a key pressed there is the assignment), display-only lists (the
-  currencies page) and the Lua mods' own windows. Twelve hits show; past that a line says how many more.
+  currencies page) and the Lua mods' windows. Twelve hits show; past that a line says how many more.
 - The Items window (modern/items.rs) over items.rs's state: the list and the action menu's direct-use list with the
   game's icons, quantities and row colours, the count, a bar; itmsort2 as a strip (Auto-sort and its question, Manual
   Sort, the Recycle Bin), iuse (Use / Drop) and the drop question under the rows, Manual Sort's hint; the mouse as
@@ -486,7 +486,7 @@ Milestone 1:
   stepping the slider only picks ("Reset?", "From Nine WHM?"): Enter, a click or letting go of a drag does it, and
   Escape drops it. The row reads As Moved again. Live: the Settings panel dragged away, Reset by keys and by the
   mouse; From Lnxcsfix WHM on WAR folded WHM's minimap.
-- Setups per character and job (2026-11-10, client/uiconf.rs; issue #94): each character's main job keeps its own
+- Setups per character and job (2026-11-10, client/uiconf.rs; issue #94): each character's main job keeps its
   window places (every display's), folded edge windows, mode presets, chat window settings and favourites, in
   <data>/ui/config/<World>-<Name>/<JOB>.json (beside an FFXI_CONFIG copy in test runs); the config's fields hold the
   one in use, loaded when the character or the main job changes (MON in Monstrosity) and written with every save. A
@@ -608,7 +608,7 @@ Milestone 1:
 - The first letter typed into a list's hidden search no longer also triggers its game hotkey.
 - Settings window search (ours, not retail): typing on a topic page searches every page's settings by name, help
   and heading; a Retail only button (Ctrl+R) hides our settings; a details column shows the setting under the
-  cursor. Mods and Mod Settings show only their own tabs. This finishes what the 2026-11-04 Settings window entry
+  cursor. Mods and Mod Settings show only their tabs. This finishes what the 2026-11-04 Settings window entry
   left to come.
 - Settings window (ours, not retail): the modern Config window is now "Settings", with every retail Config setting
   and every setting of ours (the old Settings and Extras pages) on one of fourteen pages, grouped as Game, Graphics,
@@ -668,8 +668,8 @@ Milestone 1:
   `modern-shot --menus` draws three of them.
 - Layouts per display (2026-11-02, ours; plan B): config `modern_places` keeps a layout per character and display
   ("Name @2560x1440 60%": the window's pixels and the UI scale) beside the character's latest one (the plain name).
-  A display not seen yet starts from the latest; a change saves both; a display shown for 2 s keeps its layout as
-  its own, so arranging another display doesn't move its panels, and a window dragged through sizes stores nothing.
+  A display not seen yet starts from the latest; a change saves both; a display shown for 2 s keeps that layout as
+  its layout, so arranging another display doesn't move its panels, and a window dragged through sizes stores nothing.
   UI Setup's Reset clears every display's. No other panel resizes.
 - Favourites (2026-11-02, ours; the plan's "favourites" and "a small optional favourites strip"; client/favs.rs,
   modern/favs.rs): spells, abilities (not traits) and items are starred by the star at their row's right end in the
@@ -695,7 +695,7 @@ Milestone 1:
   "pending", movable) shows "Cure III -> Raven  waiting..." once the wait passes 150 ms (a quick answer never flashes
   it). Our 0x028 of its kind confirms it (the chip goes; the cast bar and the effect take over). A 0x029 of ours before
   that, within 2 s of the ask, is the refusal: the chip turns red with the message's text ("Raven is out of
-  range.") for 4 s. No answer in 5 s says "The server has not answered." The client's own refusals (group 7 lines
+  range.") for 4 s. No answer in 5 s says "The server has not answered." The client's refusals (group 7 lines
   before anything is sent) start nothing.
 - Open question, still open: "How latency, failed transfers and invalid targets are shown." The chip is one candidate
   for actions only (not transfers); it does not settle it.

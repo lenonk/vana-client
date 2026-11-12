@@ -165,7 +165,7 @@ mods.emit(event, ...)
 ```
 
 Raises `event` in every other running mod: their `events.on(event, ...)` handlers get the values. The sending mod
-does not get its own event.
+does not get its event.
 
 **Parameters**
 

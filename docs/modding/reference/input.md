@@ -71,7 +71,7 @@ end)
 
 Notes:
 - Taking a press takes the rest of that keystroke too. Its repeats are taken without calling any filter, and its release is shown to the filters but goes no further.
-- Every running mod's filters run, in the order the mods were loaded, and a mod's own in the order it added them. A key one filter took still reaches the later ones, with `blocked = true`.
+- Every running mod's filters run, in the order the mods were loaded, and a mod's in the order it added them. A key one filter took still reaches the later ones, with `blocked = true`.
 - [Binds](binds.md) are checked after the filters.
 - A filter is the player's input: game actions in it work with the `actions` permission (`automation` is not needed).
 - A filter runs inside the client's input handling, with 20 ms to finish. It is called as a coroutine, but if it sleeps, what it returns afterwards is ignored and the key is not taken.

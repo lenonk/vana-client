@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Duration;
 
-/// Ids of accepted connections, made on the accept threads (above the mod's own ids).
+/// Ids of accepted connections, made on the accept threads (above the mod's ids).
 static NEXT: AtomicU64 = AtomicU64::new(1 << 40);
 
 /// What the threads report.

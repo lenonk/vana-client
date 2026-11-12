@@ -545,7 +545,7 @@ mod tests {
                 && t.error.is_none()
                 && t.new == [String::new(), String::new()]
         );
-        // Elsewhere 0x07 is the server's own line.
+        // Elsewhere 0x07 is the server's line.
         let mut menu = TwoFa::new();
         menu.reply(Err(Refused(0x07).into()));
         assert!(menu.error.as_deref().is_some_and(|e| e.contains("code 0x07")));

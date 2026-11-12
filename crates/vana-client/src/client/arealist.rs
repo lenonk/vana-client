@@ -188,7 +188,7 @@ fn pick(w: &mut World, gu: &GameUi) -> bool {
     let mut c = a.cond.clone();
     match (a.mode, r.value) {
         (Mode::Unity, i) => {
-            // FUN_1020f440: (i & 0x3f) << 22; row 0 is our own unity (none: 0x0f800000).
+            // FUN_1020f440: (i & 0x3f) << 22; row 0 is our unity (none: 0x0f800000).
             let own = w.stats.as_ref().map_or(0, |s| s.unity & 0x1f);
             let bits = match i {
                 0 if own != 0 => (own & 0x3f) << 22,

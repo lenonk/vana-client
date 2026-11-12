@@ -51,7 +51,7 @@ pub mod w {
     pub const DIST_OFF: usize = 41;
     /// +0x12c, the sort key as FUN_100440d0 left it last frame (update op 0x60 reads it before this frame's).
     pub const KEY_PREV: usize = 42;
-    /// Whether the instance's actor1 / actor2 is our own player (bits 0 / 1), for update op 0x60's player factor.
+    /// Whether the instance's actor1 / actor2 is our player (bits 0 / 1), for update op 0x60's player factor.
     pub const ME: usize = 43;
     /// CMoPointLightProgElem (kind 0x47): +0x19c range base, +0x1a0 intensity base, +0x1a4 intensity scale,
     /// +0x1a8 range scale, and its light table slot (NONE: no MZB list names its key). Shares the morph words.
@@ -99,7 +99,7 @@ pub mod dk {
     pub const MESH: u32 = 1;
     pub const SPRITE: u32 = 2;
     pub const BATCHED: u32 = 3;
-    /// CMoLfdElem: a lens flare (its own draw, FUN_10053920).
+    /// CMoLfdElem: a lens flare (its draw, FUN_10053920).
     pub const FLARE: u32 = 4;
     /// A D3b morph (CMoD3bElem); FRAMES holds its key count, SFRAMES its first word in the morph data.
     pub const MORPH: u32 = 5;
@@ -113,7 +113,7 @@ pub mod dk {
     pub const RING: u32 = 9;
     /// CMoDistModelElem (D3m + 0x100000): the mesh over the scene copy looked up at shifted screen points.
     pub const DIST_MODEL: u32 = 10;
-    /// CMoDistRingElem (ring + 0x100000): the S-gon rings over the scene copy at their own screen points.
+    /// CMoDistRingElem (ring + 0x100000): the S-gon rings over the scene copy at their screen points.
     pub const DIST_RING: u32 = 11;
     /// D3m + 0x200000 (FUN_10040e70): drawn top-down into an image painted onto the collision faces around it.
     pub const GROUND_PROJ: u32 = 12;

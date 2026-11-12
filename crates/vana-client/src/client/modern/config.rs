@@ -784,7 +784,7 @@ fn full(menu: &str) -> String {
 }
 
 /// Headings retail's captions leave unclear away from its layout: (page, first control, heading, help or "" for the
-/// page's own).
+/// page's).
 const HEADINGS: [(&str, u16, &str, &str); 11] = [
     ("conf2win", 5, "Gamma Adjustment: Red", ""),
     ("conf2win", 6, "Gamma Adjustment: Green", ""),
@@ -839,7 +839,7 @@ fn left_out(menu: &str, child: u16) -> bool {
     menu == "conf7" && matches!(child, 1..=4)
 }
 
-/// A setting's heading: ours where retail's is unclear, else the page's own caption on its first control's line to its
+/// A setting's heading: ours where retail's is unclear, else the page's caption on its first control's line to its
 /// left, else the nearest above it (not the page's title band); else the control's help title.
 fn heading(gu: &GameUi, s: &Shape) -> String {
     if let Some(h) = override_of(s) {
@@ -1021,7 +1021,7 @@ fn list_stops(v: &Values, page: &str, cats: bool, cat: usize) -> Vec<Stop> {
 }
 
 /// A colour's hue / saturation / value steps: the ones being edited while they still make its colour (a grey has no
-/// hue of its own to read back), else read from it.
+/// hue to read back), else read from it.
 fn steps_of(c: &ConfigUi, v: &Values, id: u16) -> [usize; 3] {
     let shown = rgb(v.get(id));
     match c.m_hsv {
@@ -1054,7 +1054,7 @@ fn ours_stops(v: &settings::View, skip: usize) -> Vec<Stop> {
     tabs.into_iter().chain(rows).collect()
 }
 
-/// The tabs a page of ours shows (`skip`: the Settings window leaves the ones before its own out) and the one on.
+/// The tabs a page of ours shows (`skip`: the Settings window leaves the ones before its out) and the one on.
 fn shown_tabs(v: &settings::View, skip: usize) -> (Vec<&str>, usize) {
     (v.tabs.iter().skip(skip).map(String::as_str).collect(), v.tab.saturating_sub(skip))
 }
@@ -1591,7 +1591,7 @@ fn colour_rows(
         let c = rgb(v.get(id));
         let col = super::chat::colour(crate::dat::battle::argb_bytes(v.get(id)));
         let open = focus.is_some_and(|f| f / 3 == i);
-        // The name, then its sample in the colour in a column of its own (the page sized for both; on a screen too
+        // The name, then its sample in the colour in a separate column (the page sized for both; on a screen too
         // narrow for that each wraps in its column, the row as tall as it needs).
         let font = FontId::proportional(m.theme.small);
         let full = ui.available_width();
@@ -2382,7 +2382,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                         help = topic_keys(find.is_some()).into();
                     }
                     Entry::List(lp, _) => {
-                        // The window's own help (its first element's).
+                        // The window's help (its first element's).
                         if let Some(h) = gu.focus_text(&full(lp), u16::MAX)[0].as_ref() {
                             ui.label(egui::RichText::new(h).size(m.theme.small - 1.5).color(m.theme.color("muted")));
                             ui.add_space(6.0);
@@ -2560,7 +2560,7 @@ fn nav_list(ui: &mut Ui, m: &super::Modern, entry: usize, open: bool, click: &mu
                 FontId::proportional(m.theme.ui),
                 ink,
             );
-            // Controller and Mods open their own windows: marked as buttons that lead on.
+            // Controller and Mods open their windows: marked as buttons that lead on.
             if *label == CONTROLLER || *label == MODS {
                 ui.painter().text(
                     pos2(r.max.x - 12.0, r.center().y),
@@ -2794,7 +2794,7 @@ pub fn key(w: &mut World, key: egui::Key, shift: bool) -> bool {
 mod tests {
     use super::*;
 
-    /// Every setting of the old Config list (retail's pages and ours, Settings' and Extras', but the classic UI's own
+    /// Every setting of the old Config list (retail's pages and ours, Settings' and Extras', but the classic UI's
     /// CLASSIC_ONLY) has exactly one place on the topic pages, every line names a setting that exists, and each page of
     /// SUBS opens from one button.
     #[test]

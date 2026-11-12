@@ -1,7 +1,7 @@
 # The release binaries built on GitHub: Linux on ARM (aarch64), macOS (Apple Silicon and Intel) and Windows (MSVC),
 # with the dist profile, uploaded as artifacts. release/fetch-ci-builds.sh starts this on master, waits and downloads
 # them into target/assets, where release/publish.sh signs them with the Linux x86_64 build (the signing key never leaves
-# the release machine). Runs on its own on pull requests that change it or the build scripts; never from ci.yml, whose
+# the release machine). Runs automatically on pull requests that change it or the build scripts; never from ci.yml, whose
 # Windows job only lints and tests.
 name: Release builds
 
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      # The Steam Runtime's arm64 SDK, as the x86_64 build uses its own (glibc 2.31: every current distro).
+      # The Steam Runtime's arm64 SDK, as the x86_64 build uses its SDK (glibc 2.31: every current distro).
       - name: Build
         env:
           VANA_CPUSET: ""

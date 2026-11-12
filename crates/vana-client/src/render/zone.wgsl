@@ -224,7 +224,7 @@ fn ff_points(lights: vec4<u32>, p: vec3<f32>, nt: vec3<f32>) -> vec3<f32> {
 }
 
 // Config 0017's type-3 meshes (the vertex shaders at 0x10376ff8.. for 0..4 lights, built by FUN_10178250): in object
-// space, c11..c14 = the light position x placement +0x80 (the placement's own inverse, T(-p) Rz Ry Rx S^-1, even on a
+// space, c11..c14 = the light position x placement +0x80 (the placement's inverse, T(-p) Rz Ry Rx S^-1, even on a
 // voyage) against the vertex v0 and its raw normal v3: sum_k c15..c17[k] x max(N.(P - V), 0) / d^3 x (d^2 <= c18[k]
 // = Range^2), c15..c17 the boosted Diffuse x I per lane (zeroed per draw). So a placement scaled by s sees I s^2 / d^2
 // and the range R s. `inv`'s columns are the rows of the inverse of the placement's 3 x 3 part, `t` its translation.
@@ -280,7 +280,7 @@ fn vs_main(v: VertexIn) -> VertexOut {
     out.world = world.xyz;
     // D3D8 lights with the normal through the inverse transpose of the world matrix (its cofactors / det), and with
     // NORMALIZENORMALS off (FUN_1017c9c0 sets it from placement +0xe) uses it as it comes: a placement scaled by s
-    // sees N.L / s, and the vertex normal's own length counts too.
+    // sees N.L / s, and the vertex normal's length counts too.
     let ma = model[0].xyz;
     let mb = model[1].xyz;
     let mc = model[2].xyz;
@@ -873,7 +873,7 @@ fn cull_col(i: u32, k: u32) -> vec4<f32> {
 }
 
 // FUN_1017b510: only the camera list's placements while one is in force; FUN_1017c9c0: the draw distance to the
-// origin (D, or the placement's own times K; a door group's within both), the LOD band as vs_main tests it, then the
+// origin (D, or the placement's times K; a door group's within both), the LOD band as vs_main tests it, then the
 // mesh's box (through the model as vs_main places it) against the six planes of the view frustum (clip x, y in
 // -w..w, z in 0..w) and retail's far plane at view depth D.
 fn cull_visible(i: u32) -> bool {
@@ -898,7 +898,7 @@ fn cull_visible(i: u32) -> bool {
     let c = cull_bounds[2u * i];
     let h = cull_bounds[2u * i + 1u];
     let far = u.area_info.z;
-    // Its own distance always holds; D 0 (Settings' Unlimited) lifts only the zone's.
+    // Its distance always holds; D 0 (Settings' Unlimited) lifts only the zone's.
     let own = u.area_info.w * c.w;
     let zone_d = select(3.4e38, far * far, far > 0.0);
     let limit = select(zone_d, select(own, min(own, zone_d), h.w > 1.5), h.w > 0.5);

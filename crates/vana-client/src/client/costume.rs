@@ -53,7 +53,7 @@ pub(super) fn worn(w: &World, id: u32) -> Option<u16> {
     c.filter(|c| c.on && c.shown != 0).map(|c| c.shown)
 }
 
-/// `source` is the costume's own model.
+/// `source` is the costume's model.
 pub(super) fn is_model(source: &Source, id: u16) -> bool {
     matches!(source, Source::Npc(crate::dat::npc::NpcLook::Model(m)) if *m == id)
 }

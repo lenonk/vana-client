@@ -1,4 +1,4 @@
-//! Lamp shadows (ours, not retail): with Real character shadows, the few point lights nearest our own character (the
+//! Lamp shadows (ours, not retail): with Real character shadows, the few point lights nearest our character (the
 //! zone's data lights, and the lamps of Real lamp lights, client/lamps.rs) each get a small perspective depth map of
 //! it, seen from the light, so standing between two lights casts two shadows. Each map darkens the scenery behind the
 //! character as the sun's does (a pass after all the scenery, before the actors), as dark as the sun's shadow and

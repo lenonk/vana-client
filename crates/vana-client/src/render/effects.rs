@@ -259,7 +259,7 @@ pub struct EffectsGpu {
     depth: Option<(wgpu::TextureView, Mat4)>,
     no_depth: wgpu::TextureView,
     /// Ours (the Lamp Lights setting, client/lamps.rs): each lamp's slot of the light table copied from its template
-    /// light after the update, at the lamp's own position. The lamps (count, then position + slot | template << 16),
+    /// light after the update, at the lamp's position. The lamps (count, then position + slot | template << 16),
     /// the pass's layout and its bind group (gone when the table changes).
     lamp_pipe: wgpu::ComputePipeline,
     lamp_layout: wgpu::BindGroupLayout,
@@ -334,7 +334,7 @@ pub struct EffectsGpu {
     keys: (wgpu::Buffer, usize),
     key_desc: (wgpu::Buffer, usize),
     paths: (wgpu::Buffer, usize),
-    /// The zone's point-light table (ZoneRenderer::lights), or a black one of our own until a zone gives it.
+    /// The zone's point-light table (ZoneRenderer::lights), or a black one of ours until a zone gives it.
     lights: wgpu::Buffer,
     slots: (wgpu::Buffer, usize),
     sverts: (wgpu::Buffer, usize),
@@ -363,7 +363,7 @@ pub struct EffectsGpu {
 const STAGES: usize = 3;
 
 /// The lamps' copy (EffectsGpu::lamp_pipe): a lamp's slot takes its template's range, colour and intensity at its
-/// own position; a lamp with no template (0xffff) its glow's colour (after the n lamps) at range 8 and intensity 20,
+/// position; a lamp with no template (0xffff) its glow's colour (after the n lamps) at range 8 and intensity 20,
 /// the gate tunnel lights' (op 0x49 of glr1 .. gll2) *(inf: a stand-in)*.
 const LAMP_WGSL: &str = r#"
 @group(0) @binding(0) var<storage, read_write> lights: array<vec4<f32>>;
@@ -1226,7 +1226,7 @@ impl EffectsGpu {
         }
     }
 
-    /// The lamps (client/lamps.rs): position, slot, template slot (0xffff: its own light) and the glow's colour
+    /// The lamps (client/lamps.rs): position, slot, template slot (0xffff: its light) and the glow's colour
     /// (BGRA, 0x80 = 1.0).
     pub fn set_lamps(&mut self, gpu: &Gpu, lamps: &[(glam::Vec3, u32, u32, u32)]) {
         let n = lamps.len().min(crate::render::LIGHTS);
@@ -1685,7 +1685,7 @@ impl EffectsGpu {
         u_rt.fog[2] = 0.0;
         u_rt.fog[3] = 0.0;
         gpu.queue.put(&self.draw_u_rt, 0, bytemuck::bytes_of(&u_rt));
-        // FUN_10040e70 steps 2-4: each projection's image, cleared to 0 (depth 1), the mesh as its own mode draws it.
+        // FUN_10040e70 steps 2-4: each projection's image, cleared to 0 (depth 1), the mesh as its mode draws it.
         let mut gp_layer: HashMap<u32, usize> = HashMap::new();
         if let (Some((_, views, _)), Some(g_rt)) = (self.gp_rt.as_ref(), self.draw_group_rt.as_ref()) {
             for (k, &e) in gps.iter().enumerate() {
@@ -1890,7 +1890,7 @@ impl EffectsGpu {
                     pass.draw(first..first + n, base..base + 1);
                 }
                 // FUN_10043720: the scene squeezed into the 256x256 copy (FUN_10042d00), which the ring samples at
-                // its own screen points; retail's soft, shifted band.
+                // its screen points; retail's soft, shifted band.
                 Draw::DistRing => {
                     let Some(dc) = self.dist_copy.as_ref() else { continue };
                     drop(pass);
@@ -1930,7 +1930,7 @@ impl EffectsGpu {
                     }
                 }
                 // FUN_10043590: the scene squeezed into the 256x256 copy (FUN_10042d00), then the morph's triangles over
-                // it (WRAP; no texture of its own).
+                // it (WRAP; no texture).
                 Draw::DistMorph(id) => {
                     let Some(m) = fx.reg.morph_data_of(id) else { continue };
                     let Some(dc) = self.dist_copy.as_ref() else { continue };

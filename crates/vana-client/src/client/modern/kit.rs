@@ -221,7 +221,7 @@ pub fn button(ui: &mut Ui, m: &Modern, label: &str, width: f32, s: Btn) -> Respo
 }
 
 /// A small button for dense panels (the edge windows): as `button`, 20 tall and as wide as its label. `colour` the
-/// label's when lit (a toggle's own colour), else the theme's.
+/// label's when lit (a toggle's colour), else the theme's.
 pub fn chip(ui: &mut Ui, m: &Modern, label: &str, s: Btn, colour: Option<Color32>) -> Response {
     let font = FontId::proportional(m.theme.small);
     let w = ui.fonts_mut(|f| f.layout_no_wrap(label.to_string(), font.clone(), Color32::WHITE).size().x) + 14.0;

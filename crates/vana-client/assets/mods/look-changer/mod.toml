@@ -17,5 +17,5 @@ forms = [
   { args = "<slot> <item | none | own>", help = "A piece of your gear.", params = [{ name = "slot", type = "enum", options = ["head", "body", "hands", "legs", "feet", "main", "sub", "range"] }, { name = "item", type = "item", also = ["none", "own"] }] },
   { args = "copy [name]", help = "Copies a player's look (your target's).", params = [{ name = "name", type = "player" }] },
   { args = "others <race | own>", help = "One race for everyone else.", params = [{ name = "race", type = "enum", options = ["hume m", "hume f", "elvaan m", "elvaan f", "tarutaru m", "tarutaru f", "mithra", "galka"], also = ["own"] }] },
-  { args = "reset", help = "Your own look back." },
+  { args = "reset", help = "Your look back." },
 ]

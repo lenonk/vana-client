@@ -29,7 +29,7 @@ pub struct SubArea {
     pub zone_areas: Vec<u32>,
     /// The zone's texture names by slot - 1, which a sub-area's meshes may name.
     pub zone_textures: Vec<String>,
-    /// The zone's own ground while the merged one is in use.
+    /// The zone's ground while the merged one is in use.
     pub home: Option<Ground>,
     /// The sub-area's area environments (its 'ev10').
     pub weather: Option<ZoneWeather>,

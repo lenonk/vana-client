@@ -1,4 +1,4 @@
-//! One mod's Lua VM (docs/lua-mods.md 3.1): its own Lua 5.4 state with a fixed library set, a memory limit, a time
+//! One mod's Lua VM (docs/lua-mods.md 3.1): its Lua 5.4 state with a fixed library set, a memory limit, a time
 //! budget per call, and every handler run as a coroutine that may sleep.
 
 use super::manifest::Manifest;
@@ -25,7 +25,7 @@ const SOFT_CAP: Duration = Duration::from_millis(2);
 const ERROR_LIMIT: usize = 20;
 const ERROR_WINDOW: Duration = Duration::from_secs(60);
 
-/// The prelude: sleeping yields our token, so the scheduler can tell its own yields from a mod's. A `__gc`
+/// The prelude: sleeping yields our token, so the scheduler can tell its yields from a mod's. A `__gc`
 /// finalizer runs with hooks off (lgc.c GCTM), out of the budget's reach, so setmetatable refuses one.
 const PRELUDE: &str = r#"
 local token = ...
@@ -212,7 +212,7 @@ impl ModState {
     }
 }
 
-/// A filter's budget per call (it runs inside the game's own paths).
+/// A filter's budget per call (it runs inside the game's paths).
 pub(super) const FILTER_CAP: Duration = Duration::from_millis(20);
 
 /// The client's start, for os.clock.
@@ -285,7 +285,7 @@ impl Vm {
             keep.raw_set(name, os.get::<Value>(name)?)?;
         }
         // os.clock as wall time (seconds on a monotonic clock since the client started): C's clock() is the process's
-        // CPU time, which runs at its own pace in a many-threaded client and broke mods' countdowns.
+        // CPU time, which runs at its pace in a many-threaded client and broke mods' countdowns.
         keep.raw_set("clock", lua.create_function(|_, ()| Ok(process_start().elapsed().as_secs_f64()))?)?;
         g.raw_set("os", keep)?;
         for name in ["dofile", "loadfile"] {

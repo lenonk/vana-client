@@ -65,7 +65,7 @@ const TOP: &[Entry] = &[
     row("Synthesis", "icons/craft", 0, 10),
     Entry { label: "System", icon: "icons/system", kind: Kind::Sub(SYSTEM) },
 ];
-/// In the Mog House retail's row 12 is Mog House, not Map (FUN_1013ff90): a row of its own here, the map's
+/// In the Mog House retail's row 12 is Mog House, not Map (FUN_1013ff90): a separate row here, the map's
 /// category keeping Region Info and Current Time.
 const WORLD_MH: &[Entry] = &[row("Region Info", "icons/find", 0, 11), row("Current Time", "icons/timer", 1, 10)];
 const TOP_MH: &[Entry] = &[

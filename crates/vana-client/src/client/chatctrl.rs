@@ -222,14 +222,14 @@ pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: 
     );
 }
 
-/// The window's own header strings: help 0xe 0x253 "Set your default chat mode.", title 0xd 0x81 "Chat".
+/// The window's header strings: help 0xe 0x253 "Set your default chat mode.", title 0xd 0x81 "Chat".
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     let Some(c) = &w.chatctrl else { return };
     let [help, title] = gu.focus_text(WINDOW, c.sel);
     (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
 }
 
-/// FUN_101ad840: the chat line's own channel, case-sensitive with the trailing space; any other "/" is 1 (no tab);
+/// FUN_101ad840: the chat line's channel, case-sensitive with the trailing space; any other "/" is 1 (no tab);
 /// none is the default chat mode (FUN_101b8c80).
 pub fn line_mode(line: &str, default: u8) -> u8 {
     const PREFIXES: [(&str, u8); 18] = [

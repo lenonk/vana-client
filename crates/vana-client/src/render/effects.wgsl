@@ -1192,7 +1192,7 @@ fn fs_dist_copy(i: VOut) -> @location(0) vec4<f32> {
 
 // CMoDist (FUN_100426f0, pass 2): a fan of the cross through +0xa0 with its view translation shifted by (off, off),
 // sampling the 256x256 copy at (P - min) k / 255 of the unshifted points (MIRROR, linear; 256 / 255 of the copy's
-// own scale, so the lookup drifts up to a pixel across the box); the centre has the element colour (alpha x fade),
+// scale, so the lookup drifts up to a pixel across the box); the centre has the element colour (alpha x fade),
 // the tips 0x00808080. Variant 9.
 @vertex
 fn vs_dist(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut {
@@ -1224,7 +1224,7 @@ fn screen_uv(vp: vec3<f32>) -> vec2<f32> {
 }
 
 // D3m + 0x200000 (FUN_10040e70 / FUN_10054d70): the mesh with its local matrix only (no translation), scaled 0.25,
-// seen from 2 above looking down (LookAtRH, up (0, 0, -1)) through the scene's own projection, into a 256x256 image.
+// seen from 2 above looking down (LookAtRH, up (0, 0, -1)) through the scene's projection, into a 256x256 image.
 @vertex
 fn vs_mesh_rt(v: VIn, @builtin(instance_index) inst: u32) -> VOut {
     let e = inst / PER_ELEM;
@@ -1332,7 +1332,7 @@ fn vs_distmodel(v: VIn, @builtin(instance_index) inst: u32) -> VOut {
 }
 
 // CMoDistRingElem (FUN_10043720): a closed S-gon per ring pair (angle (q mod S) 2 pi / S), each vertex sampling the
-// scene copy at its own screen point (no offset, no scroll); the ring colour per byte x the faded element colour >> 7,
+// scene copy at its screen point (no offset, no scroll); the ring colour per byte x the faded element colour >> 7,
 // wrapping. Variant 12 (TSS 0x10353378, MIRROR).
 @vertex
 fn vs_distring(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut {

@@ -1041,7 +1041,7 @@ pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec
 }
 
 /// Title slot 2 "Search" (group 0xd 0) or the opener's; help slot 2 the row's text: the header 0xe 0x13, a mentor 0xe 0x259; scoption's
-/// rows their own.
+/// rows theirs.
 pub fn bars(gu: &super::game_ui::GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     let Some(res) = &w.search else { return };
     bars.title[2] = gu.title_msg(res.title).unwrap_or_default();

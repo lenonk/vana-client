@@ -91,7 +91,7 @@ pub fn update(w: &mut World) {
 
 /// FUN_10176dd0(1) at the end of a trigger's load: every door's box from its flag (+0xf0), open ones let through.
 /// Ours also runs it whenever a new ground comes in (an asked load, an unload, a failed load), since each ground keeps
-/// its own boxes.
+/// its boxes.
 pub fn reapply(w: &mut World) {
     w.sub.doors_held = false;
     for (&door, &solid) in &w.doors.solid {
@@ -101,7 +101,7 @@ pub fn reapply(w: &mut World) {
     }
 }
 
-/// FUN_1017ac40: the door's flag, and its box on the ground in use and, while a sub-area is in, the zone's own kept
+/// FUN_1017ac40: the door's flag, and its box on the ground in use and, while a sub-area is in, the zone's kept
 /// ground, unless a trigger's sub-area load holds the doors (FUN_10178780).
 fn set_solid(w: &mut World, door: u32, solid: bool) {
     w.doors.solid.insert(door, solid);

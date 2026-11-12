@@ -133,7 +133,7 @@ local function recast_rows(seen)
   return rows
 end
 
--- Our own effects' gauge lengths: per status, each copy by its end (songs, maneuvers and runes keep several of one
+-- Our effects' gauge lengths: per status, each copy by its end (songs, maneuvers and runes keep several of one
 -- status). A copy whose end moved by more than a second is a new one.
 local copies = {}
 
@@ -154,7 +154,7 @@ local function copy_total(id, left, claimed)
   return left
 end
 
--- Our own effects with end times, shortest first, named by what we cast when it was ours.
+-- Our effects with end times, shortest first, named by what we cast when it was ours.
 local function own_rows()
   local names = {}
   for _, e in ipairs(E.effects_on(game.player().id)) do
@@ -256,7 +256,7 @@ local function mod_rows(secs)
 end
 
 -- The three sections' groups: recasts; us, then others by party order, then the rest; monsters, ours targeted first.
--- `builtin`: with our own tracking's rows, else only the other mods'.
+-- `builtin`: with our tracking's rows, else only the other mods'.
 function R.sections(builtin)
   local secs = { {}, {}, {} }
   if builtin then

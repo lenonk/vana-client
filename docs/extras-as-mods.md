@@ -50,12 +50,12 @@ Done so far (checked live, Lnxcsfix):
   with Ctrl+O and Alt+O at the 80 % carried over, zoomed, panned, closed by Escape and by Alt+O. Compared shot for
   shot with the built-in overlay (master) in both UIs: the same box, image, edge (rounded corners), marker and name
   plates, and the minimap's marker shaded by the overlay's opacity. The Map Overlay Opacity is the mod's setting (on its
-  own settings page; it takes config `map_overlay_opacity` at its first load), passed to the client option
-  `map_opacity`: the drawing code applies it to HUD maps that give no alpha of their own, and the minimap's marker
+  settings page; it takes config `map_overlay_opacity` at its first load), passed to the client option
+  `map_opacity`: the drawing code applies it to HUD maps that give no alpha, and the minimap's marker
   shades by it, as before. The client remembers the last value in config `map_overlay_opacity` (no Settings row), so
   the minimap's marker keeps it while the mod is off. The Settings window's Maps & Timers page went
   with it (Minimap Position, Minimap Size and Timers Position are the classic UI's rows, on its Extras tabs). To get
-  there the modern UI draws mods' HUD elements with its own painter (modern/hudmods.rs), as its own panels draw:
+  there the modern UI draws mods' HUD elements with its painter (modern/hudmods.rs), as its panels draw:
   a mod's element looks as a built-in one does (user, 2026-11-06). It shows what the map window shows (user,
   2026-11-06: "no map exists" is not "you don't have it yet"): where no map exists (Mordion Gaol) the error sound and
   it stays shut; a map not ours, or not known to be yet, retail's NO MAP image (m_000_00) over the map's place with
@@ -64,7 +64,7 @@ Done so far (checked live, Lnxcsfix):
   map not ours), beside the menu's map window showing the same. A script's `act:wheel` now passes the mods'
   mouse filters, as the window's wheel does.
 - **Clock** and **Target Info** (assets/mods/clock, target-info): `ui.native.slot` fills a built-in panel's slot with
-  the mod's values, drawn by the panel as its own text (the clock line beside the game's clock, the target window's
+  the mod's values, drawn by the panel as its text (the clock line beside the game's clock, the target window's
   distance and HP %); `game.clock` gives the clock line's parts; entities have `gauge`. Compared shot for shot with
   master in both UIs: the same text, font, place and colours; the settings carried over and their rows stand where
   they stood (a test pins each Extras tab's order).
@@ -79,7 +79,7 @@ Done so far (checked live, Lnxcsfix):
   set while the mod's setting is on. The classic log rewraps its lines when the switch changes (the modern chat
   stamps as it draws), so the lines that came before the mods started are stamped too. Compared with master in both
   UIs.
-- **Synthesis Amount** (assets/mods/synth-amount): the count step stays the synthesis window's own (client option
+- **Synthesis Amount** (assets/mods/synth-amount): the count step stays the synthesis window's (client option
   `synth_amount`: the same itemctrl under tskill1, keys and bars); its count goes to the mods (`synth_amount` event)
   and the mod makes the rest with `actions.synth` once `game.synth().busy` is false, stopping on a refusal, a
   `synth_result` that is neither made nor failed, or a zone change. Seen live in the classic UI: the count step, the
@@ -97,11 +97,11 @@ Done so far (checked live, Lnxcsfix):
   so /uimodes controls each), each with a `timers` element for its section. Wholly the mod's since 2.0.0 (the user,
   2026-11-11: built-ins are done completely in the Lua API): the tracking (engine.lua: action results, wear-offs, the
   party's effect lists, deaths, zoning, the luopan), LSB's durations (durations.lua and data/*.tsv, moved from the
-  client) and the rows and their order (rows.lua: recasts with the charge rule, our own effects shortest first, the
+  client) and the rows and their order (rows.lua: recasts with the charge rule, our effects shortest first, the
   others', the monsters'). The client only counts the element's rows down and draws them, and forwards the `timers`
   namespace to the mod's service (`add`, `remove`, `clear`; also `effects_on` for other mods). General API it took:
   the element's `groups`, `res.status_info`, the `party_buffs` event, `game.recasts().calc`, `game.job_points()`'s
-  `upgrades`, `game.player().pet`. An older client (no `res.status_info`) fills the sections from its own tracking
+  `upgrades`, `game.player().pet`. An older client (no `res.status_info`) fills the sections from its tracking
   (`builtin`). The modern UI: a window per section, its heading with the count folds it, the drawer (/timers, T) folds
   all three, the recasts' window in the old window's saved place and the others under it, mode presets that named
   "timers" name the three. The classic UI keeps the one window with three sections. The Suggestions mod reads our
@@ -253,7 +253,7 @@ Each conversion removes the Rust it replaces, keeps the extra's look in both UIs
 - **Chat Filter** (assets/mods/chat-filter; blist, Silence, stfu, Hush, antiemote and kin): others' chat (log modes 9
   say .. 15 emote) hidden by speaker, by word, shouts or yells, and repeated says / shouts / yells within a minute;
   the speaker read from the line's form (`Name :`, `(Name)`, `<Name>`, `[1]<Name>`, `Name>>`). A Rust test covers the
-  rules; live our own lines pass as they should and no bot chat came in the minute watched. Linkshell 2 and Unity
+  rules; live our lines pass as they should and no bot chat came in the minute watched. Linkshell 2 and Unity
   lines are not taken yet (their log modes still to be read).
 - **Storage Search** went into **Find** (findAll, FindAll, findall, GearFinder): each character's bags are kept in the
   account's storage (every minute, on zoning and at logout) and `/find` lists the account's other characters' holdings
@@ -287,7 +287,7 @@ Each conversion removes the Rust it replaces, keeps the extra's look in both UIs
   is written on first start; `//rules` lists, `//rules reload` reads it again. Seen live: login, Sneak gained and lost.
   Not yet: autoex's XML rule files (no XML helper yet).
 - **Music Picker** (assets/mods/music-picker; BattleStations, MountMuzzle, setbgm, VanaTunes, nocombat, NoMount):
-  `//music <track>` holds a track until `//music off`; Battle Music the game's, the zone's own day / night track, or
+  `//music <track>` holds a track until `//music off`; Battle Music the game's, the zone's day / night track, or
   silence; Mount Music the game's or silence. The zone's tracks come from the new `audio.music_slots()`. Seen live:
   Southern San d'Oria's slots read, track 108 held and released (the log's music lines; test runs have no sound).
 - **Typing Helpers** (assets/mods/typing-helpers; translate, chars, autotrans): in typed lines `[[words]]` becomes
@@ -300,7 +300,7 @@ Each conversion removes the Rust it replaces, keeps the extra's look in both UIs
   turn, the next once the last use finished (or was refused); `//useall stop`. Seen live: two bolt quivers opened.
 - **Hide Rules** (assets/mods/hide-rules; hideparty, minimapmon, minimapcontrol, HXIUIBegone and kin): HUD pieces
   (party, target, buffs, compass, minimap, cast, timers, regime, log, plates) hidden in the Mog House, in zones named,
-  while engaged or in events, each by its own setting, through ui.native.hide. Seen live: party and minimap hidden in
+  while engaged or in events, each by its setting, through ui.native.hide. Seen live: party and minimap hidden in
   Southern San d'Oria.
 - **Screen Notes** (assets/mods/screen-notes; Text): `//note <name> <text>` puts a note on the screen, dragged to its
   place and kept per character; `//note <name>` removes it, `//notes` lists them. Seen live: a note added and dragged.
@@ -415,8 +415,8 @@ Each conversion removes the Rust it replaces, keeps the extra's look in both UIs
   are drawn on this screen only, kept per character: `//look race <race>`, `face <1a..8b>`, `<slot> <item | none |
   own>` (an item's model from LandSandBoat's equipment list, bundled), `copy [name]` (the target's look, or anyone's
   in sight by name), `others <race | own>` (one race for every other player), `reset`. New `render.look(id, parts)`
-  draws a player-style look with other parts (the rest follow the character's own changes); `game.entity` now gives
-  our own look too. Seen live: Lnxcsfix as a Galka (kept across a relog), a Chainmail body, Daggao's look copied,
+  draws a player-style look with other parts (the rest follow the character's changes); `game.entity` now gives
+  our look too. Seen live: Lnxcsfix as a Galka (kept across a relog), a Chainmail body, Daggao's look copied,
   face 4b, reset. DressUp's blinking option (BlinkMeNot) is not needed: the client keeps a character drawn through a look change, so a gear swap neither blinks nor drops anyone's target (MODLOG "A changed look without the blink").
 - **Content Trackers** (assets/mods/content-trackers; dynamishelper, Omen, OmenHelper, NyzulHelper, salvage2,
   cellhelp, plasmon, reive, SheolHelper, segments, muffins, EmpyPopTracker, zenihelper and kin): an edge window for
@@ -448,14 +448,14 @@ Each conversion removes the Rust it replaces, keeps the extra's look in both UIs
   <option> > ...` talks to the nearest NPC of that name (running up when it is near) and picks each row by its words,
   passing pages that wait for a key; where a row is missing the menu is left to the player. `//errand save <name>
   <the same>` keeps such a walk, `//errand <name>` runs it. `//job <main>[/<sub>]` changes jobs with the moogle
-  window's own request (new `actions.change_job`), only where that window could. Seen live: a saved Home Point errand
+  window's request (new `actions.change_job`), only where that window could. Seen live: a saved Home Point errand
   through three rows to the talk's end, Rolandienne's lines passed and "the talk ended before Spark", `//job` refused
   outside a Mog House. Not done: shop-by-item-name searches (Sparks needs Records of Eminence progress to test), the
   Gavlan wheel, Oseem and Ambuscade (not on LandSandBoat); the job change by command not seen in a Mog House.
 - **Completion Log** (assets/mods/completion-log; SpellBook, SpellCheck, XIchecklist, FFXIQuestList and kin): `//left`
   opens a window with two tabs: Spells (a job's spells not yet learned, by level, dim above the job's level) and Quests
   (an area's quests, done, under way or not started); `//left spells [job]` and `//left quests` print summaries. New
-  `game.quests` (the Quests window's own data and names). Seen live: BLM's unlearned spells, Windurst's quests, the
+  `game.quests` (the Quests window's data and names). Seen live: BLM's unlearned spells, Windurst's quests, the
   summaries. Not done: titles, missions, key items, quest markers over NPCs.
 - **Monster Notes** (assets/mods/monster-notes; InfoBar, ibar, mobdb): a bar across the top of the screen (or above
   the log) with the zone, Vana'diel time and day, the weather, and the target: HP, distance, its last /check (level,
@@ -482,7 +482,7 @@ Each conversion removes the Rust it replaces, keeps the extra's look in both UIs
 - **Item Details** (assets/mods/item-details; latentchecker, trials): a trial weapon highlighted in a game list shows
   its weapon skill points toward unlocking (the extdata's first two bytes, against the points LandSandBoat's weapon
   list gives each of its 50 such weapons); `//trials` lists every one held. Seen live with a Sword of Trials lent to
-  Lnxcsfix (0 / 300, taken back). Not done: soul plates and reflectors (LandSandBoat's layout is its own).
+  Lnxcsfix (0 / 300, taken back). Not done: soul plates and reflectors (LandSandBoat's layout differs).
 - **Objective Sets** (assets/mods/objective-sets; roe): `//roeset save <name>` keeps the Records of Eminence objectives
   set now, `//roeset <name>` removes the others and sets those a second apart (removing loses an objective's
   progress), list and delete; `//roeshow` lists what is set. New `game.roe`, `actions.roe_set` and
@@ -500,7 +500,7 @@ Each conversion removes the Rust it replaces, keeps the extra's look in both UIs
 - **Map Notes** (assets/mods/map-notes; boussole): on the Map Overlay while it is open, notes pinned where you stood
   (`//mapnote add <text>`, list, del; per zone and map page, for every character), party members in sight, and the
   names `//mapnote track` follows, each a dot with its label. The Map Overlay mod provides its box and view
-  (`mods.provide("view")`); its own look is unchanged. Seen live in Southern San d'Oria: a note at our marker and the
+  (`mods.provide("view")`); its look is unchanged. Seen live in Southern San d'Oria: a note at our marker and the
   tracked Rumoie beside it.
 - **Exit Markers** (assets/mods/exit-markers; ZoneLines, off by default): each zone line within range (a setting)
   outlined on the ground with a post at each corner, in a colour setting. New `game.zone_lines` (the zone's 'z'
@@ -551,7 +551,7 @@ Each conversion removes the Rust it replaces, keeps the extra's look in both UIs
   from the first result's value, for 8 seconds each; a call for the Watched Moves; a line and a call when a Watched
   Monster comes within 50 yalms. Seen live: the box on a hare's move and the watched-monster alert; a Rust test covers
   the lines. It uses the game's line through `res.message` given an action result's values in the game's order
-  (the action's param, the result's value, ...), now documented; its own text is the fallback.
+  (the action's param, the result's value, ...), now documented; its text is the fallback.
 - **Gathering Log** (assets/mods/gathering-log; yield, HGather, DigDig and kin): every try at a Harvesting, Logging,
   Mining or Excavation Point (the point's event start, s2c 0x032 / 0x034: LandSandBoat's HELM puts what was found and
   whether the tool broke in its first params) counted by kind with the success rate, broken tools and the items found

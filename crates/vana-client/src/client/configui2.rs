@@ -1,4 +1,4 @@
-//! The Config pages with their own code: the scrolling lists (Chat Filters cfilter, Effects fxfilter, Log
+//! The Config pages with their code: the scrolling lists (Chat Filters cfilter, Effects fxfilter, Log
 //! Settings conf11s, key assignment k1assign / k2assign), Font Colors (conftxtc, textcol1..3), the Windows pages
 //! (conf5m, conf5win, conf5w1 / conf5w2), Log (conf11m, conf11l) and the lobby's Config window (lobycwin).
 
@@ -604,7 +604,7 @@ pub(super) fn assign(v: &mut Values, out: &mut Out, name: &str, row: usize, key:
     true
 }
 
-/// Keys for windows with their own handling; true when taken.
+/// Keys for windows with their handling; true when taken.
 pub fn key(ui: &mut ConfigUi, _gu: &GameUi, v: &mut Values, key: egui::Key, out: &mut Out) -> bool {
     let Some(w) = ui.stack.last() else { return false };
     let name = w.name.clone();
@@ -758,7 +758,7 @@ pub fn linked(v: &mut Values, id: u16, out: &mut Out) {
     }
 }
 
-/// The pointer on windows with their own handling; true when taken.
+/// The pointer on windows with their handling; true when taken.
 pub fn pointer(
     ui: &mut ConfigUi,
     gu: &GameUi,
@@ -807,7 +807,7 @@ pub fn pointer(
     true
 }
 
-/// Draws windows with their own drawing; true when drawn.
+/// Draws windows with their drawing; true when drawn.
 pub fn draw(
     ui: &ConfigUi,
     w: &Win,
@@ -1010,7 +1010,7 @@ pub fn draw(
         }
         "comyn" => {
             draw_page(ui, w, top, gu, v, sw, sh);
-            // FUN_10211050: the question inside the box at (+4, +4), wrapped to w - 8, 16 px lines, at comyn's own place.
+            // FUN_10211050: the question inside the box at (+4, +4), wrapped to w - 8, 16 px lines, at comyn's place.
             if let Some(r) = gu.window_rect(&name, sw, sh) {
                 let t = gu.group_b(0x8f).unwrap_or_else(|| "Reset keyboard assignment to default?".into());
                 for (i, line) in gu.wrap(&t, r[2] - 8.0).iter().enumerate() {

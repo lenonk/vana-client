@@ -449,7 +449,7 @@ pub enum Op {
     Decline { to: u64 },
 }
 
-/// polcore's built-in titles (xiloader's English) and FFXiMain's own (group 9).
+/// polcore's built-in titles (xiloader's English) and FFXiMain's (group 9).
 fn title(w: &World, kind: u8, reply: bool) -> String {
     match kind {
         profile::FRIEND_REQUEST => "Let's be friends!".into(),

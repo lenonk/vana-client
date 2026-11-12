@@ -51,7 +51,7 @@ fn world_at(uv: vec2<f32>, d: f32) -> vec3<f32> {
 }
 
 // At half the scene's size: each pixel reads the depth of the top-left full-size pixel under it, and rebuilds the
-// position on that same pixel's ray (the half-size pixel's own centre is a corner between four of them).
+// position on that same pixel's ray (the half-size pixel's centre is a corner between four of them).
 @fragment fn fs_ao(i: VOut) -> @location(0) vec4<f32> {
     let px = floor(i.pos.xy) * 2.0;
     let d = depth_at(px);

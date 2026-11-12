@@ -102,7 +102,7 @@ pub fn update(w: &mut World) {
     }
 }
 
-/// Our own stand-up still holds the walk (`res2`'s op 0x2e).
+/// Our stand-up still holds the walk (`res2`'s op 0x2e).
 pub fn rising(w: &World) -> bool {
     matches!(w.rests.get(&w.my_id), Some(Phase::Rising(t)) if Instant::now() < *t)
 }

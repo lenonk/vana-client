@@ -32,7 +32,7 @@ pub struct MeritEntry {
 pub struct MeritTables {
     pub cats: Vec<MeritCat>,
     pub entries: Vec<MeritEntry>,
-    /// File 88's u16 @0 per record (its own index, or 0).
+    /// File 88's u16 @0 per record (its index, or 0).
     keys: Vec<u16>,
     names: Option<DMsg>,
 }

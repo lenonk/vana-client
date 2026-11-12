@@ -1,4 +1,4 @@
-//! Sound for mods (docs/lua-mods.md 4.14): the mod's own WAV (or SeWave) files and the game's effects through our
+//! Sound for mods (docs/lua-mods.md 4.14): the mod's WAV (or SeWave) files and the game's effects through our
 //! mixer, at the effects volume.
 
 use mlua::{Lua, Table};

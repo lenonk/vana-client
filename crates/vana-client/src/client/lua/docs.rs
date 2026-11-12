@@ -171,7 +171,7 @@ pub const FUNCS: &[Func] = &[
     Func {
         ns: "timers",
         name: "add",
-        doc: "Adds or replaces a row in the Timers mod's windows (through its service; nothing while it is not running; shown even with its own tracking off), counting down `seconds`: options section ('recast' | 'buff' (default) | 'debuff'), group (a heading, e.g. a target's name), icon {kind = 'status' | 'spell' | 'ability', id}, total (the gauge's whole length), fills (toward ready, as recasts do).",
+        doc: "Adds or replaces a row in the Timers mod's windows (through its service; nothing while it is not running; shown even with its tracking off), counting down `seconds`: options section ('recast' | 'buff' (default) | 'debuff'), group (a heading, e.g. a target's name), icon {kind = 'status' | 'spell' | 'ability', id}, total (the gauge's whole length), fills (toward ready, as recasts do).",
         params: &[("name", "string", ""), ("seconds", "number", ""), ("options?", "table", "")],
         ret: "",
     },
@@ -186,7 +186,7 @@ pub const FUNCS: &[Func] = &[
     Func {
         ns: "ui",
         name: "window",
-        doc: "Creates or replaces a window: title, width, help, and elements in order. Element types: text {id, text, dim, colour}; buttons {id, label, items, marked} (marked makes them options); slider {id, label, steps, at, shown}; list {id, rows, columns, at, height} (a row is a string or {cells..., icon = {kind = 'item' | 'status' | 'spell' | 'ability', id}, colour}; columns {title, width, align = 'right'}, a heading click sends 'sort'); gauge {id, label, value 0..1, text, kind hp|mp|tp|cast|experience|recast, style = 'row' (a list row: the label, the text at the right, a thin bar under, as the training regime's; dim when done)}; separator; tabs {id, items, at} (pages: an element's page = n shows only on page n of the tabs above it); input {id, label, text, max, filter} (filter = true: typing goes into it while the window has the focus, or into the line under the cursor, the other keys work the window) (a typed line: Enter starts and ends it, Escape undoes it); key {id, label, text} (a key combination such as 'ctrl+q': Enter or a click listens, the next key press with its modifiers becomes the text and sends 'change', Backspace clears it, Escape stops; ui.update(window, id, {listen = true}) starts listening); choice {id, label, items, at} (Left / Right turn it); dropdown {id, label, items, at} (a choice whose items open in a list under it, as the login form's combo fields: Enter or a click opens it, Up / Down and Enter or a click pick, sending 'set', Escape or a click elsewhere closes it; Left / Right still turn it); colour {id, label, value = {r, g, b, a}, alpha} (Enter edits it a channel at a time); section {id, label, open} (folds what is under it, to the next section or tabs); map {id, dots} (the zone's map around us in the minimap panel's window, drawn by the client with our marker; dots {x, z, colour = 0xRRGGBB or {r, g, b}, target, tip}; the wheel over it sends 'wheel' {notches}; the zoom is the client option minimap_span); lines {id, lines} (lines of text in tones: each {text, tone = 'text' | 'muted' | 'gold' | 'bronze' | {r, g, b, a}, strong, elements = {element ids, icons after it}} or {spans = {...}, right (a span at the right end), column (the spans after the first from there), indent, bar = 0..1 (a thin gauge in its tone), fold = key (a header with a chevron, open; a click sends 'fold' {key}), heading, big, gap}; the skillchain helper's view); timers {id, section = 'recasts' | 'buffs' | 'debuffs', groups} (timer rows drawn as the Timers' sections, in an edge window with its panel: groups {name?, rows {name, left (seconds, counting down from when given; at or below 0 dimmed), total (the gauge's length; 0 none), fills (toward ready), icon {kind = 'status' (default) | 'spell' | 'ability', id}}}, in the order given; recasts as rows, the others as icon cells by group in the modern UI); canvas {id, w, h, draw} (a region the mod draws in, in its own units: draw is a list of {type = 'line', x1, y1, x2, y2, width} | {type = 'rect', x, y, w, h, to (a bottom colour: a gradient), line (outline width), round (corner radius)} | {type = 'circle', x, y, r, line} | {type = 'tri', x1, y1, x2, y2, x3, y3} | {type = 'text', x, y, text, size, align = 'center' | 'right', font = 'bold', outline} | {type = 'tip', x, y, w, h, title, text} (a tooltip region, not drawn) | {type = 'icon', x, y, size, kind = 'item' | 'status' | 'spell' | 'ability', id} (its colour tints it), each with a colour; ui.update(window, canvas, {draw = ...}) redraws it; a click sends 'click' {x, y, button = 'left' | 'right'}, the pointer 'hover' {x, y} as it moves and 'leave', a drag 'drag_start', 'drag' and 'drag_end' {x, y, dx, dy, sx, sy (on screen, window pixels: modern UI), window (the mod's other window whose canvas is under the pointer)}, held to the release wherever the pointer goes, crossing the mod's other canvases as a HUD drag does (drag_over, drag_out, drop {from = this canvas}); one of the mod's HUD elements dragged over it sends 'drag_over' {x, y, from = the element} as it moves and 'drag_out' as it leaves, and let go over it 'drop' {x, y, from}, in the modern UI). chip {id, text, note, tone = 'waiting' | 'refused' | 'quiet', detail} (a status line as the pending-action chip's: a dot, the text, the note at the right in the tone's colour, the detail under it; modern UI only); targets {id, rows} (rows {entity (server id), label, tag}: each the label, the entity's name in its colour and its HP, as the focus panel's rows; a click targets it; modern UI only). Tab moves the cursor as Down, Shift+Tab as Up. Every element may have tip (the help shown while the cursor or pointer is on it) and page. Indexes are 1-based. Window options: opacity (0..1, the whole window: per-window opacity; ui.opacity changes it), hud (never takes the keys), frame = false (no frame), x / y (its place in the classic UI), modal (keeps the keys and the pointer while open; centred unless placed), popup (modal, opened at the pointer or where ui.open says, closed by a click outside it), animate (the modern UI fades it in and grows it up from its bottom edge as it opens, and folds it back as it closes), edge (an edge window, as the Timers and the training regime: on a screen edge, the title its tab when folded, heading a line over the elements whose click folds it; never takes the keys; resize lets it be made wider; fit = true makes it as wide as its lines need (width the least, half the screen the most); grow = 'up' keeps its bottom edge as its canvas grows or shrinks, its top on the top edge, and its handler gets 'dock' {side = 'top' | 'bottom' | 'left' | 'right' | 'free'} when that changes), panel ('regime', 'timers_recasts', 'timers_buffs', 'timers_debuffs', 'skillchains' (the skillchain helper's: its lines element drawn in the Timers' dock in the classic UI), 'minimap' (its map element in a corner, and Wide Scan under it in the modern UI): it stands in for that built-in panel, with its place, fold, ui.native.hide and /uimodes; the classic UI draws only such edge windows in the Timers' dock); an ordinary window's panel 'focus' stands in for the modern focus panel (on the target panel, gone while an event takes the target window down) and 'pending' for the pending-action chip's panel (over the cast bar); neither is drawn in the classic UI. It draws in the active UI's look (classic Config page or modern panel).",
+        doc: "Creates or replaces a window: title, width, help, and elements in order. Element types: text {id, text, dim, colour}; buttons {id, label, items, marked} (marked makes them options); slider {id, label, steps, at, shown}; list {id, rows, columns, at, height} (a row is a string or {cells..., icon = {kind = 'item' | 'status' | 'spell' | 'ability', id}, colour}; columns {title, width, align = 'right'}, a heading click sends 'sort'); gauge {id, label, value 0..1, text, kind hp|mp|tp|cast|experience|recast, style = 'row' (a list row: the label, the text at the right, a thin bar under, as the training regime's; dim when done)}; separator; tabs {id, items, at} (pages: an element's page = n shows only on page n of the tabs above it); input {id, label, text, max, filter} (filter = true: typing goes into it while the window has the focus, or into the line under the cursor, the other keys work the window) (a typed line: Enter starts and ends it, Escape undoes it); key {id, label, text} (a key combination such as 'ctrl+q': Enter or a click listens, the next key press with its modifiers becomes the text and sends 'change', Backspace clears it, Escape stops; ui.update(window, id, {listen = true}) starts listening); choice {id, label, items, at} (Left / Right turn it); dropdown {id, label, items, at} (a choice whose items open in a list under it, as the login form's combo fields: Enter or a click opens it, Up / Down and Enter or a click pick, sending 'set', Escape or a click elsewhere closes it; Left / Right still turn it); colour {id, label, value = {r, g, b, a}, alpha} (Enter edits it a channel at a time); section {id, label, open} (folds what is under it, to the next section or tabs); map {id, dots} (the zone's map around us in the minimap panel's window, drawn by the client with our marker; dots {x, z, colour = 0xRRGGBB or {r, g, b}, target, tip}; the wheel over it sends 'wheel' {notches}; the zoom is the client option minimap_span); lines {id, lines} (lines of text in tones: each {text, tone = 'text' | 'muted' | 'gold' | 'bronze' | {r, g, b, a}, strong, elements = {element ids, icons after it}} or {spans = {...}, right (a span at the right end), column (the spans after the first from there), indent, bar = 0..1 (a thin gauge in its tone), fold = key (a header with a chevron, open; a click sends 'fold' {key}), heading, big, gap}; the skillchain helper's view); timers {id, section = 'recasts' | 'buffs' | 'debuffs', groups} (timer rows drawn as the Timers' sections, in an edge window with its panel: groups {name?, rows {name, left (seconds, counting down from when given; at or below 0 dimmed), total (the gauge's length; 0 none), fills (toward ready), icon {kind = 'status' (default) | 'spell' | 'ability', id}}}, in the order given; recasts as rows, the others as icon cells by group in the modern UI); canvas {id, w, h, draw} (a region the mod draws in, in its units: draw is a list of {type = 'line', x1, y1, x2, y2, width} | {type = 'rect', x, y, w, h, to (a bottom colour: a gradient), line (outline width), round (corner radius)} | {type = 'circle', x, y, r, line} | {type = 'tri', x1, y1, x2, y2, x3, y3} | {type = 'text', x, y, text, size, align = 'center' | 'right', font = 'bold', outline} | {type = 'tip', x, y, w, h, title, text} (a tooltip region, not drawn) | {type = 'icon', x, y, size, kind = 'item' | 'status' | 'spell' | 'ability', id} (its colour tints it), each with a colour; ui.update(window, canvas, {draw = ...}) redraws it; a click sends 'click' {x, y, button = 'left' | 'right'}, the pointer 'hover' {x, y} as it moves and 'leave', a drag 'drag_start', 'drag' and 'drag_end' {x, y, dx, dy, sx, sy (on screen, window pixels: modern UI), window (the mod's other window whose canvas is under the pointer)}, held to the release wherever the pointer goes, crossing the mod's other canvases as a HUD drag does (drag_over, drag_out, drop {from = this canvas}); one of the mod's HUD elements dragged over it sends 'drag_over' {x, y, from = the element} as it moves and 'drag_out' as it leaves, and let go over it 'drop' {x, y, from}, in the modern UI). chip {id, text, note, tone = 'waiting' | 'refused' | 'quiet', detail} (a status line as the pending-action chip's: a dot, the text, the note at the right in the tone's colour, the detail under it; modern UI only); targets {id, rows} (rows {entity (server id), label, tag}: each the label, the entity's name in its colour and its HP, as the focus panel's rows; a click targets it; modern UI only). Tab moves the cursor as Down, Shift+Tab as Up. Every element may have tip (the help shown while the cursor or pointer is on it) and page. Indexes are 1-based. Window options: opacity (0..1, the whole window: per-window opacity; ui.opacity changes it), hud (never takes the keys), frame = false (no frame), x / y (its place in the classic UI), modal (keeps the keys and the pointer while open; centred unless placed), popup (modal, opened at the pointer or where ui.open says, closed by a click outside it), animate (the modern UI fades it in and grows it up from its bottom edge as it opens, and folds it back as it closes), edge (an edge window, as the Timers and the training regime: on a screen edge, the title its tab when folded, heading a line over the elements whose click folds it; never takes the keys; resize lets it be made wider; fit = true makes it as wide as its lines need (width the least, half the screen the most); grow = 'up' keeps its bottom edge as its canvas grows or shrinks, its top on the top edge, and its handler gets 'dock' {side = 'top' | 'bottom' | 'left' | 'right' | 'free'} when that changes), panel ('regime', 'timers_recasts', 'timers_buffs', 'timers_debuffs', 'skillchains' (the skillchain helper's: its lines element drawn in the Timers' dock in the classic UI), 'minimap' (its map element in a corner, and Wide Scan under it in the modern UI): it stands in for that built-in panel, with its place, fold, ui.native.hide and /uimodes; the classic UI draws only such edge windows in the Timers' dock); an ordinary window's panel 'focus' stands in for the modern focus panel (on the target panel, gone while an event takes the target window down) and 'pending' for the pending-action chip's panel (over the cast bar); neither is drawn in the classic UI. It draws in the active UI's look (classic Config page or modern panel).",
         params: &[("id", "string", ""), ("spec", "vana.WindowSpec", "")],
         ret: "",
     },
@@ -424,7 +424,7 @@ pub const FUNCS: &[Func] = &[
     Func {
         ns: "ui.native",
         name: "slot",
-        doc: "Fills a built-in panel's slot, drawn by the panel in both UIs as its own text while the mod is loaded (the newest mod's value wins); nil empties it if it is this mod's. clock: {earth, moon_name, moon, next_day, next_minutes} (game.clock's table) beside the game's clock; target_distance: a number (yalms) in the target window; target_hpp: a number (percent) at the classic target window's right, in the HP colour. The target slots show on the current target. battle_rows (the modern UI): up to 8 rows above the battle menu's commands, each {kind = 'spell' | 'ability', id, target (a party member's name: the target prompt starts on them), reason (its tip), label (in place of the action's name), group (spell ids: a submenu on the row, Right or Enter opens it)}; a pick goes through Magic or Abilities and the action's list, then the target prompt, as the player would (the suggestions event's rows come in this shape). Needs ui.native.",
+        doc: "Fills a built-in panel's slot, drawn by the panel in both UIs as its text while the mod is loaded (the newest mod's value wins); nil empties it if it is this mod's. clock: {earth, moon_name, moon, next_day, next_minutes} (game.clock's table) beside the game's clock; target_distance: a number (yalms) in the target window; target_hpp: a number (percent) at the classic target window's right, in the HP colour. The target slots show on the current target. battle_rows (the modern UI): up to 8 rows above the battle menu's commands, each {kind = 'spell' | 'ability', id, target (a party member's name: the target prompt starts on them), reason (its tip), label (in place of the action's name), group (spell ids: a submenu on the row, Right or Enter opens it)}; a pick goes through Magic or Abilities and the action's list, then the target prompt, as the player would (the suggestions event's rows come in this shape). Needs ui.native.",
         params: &[
             ("slot", "string", "clock, target_distance, target_hpp or battle_rows"),
             ("value?", "any", "nil empties it"),
@@ -434,7 +434,7 @@ pub const FUNCS: &[Func] = &[
     Func {
         ns: "ui.native",
         name: "place",
-        doc: "Places, scales or fades a modern panel while the mod is loaded (the newest mod's place wins): x, y (its top left in window pixels, negative from the right or bottom edge; none keeps the panel's own place, and a panel placed at a point is not moved by the player), scale (0.25..4; the pointer works on it scaled) about origin (top_left (the default), top_right, bottom_left, bottom_right, center: the corner that stays put) and alpha (0..1). nil gives it back. The edge windows (timers, minimap, regime) only hide. Modern UI only. Needs ui.native.",
+        doc: "Places, scales or fades a modern panel while the mod is loaded (the newest mod's place wins): x, y (its top left in window pixels, negative from the right or bottom edge; none keeps the panel's place, and a panel placed at a point is not moved by the player), scale (0.25..4; the pointer works on it scaled) about origin (top_left (the default), top_right, bottom_left, bottom_right, center: the corner that stays put) and alpha (0..1). nil gives it back. The edge windows (timers, minimap, regime) only hide. Modern UI only. Needs ui.native.",
         params: &[
             ("panel", "string", "a name from ui.native.panels"),
             (
@@ -532,14 +532,14 @@ pub const FUNCS: &[Func] = &[
     Func {
         ns: "render",
         name: "look",
-        doc: "A player-style look's parts drawn in place of the entity's own while the mod is loaded: race (1..8), face, and the model ids of head, body, hands, legs, feet, main, sub, range (as game.entity().look gives them); parts left out stay its own. nil clears the mod's look for it; the newest mod's wins. game.entity() still gives the real look.",
+        doc: "A player-style look's parts drawn in place of the entity's while the mod is loaded: race (1..8), face, and the model ids of head, body, hands, legs, feet, main, sub, range (as game.entity().look gives them); parts left out stay the entity's. nil clears the mod's look for it; the newest mod's wins. game.entity() still gives the real look.",
         params: &[("id", "integer", "server id (ourselves too)"), ("look", "table?", "")],
         ret: "",
     },
     Func {
         ns: "render",
         name: "entity",
-        doc: "How an entity draws while the mod is loaded: {hidden (model and plate), name (its plate's), name_colour {r, g, b, a}, alpha (0..1, at most its own), tint {r, g, b} multipliers, scale}. nil clears the mod's look for it; the newest mod's look wins.",
+        doc: "How an entity draws while the mod is loaded: {hidden (model and plate), name (its plate's), name_colour {r, g, b, a}, alpha (0..1, at most the model's), tint {r, g, b} multipliers, scale}. nil clears the mod's look for it; the newest mod's look wins.",
         params: &[("id", "integer", "server id (ourselves too)"), ("look", "table?", "")],
         ret: "",
     },
@@ -689,7 +689,7 @@ pub const FUNCS: &[Func] = &[
     Func {
         ns: "net",
         name: "request",
-        doc: "Starts an HTTP(S) request on its own thread: {url, method (any HTTP method; GET by default), body (sent with any method), body, headers, timeout (s)}; the callback later gets {status, body, headers} or {error}. A body of 16 MB or more gives {error}. Needs net.",
+        doc: "Starts an HTTP(S) request on a separate thread: {url, method (any HTTP method; GET by default), body (sent with any method), body, headers, timeout (s)}; the callback later gets {status, body, headers} or {error}. A body of 16 MB or more gives {error}. Needs net.",
         params: &[("spec", "table", ""), ("callback", "fun(res: table)", "")],
         ret: "integer",
     },
@@ -1821,7 +1821,7 @@ pub const FUNCS: &[Func] = &[
     Func {
         ns: "fs",
         name: "read",
-        doc: "A file's bytes, or nil: the mod's data folder first (what it wrote), then its own files. \"shared/...\" is the area every mod with files.shared can reach.",
+        doc: "A file's bytes, or nil: the mod's data folder first (what it wrote), then its files. \"shared/...\" is the area every mod with files.shared can reach.",
         params: &[("path", "string", "relative, / separated")],
         ret: "string?",
     },
@@ -1842,14 +1842,14 @@ pub const FUNCS: &[Func] = &[
     Func {
         ns: "fs",
         name: "exists",
-        doc: "Whether a file or folder is there (data folder or the mod's own files).",
+        doc: "Whether a file or folder is there (data folder or the mod's files).",
         params: &[("path", "string", "")],
         ret: "boolean",
     },
     Func {
         ns: "fs",
         name: "list",
-        doc: "The names in a folder, sorted (folders end in /): the data folder's and the mod's own.",
+        doc: "The names in a folder, sorted (folders end in /): the data folder's and the mod's.",
         params: &[("path?", "string", "none: the top")],
         ret: "string[]",
     },
@@ -1955,7 +1955,7 @@ pub const FUNCS: &[Func] = &[
     Func {
         ns: "text",
         name: "colour",
-        doc: "`text` in the log's in-line colour code `code` (as the game colours names: 7 ours, 6 party, 3 alliance, 8 a monster we claimed, 5 another's), then back to the line's own colour; 0 leaves it.",
+        doc: "`text` in the log's in-line colour code `code` (as the game colours names: 7 ours, 6 party, 3 alliance, 8 a monster we claimed, 5 another's), then back to the line's colour; 0 leaves it.",
         params: &[("text", "string", ""), ("code", "integer", "")],
         ret: "string",
     },
@@ -2374,7 +2374,7 @@ pub const NAMESPACES: &[(&str, &str)] = &[
     ("", "Functions every mod has: printing, modules, waiting, the clock."),
     ("log", "Lines in vana-client.log."),
     ("events", "Handlers for the client's events (see the event list)."),
-    ("commands", "The mod's own text commands, and running the game's."),
+    ("commands", "The mod's text commands, and running the game's."),
     ("filters", "Chat lines and typed lines rewritten or dropped before the client takes them."),
     ("timers", "Rows in the client's Timers window."),
     ("ui", "The mod's windows, in the active UI's look."),
@@ -2385,7 +2385,7 @@ pub const NAMESPACES: &[(&str, &str)] = &[
     ),
     ("ui.skin", "The modern UI's look: its sprites, palette colours and window frames, replaced while the mod runs."),
     ("render", "How entities and the camera draw, and post-process passes."),
-    ("audio", "The game's sounds and music, and the mod's own."),
+    ("audio", "The game's sounds and music, and the mod's."),
     ("draw", "Lines, shapes, text and images placed in the world."),
     ("net", "HTTP, TCP, UDP, local pipes and sockets, and links (the net permission)."),
     ("ipc", "Messages between game windows on this computer (multibox)."),
@@ -2400,7 +2400,7 @@ pub const NAMESPACES: &[(&str, &str)] = &[
         "Doing things in the game: casting, items, equipment, targeting, moving, menus (actions or automation).",
     ),
     ("res", "Game data from the DATs: items, spells, abilities, statuses, zones, messages, names."),
-    ("fs", "Files in the mod's data folder (and its own files, read only)."),
+    ("fs", "Files in the mod's data folder (and its files, read only)."),
     ("json", "JSON text to Lua tables and back."),
     ("mods", "The other mods: the list, calls into them, events to them."),
     ("text", "Shift-JIS and auto-translate phrases in strings."),

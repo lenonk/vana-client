@@ -352,7 +352,7 @@ pub fn changed(w: &mut World) -> Option<(u64, Vec<Key>, u16, u8)> {
     };
     let mut all = all;
     super::layout::overrides(w, &mut all);
-    // Mannequins are PC-look actors, not models of their own (FUN_101cd3b0 type 14).
+    // Mannequins are PC-look actors, not separate models (FUN_101cd3b0 type 14).
     let (mq, want): (Vec<Key>, Vec<Key>) = {
         let ty = |id: u16| w.item_info.as_ref().and_then(|i| i.item(id)).map_or(0, |it| it.item_type);
         all.into_iter().partition(|k| ty(k.2) == MANNEQUIN)

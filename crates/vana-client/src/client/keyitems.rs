@@ -80,7 +80,7 @@ impl KeyItems {
     }
 }
 
-/// The ten categories (FUN_1022a360): each '-' header closes the entries before it, titled by its own name.
+/// The ten categories (FUN_1022a360): each '-' header closes the entries before it, titled by its name.
 pub fn categories(list: &[(u32, String)]) -> Vec<(String, Vec<(u16, String)>)> {
     let mut out = Vec::new();
     let mut cur = Vec::new();
@@ -420,7 +420,7 @@ fn text(gu: &mut GameUi, s: &str, x: f32, y: f32, tint: u32) {
 }
 
 /// FUN_1022a8b0: the waiting lines, the categories (framesus 35 at child (22, 5), the name at (36, 0)), a category's
-/// items (rows from y 12 at their own heights, + 12 between: seen framesus 35 at (22, 5), new keytops3 170 at (18, 1),
+/// items (rows from y 12 at their heights, + 12 between: seen framesus 35 at (22, 5), new keytops3 170 at (18, 1),
 /// the name wrapped at 283), the empty line, the description box; evitem01's question and Yes / No over it.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();

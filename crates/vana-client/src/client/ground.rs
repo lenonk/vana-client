@@ -57,7 +57,7 @@ pub struct Ground {
     /// Zero-length edge: FUN_10161130 marks these and the sweep skips them.
     degenerate: Vec<bool>,
     cells: HashMap<(i32, i32), Vec<u32>>,
-    /// The MZB's own grid, which sets the sweep's face order.
+    /// The MZB's grid, which sets the sweep's face order.
     grid: Option<Grid>,
     /// The player's body for walk_player().
     body: Cell<Body>,
@@ -641,7 +641,7 @@ impl Ground {
 
     /// FUN_101813f0 / FUN_1016a2d0 for the camera lists (FUN_10179390): a ray from 0.51 above the eye 100 down, else
     /// from 0.51 below it 15 up; the nearest face's object names the list (+0xa8, the MZB offset; 0 none or a miss).
-    /// *(inf: door boxes name none; retail links them in lists of their own)*
+    /// *(inf: door boxes name none; retail links them in separate lists)*
     pub fn camera_list(&self, eye: Vec3) -> u32 {
         let hits = || self.hits(eye.x, eye.z);
         let down = hits().filter(|h| h.0 >= eye.y - 0.51 && h.0 <= eye.y + 100.0).min_by(|a, b| a.0.total_cmp(&b.0));

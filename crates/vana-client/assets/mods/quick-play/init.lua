@@ -1,5 +1,5 @@
 -- Plays the chosen character once the lobby shows the character list, once per start (the auto-login add-ons). The
--- password stays the login screen's own (Remember password).
+-- password stays the login screen's (Remember password).
 
 local done = false
 

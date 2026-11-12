@@ -79,7 +79,7 @@ impl<R: Read> FolderStream<'_, R> {
         if data.len() < 2 || &data[..2] != b"CK" {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "bad MSZIP block signature"));
         }
-        // Each MSZIP block is its own deflate stream seeded with the previous 32 KiB;
+        // Each MSZIP block is its deflate stream seeded with the previous 32 KiB;
         // a stored block replays that history into the window.
         self.inflate.reset(false);
         if !self.dict.is_empty() {

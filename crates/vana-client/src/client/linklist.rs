@@ -1,5 +1,5 @@
 //! Linkshell's Link List (MODLOG "Linkshell: the Link List"): "menu    link12", the scresult class on
-//! its own object, listing the members of an equipped linkshell from the search server's group list (kind 2), and the
+//! its object, listing the members of an equipped linkshell from the search server's group list (kind 2), and the
 //! member windows link7..10 (Tell, To Sack / To Pearl, Kick).
 
 use super::World;
@@ -93,7 +93,7 @@ fn acts_for(ours: u8, theirs: u8) -> &'static str {
 
 /// The member window's disabled rows (FUN_101e6900 / 69e0 / 6ac0, FUN_101e6780): rank changes and Kick only through
 /// linkshell 1; the rank change only for members wearing it as their linkshell 1 *(inf)*; Kick not on a holder, on
-/// our own rank, or on ourselves.
+/// our rank, or on ourselves.
 fn off(w: &World, l: &LinkList, name: &str, r: &Record, theirs: u8) -> Vec<u16> {
     let mut off = Vec::new();
     let kick = if name == SACK_SELF { 2 } else { 3 };

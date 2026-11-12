@@ -164,7 +164,7 @@ const MON_PREFIXES: Sig = Sig {
     md5: "97532e5b1c14131bf50a39cd77ac0ebf",
 };
 /// FUN_10161fd0's table 0x103353c8 (0x10336510 in 30261102_0): the colours of in-line codes `1e 00..10` (0 = the
-/// line's own colour). Signed over codes 0..8 only: 30261102_0 gave code 9 a colour (0x60404040, was 0).
+/// line's colour). Signed over codes 0..8 only: 30261102_0 gave code 9 a colour (0x60404040, was 0).
 const CODE_COLOURS: Sig = Sig {
     name: "colour codes",
     hint: &[0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0xc0, 0x40, 0x40, 0xa0, 0x40, 0x40, 0x60],

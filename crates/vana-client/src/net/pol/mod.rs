@@ -168,7 +168,7 @@ pub fn sign_in(c: &Credentials) -> Result<(Session, Pol)> {
 }
 
 /// Signs the member in as Viewer 1.18.15e and FFXiMain do: the chat login; polcore's connect, the member login (4/7)
-/// and its own ChangeMyStatus `(-2, -2, 1, -2, -1, -2)` (POLCON 0x1b, 0x28; both skipped when the chat said so);
+/// and its ChangeMyStatus `(-2, -2, 1, -2, -1, -2)` (POLCON 0x1b, 0x28; both skipped when the chat said so);
 /// app.dll's LoadMyStatus (4/6), handle and character lists (0/9, 1/3) and ChangeMyStatus `(handle, -2, 1, 2, 0, -2)`;
 /// then FFXiMain's `(-2, -1, 0, -2, -1, 1)`, whose reply makes the lobby's session.
 pub fn sign_in_at(c: &Credentials, servers: &Servers) -> Result<(Session, Pol)> {

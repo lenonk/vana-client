@@ -18,7 +18,7 @@
 -- { name, label?, action = { kind = "ma", name = "Cure", target = "t" }?, lines = { <lines after it> } }.
 -- An equip action's target is the equipment slot ({ kind = "equip", name = "Warp Ring", target = "ring1" }); a system
 -- command's name is the command itself ({ kind = "cmd", name = "/attack", target = "t" }). An action's `line`, when
--- set, is the player's own line run in place of the one it builds.
+-- set, is the player's line run in place of the one it builds.
 -- A group entry stands for several: { name, label?, group = { <entry>, ... } }; its slot opens a list of them to pick
 -- one from (src/chooser.lua), the one picked last first.
 --
@@ -210,7 +210,7 @@ M.ACTION_KINDS = COMMAND
 -- The line an action builds: { kind = "ma", name = "Cure", target = "t" } -> /ma "Cure" <t>;
 -- { kind = "equip", name = "Warp Ring", target = "ring1" } -> /equip ring1 "Warp Ring";
 -- { kind = "cmd", name = "/attack", target = "t" } -> /attack <t>; { kind = "cmd", name = "/heal" } -> /heal.
--- An action with its own `line` runs that.
+-- An action with its `line` runs that.
 function M.command(action)
   if not is_table(action) or not COMMAND[action.kind] or trim(action.name) == "" then
     return nil
@@ -233,7 +233,7 @@ function M.command(action)
   return line
 end
 
--- An entry's lines as they run: its action's line, then its own (none for a group: its members run).
+-- An entry's lines as they run: its action's line, then the entry's (none for a group: its members run).
 function M.entry_lines(entry)
   local out = {}
   if is_table(entry.group) then return out end

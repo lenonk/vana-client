@@ -13,7 +13,7 @@ local E = {
 local GRACE = 3.0
 -- A party member's effect list may be older than an effect that just landed.
 local LIST_LAG = 3.0
--- Our own effects that wore off this long ago still count for the action that used them.
+-- Our effects that wore off this long ago still count for the action that used them.
 local LOST_FOR = 1.5
 
 -- Action result messages removing the status in the value from the target (-na, Healing Waltz, Erase / Dispel /
@@ -258,7 +258,7 @@ local function land(c, a, row, kind, id, target, first, value, white, double_up,
   else
     remove_where(b.effects, function(e) return e.status == status end)
   end
-  -- Rolls: a COR keeps two of its own on a target (one as a sub job); the one ending first goes.
+  -- Rolls: a COR keeps two rolls on a target (one as a sub job); the one ending first goes.
   if f == "ROLL" then
     local limit = c.main[1] == 17 and 2 or 1
     local n, best, at = 0, nil, nil
@@ -277,7 +277,7 @@ local function land(c, a, row, kind, id, target, first, value, white, double_up,
   b.effects[#b.effects + 1] = { status = status, name = name, start = t, secs = secs, told = told, tier = row.tier }
 end
 
--- Our melee / ranged hit's additional effect: the weapon's own length for it.
+-- Our melee / ranged hit's additional effect: the weapon's length for it.
 local function procs(a)
   local ranged = a.category == 2
   local t = now()
@@ -348,7 +348,7 @@ local function others(a)
       end
     end
   end
-  -- Arise accepted: the raised player's own Arise action; Reraise for an hour, no origin.
+  -- Arise accepted: the raised player's Arise action; Reraise for an hour, no origin.
   if a.category == 4 and a.param == 494 then
     for i, x in ipairs(arise) do
       if x[1] == a.actor then
@@ -363,7 +363,7 @@ local function others(a)
   end
 end
 
--- An action for anyone: removals, defeats and others' landings end ours; our own (and our pet's) landings start them.
+-- An action for anyone: removals, defeats and others' landings end ours; our (and our pet's) landings start them.
 function E.on_action(a)
   for _, tg in ipairs(a.targets) do
     for _, r in ipairs(tg.results) do

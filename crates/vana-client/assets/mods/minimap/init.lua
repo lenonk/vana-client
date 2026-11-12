@@ -9,7 +9,7 @@ local SPAN_MIN, SPAN_MAX = 48, 512
 local shown = false
 local heading = ""
 local heading_at = -math.huge
--- An older client knows no map element: it draws its own minimap in the bare window, as before.
+-- An older client knows no map element: it draws its minimap in the bare window, as before.
 local legacy = false
 
 -- Only what stands within reach of the map shown: its corners (half the span's map pixels, as yalms, and the diagonal)

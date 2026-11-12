@@ -96,7 +96,7 @@ audio.play_ui(id) -> nothing
 ```
 
 Plays one of the game's interface sounds by id: the sounds its menus make for a cursor move, a selection, a
-cancel and so on. Use it so a mod's own windows and prompts sound like the game's.
+cancel and so on. Use it so a mod's windows and prompts sound like the game's.
 
 **Parameters**
 
@@ -201,7 +201,7 @@ battle, 5 mounted, 6 K.O., 7 and 8 set by events. 0 is an unset slot. The game p
 **Example**
 
 ```lua
--- The zone's own field music while fighting.
+-- The zone's field music while fighting.
 events.on("status_change", function(status)
   local slots = audio.music_slots()
   if status == 1 then audio.music(slots[1]) else audio.music() end

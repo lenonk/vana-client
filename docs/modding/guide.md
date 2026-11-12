@@ -38,7 +38,7 @@ Config → Settings → Mods.
 
 ```toml
 name = "Camp Helper"            # shown on the Mods and Extras pages
-version = "1.2.0"               # your mod's own version
+version = "1.2.0"               # your mod's version
 description = "Helps you camp." # one line
 authors = ["You"]
 permissions = ["actions"]       # what it may do; the player grants each (see Permissions)
@@ -78,7 +78,7 @@ local data = require("data.zones")  -- data/zones.lua, or data/zones/init.lua
 chat.add(util.percent(3, 4) .. "%")
 ```
 
-Each mod has its own Lua world: its globals, tables and functions are not shared with any other mod.
+Each mod has its Lua world: its globals, tables and functions are not shared with any other mod.
 
 ## When your code runs
 
@@ -242,7 +242,7 @@ args = "<name> <words>"             # the words after the command
 [commands.camp]
 help = "Shows the camp timer."      # the command alone (args = "" below)
 args = ""
-forms = [                           # its other forms, each with a line of its own
+forms = [                           # its other forms, each with a separate line
   { args = "start", help = "Starts the timer." },
   { args = "stop", help = "Stops it." },
 ]
@@ -361,9 +361,9 @@ permissions = ["actions", "net"]
 
 | Permission | What it allows |
 | --- | --- |
-| *(none needed)* | Reading the game; your own windows, HUD and drawing; chat output; your commands; sounds; your settings and storage. |
+| *(none needed)* | Reading the game; your windows, HUD and drawing; chat output; your commands; sounds; your settings and storage. |
 | `actions` | Game actions while handling the player's input: in one of your commands, or a click or key in your window or HUD. |
-| `automation` | Game actions at any time: from events, timers, or your own logic. |
+| `automation` | Game actions at any time: from events, timers, or your logic. |
 | `packets.read` | Hooks that read packets. |
 | `packets.write` | Changing, blocking and sending packets. |
 | `input.capture` | Taking keys and the mouse away from the game, and pressing keys. |
@@ -465,11 +465,11 @@ bar, the compass and so on. See [reference/ui.native.md](reference/ui.native.md)
 
 A mod can change the built-in interface as well as add to it. In the modern UI, with the `ui.native` permission:
 
-- **Hide** a panel (`ui.native.hide("focus")`) and draw your own in its place: HUD elements with `anchor = "focus"`
+- **Hide** a panel (`ui.native.hide("focus")`) and draw yours in its place: HUD elements with `anchor = "focus"`
   stand where it was.
 - **Move, scale or fade** a panel (`ui.native.place("target", {x = 600, y = 80, scale = 1.3, alpha = 0.9})`), and find
   where any panel is (`ui.native.rect`).
-- **Fill its slots** (both UIs): your text in a built-in panel, drawn as its own (`ui.native.slot("clock", game.clock())`
+- **Fill its slots** (both UIs): your text in a built-in panel, drawn as the panel's (`ui.native.slot("clock", game.clock())`
   beside the game's clock; `target_distance` and `target_hpp` in the target window).
 - **Reskin** it: replace its sprites with your PNGs, set its palette colours, or give its windows a new frame
   (`ui.skin.sprite`, `ui.skin.colour`, `ui.skin.frame`). Every panel, and every mod's window, draws with them.
@@ -577,7 +577,7 @@ local data = json.decode(fs.read("data.json") or "{}")
 fs.write("data.json", json.encode(data))
 ```
 
-Files go in your mod's own data folder. `fs.read` also finds files shipped in your mod's folder, so data you
+Files go in your mod's data folder. `fs.read` also finds files shipped in your mod's folder, so data you
 include with the mod can be read the same way. See [reference/fs.md](reference/fs.md).
 
 ## Packets

@@ -52,7 +52,7 @@ pub fn append(ctx: &Context, job: &mut LayoutJob, text: &str, font: &FontId, col
         if element(c).is_some() {
             flush(job, &mut run);
             let s = c.to_string();
-            // The placeholder's own advance makes the room (letter spacing goes before a glyph, and is lost at a
+            // The placeholder's advance makes the room (letter spacing goes before a glyph, and is lost at a
             // paragraph's or row's start): its font scaled to the icon's width, the row kept the text's height.
             let (natural, row) =
                 ctx.fonts_mut(|f| (f.layout_no_wrap(s.clone(), font.clone(), color).size().x, f.row_height(font)));

@@ -41,7 +41,7 @@ commands.register("hello", function() ui.open("hello") end)
 
 A window's `elements` is a list of tables, drawn top to bottom in the order given. Every element table has a `type`
 (one of the types below). Most types also need an `id`, a string you choose, which is how `ui.update`, `ui.get` and
-the events name the element. Give each element of a window a different id. The window's own options (`title`,
+the events name the element. Give each element of a window a different id. The window's options (`title`,
 `width`, `help`, `hud`, `frame`, `x` / `y`, `modal`, `popup`, `animate`) are listed under [`ui.window`](#uiwindow).
 
 Every element, of any type, may also have these fields:
@@ -83,7 +83,7 @@ event.
 ### slider
 
 A slider with a number of steps. Enter starts moving it, Left / Right move it, Enter or Escape ends. Each move sends a
-`set` event. The slider shows no number of its own: put the value you want shown in `shown`, and update it when the
+`set` event. The slider itself shows no number: put the value you want shown in `shown`, and update it when the
 slider moves.
 
 | Field | Type | Default | Description |
@@ -111,7 +111,7 @@ A row is either a string (a number or a boolean is shown as text too), or a tabl
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `cells` | `table` | the row table's own list part | The row's cells, one per column. You may instead put the cells straight in the row table: `{"Potion", "12"}`. |
+| `cells` | `table` | the row table's list part | The row's cells, one per column. You may instead put the cells straight in the row table: `{"Potion", "12"}`. |
 | `icon` | `{kind, id}` | none | An icon before the first cell: `kind` is `"item"` (or none), `"status"`, `"spell"` or `"ability"`, as for [`hud.icon`](hud.md#hudicon); `id` is the item, status, spell or ability id (required in an `icon` table). |
 | `colour` | `{r, g, b, a}` | none | The row's text colour. |
 
@@ -328,7 +328,7 @@ fields, all numbers defaulting to `0` unless shown:
 | `"rect"` | `x`, `y`, `w`, `h`, `to`, `line`, `round` | A filled rectangle with its top left at (x, y). With `to` (a colour), it fades from `colour` at the top to `to` at the bottom. With `line` (a width), only its outline is drawn, that thick (`to` is then not used). `round` rounds its corners that much (not with `to`; the classic UI draws square ones). |
 | `"circle"` | `x`, `y`, `r`, `line` | A filled circle centred on (x, y) with radius `r`; with `line`, only its outline, that thick. |
 | `"tri"` | `x1`, `y1`, `x2`, `y2`, `x3`, `y3` | A filled triangle. |
-| `"text"` | `x`, `y`, `text` (default `""`), `size` (default `1`), `align`, `font`, `outline` | Text at (x, y), in the UI's text font: `size` times its small text, `align` `"left"` (the default), `"center"` or `"right"` of `x`, `font = "bold"` for the bold face, `outline` a colour round the letters. The classic UI draws its own font at one size. |
+| `"text"` | `x`, `y`, `text` (default `""`), `size` (default `1`), `align`, `font`, `outline` | Text at (x, y), in the UI's text font: `size` times its small text, `align` `"left"` (the default), `"center"` or `"right"` of `x`, `font = "bold"` for the bold face, `outline` a colour round the letters. The classic UI draws its font at one size. |
 | `"tip"` | `x`, `y`, `w`, `h`, `title`, `text` | Nothing drawn: the tooltip shown while the pointer rests on that rectangle (modern UI). |
 | `"icon"` | `x`, `y`, `size` (default `16`), `kind`, `id` | A square icon with its top left at (x, y), tinted by `colour` (its alpha fades it; the classic UI draws it plain): `kind` is `"item"` (or none), `"status"`, `"spell"` or `"ability"`, as for [`hud.icon`](hud.md#hudicon). `id` is required. |
 
@@ -369,7 +369,7 @@ When the page turns, the cursor moves to the first control that can be seen if i
 ### Folding sections
 
 A `section` folds the elements under it, down to the next `section` or `tabs` element. While it is folded those
-elements are hidden. On a window with pages, a section that has a `page` folds only the elements of its own page and
+elements are hidden. On a window with pages, a section that has a `page` folds only the elements of its page and
 the elements without a page; elements of other pages are not under it.
 
 ### Tips and help
@@ -502,7 +502,7 @@ redraws it with the new elements; the values you give (`at`, `text`, `open` and 
 | `elements` | `table` | `{}` | The elements, top to bottom (see [Window elements](#window-elements)). |
 | `hud` | `boolean` | `false` | A HUD window: it never takes the keys, not from `ui.open` and not from a click. Clicks on its controls still act. |
 | `frame` | `boolean` | `true` | `false` draws the window without its frame. |
-| `x`, `y` | `number` | none | The window's top left corner in the classic UI, in its own units. Give both, or neither. Without them, windows are placed one below and right of the other from the top left. The modern UI places its windows itself and does not use these. |
+| `x`, `y` | `number` | none | The window's top left corner in the classic UI, in its units. Give both, or neither. Without them, windows are placed one below and right of the other from the top left. The modern UI places its windows itself and does not use these. |
 | `modal` | `boolean` | `false` | While a modal window is open it keeps the keys and is the only mod window the pointer reaches; other mod windows cannot take the keys from it. It is centred on the screen (in the classic UI, at `x`, `y` when given). A click outside it does not close it. |
 | `popup` | `boolean` | `false` | A pop-up: a modal window placed with its top left at the pointer, which a click outside it closes (sending `close`). It opens where the pointer is when `ui.open` opens it, or where `ui.open`'s `at` says. |
 | `animate` | `boolean` | `false` | The modern UI fades the window in and grows it up from its bottom edge as it opens, and folds it back down as it closes (about a sixth of a second each way). The classic UI shows and hides it at once. |
@@ -769,7 +769,7 @@ ui.opacity(id, opacity)
 ```
 
 Sets the opacity of one of your windows, its frame and everything in it, as the client draws every window: each
-window, built in or a mod's, carries its own opacity. The player's setting for the window, when there is one,
+window, built in or a mod's, carries its opacity. The player's setting for the window, when there is one,
 wins over yours.
 
 **Parameters**

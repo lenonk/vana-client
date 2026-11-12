@@ -1,12 +1,12 @@
 -- Timers (the timers add-ons): our recasts, the effects on us and our party, and the ones we put on monsters, each in
--- an edge window of its own so /uimodes shows and hides each. The classic UI draws them as the one Timers window with
+-- a separate edge window so /uimodes shows and hides each. The classic UI draws them as the one Timers window with
 -- three sections. The tracking and LandSandBoat's durations are this mod's (engine.lua, durations.lua); other mods add
 -- rows through its service (the `timers` namespace calls it), shown whether the setting is on or not.
 
 local E = require("engine")
 local R = require("rows")
 
--- A client older than the mod's rows (no res.status_info) fills the sections from its own tracking.
+-- A client older than the mod's rows (no res.status_info) fills the sections from its tracking.
 local OWN_ROWS = res.status_info ~= nil
 
 local WINDOWS = {
@@ -19,7 +19,7 @@ local function show()
   for _, w in ipairs(WINDOWS) do
     ui.window(w.id, {
       edge = true, panel = "timers_" .. w.id, resize = true, title = w.title,
-      -- builtin: an older client fills the section from its own tracking (it does not read `groups`).
+      -- builtin: an older client fills the section from its tracking (it does not read `groups`).
       elements = { { type = "timers", id = "rows", section = w.id, builtin = settings.get("on") == true, groups = {} } },
     })
     ui.open(w.id)

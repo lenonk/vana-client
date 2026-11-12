@@ -14,7 +14,7 @@ Addresses are Steven's FFXiMain.dll.
   the width off. Ours draws the world once for both eyes and crops it, which cannot hold two copies: not modelled.
 - The "after-image path" is FUN_10038e10 / FUN_10038a80 (from the actor draw FUN_1002b6e0), which copy actors'
   targets into DAT_1047b958 / 5c, not DAT_1047bb88; none of it touches the distortion copy.
-- FOGENABLE during FUN_10042d00's copy is the element's own (FUN_10046070 -> FUN_100467e0 sets fog before vt +0x48
+- FOGENABLE during FUN_10042d00's copy is the element's (FUN_10046070 -> FUN_100467e0 sets fog before vt +0x48
   draws: on unless op-1 flag 25, the mode by the device caps +0x92d / +0x92e: table fog LINEAR whenever the device
   has FOGTABLE, which every current device does; mode 0x48's fog colour is black, FUN_10045950). The quad is
   XYZRHW with rhw 1, so table fog (W fog for a pre-transformed vertex) uses depth 1: the copy is mixed toward the fog
@@ -25,7 +25,7 @@ Addresses are Steven's FFXiMain.dll.
   most keys; the copy's fog is at most 8.6 levels in most fog-heavy zones (DAT 319, end 29.7) and the whole fog colour
   in DAT 83925 `suny` (start 0, end 0).
 - Ours: `copy_fog` in effects.wgsl for DistModel / DistMorph / DistRing (variants 11, 14 / 15, 12), applied at the
-  lookup (fogging a texel before the bilinear lookup is the same), then the element's own fog as before.
+  lookup (fogging a texel before the bilinear lookup is the same), then the element's fog as before.
 - DistModel (0x1004348e) and DistMorph (0x10043609) call FUN_10042d00 like DistRing (0x100438ea): all three now
   sample the squeezed 256x256 copy (flipped; vs_distmodel / vs_distmorph uv = (s.x, 1 - s.y) + the UV scroll), WRAP
   for DistModel / DistMorph, MIRROR for DistRing. The 256x256 target is one shared texture (EffectsGpu dist_copy) and

@@ -1,4 +1,4 @@
-//! The zone session on its own thread: decodes what the server sends into events and
+//! The zone session on a separate thread: decodes what the server sends into events and
 //! keeps the session alive with our position. Follows zone changes to the next server.
 
 use crate::net::lobby::MapLogin;
@@ -93,7 +93,7 @@ pub struct EntityUpdate {
     /// MonStat (actor +0x124 bits 13..14): 0x00E mask 0x04 without those two bits, @0x2A & 3 (asm 0x1009be5d).
     pub mon_stat: Option<u8>,
     /// 0x00E u32 @0x28 bit 31 -> entity +0x130 bit 18 (FUN_100cd040): the character draws at half alpha, whatever the
-    /// near-camera fade says. Cleared on our own entity by 0x037.
+    /// near-camera fade says. Cleared on our entity by 0x037.
     pub half_fade: Option<bool>,
     /// The face target's ActIndex, (u32 @0x18 >> 17) & 0x7fff with the position (actor +0x1f8; LSB facetarget).
     pub face: Option<u16>,
@@ -158,7 +158,7 @@ pub struct Marks {
     pub silent: bool,
 }
 
-/// Our own plate's fields from 0x037 (MODLOG "Name plate icons"): Flags0 u32 @0x28, Flags1 @0x2c, the linkshell colour
+/// Our plate's fields from 0x037 (MODLOG "Name plate icons"): Flags0 u32 @0x28, Flags1 @0x2c, the linkshell colour
 /// @0x31..0x33, Flags2 @0x34, Flags3 @0x38 (Ballista info @0x39), Monstrosity u16 @0x54, job master @0x58 bit 7, the
 /// ranks @0x5a.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -224,7 +224,7 @@ fn self_plate(p: &SubPacket) -> SelfPlate {
 }
 
 /// The rest of the plate's fields: u8 @0x32 (+0x294 Ballista info) and @0x33 bit 1 trial, bit 6 job master, bits 4..5 /
-/// 2..3 the Belligerency ranks (+0x13c bits 2..3 / 4..5), read on every 0x00D but a despawn; 0x037 has its own places.
+/// 2..3 the Belligerency ranks (+0x13c bits 2..3 / 4..5), read on every 0x00D but a despawn; 0x037 has its places.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PlateExtra {
     pub ballista: u8,
@@ -564,10 +564,10 @@ pub enum NetEvent {
         mode: u8,
     },
     ZoneText(ZoneText),
-    /// s2c 0x067 kind 2 (char sync): the character, the owner of the Mog House being visited (@0x20, our own client
-    /// only; 0 = none / our own) and the 2F flag (@0x27 bit 0, the owner's when visiting).
+    /// s2c 0x067 kind 2 (char sync): the character, the owner of the Mog House being visited (@0x20, our client
+    /// only; 0 = none / ours) and the 2F flag (@0x27 bit 0, the owner's when visiting).
     /// @0x25: the main job's level before any level restriction (player +0x40c42).
-    /// `custom`: CustomProperties @0x18 / @0x1C, our own personal chocobo's look (FUN_1009ab40).
+    /// `custom`: CustomProperties @0x18 / @0x1C, our personal chocobo's look (FUN_1009ab40).
     CharSync {
         id: u32,
         owner: u32,
@@ -691,12 +691,12 @@ pub enum NetEvent {
         bits: [u32; 16],
         seen: [u32; 16],
     },
-    /// Our own equipment changed (0x051).
+    /// Our equipment changed (0x051).
     SelfLook([u16; 9]),
     /// The server is moving us to another zone; a ZoneIn follows.
     Zoning,
     Entity(EntityUpdate),
-    /// Our own status (0x037): LSB Animation @0x30, HP% (u32 @0x28 bits 16-23), and while dead the
+    /// Our status (0x037): LSB Animation @0x30, HP% (u32 @0x28 bits 16-23), and while dead the
     /// seconds until the forced return home (dead_counter1 @0x38, 60 Hz, includes a 6 minute floor).
     /// `dead`: dead_counter1 u32 @0x3C (60 Hz ticks) and dead_counter2 u32 @0x40 (Earth seconds since the Vana'diel
     /// epoch), the time the server sends us home (@0x38 is Flags3).
@@ -761,7 +761,7 @@ pub enum NetEvent {
         ids: [u16; 32],
         ends: [u32; 32],
     },
-    /// Our own HP, MP and TP (0x0DF).
+    /// Our HP, MP and TP (0x0DF).
     Vitals {
         hp: u32,
         mp: u32,
@@ -1065,7 +1065,7 @@ pub enum NetCommand {
     /// Any c2s packet: id and body (after the 4-byte header).
     Packet { id: u16, body: Vec<u8> },
     /// Ours: a packet of a gated id held until FUN_100fc3c0's gate opens for it, where Packet would be dropped (the
-    /// modern storage view's moves, the sorts' 0x03A). The gate's time is the net thread's own, so callers need not
+    /// modern storage view's moves, the sorts' 0x03A). The gate's time is the net thread's, so callers need not
     /// guess it.
     PacketHeld { id: u16, body: Vec<u8> },
     /// c2s 0x0F1 {u16 BuffNo}: cancel a status effect (FUN_100a0590).
@@ -2835,7 +2835,7 @@ mod tests {
         assert_eq!(q.len(), 2);
     }
 
-    /// FUN_100fc3c0 at the call site: once a second per id, each id on its own.
+    /// FUN_100fc3c0 at the call site: once a second per id, each id separately.
     #[test]
     fn call_gate_once_a_second() {
         let t0 = Instant::now();

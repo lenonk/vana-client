@@ -497,7 +497,7 @@ pub static OPS: [Option<Op>; 256] = {
         sub_jumps: &[],
         waits: false,
         stop: false,
-        desc: "FUN_100b2f80: actor u32@1 model vtable +0x298(4cc@9, target u32@5) (run the actor's own scheduler/motion, inferred)",
+        desc: "FUN_100b2f80: actor u32@1 model vtable +0x298(4cc@9, target u32@5) (run the actor's scheduler/motion, inferred)",
     });
     t[0x2d] = Some(Op {
         name: "zone_sched",
@@ -2184,7 +2184,7 @@ pub static OPS: [Option<Op>; 256] = {
         sub_jumps: &[],
         waits: false,
         stop: false,
-        desc: "FUN_100bac90: event actor flags by sub; 0x0f / 0x10 DAT_10489900 = 1 / 0 (unbound PCs keep the s2c 0x00D height); 0x12 / 0x13 +0x128 bit 24 (fishing state 3, read only for our own character)",
+        desc: "FUN_100bac90: event actor flags by sub; 0x0f / 0x10 DAT_10489900 = 1 / 0 (unbound PCs keep the s2c 0x00D height); 0x12 / 0x13 +0x128 bit 24 (fishing state 3, read only for our character)",
     });
     t[0xac] = Some(Op {
         name: "opac",
@@ -2507,7 +2507,7 @@ pub static OPS: [Option<Op>; 256] = {
         sub_jumps: &[],
         waits: false,
         stop: false,
-        desc: "FUN_100afee0: sub0 actor@2 VM (+0xd4): its own op operand @6 = val@8; 1 str@2 = actor@4 name; 2 set@2 = server id (0); 3 set@2 = ActIndex (0xffff); 4 slot val@2 (0..8) of DAT_10480a94 = ActIndex (no reader)",
+        desc: "FUN_100afee0: sub0 actor@2 VM (+0xd4): its op operand @6 = val@8; 1 str@2 = actor@4 name; 2 set@2 = server id (0); 3 set@2 = ActIndex (0xffff); 4 slot val@2 (0..8) of DAT_10480a94 = ActIndex (no reader)",
     });
     t[0xb8] = Some(Op {
         name: "map_marker2",

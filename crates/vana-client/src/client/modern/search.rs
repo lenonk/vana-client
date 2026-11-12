@@ -1,6 +1,6 @@
 //! Type-to-search in the modern lists beyond the magic, ability, item and journal ones (listsearch.rs runs it, the
 //! lists draw its hits in place of their rows): each list's rows as the search sees them, and a pick through the
-//! list's own cursor and Enter (what a click on the row does).
+//! list's cursor and Enter (what a click on the row does).
 
 use super::super::listsearch::{Entry, List, count_note};
 use super::super::{World, bluset, equipwin, pupset, shop};

@@ -79,7 +79,7 @@ fn table() -> &'static HashMap<(u16, u32), u16> {
     })
 }
 
-/// A zone's own scene: LSB's 0x00A carries the zone id as the map number (@0x42), mapped as net::scene_of maps it.
+/// A zone's scene: LSB's 0x00A carries the zone id as the map number (@0x42), mapped as net::scene_of maps it.
 pub fn map_of(zone: u16) -> u16 {
     if zone >= 0x100 { zone + 0x1bc } else { zone }
 }

@@ -4,8 +4,8 @@ The `hud` namespace draws things over the game: texts, filled rectangles, speech
 portraits of actors and item, status, spell or ability icons. Each element has an id you choose. You create it once (`hud.text`, `hud.rect`, ...), change it with `hud.set`
 as things happen, and it stays on screen until you remove it; you do not redraw it every frame. HUD elements draw over
 the game world and the name plates and under every window, in the game world only, and they hide while the player has
-the interface hidden. Each interface draws them as it draws its own: the classic UI with the game's art and fonts, the
-modern UI with its own painter (its faces, smooth shapes, the pack's gauges), so an element looks as a built-in one
+the interface hidden. Each interface draws them as it draws its built-in ones: the classic UI with the game's art and fonts, the
+modern UI with its painter (its faces, smooth shapes, the pack's gauges), so an element looks as a built-in one
 does. None of these functions needs a permission. Clicks, drags and the pointer coming and going on an
 element can be handled with `hud.on`, and any element can carry a tooltip.
 
@@ -250,7 +250,7 @@ progress.
 | `h` | `number` | `8` | Its height in window pixels. |
 | `value` | `number` | `0` | How full it is, 0 to 1 (values outside are cut to that range). |
 | `kind` | `string` | `"hp"` | The fill's colour by kind: `"hp"` green, `"mp"` orange, `"tp"` blue, `"cast"` cyan, `"experience"` violet, `"recast"` grey. Any other value gives the `"hp"` green. |
-| `colour` | `{r, g, b, a}` | none | A fill colour of your own, used instead of `kind`'s. |
+| `colour` | `{r, g, b, a}` | none | A fill colour you choose, used instead of `kind`'s. |
 
 **Returns** nothing.
 
@@ -274,7 +274,7 @@ hud.map(id, spec)
 
 Creates or replaces a window onto the map of the place the player is in, showing what the map window shows there
 (see `game.map`): the map; the game's NO MAP image over the map's place while the map is not yours (or not known to be
-yet), the marker still where you are; or a record's own image where the place needs no map, without a marker. By
+yet), the marker still where you are; or a record's image where the place needs no map, without a marker. By
 default it is centred on the player and follows them. Where no map exists, nothing is drawn.
 
 **Parameters**
@@ -554,7 +554,7 @@ it away.
   that one gets `"drop"` with the dragged element in `from`. That is enough to drag one slot onto another, or to move a bar: set its `x` and
   `y` from `dx` and `dy` while it drags.
 - **Pointer:** `"mouse_enter"` and `"mouse_leave"` come as the pointer comes onto the element and leaves it (with
-  `x` and `y` only). Elements with a `tip` show it on their own; use these for anything more (a slot showing its
+  `x` and `y` only). Elements with a `tip` show it automatically; use these for anything more (a slot showing its
   macro's lines in another element).
 
 **Parameters**
@@ -650,7 +650,7 @@ hud.opacity(window, opacity)
 ```
 
 Sets the opacity of one of your HUD windows: every element whose `window` field names it (`"hud"` for elements that
-name none) draws at it, as the client draws every window, built in or a mod's, at its own opacity. The player's
+name none) draws at it, as the client draws every window, built in or a mod's, at its opacity. The player's
 setting for the window, when there is one, wins over yours.
 
 **Parameters**

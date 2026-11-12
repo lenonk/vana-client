@@ -55,7 +55,7 @@ pub fn key(gu: &GameUi, w: &mut World, key: egui::Key) {
         egui::Key::ArrowRight => (at + 1) % n,
         egui::Key::ArrowUp if at >= row => at - row,
         egui::Key::ArrowDown if at + row < n => at + row,
-        // Escape leaves status select mode (seen in retail; the window's own message 6 does nothing).
+        // Escape leaves status select mode (seen in retail; the window's message 6 does nothing).
         egui::Key::Escape => {
             w.log_focus = 0;
             w.sounds.push(crate::audio::Ui::Cancel as u32);

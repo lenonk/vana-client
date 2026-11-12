@@ -1,5 +1,5 @@
 //! The mouse cursor (mouse object DAT_104e1d4c): its kind from FUN_10125360 and its draw, FUN_10124eb0. Config 0021
-//! picks the game's own sprite cursor (0, the default) or the game folder's Windows cursors (.ani, LoadCursorFromFileA).
+//! picks the game's sprite cursor (0, the default) or the game folder's Windows cursors (.ani, LoadCursorFromFileA).
 //! A cursor pack in the mods shows in both (not retail).
 
 use super::game_ui::GameUi;

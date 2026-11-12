@@ -475,7 +475,7 @@ fn top_edge(m: &super::Modern, screen: Rect, x0: f32, x1: f32) -> f32 {
 /// beside a double chevron. On the top edge it sits under the top bar while that shows. It stays where it was put:
 /// the menu's windows draw over it (user, 2026-10-27). Dragged it slides along its edge, and let go near another it
 /// goes there. With `resize` the grip on its corner away from the edge sizes it (the place's w / h; a double click
-/// gives it back its own), `width` until then. `add` draws the contents (told the side, and whether the height is
+/// gives it back its size), `width` until then. `add` draws the contents (told the side, and whether the height is
 /// set: its body then scrolls in it, edge_body) and says whether its fold button was clicked; the tab's click counts
 /// too. Returns that.
 fn edge_window(
@@ -519,7 +519,7 @@ fn edge_window_up(
     let side = side_of(&place, screen, width);
     let left = side == Side::Left;
     let across = side.across() && !float;
-    // Kept whole on the screen: its top at least its own height (last frame's) above the bottom.
+    // Kept whole on the screen: its top at least its height (last frame's) above the bottom.
     let last = m.rects.borrow().get(key).copied();
     let tall = last.map_or(TAB_H, |r| r.height().max(TAB_H));
     let mut top = (screen.height() * place.y).clamp(screen.min.y, (screen.max.y - tall).max(screen.min.y));
@@ -686,7 +686,7 @@ const MIN_W: f32 = 180.0;
 const MIN_H: f32 = 90.0;
 
 /// The size grip on the corner away from the edge (the bottom one, the top one on the bottom edge): three short
-/// diagonals. Dragged, the size it is pulled to; double-clicked, Vec2::ZERO (its own size again).
+/// diagonals. Dragged, the size it is pulled to; double-clicked, Vec2::ZERO (its size again).
 fn size_grip(ui: &mut Ui, m: &super::Modern, r: Rect, side: Side, id: egui::Id) -> Option<Vec2> {
     let (corner, sx, sy) = match side {
         Side::Right => (pos2(r.min.x + 5.0, r.max.y - 5.0), 1.0, 1.0),
@@ -918,7 +918,7 @@ pub(super) fn edge_frame_shape(
         (true, Side::Top) => egui::CornerRadius { nw: 0, ne: 0, sw: k, se: k },
         (true, Side::Bottom) => egui::CornerRadius { nw: k, ne: k, sw: 0, se: 0 },
     };
-    // The other border styles draw their own (borders.rs), without the jewel.
+    // The other border styles draw theirs (borders.rs), without the jewel.
     if let Some(s) = super::borders::edge(m, ext, round(radius)) {
         return s;
     }
@@ -1189,7 +1189,7 @@ fn arrow(painter: &egui::Painter, c: Pos2, facing: f32, size: f32, m: &super::Mo
     arrow_in(painter, c, facing, size, m.theme.color("gold"));
 }
 
-/// Our own arrow on the minimap and the map overlay: reddish orange, to stand out on the parchment (user, 2026-10-26).
+/// Our arrow on the minimap and the map overlay: reddish orange, to stand out on the parchment (user, 2026-10-26).
 pub(super) const ME: Color32 = Color32::from_rgb(0xf2, 0x55, 0x22);
 
 pub(super) fn arrow_in(painter: &egui::Painter, c: Pos2, facing: f32, size: f32, colour: Color32) {
@@ -1216,7 +1216,7 @@ fn minimap_panel(p: &mut Panels, w: &mut World) {
     let title = if win.title.is_empty() { "Map".to_string() } else { win.title.clone() };
     let (m, ctx) = (p.m, p.ctx);
     let tex = map_texture(m, ctx, &img);
-    // Its own size once resized (the place's w), else Small / Medium / Large as big on screen as the retail-drawn one:
+    // Its size once resized (the place's w), else Small / Medium / Large as big on screen as the retail-drawn one:
     // its layout pixels through the UI's scale.
     let mp = p.place("minimap");
     let d = if mp.w > 0.0 {
@@ -1462,7 +1462,7 @@ fn widescan_panel(p: &mut Panels, w: &mut World) {
     let streaming = w.scan.list_state == 1 || (w.scan.busy && w.scan.list_state != 2);
     let built = (w.scan.generation, w.npc_names.len(), w.my_index);
     if !streaming && m.scan_built.get() != Some(built) {
-        // Named as retail's list (FUN_101fb4b0): players by their own name, NPCs and monsters from the zone's NPC list
+        // Named as retail's list (FUN_101fb4b0): players by their name, NPCs and monsters from the zone's NPC list
         // by index & 0x3ff; nameless ones and ourselves left out.
         let names: std::collections::HashMap<u16, &String> =
             w.npc_names.iter().map(|(id, n)| ((id & 0x3ff) as u16, n)).collect();

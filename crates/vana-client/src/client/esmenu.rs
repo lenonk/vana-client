@@ -136,7 +136,7 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
     }
 }
 
-/// The mouse on mcres20 (rows and page arrows) or mcresmn; the slot editor's own.
+/// The mouse on mcres20 (rows and page arrows) or mcresmn; the slot editor's.
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
     use super::macroedit::generic;
     // The modern layer draws these and takes their mouse.
@@ -337,7 +337,7 @@ fn name(w: &World, row: usize) -> String {
 }
 
 /// FUN_101a6d60: on a row, title slot 2 = the set's name and the help "Equipment Set (#%d)" (group 10 0x75); on an
-/// arrow both cleared. mcresmn shows its own row help under the "Equipment Sets" title.
+/// arrow both cleared. mcresmn shows its row help under the "Equipment Sets" title.
 pub fn bars(gu: &GameUi, w: &World, s: &SetList, bars: &mut super::hudtop::BarText) {
     let focus = |bars: &mut super::hudtop::BarText, name: &str, child: u16| {
         let [help, title] = gu.focus_text(name, child);

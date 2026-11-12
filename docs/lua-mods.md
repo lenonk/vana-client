@@ -116,7 +116,7 @@ Built (client/lua/, modern/modwin.rs), each checked live:
   it would stand now); a HUD element's `anchor` places it from a panel's corner (a replacement where a hidden one
   stands, or beside a shown one: HUD elements draw under panels); `ui.skin` replaces the pack's sprites (keeping their
   logical size and insets), palette colours and window frames (border and gradient); `ui.native.slot` puts a mod's values in a built-in panel's slot (the clock line, the
-  target window's distance and HP %), drawn by the panel as its own text in both UIs. Each undone when its mod
+  target window's distance and HP %), drawn by the panel as its text in both UIs. Each undone when its mod
   unloads. Checked live (modern UI) with the action-bar and panel-tweaks examples: icons, tooltips, a swap and a bar
   moved by drags, a Berserk recast's total, a scaled target window, the location panel replaced, the skin on and off.
 - **Render** (`render`): per entity, while the mod runs (the newest mod's wins): hidden (model and plate), plate name and
@@ -132,7 +132,7 @@ Built (client/lua/, modern/modwin.rs), each checked live:
   point) and `draw.image` (a PNG of the mod's on a world quad: on the ground, upright toward a yaw, or turned to the
   camera; in 8 x 8 pieces for its perspective), both drawn with the HUD behind what stands in front; checked live (a
   circle under us, a label over us, an upright and a camera-facing panel).
-- **Network and other windows:** `net.request` (HTTP(S) on its own thread, the answer to a callback in a later mod
+- **Network and other windows:** `net.request` (HTTP(S) on a separate thread, the answer to a callback in a later mod
   phase; `net`), `net.open_url`; `ipc.send` and the `ipc_message` event between game windows on one machine (local
   UDP, ports listed in the runtime folder; `multibox`). Checked live against a local server and a stand-in window.
   Sockets for companion programs (`net`): `net.connect` / `listen` (TCP out and in, 127.0.0.1 unless asked),
@@ -205,11 +205,11 @@ Built (client/lua/, modern/modwin.rs), each checked live:
   - `chat.line` and `chat.set_line` (open the chat line with text, or close it)
   - test drives' keys and mouse go through the same filters and binds
   - checked live: a key taken (Space left the chat line shut), F9 taken, binds by function and by line, a click's
-    place, the chat line opened by a mod and sent by its own Enter
+    place, the chat line opened by a mod and sent by its Enter
 - **Runtime helpers:**
   - `os.time`, `os.date`, `os.clock`, `os.difftime` (nothing else of `os`)
   - `fs.read` / `write` / `append` / `exists` / `list` / `mkdir` / `remove` / `rename` in the mod's data folder
-    (mod-data/<id>/files), reads falling back to the mod's own files; `shared/...` with `files.shared`; no `..`
+    (mod-data/<id>/files), reads falling back to the mod's files; `shared/...` with `files.shared`; no `..`
   - `json.encode` / `decode`
   - `mods.list` (with each mod's time a frame, memory and errors), `mods.installed` (every mod on disk and bundled:
     enabled, loaded), `mods.provide` / `mods.call` (a function in another mod's VM, values copied; not a suspended
@@ -225,7 +225,7 @@ Built (client/lua/, modern/modwin.rs), each checked live:
   open. Checked live: an autologin port signed in with its sealed password and played a character, stayed loaded
   through the world and logout, and was unloaded as the client closed.
   - checked live: a call returning two values, an emitted table, files written, appended, listed and read back, the
-    mod's own file read, `..` and `shared/` refused, JSON both ways, the os subset, Shift-JIS round trip
+    mod's file read, `..` and `shared/` refused, JSON both ways, the os subset, Shift-JIS round trip
 - **Bundled mods:** `/dps` (the first Extra ported), then Text Auto-Advance, Trust Speech, `/find` and the Map Overlay
   (the Extras as mods, docs/extras-as-mods.md): granted their manifests' permissions, their settings on our Extras tabs (`tab`,
   `place`), carried over from the config (`from`).
@@ -249,7 +249,7 @@ What that covers (counted from source, see the surveys):
 
 | Ecosystem | Surveyed |
 | --- | --- |
-| Windower 4 | 127 official add-ons (115k lines), 42 shared libs, 55 widely used community add-ons, 17 current and 25 deprecated plugins, Windower's own hook features |
+| Windower 4 | 127 official add-ons (115k lines), 42 shared libs, 55 widely used community add-ons, 17 current and 25 deprecated plugins, Windower's hook features |
 | Ashita | 81 official v4 add-ons, 58 v3 add-ons, 191 community add-ons (228 v4 in all), 7 + 27 + 36 plugins |
 
 The heaviest uses: commands (Windower 102 add-ons, Ashita 167), packet reads (58 / 106), chat output (86 / 150 via
@@ -284,7 +284,7 @@ named API call**. Ashita survey section 9 and Windower survey section 14 are the
   - LuaJIT is rejected: its FFI is a sandbox hole, and hooks are unreliable under the JIT. Windower (5.1) and Ashita
     (LuaJIT) add-ons are ported, so syntax differences cost little.
 - **One VM per mod.**
-  - This gives each mod its own memory limit, instruction budget, crash containment and hot reload.
+  - This gives each mod its memory limit, instruction budget, crash containment and hot reload.
   - Every command a mod issues carries its id.
   - Mods talk to each other by copying values: `mods.call(name, fn, ...)` and custom events.
   - VMs live on the main thread; there is no cross-thread Lua.
@@ -292,7 +292,7 @@ named API call**. Ashita survey section 9 and Windower survey section 14 are the
   Windower and Ashita add-ons expect (24 and 16 add-ons sleep inside handlers).
 - **Libraries:**
   - Our explicit set: base (without `dofile` / `loadfile`), `table`, `string`, `math`, `utf8`, `coroutine`.
-  - Plus our own `fs`, `json`, `time`, `bit` helpers, and `string.pack` / `unpack`, which Lua 5.4 already has.
+  - Plus our `fs`, `json`, `time`, `bit` helpers, and `string.pack` / `unpack`, which Lua 5.4 already has.
   - `io`, `os` and `package` are not loaded. `require` resolves inside the mod's folder and the shared lib folder.
   - `load` takes text chunks only, for mods that evaluate user files (GearSwap job files, eval).
 
@@ -361,7 +361,7 @@ through the main thread, only while some mod hooks that direction (an atomic fla
 
 Each installed mod loads for every character and job by default. Its page in the Mods window has two more rows,
 **Per Character** and **Per Job** (config `mods`, the mod's entry: `per_character`, `per_job`, `on`). With either on,
-the mod's switch on the Mods page is that character's, that job's, or that character's job's own, kept in `on` by
+the mod's switch on the Mods page is that character's, that job's, or that character's job's, kept in `on` by
 "<World>-<Name>", "<JOB>" or "<World>-<Name>/<JOB>" (MON in Monstrosity). A character or job never switched follows
 the mod's switch as it was (`enabled`). Entering the world loads the mods on for this character and, once the job is
 known, this job; a job change loads and unloads the mods kept per job. Mods asked for in the lobby (`lobby = true`)
@@ -378,8 +378,8 @@ and revoke them there.
 | Permission | Grants | Needed by (examples) |
 | --- | --- | --- |
 | *(none)* | read state, own windows and HUD, own settings / storage, chat output, own commands, sounds | most trackers, timers, HUDs |
-| `actions` | game actions from the mod's own UI or commands, in response to the player's input | click-to-cast (Nostrum, Rhombus) |
-| `automation` | game actions on the mod's own initiative: cast, target, move, trade, lot, NPC menus | GearSwap, AutoRA, Treasury, HealBot, FastFollow |
+| `actions` | game actions from the mod's UI or commands, in response to the player's input | click-to-cast (Nostrum, Rhombus) |
+| `automation` | game actions on the mod's initiative: cast, target, move, trade, lot, NPC menus | GearSwap, AutoRA, Treasury, HealBot, FastFollow |
 | `packets.read` | raw packet hooks, read only | 58 / 106 add-ons |
 | `packets.write` | modify, block, inject | battlemod, DressUp, organizer, GearSwap |
 | `input.capture` | swallow keys and mouse, synthesise keys | Tab, Yush, autoenterkey |
@@ -502,14 +502,14 @@ or `actions` (4.8).
 - Needs `packets.read` / `packets.write`.
 
 ### 4.8 `actions`
-Direct game actions, all through the same code the player's own actions take:
+Direct game actions, all through the same code the player's actions take:
 - **Combat:** cast, use an ability, weapon skill or item, ranged attack, attack and disengage, target, assist.
 - **Items:** equip and equip sets; move, sort, drop and stack items, get from and put into storage.
 - **Treasure and buffs:** lot and pass; cancel a buff.
 - **Job setups:** set and reset BLU spells and PUP attachments.
 - **World:** widescan tracking; trade, sell and buy; answer NPC menus (event options through 0x05B / 0x05C).
 - **Social:** party invite and reply, mounting.
-- **Movement:** run in a direction or to a point, turn, follow, walk toggle, stop. These are synchronised with our own
+- **Movement:** run in a direction or to a point, turn, follow, walk toggle, stop. These are synchronised with our
   movement and autorun code.
 
 Requires `actions` or `automation`.
@@ -522,7 +522,7 @@ Requires `actions` or `automation`.
 - **Icons as UI images** for items, statuses, jobs and spells, usable in widgets and the HUD.
 - **Game text:** dialogue text by zone and id, and zone NPC lists.
 - **Raw DAT bytes** by file id, read-only and through the DAT overlay (equipviewer, boxdestroyer).
-- **Bundled data:** mob databases and similar are the mod's own data files.
+- **Bundled data:** mob databases and similar are the mod's data files.
 
 ### 4.10 `ui`: widgets, HUD and native windows
 - **Windows:**

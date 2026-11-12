@@ -221,7 +221,7 @@ pub(super) fn list(
 }
 
 /// The count asked (itemctrl's for a stack, or the amount to make): the value of most and its keys as buttons (itemctrl's
-/// own "-", "+", "1", "All"), OK and Cancel.
+/// "-", "+", "1", "All"), OK and Cancel.
 pub(super) fn count_row(
     ui: &mut Ui,
     m: &super::Modern,

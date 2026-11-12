@@ -309,7 +309,7 @@ fn pose_actors(@builtin(workgroup_id) wg: vec3<u32>, @builtin(local_invocation_i
                 if (i == 0u) { q3 = qi; } else { q7 = qi; }
             }
         }
-        // The neck turns by its share; the head by both, about its own pivot (bone locals turned against the neck's
+        // The neck turns by its share; the head by both, about its pivot (bone locals turned against the neck's
         // pre-look rotation, FUN_1002ac60's second loop).
         if (look_w > 0.0 && (b == look_a || b == look_b)) {
             for (var k = 0u; k < 6u; k = k + 3u) {
@@ -320,7 +320,7 @@ fn pose_actors(@builtin(workgroup_id) wg: vec3<u32>, @builtin(local_invocation_i
         }
         emit(sc, b, out, n_from, blend);
     }
-    // Pass 1: each carry bone on its grip (its own scale kept), then the held subtrees in order.
+    // Pass 1: each carry bone on its grip (its scale kept), then the held subtrees in order.
     for (var i = 0u; i < 2u; i = i + 1u) {
         if (grips[i] == NO_BONEu) { continue; }
         let c = grips[i] & 0xffffu;

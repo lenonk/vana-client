@@ -1,4 +1,4 @@
-//! FFXiMain's option store, keyed by its own config ids (table built by FUN_1018d1c0's FUN_1018e330 calls, US
+//! FFXiMain's option store, keyed by its config ids (table built by FUN_1018d1c0's FUN_1018e330 calls, US
 //! values; records 0x2c bytes: value +8, kind +0xc, min +0x18, max +0x1c, default +0x20, flag +0x28).
 //! Set = FUN_1018ecb0: a value outside [min, max] (signed, unless max is -1) becomes the default. Kind 4 lives in
 //! the character's cnf.dat, kind 6 in tig.dat, kinds 1 / 2 are PlayOnline-wide, kind 5 is never saved.

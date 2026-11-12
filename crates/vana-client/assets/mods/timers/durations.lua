@@ -250,7 +250,7 @@ function M.caster(lost, tp, roll_on_me, pet_tp)
       for _, x in ipairs(M.item_mods(piece, c.main[2], p.zone)) do add(c, x[1], x[2]) end
     end
   end
-  -- Mods our own effects add, and the BRD job point gift.
+  -- Mods our effects add, and the BRD job point gift.
   local s = 0
   if c.main[1] == 20 and c.main[2] >= 20 then s = 3 * math.floor((c.main[2] - 10) / 10) end
   local arts_w = c:has(358) or c:has(401)

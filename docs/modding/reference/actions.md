@@ -118,7 +118,7 @@ Target forms, as the game's commands read them (the target is looked up when the
 | Form | Means |
 | --- | --- |
 | nil | You, for a spell or ability that can only target you; otherwise your current target, or you when nothing is targeted and you can be its target. |
-| an integer | A server id (`entity.id`) of anything the client knows in the zone (players, NPCs, monsters), or your own. |
+| an integer | A server id (`entity.id`) of anything the client knows in the zone (players, NPCs, monsters), or yours. |
 | `"<t>"` | Your current target. |
 | `"<me>"` | Yourself. |
 | `"<bt>"` | The living monster with the lowest index that you or a party member has claimed. |
@@ -127,7 +127,7 @@ Target forms, as the game's commands read them (the target is looked up when the
 | `"<scan>"` | The entity you are tracking with Wide Scan. |
 | `"<p0>"` .. `"<p5>"`, `"<a10>"` .. `"<a15>"`, `"<a20>"` .. `"<a25>"`, `"<focust>"` | The party / alliance slot's member (or the focus target), by name. |
 | `"<st>"`, `"<stpc>"`, `"<stnpc>"`, `"<stpt>"`, `"<stal>"` | Opens the game's target cursor (any, players, NPCs, party, alliance); the spell goes off when the player picks. Refused in an event or a Mog House. |
-| a name | A player in the zone near you (a name of 3 to 15 letters matches in any case), or your own name; for `cast` and `ability` also your pet or a trust in your party. |
+| a name | A player in the zone near you (a name of 3 to 15 letters matches in any case), or your name; for `cast` and `ability` also your pet or a trust in your party. |
 
 The command line also passes through every mod's `filters.typed` filter, as a typed line does.
 
@@ -833,7 +833,7 @@ commands.register("hello", function()
 end)
 ```
 
-Nothing happens during an event, while an earlier talk is still waiting for the server, for a player, or for an NPC that is not shown, is hidden, or is despawning. Refused with the game's line while mounted or invisible, and with "Target out of range." beyond 6 yalms. Your own Mog House door opens its exit menu.
+Nothing happens during an event, while an earlier talk is still waiting for the server, for a player, or for an NPC that is not shown, is hidden, or is despawning. Refused with the game's line while mounted or invisible, and with "Target out of range." beyond 6 yalms. Your Mog House door opens its exit menu.
 
 ## `actions.choose`
 
@@ -1149,7 +1149,7 @@ asked for the jobs. Only in a Mog House, or in a zone whose moogle menu works ou
 commands.register("wardnc", function() actions.change_job(1, 19) end)
 ```
 
-Problems are printed in the log in red: `actions.change_job: only in a Mog House or where a moogle can change jobs`, `that main job is not unlocked`, `that support job cannot be set`, `a job change is under way`, `those are the jobs already`. Whether the server agrees is its own.
+Problems are printed in the log in red: `actions.change_job: only in a Mog House or where a moogle can change jobs`, `that main job is not unlocked`, `that support job cannot be set`, `a job change is under way`, `those are the jobs already`. Whether the server agrees is up to it.
 
 ## `actions.auction_bid`
 
@@ -1569,7 +1569,7 @@ Opens a game window as its row in the main menu does, without the main menu bein
 | `linkshell` | Linkshell |
 | `synthesis` | Synthesis |
 | `region` | Region Info |
-| `map` | Map; in your own Mog House the moogle's menu |
+| `map` | Map; in your Mog House the moogle's menu |
 | `missions` | Missions |
 | `quests` | Quests |
 | `key_items` | Key Items |

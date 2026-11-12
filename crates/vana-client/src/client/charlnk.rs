@@ -27,7 +27,7 @@ pub struct CharLnk {
     pub name: String,
     pub mode: u8,
     pub ranked: bool,
-    /// fulllog +0x2c (our own line: rows 1..8 off, our name at the top) and +0x2d (a chat mode: Copy on).
+    /// fulllog +0x2c (our line: rows 1..8 off, our name at the top) and +0x2d (a chat mode: Copy on).
     pub own: bool,
     pub chat: bool,
     /// +0x56: the text from the cursor's row to the line's end (Copy).
@@ -69,7 +69,7 @@ pub fn open(w: &mut World, line: Option<(usize, String)>) {
     w.sounds.push(Ui::Select as u32);
 }
 
-/// The name drawn at its top (+0x458): ours on our own line.
+/// The name drawn at its top (+0x458): ours on our line.
 pub fn shown_name<'a>(w: &'a World, c: &'a CharLnk) -> &'a str {
     if c.own { &w.name } else { &c.name }
 }
@@ -257,7 +257,7 @@ pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: 
     );
 }
 
-/// Help slot 1 and the title: the row's own.
+/// Help slot 1 and the title: the row's.
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     let Some(c) = &w.charlnk else { return };
     let [help, title] = gu.focus_text(CHARLNK, c.cursor);

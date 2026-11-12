@@ -267,7 +267,7 @@ fn list(p: &mut Panels, w: &mut World) {
             ui.label(egui::RichText::new(hint).size(m.theme.small).color(m.theme.color("gold")));
         }
         if ui.rect_contains_pointer(ui.max_rect()) {
-            // The wheel's own events (line notches; pixel deltas as 50 points a notch), not egui's smoothed scroll.
+            // The wheel's events (line notches; pixel deltas as 50 points a notch), not egui's smoothed scroll.
             mouse.wheel = ui.input(|i| {
                 i.events
                     .iter()
@@ -305,7 +305,7 @@ fn win_mut(w: &mut World) -> Option<(&mut usize, &mut Option<Sub>, &mut Option<S
     }
 }
 
-/// The list's mouse through retail's own keys: a button sets its window's cursor, then Enter.
+/// The list's mouse through retail's keys: a button sets its window's cursor, then Enter.
 fn apply(w: &mut World, mouse: Mouse, sort: Option<SortWin>, sub: Option<Sub>) {
     if let Some(yes) = mouse.drop {
         if let Some((_, Some(Sub::Drop { yes: y, .. }), _)) = win_mut(w) {

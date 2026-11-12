@@ -1,4 +1,4 @@
--- Our HP, MP and TP as large bars near the middle of the screen (the player bar add-ons), in the HUD's own gauges.
+-- Our HP, MP and TP as large bars near the middle of the screen (the player bar add-ons), in the HUD's gauges.
 
 local KINDS = { { "hp", "HP" }, { "mp", "MP" }, { "tp", "TP" } }
 local last

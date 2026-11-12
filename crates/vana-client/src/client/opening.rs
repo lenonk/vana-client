@@ -1,4 +1,4 @@
-//! The opening movie before the title (config 0022; CXiOpening, FUN_10017a90): mov999.pmv decoded on its own thread
+//! The opening movie before the title (config 0022; CXiOpening, FUN_10017a90): mov999.pmv decoded on a separate thread
 //! (mpeg1.rs) and shown on black, music999.bgw as the music; any input skips it.
 
 use std::path::Path;

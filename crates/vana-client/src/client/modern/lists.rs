@@ -583,7 +583,7 @@ fn list(p: &mut Panels, w: &mut World) {
             }
         }
         if ui.rect_contains_pointer(ui.max_rect()) {
-            // The wheel's own events (line notches; pixel deltas as 50 points a notch), not egui's smoothed scroll.
+            // The wheel's events (line notches; pixel deltas as 50 points a notch), not egui's smoothed scroll.
             wheel = ui.input(|i| {
                 i.events
                     .iter()

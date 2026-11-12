@@ -142,7 +142,7 @@ print(text.strip(text.colour("Wild Rabbit", 8)))  --> Wild Rabbit
 text.colour(text, code) -> string
 ```
 
-`text` in one of the log's in-line colours, then back to the line's own colour, as the game colours names and items
+`text` in one of the log's in-line colours, then back to the line's colour, as the game colours names and items
 in its lines. Put it in a battle filter's lines, `chat.add` text, or a chat filter's rewrite.
 
 **Parameters**

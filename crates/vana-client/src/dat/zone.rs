@@ -327,7 +327,7 @@ pub struct Placement {
     /// From an MZB whose byte 0x1c is 2 (scene slot type 3, FUN_10179430): a voyage zone's world, drawn through the
     /// voyage matrix while the voyage runs (FUN_1017b510).
     pub world: bool,
-    /// Record +0x40 when +0x46 bit 0 is set: its own draw distance, scaled by the Clipping factor instead of the
+    /// Record +0x40 when +0x46 bit 0 is set: its draw distance, scaled by the Clipping factor instead of the
     /// zone's (FUN_1017c9c0).
     pub own_dist: Option<f32>,
     /// Runtime +0xe, D3DRS_NORMALIZENORMALS while it draws (FUN_1017c9c0): set by the loader (FUN_10179430) only for

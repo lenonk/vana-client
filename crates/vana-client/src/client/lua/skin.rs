@@ -61,7 +61,7 @@ fn info(lua: &Lua) -> std::rc::Rc<std::cell::RefCell<super::state::FrameInfo>> {
         .unwrap_or_default()
 }
 
-/// Sets or (None) clears a mod's own change for a name; other mods' changes are left alone. The newest change is the
+/// Sets or (None) clears a mod's change for a name; other mods' changes are left alone. The newest change is the
 /// one in use, so a clear or an unload lets the change before it show again. Whether the change in use moved.
 fn put<T>(map: &mut BTreeMap<String, Vec<(String, T)>>, name: String, me: &str, v: Option<T>) -> bool {
     match v {

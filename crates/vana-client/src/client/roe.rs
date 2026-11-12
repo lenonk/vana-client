@@ -434,7 +434,7 @@ pub fn answer(w: &mut World, a: Ask) {
     }
 }
 
-/// The prompts but the second one open under quest01 (FUN_10119110: its own x, quest01's bottom + 2).
+/// The prompts but the second one open under quest01 (FUN_10119110: its x, quest01's bottom + 2).
 pub fn under_list(a: Ask) -> bool {
     a.kind != AskKind::Reset
 }

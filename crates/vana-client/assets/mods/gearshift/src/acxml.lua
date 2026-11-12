@@ -678,7 +678,7 @@ local function put_set(ctx, name, dlock, dprio, seen)
   if not set then return end
   seen = seen or {}
   if seen[set] then
-    warn("set " .. tostring(name) .. " is its own baseset")
+    warn("set " .. tostring(name) .. " is its baseset")
     return
   end
   seen[set] = true

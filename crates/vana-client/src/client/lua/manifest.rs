@@ -50,7 +50,7 @@ impl Default for Manifest {
 }
 
 /// A declared text command (`[commands.<name>]`): a line on what it does, the words of its main form (`args`; none: it
-/// has only `forms`), and its other forms, each with a line of its own.
+/// has only `forms`), and its other forms, each with a separate line.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Command {

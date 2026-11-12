@@ -146,7 +146,7 @@ pub struct Task {
     pub ends_loop: bool,
     /// The end op was reached on a loop: FUN_10057c20 resets it at the next step (no op runs then).
     pub restart: bool,
-    /// Took its first step when an op created it: the frame's own step passes it by once.
+    /// Took its first step when an op created it: the frame's step passes it by once.
     pub stepped: bool,
     /// +0x140 (op 0x52): the countdown runs on the Vana'diel clock (1/60 Vana'diel seconds).
     pub vana: bool,
@@ -155,7 +155,7 @@ pub struct Task {
     /// +0x143: a model actor's sequence (FUN_100c4730), killed by the next one.
     pub seq: bool,
     /// Started by an event op (0x45 family), or by a task that was: its camera ops (0x04 / 0x81) move the cutscene
-    /// camera. The event's own scheduler (`event_root`) leaves them to client/event.rs's runner, which plays it too.
+    /// camera. The event's scheduler (`event_root`) leaves them to client/event.rs's runner, which plays it too.
     pub event: bool,
     pub event_root: bool,
     /// An `init` start's wanted sub-animation (Effects::on_init), for the tasks of its first step. Retail loads
@@ -173,7 +173,7 @@ impl Task {
         speed: f32,
     ) -> Self {
         // Melee: the attacker's swing is client/combat.rs's plan; the target's side (gurd / pary, a counter's swing)
-        // plays its own motions and holds. A ranged finish plays from its files (shlg -> op 0x77 -> ls?? -> gu2).
+        // plays its motions and holds. A ranged finish plays from its files (shlg -> op 0x77 -> ls?? -> gu2).
         let motions = action.as_ref().is_none_or(|a| {
             let a = a.borrow();
             a.action.category != 1 || a1.id().is_some_and(|id| id != a.action.actor) || !a.client_swing

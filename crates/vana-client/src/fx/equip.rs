@@ -61,7 +61,7 @@ impl Effects {
         }
     }
 
-    /// A new actor on the id (our own at a zone-in).
+    /// A new actor on the id (ours at a zone-in).
     pub fn reset_equip(&mut self, actor: u32) {
         self.equip.remove(&actor);
         self.equip_calls.retain(|c| c.0 != actor);
@@ -107,7 +107,7 @@ impl Effects {
             }
             EquipCall::Kill => {
                 if s.in_on {
-                    // Each of the three is looked up and started on its own.
+                    // Each of the three is looked up and started separately.
                     let found =
                         [cc(b"!kl1"), cc(b"!kl2"), cc(b"!kl3")].map(|name| self.part_scheduler(id, name, actors));
                     if found.iter().any(|f| f.is_err()) {
@@ -135,7 +135,7 @@ impl Effects {
         Ok(false)
     }
 
-    /// FUN_100ce9b0: the part files, then the model's own files.
+    /// FUN_100ce9b0: the part files, then the model's files.
     fn part_scheduler(&mut self, id: u32, name: u32, actors: &dyn Actors) -> Result<Option<Ref>, ()> {
         let (parts, _) = actors.files(id);
         let mut waiting = false;

@@ -112,7 +112,7 @@ pub struct Font {
     /// Shape textures by IMG name (e.g. "font    elfire").
     pub textures: HashMap<String, Texture>,
     pub lang: u8,
-    /// The colours of in-line codes `1e 00..10` (FUN_10161fd0's table; 0 = the line's own colour).
+    /// The colours of in-line codes `1e 00..10` (FUN_10161fd0's table; 0 = the line's colour).
     pub codes: [u32; 17],
 }
 
@@ -343,7 +343,7 @@ impl Font {
         };
         for g in glyphs(sjis) {
             // FUN_10162140: `1e xx` replaces the colour, keeping the draw's alpha: below 0x11 the 17-entry table (0 = the
-            // line's own), from 0x11 the colour-id table (FUN_10129d00, 0x80808080 when absent); `1f xx` mode xx's
+            // line's), from 0x11 the colour-id table (FUN_10129d00, 0x80808080 when absent); `1f xx` mode xx's
             // colour (FUN_10129c70).
             if (-0x1ff..=-0x100).contains(&g) {
                 let xx = (-0x100 - g) as usize;
@@ -492,7 +492,7 @@ const PAIR_BASE: u32 = 0xF0000;
 /// PAIR_BASE + 0x1000.. is free, and it stays clear of the chat icons at U+F0000..U+F0FFF (chaticons::BASE).
 const BYTE_BASE: u32 = PAIR_BASE + 0x1000;
 
-/// The game's own glyphs as Unicode for faces that lack them (the modern interface's): its apostrophe (0x8552) and
+/// The game's glyphs as Unicode for faces that lack them (the modern interface's): its apostrophe (0x8552) and
 /// curly quotes (0x87B2 / 0x87B3); the other private-use characters (gaiji, pairs Shift-JIS lacks, the in-line colour
 /// codes and phrase bytes kept in plane 16) are left out.
 pub fn plain_char(c: char) -> Option<char> {
@@ -565,7 +565,7 @@ pub fn decode_sjis(sjis: &[u8]) -> String {
             if pair[0] == 0xEF && (GAIJI_FIRST..GAIJI_END).contains(&g) {
                 out.push(char::from_u32(0xE000 + (g - GAIJI_FIRST) as u32).unwrap());
             } else {
-                // Pairs standard Shift-JIS lacks are the game's own glyphs (e.g. 0x87B2 / 0x87B3, its curly double
+                // Pairs standard Shift-JIS lacks are the game's glyphs (e.g. 0x87B2 / 0x87B3, its curly double
                 // quotes): kept as private-use U+F0000 + pair so encode_sjis gives the bytes back for the font.
                 // Retail never converts chat (FUN_1011c940 indexes the pair as it is), so a pair that encoding_rs
                 // would encode back as other bytes (NEC row 13 duplicates, the NEC-selected IBM rows 0xED / 0xEE) is
@@ -635,7 +635,7 @@ pub fn encode_sjis(text: &str) -> Vec<u8> {
 mod tests {
     use super::*;
 
-    /// A pair kept as its bytes still reaches the modern faces as its character; the game's own glyphs stay theirs.
+    /// A pair kept as its bytes still reaches the modern faces as its character; the game's glyphs stay theirs.
     #[test]
     fn kept_pairs_plain() {
         for (pair, ch) in [([0x87u8, 0x90], '≒'), ([0x87, 0x9A], '∵'), ([0xFA, 0x4A], 'Ⅰ')] {

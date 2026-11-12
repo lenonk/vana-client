@@ -1,5 +1,5 @@
 -- In typed lines (the translate and chars add-ons): [[words]] -> the auto-translate phrase with that text; <tag> -> a
--- symbol of the game's font. The game's own <t>-style tags are left alone.
+-- symbol of the game's font. The game's <t>-style tags are left alone.
 
 local SYMBOLS = {
   star = "★", wstar = "☆", note = "♪", heart = "♥", wheart = "♡", circle = "○", bcircle = "●", square = "□",

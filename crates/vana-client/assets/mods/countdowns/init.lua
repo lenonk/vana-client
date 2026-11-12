@@ -1,4 +1,4 @@
--- Countdowns in the Timers windows (the timer add-ons): //timer <time> <name>. The resting tick is the client's own.
+-- Countdowns in the Timers windows (the timer add-ons): //timer <time> <name>. The resting tick is the client's.
 
 local mine = {}       -- name -> timer id of its "up" line
 

@@ -275,7 +275,7 @@ fn send_active(w: &mut World, n: u8, bag: u8, slot: u8, active: bool, name: &[u8
 }
 
 /// The linkshell message (spec L5): per linkshell n 1..3 the ask state S+0x9818 + 4n (0 fresh at login, 1 after our
-/// own equip, 2 asked) and the reason S+0x9834 + 4n the reply prints by (0 typed, 1 / 2 asked by the client).
+/// equip, 2 asked) and the reason S+0x9834 + 4n the reply prints by (0 typed, 1 / 2 asked by the client).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct MsgState {
     pub ask: [u8; 4],
@@ -294,7 +294,7 @@ fn ask_message(w: &mut World, n: u8, bag: u8, slot: u8, reason: u8) {
 }
 
 /// LAB_100ea780 after the slot is stored: with an item there, ask for the message the first time (reason 1) or after
-/// our own equip (reason 2); asked either way.
+/// our equip (reason 2); asked either way.
 pub fn on_equip(w: &mut World, n: u8, index: u8, bag: u8) {
     let Some(&state) = w.ls_msg.ask.get(n as usize) else { return };
     if index != 0 && state < 2 {

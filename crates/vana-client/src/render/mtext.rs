@@ -1,4 +1,4 @@
-//! The modern UI's text inside the game UI's own pass (while Modern is on): the bundled Fira Sans faces' glyphs, each
+//! The modern UI's text inside the game UI's pass (while Modern is on): the bundled Fira Sans faces' glyphs, each
 //! rasterized once per size into one atlas uploaded as the UI image "mtext" (again whenever it grows); a string is
 //! its glyphs' quads. Sizes come from the layout-to-screen scale of the last frame, so glyphs are never minified much.
 
