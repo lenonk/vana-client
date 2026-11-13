@@ -4842,7 +4842,17 @@ fn world_hud(
                     let max = rect.map_or(100.0, |r| r[2] - 13.0);
                     let tid = world.target.unwrap_or(0);
                     let tint = name_colour(tid, e, world, |i| gu.ncol(i));
-                    gu.wrapped_name(monstrosity::name(e), max, t.x, t.y, tint, true, e.no_gauge);
+                    // The zone file's name, as retail breaks it after the colon ("Door:" / "House"), not ours with a space.
+                    let file = world.npc_names.get(&tid).filter(|n| colon_space(n) == e.name);
+                    gu.wrapped_name(
+                        file.map_or(monstrosity::name(e), |n| n.as_str()),
+                        max,
+                        t.x,
+                        t.y,
+                        tint,
+                        true,
+                        e.no_gauge,
+                    );
                     // The mods' slots (the bundled Target Info's): the distance left of the HP gauge, the HP percent at the
                     // window's right, on the gauge's row.
                     if !e.no_gauge {
@@ -6268,6 +6278,20 @@ fn npc_names(index: &DatIndex, zone: u16) -> HashMap<u32, String> {
             (id != 0).then(|| (id, String::from_utf8_lossy(name).into_owned()))
         })
         .collect()
+}
+
+/// A space after every colon in an NPC's name ("Door:House" -> "Door: House"). Ours, not retail: the zone files
+/// have none, and retail's target window breaks the name after the colon instead (FUN_101c9fa0).
+pub(crate) fn colon_space(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 2);
+    let mut chars = name.chars().peekable();
+    while let Some(c) = chars.next() {
+        out.push(c);
+        if c == ':' && chars.peek().is_some_and(|n| *n != ' ') {
+            out.push(' ');
+        }
+    }
+    out
 }
 
 /// Lobby/zone GrapIDTbl: [0] is face | race << 8, the rest carry the slot in the top nibble.
@@ -11013,7 +11037,7 @@ impl App {
                 world.npc_names = world.index.as_ref().map(|i| npc_names(i, zone_id)).unwrap_or_default();
                 for (id, e) in world.entities.iter_mut() {
                     if let Some(n) = world.npc_names.get(id) {
-                        e.name = n.clone();
+                        e.name = colon_space(n);
                     }
                 }
                 self.status.clear();
@@ -11862,10 +11886,11 @@ impl App {
                     // FUN_10093430 via the 0x00E handler: the packet's name where it carries one (players, index >= 0x700,
                     // text marked 0x01), else the zone list by server id (FUN_1008a930), else "NPC" (0x1035bb44).
                     if let Some(n) = e.name {
-                        entry.name = n;
+                        entry.name = colon_space(&n);
                     } else if let Some(n) = world.npc_names.get(&e.id) {
-                        if entry.name != *n {
-                            entry.name = n.clone();
+                        let n = colon_space(n);
+                        if entry.name != n {
+                            entry.name = n;
                         }
                     } else if e.kind == EntityKind::Npc && e.index < 0x700 && entry.name.is_empty() {
                         entry.name = "NPC".into();
@@ -20797,6 +20822,17 @@ pub(crate) fn egui_pass(ctx: &egui::Context, raw: egui::RawInput, ui: impl FnMut
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn colon_space() {
+        use super::colon_space as cs;
+        assert_eq!(cs("Door:House"), "Door: House");
+        assert_eq!(cs("Door:\"Marble Bridge\""), "Door: \"Marble Bridge\"");
+        assert_eq!(cs("Gate: Hall of Binding"), "Gate: Hall of Binding");
+        assert_eq!(cs("Rally Point:Red"), "Rally Point: Red");
+        assert_eq!(cs("Ends:"), "Ends:");
+        assert_eq!(cs("Moogle"), "Moogle");
+    }
+
     #[test]
     fn full_keyboard_types_main_block_keys() {
         use egui::Key as K;

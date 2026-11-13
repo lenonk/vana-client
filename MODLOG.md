@@ -24034,3 +24034,14 @@ All of it is the mod's Lua over the general API; the client gained nothing.
   effects) is kept *(ours: only the colour is reset)*.
 - Op 0x62 with tag 0xfefefe00 (25 sites in this scene) finds no scheduler (FUN_10071310 compares the name exactly) and
   only loads and pins the file (FUN_10072200, +0x1a |= 0x10); ours logs "no scheduler" for them.
+
+## NPC names: a space after the colon (2026-11-13)
+
+- The zone name files (0x1a40 + zone) write door and gate names with no space after the colon and keep quotes around
+  shop names: Upper Jeuno 17776739 is `Door:"Marble Bridge"`, 17776740 `Door:House`. Prefixes over every zone: Door
+  (302), Gate (22), Liseran Door, Rally Point, Entrance, Exit; 44 names already have the space (Aht Urhgan zones).
+- Retail shows them as stored: FUN_101c9fa0 (the target window) breaks a name after its first colon onto two lines
+  and keeps the quotes ("Door:" / "\"Marble Bridge\"").
+- Ours (user, 2026-11-13: "there should ALWAYS be a space after the colon"): every NPC name gets a space after a colon
+  where it has none (client colon_space: the zone file names, 0x00E names, event op 0xb5), quotes kept. The classic
+  target window still draws the file's name, so it breaks as retail's.

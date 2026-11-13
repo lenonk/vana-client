@@ -1519,7 +1519,7 @@ impl Host for LiveHost<'_> {
             Effect::Op { op: 0xb5, sub: Some(0), actor, args, .. } => {
                 let id = self.wid(actor);
                 if let (Some(Arg::Name(n)), Some(e)) = (args.first(), self.w.entities.get_mut(&id)) {
-                    e.name = n.chars().take(20).collect();
+                    e.name = super::colon_space(&n.chars().take(20).collect::<String>());
                 }
             }
             // FUN_100b5070: sub 0..7 music slot = val@2; 0x80..0x87 the same with a volume.
