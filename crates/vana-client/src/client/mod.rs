@@ -4842,17 +4842,7 @@ fn world_hud(
                     let max = rect.map_or(100.0, |r| r[2] - 13.0);
                     let tid = world.target.unwrap_or(0);
                     let tint = name_colour(tid, e, world, |i| gu.ncol(i));
-                    // The zone file's name, as retail breaks it after the colon ("Door:" / "House"), not ours with a space.
-                    let file = world.npc_names.get(&tid).filter(|n| colon_space(n) == e.name);
-                    gu.wrapped_name(
-                        file.map_or(monstrosity::name(e), |n| n.as_str()),
-                        max,
-                        t.x,
-                        t.y,
-                        tint,
-                        true,
-                        e.no_gauge,
-                    );
+                    gu.wrapped_name(monstrosity::name(e), max, t.x, t.y, tint, true, e.no_gauge);
                     // The mods' slots (the bundled Target Info's): the distance left of the HP gauge, the HP percent at the
                     // window's right, on the gauge's row.
                     if !e.no_gauge {
@@ -6280,8 +6270,8 @@ fn npc_names(index: &DatIndex, zone: u16) -> HashMap<u32, String> {
         .collect()
 }
 
-/// A space after every colon in an NPC's name ("Door:House" -> "Door: House"). Ours, not retail: the zone files
-/// have none, and retail's target window breaks the name after the colon instead (FUN_101c9fa0).
+/// The modern UI's one-line names get a space after every colon ("Door:House" -> "Door: House"); retail's target
+/// window breaks the name after the colon instead (FUN_101c9fa0), so the files have none.
 pub(crate) fn colon_space(name: &str) -> String {
     let mut out = String::with_capacity(name.len() + 2);
     let mut chars = name.chars().peekable();
@@ -11037,7 +11027,7 @@ impl App {
                 world.npc_names = world.index.as_ref().map(|i| npc_names(i, zone_id)).unwrap_or_default();
                 for (id, e) in world.entities.iter_mut() {
                     if let Some(n) = world.npc_names.get(id) {
-                        e.name = colon_space(n);
+                        e.name = n.clone();
                     }
                 }
                 self.status.clear();
@@ -11886,11 +11876,10 @@ impl App {
                     // FUN_10093430 via the 0x00E handler: the packet's name where it carries one (players, index >= 0x700,
                     // text marked 0x01), else the zone list by server id (FUN_1008a930), else "NPC" (0x1035bb44).
                     if let Some(n) = e.name {
-                        entry.name = colon_space(&n);
+                        entry.name = n;
                     } else if let Some(n) = world.npc_names.get(&e.id) {
-                        let n = colon_space(n);
-                        if entry.name != n {
-                            entry.name = n;
+                        if entry.name != *n {
+                            entry.name = n.clone();
                         }
                     } else if e.kind == EntityKind::Npc && e.index < 0x700 && entry.name.is_empty() {
                         entry.name = "NPC".into();

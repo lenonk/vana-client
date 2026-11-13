@@ -24042,6 +24042,6 @@ All of it is the mod's Lua over the general API; the client gained nothing.
   (302), Gate (22), Liseran Door, Rally Point, Entrance, Exit; 44 names already have the space (Aht Urhgan zones).
 - Retail shows them as stored: FUN_101c9fa0 (the target window) breaks a name after its first colon onto two lines
   and keeps the quotes ("Door:" / "\"Marble Bridge\"").
-- Ours (user, 2026-11-13: "there should ALWAYS be a space after the colon"): every NPC name gets a space after a colon
-  where it has none (client colon_space: the zone file names, 0x00E names, event op 0xb5), quotes kept. The classic
-  target window still draws the file's name, so it breaks as retail's.
+- Ours (user, 2026-11-13): the modern UI, which draws names on one line, puts a space after every colon that has none
+  (colon_space: the target panel, the other-target rows, the battle menu's title and the modern plates); quotes kept.
+  Entity names stay as the files and the server give them, so the classic UI, the chat log and mods are retail's.

@@ -82,7 +82,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         if t == w.my_id {
             Some(monstrosity::my_name(w).to_string())
         } else {
-            w.entities.get(&t).map(|e| monstrosity::name(e).to_string())
+            w.entities.get(&t).map(|e| crate::client::colon_space(monstrosity::name(e)))
         }
     });
     let title = if engaged { "Battle" } else { "Commands" };
