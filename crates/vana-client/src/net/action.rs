@@ -17,6 +17,12 @@ pub mod category {
     pub const ABILITY_START: u8 = 10;
     pub const MOB_SKILL_FINISH: u8 = 11;
     pub const RANGED_START: u8 = 12;
+
+    /// The categories that run from effect files (FUN_100a9230): skill, magic, item and ability finishes, mob
+    /// skills and 0xd..0xf.
+    pub fn by_file(category: u8) -> bool {
+        matches!(category, SKILL_FINISH..=ABILITY_FINISH | MOB_SKILL_FINISH | 0xd..=0xf)
+    }
 }
 
 /// One result (FUN_10185a20 fields; record offsets as FUN_101861b0 copies them).

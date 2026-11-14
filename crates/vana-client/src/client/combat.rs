@@ -1154,6 +1154,9 @@ pub(super) fn message_queue(w: &mut World, dt: f32) {
 /// 0x028. A melee round of several records replays "atk0" per record (op 0x32 jumps back for the next one): one swing,
 /// message and reaction per hit, each after the last swing ends; ours splits the round and queues the rest.
 pub(super) fn on_action(w: &mut World, a: &Action) {
+    if super::event::drops_action(w, a.actor, a.targets.first().map(|t| t.id), a.category) {
+        return;
+    }
     // A new round flushes what is left of the last one at once.
     if let Some((_, rest)) = w.rounds.remove(&a.actor) {
         for r in rest {
@@ -1261,7 +1264,7 @@ fn one_action(w: &mut World, a: &Action) {
     // Skill, magic, item and mob TP actions run from effect files (FUN_100a9230): the caster and every target are held
     // from now until "main" starts (fx releases them; 1800-tick safety, +0x11e); the reactions and messages come from
     // its ops 0x25 / 0x2b.
-    let by_file = matches!(a.category, 3..=6 | 0xb | 0xd..=0xf);
+    let by_file = category::by_file(a.category);
     if by_file {
         for id in std::iter::once(a.actor).chain(a.records().iter().map(|r| r.0)) {
             fx_load(w, id);
@@ -1808,7 +1811,10 @@ pub(super) fn die(actor: &mut Actor, sdep: bool) {
 /// 0x038: a scheduler by name on an actor ("kesu", LSB FadeOut before a despawn: its op 0x29 fades to alpha 0).
 /// LAB_1009dee0 drops it when either actor has +0x124 bit 29 (event op 0x5f sub 1).
 pub(super) fn on_scheduler(w: &mut World, actor: u32, target: u32, name: [u8; 4]) {
-    if super::event::no_038(w, actor) || super::event::no_038(w, target) {
+    if super::event::drops_scheduler(w, actor, target)
+        || super::event::no_038(w, actor)
+        || super::event::no_038(w, target)
+    {
         return;
     }
     w.effects.on_scheduler(actor, actor, u32::from_le_bytes(name));
@@ -1859,7 +1865,7 @@ pub(super) fn on_magic_scheduler(w: &mut World, ids: (u32, u32), indices: (u16, 
             if id == w.my_id { w.my_index == index } else { w.entities.get(&id).is_some_and(|e| e.index == index) };
         known && w.actors.get(&id).is_some_and(|a| a.character.is_some())
     };
-    if !(ok(ids.0, indices.0) && ok(ids.1, indices.1)) {
+    if !(ok(ids.0, indices.0) && ok(ids.1, indices.1)) || super::event::drops_scheduler(w, ids.0, ids.1) {
         return;
     }
     log::debug!("0x03A type {kind} file {file} on {:#x} -> {:#x}", ids.0, ids.1);
@@ -1870,6 +1876,10 @@ pub(super) fn on_magic_scheduler(w: &mut World, ids: (u32, u32), indices: (u16, 
 /// id and index is 0 (LSB's entityVisualPacket at zone-in: '1pb1', 'on00'), else on the two actors, both known by
 /// index and id with their models in. Held until the zone's effects are loaded (retail handles packets after the load).
 pub(super) fn on_map_scheduler(w: &mut World, ids: (u32, u32), indices: (u16, u16), name: [u8; 4]) {
+    // The event's flags as they are when the packet comes in (FUN_1009dd20), not when the held ones run.
+    if ids != (0, 0) && super::event::drops_scheduler(w, ids.0, ids.1) {
+        return;
+    }
     w.map_schedulers.push((ids, indices, name));
 }
 

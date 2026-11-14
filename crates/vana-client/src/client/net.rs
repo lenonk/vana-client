@@ -1104,8 +1104,16 @@ pub fn event_end_body(target: u32, index: u16, option: u32, zone: u16, event: u1
     b
 }
 
-/// s2c 0x032 / 0x034 / 0x033 as LSB writes them (offsets include the header).
+/// s2c 0x032 / 0x034 / 0x033 as LSB writes them (offsets include the header). All three handlers store Mode with
+/// bit 0x2000 set (FUN_100a0200 / FUN_100a02d0 / FUN_100a03c0: `Mode | 0x2000`), so a 0x052 mode 0 does nothing to
+/// an event a packet started; only the 0x00A login event keeps its Mode as sent.
 pub fn event_start(p: &SubPacket) -> EventStart {
+    let mut s = event_start_raw(p);
+    s.mode |= super::event::mode::PACKET_START as u16;
+    s
+}
+
+fn event_start_raw(p: &SubPacket) -> EventStart {
     match p.id {
         0x034 => EventStart {
             target: p.u32(4),
@@ -3173,7 +3181,7 @@ mod tests {
             ],
         );
         let s = event_start(&p);
-        assert_eq!((s.target, s.index, s.zone, s.event, s.mode, s.zone2), (0x010e_607e, 0x7e, 230, 615, 8, 230));
+        assert_eq!((s.target, s.index, s.zone, s.event, s.mode, s.zone2), (0x010e_607e, 0x7e, 230, 615, 0x2008, 230));
         let p = sub(
             0x034,
             0x34,

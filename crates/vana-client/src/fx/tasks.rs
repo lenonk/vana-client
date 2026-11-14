@@ -393,6 +393,11 @@ impl Effects {
         }
     }
 
+    /// FUN_10085450(0): a casting effect still stored for the actor ends (its "st??" runs).
+    pub fn end_cast(&mut self, caster: u32) {
+        self.cast_state(caster, 0);
+    }
+
     /// FUN_10083d60(caster, arg): a stored cast 4cc runs as "st??" (ends the casting effect); +0xa0 = arg either way
     /// (asm 0x10083d83; the decompile's 0 is a stack misread), 0 clearing it.
     fn cast_state(&mut self, caster: u32, arg: u32) {
