@@ -122,7 +122,6 @@ pub fn draw(
     if name.is_empty() {
         return;
     }
-    let name = &crate::client::colon_space(name);
     let em = EM * scale[1];
     let px = BUCKETS.iter().copied().find(|&b| b >= em).unwrap_or(BUCKETS[3]);
     let key = format!("plate {px} {name}");

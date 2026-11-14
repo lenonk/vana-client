@@ -24043,5 +24043,7 @@ All of it is the mod's Lua over the general API; the client gained nothing.
 - Retail shows them as stored: FUN_101c9fa0 (the target window) breaks a name after its first colon onto two lines
   and keeps the quotes ("Door:" / "\"Marble Bridge\"").
 - Ours (user, 2026-11-13): the modern UI, which draws names on one line, puts a space after every colon that has none
-  (colon_space: the target panel, the other-target rows, the battle menu's title and the modern plates); quotes kept.
-  Entity names stay as the files and the server give them, so the classic UI, the chat log and mods are retail's.
+  (colon_space: the target panel, the other-target rows, the right-click menu's title, the compass's tracked name,
+  the Wide Scan rows and the modern plates); quotes kept. The battle menu's title is left: it breaks after the colon
+  as retail's target window (name_lines). Entity names stay as the files and the server give them, so the classic UI,
+  the chat log and a mod's plate name (render.look) are as given.

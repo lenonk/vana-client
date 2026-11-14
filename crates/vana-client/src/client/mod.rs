@@ -2297,14 +2297,19 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
             gu.depth(Some(z));
             let look = looks.get(id);
             let tint = look.and_then(|l| l.plate_tint()).unwrap_or_else(|| name_colour(*id, e, world, |i| gu.ncol(i)));
-            let name = look.and_then(|l| l.name.as_deref()).unwrap_or_else(|| monstrosity::name(e));
+            // A mod's name (render.look) as given; the game's gets the modern UI's colon space.
+            let name = match look.and_then(|l| l.name.as_deref()) {
+                Some(n) => n.into(),
+                None if world.modern => colon_space(monstrosity::name(e)),
+                None => monstrosity::name(e).into(),
+            };
             let p = entity_plate(*id, e);
             let (prefix, icon) = plate::prefix(&p);
             if world.modern {
                 modern::plates::draw(
                     gu,
                     &prefix,
-                    name,
+                    &name,
                     x,
                     y,
                     scale,
@@ -2315,7 +2320,7 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
                     m,
                 );
             } else {
-                gu.name_plate(&prefix, name, x, y, scale, faded(tint), pulse, faded(icon), plate::stars(&p));
+                gu.name_plate(&prefix, &name, x, y, scale, faded(tint), pulse, faded(icon), plate::stars(&p));
             }
         }
     }
@@ -6272,7 +6277,10 @@ fn npc_names(index: &DatIndex, zone: u16) -> HashMap<u32, String> {
 
 /// The modern UI's one-line names get a space after every colon ("Door:House" -> "Door: House"); retail's target
 /// window breaks the name after the colon instead (FUN_101c9fa0), so the files have none.
-pub(crate) fn colon_space(name: &str) -> String {
+pub(crate) fn colon_space(name: &str) -> std::borrow::Cow<'_, str> {
+    if !name.contains(':') {
+        return name.into();
+    }
     let mut out = String::with_capacity(name.len() + 2);
     let mut chars = name.chars().peekable();
     while let Some(c) = chars.next() {
@@ -6281,7 +6289,7 @@ pub(crate) fn colon_space(name: &str) -> String {
             out.push(' ');
         }
     }
-    out
+    out.into()
 }
 
 /// Lobby/zone GrapIDTbl: [0] is face | race << 8, the rest carry the slot in the top nibble.
