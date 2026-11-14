@@ -2275,10 +2275,13 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
         None => true,
         Some(others) => others && (*id >> 24 != 0 || *id == world.my_id),
     };
+    // FUN_10096000: outside a running event's cast, +0x130 bit 7 (0x00E @0x2B 0x08, LSB's HideName) leaves no name.
+    let bound = |id: &u32| world.event.as_ref().is_some_and(|l| l.st.bound.contains(id));
     for (id, e) in world.entities.iter().filter(|(id, e)| {
         !monstrosity::name(e).is_empty()
             && !e.name.starts_with('_')
             && !e.no_plate
+            && !(e.untargetable && !bound(id))
             && !(0xb22..=0xb31).contains(&e.model)
             && visible(id, e)
             && !hidden.contains(id)

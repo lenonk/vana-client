@@ -24034,3 +24034,12 @@ All of it is the mod's Lua over the general API; the client gained nothing.
   effects) is kept *(ours: only the colour is reset)*.
 - Op 0x62 with tag 0xfefefe00 (25 sites in this scene) finds no scheduler (FUN_10071310 compares the name exactly) and
   only loads and pins the file (FUN_10072200, +0x1a |= 0x10); ours logs "no scheduler" for them.
+
+## Name plates: the hidden-name bit
+
+- FUN_10096000 (the plate name getter) returns no name when actor +0x130 bit 7 is set (0x00E u8 @0x2B bit 0x08),
+  unless the actor is bound (+0x120 bit 7) to a running event, where its own +0x12e bit 0 / bit 17 rule applies. So
+  no plate. LSB sets this bit (HideName) on stealth roamers and on Chigoes, which clear it when engaged and set it
+  again when disengaged: retail shows the model with no plate until the fight. Ours: the plate filter in
+  client/mod.rs skips `untargetable` actors that are not in the running event's bound list. Live (Caedarva Mire,
+  Chigoe 11): the plate is up while it attacks.
