@@ -1475,7 +1475,7 @@ fn widescan_panel(p: &mut Panels, w: &mut World) {
                 let name = if e.kind == 0 {
                     e.name.clone()
                 } else {
-                    names.get(&(e.index & 0x3ff)).map(|n| n.to_string()).unwrap_or_default()
+                    names.get(&(e.index & 0x3ff)).map(|n| super::super::colon_space(n).into_owned()).unwrap_or_default()
                 };
                 (!name.is_empty()).then(|| (e.clone(), name))
             })

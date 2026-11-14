@@ -333,7 +333,7 @@ fn actor_rows(w: &World, id: u32) -> Option<(Option<String>, Vec<Row>)> {
     let e = w.entities.get(&id)?;
     let pick = target::picks_allowed(w);
     let name = textcmd::display_name(w, id);
-    let name = if name.is_empty() { e.name.clone() } else { name };
+    let name = super::super::colon_space(if name.is_empty() { &e.name } else { &name }).into_owned();
     let rows: Vec<Row> = if e.mob {
         vec![
             ("Target".into(), Act::Target, pick),
