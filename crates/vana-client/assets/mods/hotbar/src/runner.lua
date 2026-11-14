@@ -1,9 +1,5 @@
--- Runs a multi-line macro.
---
--- Each line is run as if typed. Waits work like the game's macros:
---   /wait 2                  a line that only waits
---   /ma "Cure" <t> <wait 3>  runs the line, then waits
--- A macro that is still running ignores a second press.
+-- Runs a macro's lines as typed commands. "/wait 2" waits; a trailing "<wait 3>" waits after its line. A macro still
+-- running ignores another press.
 
 local M = {}
 
@@ -41,12 +37,7 @@ function M.parse_line(line)
   return "cmd", line
 end
 
-function M.is_running(macro)
-  return running[macro] == true
-end
-
--- `macro` is { name, lines }. Call from a player-input handler (a bind or a click)
--- so the `actions` permission applies, also across the waits.
+-- Call from player input (a bind or click) so the actions permission applies.
 function M.run(macro)
   if type(macro) ~= "table" or type(macro.lines) ~= "table" or running[macro] then
     return
@@ -73,9 +64,8 @@ end
 
 local last_warn = nil
 
--- Like run, but a refused permission becomes one clear chat line (at most one every
--- 5 seconds) instead of an error on every key press: the client suspends a mod that
--- raises 20 errors in a minute. Any other error is raised as before.
+-- run, with a refused permission reported in chat (at most every 5 s) instead of raised: repeated errors would
+-- suspend the mod.
 function M.run_checked(macro)
   local ok, err = pcall(M.run, macro)
   if ok then

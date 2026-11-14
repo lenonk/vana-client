@@ -1,11 +1,8 @@
--- Hotkeys for the bars: a modifier per bar plus one key row shared by all bars, unless a slot has a separate key
--- (any combination, or none). Defaults: bar 1 = 1..0, bar 2 = Ctrl+1..0, bar 3 = Alt+1..0.
--- The choices live in storage.account.keys (string keys only: saved tables
--- come back with text keys).
+-- Bar hotkeys: a modifier per bar and a shared key row, or a slot's own key. Default: 1..=, Ctrl+, Alt+.
+-- Stored in storage.account.keys with string keys.
 
 local M = {}
 
--- label -> key prefix, in the order the editor offers them.
 M.MOD_LABELS = { "None", "Ctrl", "Alt", "Shift", "Ctrl+Alt", "Ctrl+Shift", "Alt+Shift" }
 local MOD_PREFIX = {
   ["None"] = "",
@@ -101,7 +98,7 @@ local function row()
   return ROWS[index_of(M.ROW_LABELS, M.get_row())]
 end
 
--- A slot's key: a combination such as "ctrl+q", "" for none, nil when it takes the bar's.
+-- A slot's own key ("ctrl+q", "" for none), or nil for the bar's.
 function M.get_slot(bar, slot)
   local t = store().slots
   local v = type(t) == "table" and t[bar .. "." .. slot] or nil
@@ -116,12 +113,10 @@ function M.set_slot(bar, slot, combo)
   s.slots[bar .. "." .. slot] = combo
 end
 
--- The bar's key for a slot, e.g. "ctrl+1".
 function M.default_combo(bar, slot)
   return MOD_PREFIX[M.get_mod(bar)] .. (row().keys[slot] or "")
 end
 
--- The key combination for a slot ("" when it has none).
 function M.combo(bar, slot)
   return M.get_slot(bar, slot) or M.default_combo(bar, slot)
 end
@@ -130,7 +125,7 @@ local SHORT_KEY = { pageup = "PgU", pagedown = "PgD", backspace = "BS", insert =
   escape = "Esc", space = "Spc", enter = "Ent", up = "Up", down = "Dn", left = "Lt", right = "Rt", home = "Hm",
   ["end"] = "End", tab = "Tab" }
 
--- Short text for a combination: "ctrl+q" is "CQ", "alt+numpad3" "AN3".
+-- "ctrl+q" -> "CQ", "alt+numpad3" -> "AN3".
 local function short(combo)
   local mods, key = "", combo
   while true do
@@ -146,7 +141,7 @@ local function short(combo)
   return mods .. key
 end
 
--- Short text for the slot's corner, e.g. "C1" or "AF3".
+-- The slot's corner text, e.g. "C1".
 function M.hint(bar, slot)
   local own = M.get_slot(bar, slot)
   if own then
@@ -155,14 +150,12 @@ function M.hint(bar, slot)
   return MOD_SHORT[M.get_mod(bar)] .. (row().hints[slot] or "")
 end
 
--- The hint, or "no key".
 function M.hint_or(bar, slot)
   local h = M.hint(bar, slot)
   return h ~= "" and h or "no key"
 end
 
--- Drops the old binds and binds every slot to fire(bar, slot). A combination two
--- slots share is bound for the first only; the clash is listed by M.conflicts().
+-- Rebinds every slot to fire(bar, slot). A shared combination binds the first slot; the rest are conflicts().
 function M.bind_all(bars, slots, fire)
   for _, combo in ipairs(bound) do
     pcall(binds.unset, combo)
@@ -173,16 +166,12 @@ function M.bind_all(bars, slots, fire)
   for b = 1, bars do
     for s = 1, slots do
       local combo = M.combo(b, s)
-      if combo == "" then
-        -- No key.
-      elseif seen[combo] then
+      if seen[combo] then
         conflicts[#conflicts + 1] = ("%s: bar %d slot %d is taken by bar %d slot %d"):format(
           combo, b, s, seen[combo][1], seen[combo][2])
-      else
+      elseif combo ~= "" then
         seen[combo] = { b, s }
-        local ok, err = pcall(binds.set, combo, function()
-          fire(b, s)
-        end)
+        local ok, err = pcall(binds.set, combo, function() fire(b, s) end)
         if ok then
           bound[#bound + 1] = combo
         else

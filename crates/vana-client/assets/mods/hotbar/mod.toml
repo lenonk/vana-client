@@ -1,20 +1,34 @@
 name = "Hotbars"
-version = "1.8.2"
-description = "Hotbars of multi-line macros with their actions' icons and recasts, loaded by main job and sub job; a macro library with a builder and a palette to drag from."
+version = "1.12.0"
+description = "Hotbars of multi-line macros with their actions' icons and recasts, loaded by main job and sub job; a macro library with a builder and a palette to drag from. Play with the keyboard's hotbars or the gamepad's crossbars (LT, RT or both with the d-pad, face buttons, L1 / R1 and L3 / R3), and switch between them with //hb mode. Gamepad mode needs input.capture (to take the triggers and buttons) and automation (a slot fires from a timer, since a pad filter cannot wait for a macro's waits)."
 authors = ["Arusia"]
-permissions = ["actions", "ui.native"]
+permissions = ["actions", "automation", "input.capture", "ui.native"]
 
 [settings.on]
 type = "bool"
 default = false
 label = "Hotbars"
-help = "Shows the hotbars in an edge window and binds their keys. //hb opens the manager."
+help = "Shows the hotbars in an edge window and binds their keys, or in gamepad mode shows the crossbars and takes the controller's triggers, and with one held its d-pad, face buttons, bumpers and stick clicks. //hb opens the manager; //hb mode switches between the two."
 
 [settings.hide_stock]
 type = "bool"
 default = true
 label = "Hide Stock Macro Bar"
-help = "Hides the game's macro palette while the hotbars show. Its Ctrl and Alt keys still run macros unless a bar uses them."
+help = "Hides the game's macro palette (the hotbars' or the crossbars') while Hotbars shows. Its Ctrl and Alt keys still run macros unless a bar uses them."
+
+[settings.mode]
+type = "enum"
+options = ["Hotbars", "Gamepad"]
+default = "Hotbars"
+label = "Mode"
+scope = "character"
+help = "Hotbars: the keyboard's bars. Gamepad: the controller's crossbars (hold LT, RT or both, then the d-pad, a face button, L1 / R1 or L3 / R3: three sets). //hb mode switches for the session."
+
+[settings.pad_detect]
+type = "bool"
+default = false
+label = "Detect Gamepad"
+help = "Switches to the crossbars when a controller is connected and back to the hotbars when it is gone. //hb mode still switches by hand until the controller comes or goes again."
 
 [settings.visible]
 type = "bool"
@@ -62,6 +76,21 @@ default = true
 label = "Show Key Hints"
 help = "Show each slot's hotkey in its corner."
 
+[settings.pad_size]
+type = "int"
+default = 46
+min = 30
+max = 72
+step = 2
+label = "Crossbar Slot Size"
+help = "Width and height of one crossbar slot in gamepad mode."
+
+[settings.pad_autohide]
+type = "bool"
+default = true
+label = "Crossbar Only While Triggered"
+help = "In gamepad mode, fold the crossbars back to the edge (leaving a button that opens the manager) until LT, RT or both are held, then show only that set. Without a controller, or while the manager or palette is open, all three sets stay shown to set up."
+
 [commands.hb]
 help = "Opens the hotbar manager."
 args = ""
@@ -71,8 +100,12 @@ forms = [
   { args = "more", help = "Shows one more bar." },
   { args = "fewer", help = "Shows one bar fewer." },
   { args = "palette", help = "Opens or closes the macro palette for your job." },
+  { args = "mode", help = "Switches between the keyboard hotbars and the gamepad crossbars." },
+  { args = "mode hotbars", help = "Uses the keyboard hotbars." },
+  { args = "mode gamepad", help = "Uses the gamepad crossbars: hold LT, RT or both, then the d-pad, a face button, L1 / R1 or L3 / R3." },
+  { args = "assign", help = "Starts or ends assigning crossbar slots with the controller (or hold a trigger and press Back; a trigger and Start open the manager): a slot press opens the library's list, A puts the macro there." },
   { args = "run <bar> <slot>", help = "Fires a slot." },
-  { args = "reload", help = "Reads macros.json again." },
+  { args = "reload", help = "Reads this world's macros file (macros-<World>.json) again." },
   { args = "wipestock", help = "Empties the game's macro palette (it can be restored)." },
   { args = "restorestock", help = "Puts the game's macro palette back." },
 ]

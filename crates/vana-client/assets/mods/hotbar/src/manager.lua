@@ -1,11 +1,5 @@
--- The macro manager window.
---
---   Library  a main job's macros as tiles, dragged onto the bars: new, edit, copy, delete, and the palette.
---   Config   the hotkey modifier of each bar, the key row, and a slot's key (changes apply at once).
---   Builder  (New, Edit: in the window's place until Save or Cancel) one macro: an action of a type (spell, job
---            ability, weapon skill, pet command, item, equipment, system command) and its target build the first
---            line (or the player's line in its place); lines typed under it run after it. A "Macro" is typed
---            only. A row that opens a list in the game's menu (Rune Enchantment, Phantom Roll...) opens that list.
+-- The macro manager: Library (the job's macros as tiles: new, edit, copy, delete, drag onto slots), Keys (bar
+-- hotkeys), Help (the mode in use), and the Builder (New / Edit, in the window's place until Save or Cancel).
 
 local data = require("src.data")
 local jobs = require("src.jobs")
@@ -14,43 +8,32 @@ local actions = require("src.actions")
 local builder = require("src.builder")
 local palette = require("src.palette")
 local ghost = require("src.ghost")
+local mode = require("src.mode")
 
 local M = {}
 
--- Set by init.lua: changed() redraws the bars, rebind() rebinds the hotkeys, palette() shows or hides the palette.
+-- Set by init.lua: changed(), rebind(), palette().
 M.hooks = {}
 
 local WIN = "manager"
-local TAB_LIB, TAB_CONFIG = 1, 2
+local TAB_LIB, TAB_KEYS, TAB_HELP = 1, 2, 3
 
 local S = { mj = nil }
 local defined = false
--- Type and Target's element ("dropdown", or "choice" on a client without dropdowns); whether the Builder shows.
-local DROP, building = "dropdown", false
+local DROP, building = "dropdown", false -- "choice" on clients without dropdowns
 local layout, leave_builder
 
--- The library rows as shown (ids, in order) and the builder's state: the entry edited (nil: a new one), the action
--- kind (nil: a macro of typed lines), the action picked ({name}), its target, the player's line in place of the
--- built one (nil: the built one), the search results, the opener whose list is shown ({list, name}), and the slot it
--- was opened from ({bar, slot, main, sub}: the saved macro goes on it), if any.
-local lib_ids = {}
 local open_builder
--- `group` is the members while the macro is a group ({name, action} each), else nil.
+-- Builder state. id: entry edited (nil: new); kind: action kind (nil: typed lines); pick: {name}; line: the
+-- player's line over the built one; opened: {list, name} of an opener shown; group: members ({name, action}).
 local E = { id = nil, kind = "ma", pick = nil, target = "t", line = nil, results = {}, opened = nil, auto_name = nil,
-  slot = nil, group = nil }
+  group = nil }
 local MAX_MEMBERS = 12
--- The Config tab's slot whose own key is set there.
+-- The Keys tab's chosen slot.
 local K = { bar = 1, slot = 1 }
 
 local function say(msg)
   chat.add("Hotbars: " .. msg)
-end
-
--- The icon a list row shows for a macro, from its first action.
-local function row_icon(macro)
-  local a = macro and actions.of(macro)
-  if not a then return nil end
-  return { kind = a.kind, id = a.id }
 end
 
 -- ---------------------------------------------------------------------------
@@ -71,11 +54,7 @@ local function does_text(entry)
   return n == 1 and entry.lines[1] or ("%d lines"):format(n)
 end
 
--- ---------------------------------------------------------------------------
--- Library: the job's macros as tiles
--- ---------------------------------------------------------------------------
-
-local CW, T, TG = 480, 52, 6                      -- the canvas's width, a tile's size, the gap between tiles
+local CW, T, TG = 480, 52, 6 -- canvas width, tile size, gap
 local COLS = math.floor((CW + TG) / (T + TG))
 local TILE = { 10, 17, 24, 255 }
 local TILE_HOVER = { 20, 33, 44, 255 }
@@ -85,8 +64,7 @@ local TILE_TEXT = { 236, 230, 214, 255 }
 local GHOST_BG = { 20, 24, 38, 160 }
 local GHOST_INK = { 255, 255, 255, 170 }
 
--- The tiles shown: {id, entry, act, label, lines}; the chosen one's id; the tile under the pointer; a tile's drag
--- ({n, x, y}: where in the canvas, nil x while it is over another window).
+-- tiles: {id, entry, act, label, tip}. L.sel: chosen id; L.drag: {n, x, y} (x nil outside this canvas).
 local tiles = {}
 local L = { sel = nil, hover = nil, drag = nil }
 
@@ -137,10 +115,9 @@ local function draw_tiles()
     end
     local uses = data.uses(S.mj, t.id)
     add({ type = "tip", x = x, y = y, w = T, h = T, title = t.entry.name or "",
-      text = table.concat(t.lines, "\n") .. ("\n\nOn %d slot%s. Drag onto a slot of the bars; click to choose, "
+      text = t.tip .. ("\n\nOn %d slot%s. Drag onto a slot of the bars; click to choose, "
         .. "right-click to edit."):format(uses, uses == 1 and "" or "s") })
   end
-  -- The dragged tile under the pointer, while it is over this window.
   local g = L.drag and L.drag.x and tiles[L.drag.n]
   if g then
     local gx, gy = L.drag.x - T / 2, L.drag.y - T / 2
@@ -169,7 +146,7 @@ end
 
 local function refresh_library(select_id)
   ui.update(WIN, "job", { text = S.mj or "" })
-  tiles, lib_ids = {}, {}
+  tiles = {}
   if not S.mj then
     ui.update(WIN, "lctx", { text = "Jobs are not loaded yet." })
     draw_tiles()
@@ -178,14 +155,8 @@ local function refresh_library(select_id)
   if select_id then L.sel = tostring(select_id) end
   local still = false
   for i, it in ipairs(data.library(S.mj)) do
-    lib_ids[i] = it.id
     local macro = data.macro_of(S.mj, it.id)
-    local lines = data.entry_lines(it.entry)
-    if macro and macro.group then
-      lines = {}
-      for k, m in ipairs(macro.group) do lines[k] = ("%d. %s"):format(k, m.lines[1] or m.name) end
-    end
-    tiles[i] = { id = it.id, entry = it.entry, lines = lines, act = macro and actions.of(macro),
+    tiles[i] = { id = it.id, entry = it.entry, tip = macro and data.tip_text(macro) or "", act = macro and actions.of(macro),
       label = data.display_label(it.entry) }
     if it.id == L.sel then still = true end
   end
@@ -198,11 +169,7 @@ local function refresh_library(select_id)
   show_selected()
 end
 
-local function selected_entry()
-  return L.sel
-end
-
--- The tiles' events: hover, click to choose, right-click to edit, drag onto the bars.
+-- Hover, click to choose, right-click to edit, drag onto slots.
 local function on_tiles(e)
   if e.kind == "hover" or e.kind == "leave" then
     local n = e.kind == "hover" and tile_at(e.x, e.y) or nil
@@ -222,7 +189,6 @@ local function on_tiles(e)
     if not n then return end
     local t = tiles[n]
     L.drag = { n = n, x = e.x, y = e.y }
-    -- Only the current main job's macros go on the bars.
     if S.mj == jobs.current() then
       palette.start_drag(t.id, t.act, t.label)
     else
@@ -232,7 +198,7 @@ local function on_tiles(e)
     if e.sx then ghost.start(e.sx, e.sy, math.floor(settings.get("size") * hud.screen().ui_scale), t.act, t.label) end
     draw_tiles()
   elseif e.kind == "drag" and L.drag then
-    -- Over this window it draws the tile itself; over another of ours that one does; between them the HUD's ghost.
+    -- The HUD ghost shows only outside our windows; windows draw their own copy.
     local inside = e.x >= 0 and e.y >= 0 and e.x < CW and e.y < math.max(1, math.ceil(#tiles / COLS)) * (T + TG)
     L.drag.x, L.drag.y = inside and e.x or nil, e.y
     if e.sx then
@@ -248,7 +214,7 @@ local function on_tiles(e)
 end
 
 local function copy_selected()
-  local id = selected_entry()
+  local id = L.sel
   local entry = id and data.get_entry(S.mj, id)
   if not entry then return end
   local copy = {}
@@ -259,7 +225,7 @@ local function copy_selected()
 end
 
 local function delete_selected()
-  local id = selected_entry()
+  local id = L.sel
   local entry = id and data.get_entry(S.mj, id)
   if not entry then return end
   local mj = S.mj
@@ -283,7 +249,6 @@ local function type_def()
   return builder.TYPES[builder.type_index(E.kind)]
 end
 
--- The line the picked action builds (nil: none picked).
 local function built_line()
   return E.kind and E.pick and data.command({ kind = E.kind, name = E.pick.name, target = E.target }) or nil
 end
@@ -316,7 +281,7 @@ local function refresh_preview()
   })
 end
 
--- The target menu's choices for the kind and pick, with the target held when it is none of them.
+-- Target choices for the kind and pick, plus the current target if it is not among them.
 local function target_choices()
   if not E.kind then return { { "", "(not used)" } } end
   local choices = {}
@@ -331,7 +296,6 @@ local function target_choices()
   return choices
 end
 
--- The line field shows the player's line, else the one the pick builds.
 local function refresh_line()
   if E.group then
     ui.update(WIN, "line", { label = "Line it builds (none: each member builds one)", text = "" })
@@ -383,7 +347,7 @@ local function refresh_results(query)
     ui.update(WIN, "fcount", { text = "" })
     return
   end
-  -- A group with no search shows its members (a click takes one out).
+  -- A group with no search lists its members; a click removes one.
   if E.group and data.trim(query) == "" and not E.opened then
     E.results = {}
     local rows = {}
@@ -398,7 +362,6 @@ local function refresh_results(query)
     return
   end
   local found, more = builder.find(E.kind, query, E.opened and E.opened.list)
-  -- An opener's list starts with the row back out of it.
   E.results = {}
   local rows = {}
   if E.opened then
@@ -424,17 +387,13 @@ local function refresh_results(query)
 end
 
 local function builder_where()
-  local text = E.id and ('Editing "%s" of %s.'):format((data.get_entry(S.mj, E.id) or {}).name or "?", S.mj or "?")
+  return E.id and ('Editing "%s" of %s.'):format((data.get_entry(S.mj, E.id) or {}).name or "?", S.mj or "?")
     or ("New macro for %s."):format(S.mj or "?")
-  if E.slot then
-    text = text .. (" Save puts it on bar %d, slot %d."):format(E.slot.bar, E.slot.slot)
-  end
-  return text
 end
 
 local function set_kind(kind)
   if kind == E.kind then return end
-  -- A group keeps its members: another type adds other kinds to it.
+  -- A group keeps its members across types.
   E.kind, E.pick, E.line, E.opened = kind, nil, nil, nil
   E.target = kind == "equip" and "main" or kind == "cmd" and "" or "t"
   refresh_results(ui.get(WIN, "q").text)
@@ -442,21 +401,16 @@ local function set_kind(kind)
   refresh_preview()
 end
 
--- Opens the builder on a library entry (`id`), or on a new macro: blank, or `macro` (a slot's macro) as typed
--- lines. `slot` ({bar, slot, main, sub}) is where Save puts it.
-function open_builder(id, slot, macro)
+-- On library entry `id`, or a new macro.
+function open_builder(id)
   if not S.mj then
     say("jobs are not loaded yet.")
     return
   end
   local entry = id and data.get_entry(S.mj, id) or nil
   E.id = entry and tostring(id) or nil
-  E.slot = slot
   E.kind, E.pick, E.target, E.auto_name, E.line, E.opened, E.group = "ma", nil, "t", nil, nil, nil, nil
   local name, label, extra = "", "", ""
-  if macro then
-    entry = { name = macro.name, label = macro.label, lines = macro.lines }
-  end
   if entry then
     name, label = entry.name or "", entry.label or ""
     extra = data.join_lines(entry.lines)
@@ -478,7 +432,6 @@ function open_builder(id, slot, macro)
       E.kind = nil
     end
   end
-  -- The Builder takes the window's place.
   layout(true)
   ui.update(WIN, "name", { text = name })
   ui.update(WIN, "label", { text = label })
@@ -490,14 +443,13 @@ function open_builder(id, slot, macro)
   refresh_preview()
 end
 
--- Into an opener's list (`e`), or back out of it (nil); the search starts over.
+-- Into an opener's list (`e`), or back out (nil).
 local function open_list(e)
   E.opened = e and { list = e.list, name = e.name } or nil
   ui.update(WIN, "q", { text = "" })
   refresh_results("")
 end
 
--- A group's member from a result: its action on the result's usual target.
 local function member_of(e)
   return { name = e.title or e.name, action = { kind = E.kind, name = e.name, target = e.target or "" } }
 end
@@ -532,12 +484,11 @@ local function pick(index)
     return
   end
   local name = data.trim(ui.get(WIN, "name").text)
-  -- The name follows the pick until the player types one.
+  -- The name follows the pick until typed over.
   if name == "" or name == E.auto_name then
     ui.update(WIN, "name", { text = e.title or e.name })
     E.auto_name = e.title or e.name
   end
-  -- A new pick starts on its usual target and the line it builds; picking the same again keeps them.
   if not E.pick or E.pick.name ~= e.name then
     E.target, E.line = e.target, nil
   end
@@ -550,7 +501,7 @@ local function set_target(index)
   local c = target_choices()[index]
   if not c or not E.kind then return end
   E.target = c[1]
-  -- A group's members take it, but those that can take only you stay on <me>.
+  -- Members that target only you keep <me>.
   for _, m in ipairs(E.group or {}) do
     if m.action and m.action.kind ~= "equip" and m.action.kind ~= "cmd"
       and not builder.self_only(m.action.kind, m.action.name) then
@@ -561,7 +512,7 @@ local function set_target(index)
   refresh_preview()
 end
 
--- The results shown as one group slot (an opener's list, a search such as "cure"), or back to one action.
+-- Makes the results a group, or a group back into one action.
 local function toggle_group()
   if E.group then
     E.group = nil
@@ -598,7 +549,6 @@ local function toggle_group()
   refresh_preview()
 end
 
--- The line field typed in: the player's line, or (cleared, or the built one again) none.
 local function line_edited(text)
   if not E.kind then return end
   text = data.trim(text)
@@ -630,17 +580,12 @@ local function save_builder()
     entry.name = c and c.title or entry.action and entry.action.name or entry.lines[1]:sub(1, 24)
   end
   local id = data.save_entry(S.mj, E.id, entry)
-  local s = E.slot
-  if s and s.main == S.mj then
-    data.assign(s.main, s.sub, s.bar, s.slot, id)
-    say(('"%s" is on bar %d, slot %d.'):format(entry.name, s.bar, s.slot))
-  end
   M.hooks.changed()
   leave_builder(id)
 end
 
 -- ---------------------------------------------------------------------------
--- Config
+-- Keys
 -- ---------------------------------------------------------------------------
 
 local function refresh_keys()
@@ -653,7 +598,6 @@ local function refresh_keys()
     text = #c == 0 and "No key clashes." or ("Clash: " .. table.concat(c, "; ")),
     colour = #c == 0 and { 160, 200, 160 } or { 240, 120, 100 },
   })
-  -- The chosen bar's slots: each one's key, the slot's or its bar's.
   local bars = math.min(settings.get("bars"), data.MAX_BARS)
   local slots = math.min(settings.get("slots"), data.MAX_SLOTS)
   K.bar = math.min(K.bar, bars)
@@ -671,6 +615,54 @@ local function refresh_keys()
   ui.update(WIN, "skey", { label = ("Bar %d, slot %d's key"):format(K.bar, K.slot), text = keys.combo(K.bar, K.slot) })
 end
 
+-- ---------------------------------------------------------------------------
+-- Help
+-- ---------------------------------------------------------------------------
+
+local HEAD = { 232, 210, 156 }
+local INK = { 236, 230, 214 }
+
+-- Per mode; a table is a heading.
+local HELP = {
+  [mode.HOTBARS] = {
+    { "Keyboard hotbars" },
+    "Each bar's slots fire with its modifier and the key row (Keys tab),",
+    "or with a click. A group slot opens a list: Up / Down, then Enter.",
+    { "Putting macros on the bars" },
+    "Library tab: New builds a macro for the job; drag a tile onto a slot.",
+    "The Palette (Library tab or //hb palette) has the tiles to drag too.",
+    "Drag a slot onto another to swap them. Right-click a slot for its menu.",
+    { "More" },
+    "//hb show, hide, more, fewer: the bars; //hb mode: the gamepad's.",
+    "The Mods page: bar count, slots, size, key hints, Individual Config.",
+  },
+  [mode.GAMEPAD] = {
+    { "Gamepad crossbars" },
+    "Hold LT, RT or both, then press a d-pad direction, A / B / X / Y,",
+    "L1 / R1 or L3 / R3: three sets of twelve slots.",
+    "A group slot opens a list: d-pad Up / Down, A runs it, B closes it.",
+    "Trigger + Start opens this manager.",
+    { "Assigning with the controller" },
+    "Trigger + Back (or //hb assign) starts assigning: all sets show.",
+    "Trigger + a slot's button opens the library: A puts it on the slot,",
+    "its Clear row empties it. Back, or B with no trigger, ends it.",
+    { "With the mouse" },
+    "Drag a Library or Palette tile onto a crossbar slot.",
+    { "More" },
+    "//hb mode: the keyboard's. The Mods page: Auto-hide, Detect Gamepad.",
+  },
+}
+local HELP_LINES = 14
+
+local function refresh_help()
+  local lines = HELP[mode.get()] or HELP[mode.HOTBARS]
+  for i = 1, HELP_LINES do
+    local l = lines[i]
+    local head = type(l) == "table"
+    ui.update(WIN, "help" .. i, { text = (head and l[1] or l) or "", colour = head and HEAD or INK })
+  end
+end
+
 local function keys_changed()
   M.hooks.rebind()
   M.hooks.changed()
@@ -678,11 +670,10 @@ local function keys_changed()
 end
 
 -- ---------------------------------------------------------------------------
--- The window
+-- Window
 -- ---------------------------------------------------------------------------
 
--- The window's spec: the Builder (`build`), else the Library and Config tabs. Type and Target are `drop` elements:
--- "dropdown", or "choice" on a client without dropdowns.
+-- The Builder (`build`) or the tabs. `drop`: Type and Target's element type.
 local function spec(drop, build)
   if build then
     return {
@@ -715,12 +706,8 @@ local function spec(drop, build)
       },
     }
   end
-  return {
-    title = "Hotbars",
-    width = 520,
-    help = "Drag a macro onto a slot of the bars. Right-click a slot to clear it.",
-    elements = {
-      { type = "tabs", id = "tabs", items = { "Library", "Config" }, at = TAB_LIB },
+  local elements = {
+      { type = "tabs", id = "tabs", items = { "Library", "Keys", "Help" }, at = TAB_LIB },
 
       -- Library
       { type = "input", id = "job", label = "Job", text = "", max = 3, page = TAB_LIB,
@@ -730,31 +717,39 @@ local function spec(drop, build)
       { type = "text", id = "lsel", text = "", dim = true, page = TAB_LIB },
       { type = "buttons", id = "lbtn", items = { "New", "Edit", "Copy", "Delete", "Palette" }, page = TAB_LIB },
 
-      -- Config
-      { type = "text", id = "ktext", text = "Hotkey modifier for each bar:", page = TAB_CONFIG },
-      { type = "choice", id = "mod1", label = "Bar 1", items = keys.MOD_LABELS, at = 1, page = TAB_CONFIG },
-      { type = "choice", id = "mod2", label = "Bar 2", items = keys.MOD_LABELS, at = 1, page = TAB_CONFIG },
-      { type = "choice", id = "mod3", label = "Bar 3", items = keys.MOD_LABELS, at = 1, page = TAB_CONFIG },
-      { type = "choice", id = "row", label = "Keys", items = keys.ROW_LABELS, at = 1, page = TAB_CONFIG },
-      { type = "text", id = "clash", text = "", page = TAB_CONFIG },
-      { type = "buttons", id = "kbtn", items = { "Reset to defaults" }, page = TAB_CONFIG },
-      { type = "separator", page = TAB_CONFIG },
+      -- Keys
+      { type = "text", id = "ktext", text = "Hotkey modifier for each bar:", page = TAB_KEYS },
+      { type = "choice", id = "mod1", label = "Bar 1", items = keys.MOD_LABELS, at = 1, page = TAB_KEYS },
+      { type = "choice", id = "mod2", label = "Bar 2", items = keys.MOD_LABELS, at = 1, page = TAB_KEYS },
+      { type = "choice", id = "mod3", label = "Bar 3", items = keys.MOD_LABELS, at = 1, page = TAB_KEYS },
+      { type = "choice", id = "row", label = "Keys", items = keys.ROW_LABELS, at = 1, page = TAB_KEYS },
+      { type = "text", id = "clash", text = "", page = TAB_KEYS },
+      { type = "buttons", id = "kbtn", items = { "Reset to defaults" }, page = TAB_KEYS },
+      { type = "separator", page = TAB_KEYS },
       { type = "text", id = "kslottext", text = "A slot's key (any key, with Ctrl, Alt or Shift) takes the place of "
-        .. "its bar's:", page = TAB_CONFIG },
-      { type = "choice", id = "kbar", label = "Bar", items = { "1" }, at = 1, page = TAB_CONFIG },
-      { type = "list", id = "kslots", rows = {}, height = 6, page = TAB_CONFIG,
+        .. "its bar's:", page = TAB_KEYS },
+      { type = "choice", id = "kbar", label = "Bar", items = { "1" }, at = 1, page = TAB_KEYS },
+      { type = "list", id = "kslots", rows = {}, height = 6, page = TAB_KEYS,
         columns = { { title = "Slot", width = 44 }, { title = "Key" }, { title = "From", width = 80 } },
         tip = "Enter or click a slot, then press its key." },
-      { type = "key", id = "skey", label = "Key", text = "", page = TAB_CONFIG,
+      { type = "key", id = "skey", label = "Key", text = "", page = TAB_KEYS,
         tip = "Enter or click, then press the slot's key. Backspace: no key." },
-      { type = "buttons", id = "skeyb", items = { "Bar's Key" }, page = TAB_CONFIG,
+      { type = "buttons", id = "skeyb", items = { "Bar's Key" }, page = TAB_KEYS,
         tip = "The slot takes its bar's key again." },
-    },
+  }
+  for i = 1, HELP_LINES do
+    elements[#elements + 1] = { type = "text", id = "help" .. i, text = "", page = TAB_HELP }
+  end
+  return {
+    title = "Hotbars",
+    width = 520,
+    help = "Drag a macro onto a slot of the bars. Right-click a slot to clear it.",
+    elements = elements,
   }
 end
 
 local function define()
-  -- A client older than the dropdown element (1.0.10 and before) gets Type and Target as choices.
+  -- Clients 1.0.10 and older have no dropdown.
   DROP = pcall(ui.window, WIN, spec("dropdown", true)) and "dropdown" or "choice"
   ui.window(WIN, spec(DROP, false))
   building = false
@@ -810,8 +805,7 @@ local function define()
         if e.index == 1 then
           open_builder(nil)
         elseif e.index == 2 then
-          local id = selected_entry()
-          if id then open_builder(id) end
+          if L.sel then open_builder(L.sel) end
         elseif e.index == 3 then
           copy_selected()
         elseif e.index == 4 then
@@ -845,27 +839,30 @@ end
 local function refresh_all(select_id)
   refresh_library(select_id)
   refresh_keys()
+  refresh_help()
 end
 
--- The window as the Builder (New, Edit) or as the Library and Config tabs; it stays open where it is.
 function layout(build)
   building = build
   ui.window(WIN, spec(DROP, build))
 end
 
--- Back from the Builder to the Library (Save, Cancel), `select_id` chosen when given.
+-- Builder -> Library, choosing `select_id`.
 function leave_builder(select_id)
   layout(false)
   refresh_all(select_id)
 end
 
--- Opens the manager on the current main job's library, with `select_id` chosen when given.
 function M.open(select_id)
   ensure()
   S.mj = jobs.current() or S.mj
   layout(false)
   refresh_all(select_id)
   ui.open(WIN)
+end
+
+function M.is_open()
+  return defined and ui.is_open(WIN) or false
 end
 
 function M.toggle()
@@ -877,7 +874,6 @@ function M.toggle()
   end
 end
 
--- Opens the builder on a library entry of the current main job (a palette tile clicked).
 function M.edit_entry(id)
   ensure()
   S.mj = jobs.current() or S.mj
@@ -885,8 +881,7 @@ function M.edit_entry(id)
   ui.open(WIN)
 end
 
--- Redraws the window's lists after the data changed from outside (//hb reload, a palette drop); the Builder keeps
--- its macro until Save or Cancel.
+-- After outside changes; the Builder keeps its macro.
 function M.refresh()
   if defined and not building then
     refresh_all()

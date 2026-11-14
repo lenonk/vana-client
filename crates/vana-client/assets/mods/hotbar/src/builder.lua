@@ -1,9 +1,8 @@
--- What the macro builder offers: the actions of each type you can use now, found by name, and the targets (or, to
--- equip, the slots) a built line can name.
+-- The builder's choices: actions of each type usable now, searchable by name, and their targets or equip slots.
 
 local M = {}
 
--- Builder types, in the order the editor offers them; `kind` is the action's (nil: a macro of typed lines only).
+-- kind nil: typed lines only.
 M.TYPES = {
   { kind = "ma", label = "Spell", search = "Search your spells", column = "Spell" },
   { kind = "ja", label = "Job ability", search = "Search your job abilities", column = "Ability" },
@@ -15,12 +14,10 @@ M.TYPES = {
   { kind = nil, label = "Macro", search = "(not used for a macro: type its lines)", column = "" },
 }
 
--- Game icons that stand in for the commands: an item's, a status effect's or a spell's.
 local ITEM_ICON = function(id) return { kind = "item", id = id } end
 local STATUS_ICON = function(id) return { kind = "status", id = id } end
 
--- The common system commands, as typed (arguments included), with the target each starts on (nil: it takes none)
--- and the icon a slot shows for it (none for some).
+-- System commands: the line, its starting target (nil: none) and a stand-in icon.
 M.COMMANDS = {
   { line = "/attack", title = "Attack", target = "t", does = "Engage the target, or switch to it",
     icon = ITEM_ICON(16535) },                                          -- Bronze Sword
@@ -46,7 +43,6 @@ M.COMMANDS = {
 
 local NO_TARGET = { { "", "(none)" } }
 
--- A command of M.COMMANDS by its line.
 function M.command(line)
   for _, c in ipairs(M.COMMANDS) do
     if c.line == line then return c end
@@ -83,7 +79,7 @@ M.TARGETS = {
   { "p5", "<p5> Party member 6" },
 }
 
--- Equipment slots by bit (res.item's `slots`), with the names /equip takes.
+-- Equipment slots by res.item `slots` bit, as /equip names them.
 M.EQUIP_SLOTS = {
   { "main", "Main" }, { "sub", "Sub" }, { "range", "Range" }, { "ammo", "Ammo" }, { "head", "Head" },
   { "body", "Body" }, { "hands", "Hands" }, { "legs", "Legs" }, { "feet", "Feet" }, { "neck", "Neck" },
@@ -91,8 +87,7 @@ M.EQUIP_SLOTS = {
   { "ring2", "Right ring" }, { "back", "Back" },
 }
 
--- The choices of the target menu for an action kind (and, for a command, the one picked): { {value, label}, ... }.
--- A command that takes no target has only "(none)" (value "").
+-- Target menu choices { {value, label} } for a kind (and command `name`).
 function M.targets_for(kind, name)
   if kind == "equip" then return M.EQUIP_SLOTS end
   if kind == "cmd" then
@@ -102,7 +97,6 @@ function M.targets_for(kind, name)
   return M.TARGETS
 end
 
--- The label of a target value for an action kind.
 function M.target_label(kind, value, name)
   for _, t in ipairs(M.targets_for(kind, name)) do
     if t[1] == value then return t[2] end
@@ -112,8 +106,7 @@ end
 
 local SPELL_KINDS = { "White", "Black", "Summoning", "Ninjutsu", "Song", "Blue", "Geomancy", "Trust" }
 
--- A target from valid-target bits (spells and items): an enemy for one that can hit enemies, yourself for one that
--- only takes you, a party (or alliance) member for one that takes no other player (Refresh: 0x05), else a player.
+-- From valid-target bits: enemy, self only, party / alliance member (no other players), else any player.
 function M.default_target(targets)
   local t = targets or 0
   if t & 0x20 ~= 0 then return "t" end
@@ -122,7 +115,6 @@ function M.default_target(targets)
   return "stpc"
 end
 
--- The first slot an item fits, by its `slots` bits.
 local function first_slot(bits)
   for n = 0, 15 do
     if bits & (1 << n) ~= 0 then return M.EQUIP_SLOTS[n + 1][1] end
@@ -133,9 +125,8 @@ end
 local ABILITY_KIND = { ja = 1, pet = 2, ws = 3 }
 local DEFAULT_TARGET = { ja = "me", pet = "t", ws = "t" }
 
--- The rows that open a sub-list instead of acting (Rune Enchantment, Phantom Roll, Blood Pact: Rage, Ready...), by the
--- kind of the rows in their list: { [kind] = { name, kind = the opener's kind } }. /ja cannot use an opener; the
--- rows of its list are what a macro names (/ja "Ignis" <me>).
+-- Abilities that open a sub-list (Rune Enchantment, Phantom Roll...), keyed by their rows' kind: { name, kind }.
+-- Macros name the rows, not the opener.
 local openers_by_kind
 
 local function openers()
@@ -151,7 +142,7 @@ local function openers()
   return openers_by_kind
 end
 
--- Whether blue magic `id` is set (only set blue magic can be cast), from the BLU side's job data; cached on `me`.
+-- Whether blue magic `id` is set; cached on `me`.
 local function blue_set(id, me)
   if not me._blue then
     me._blue = {}
@@ -163,8 +154,7 @@ local function blue_set(id, me)
   return me._blue[id] == true
 end
 
--- Whether spell `id` is one the magic list offers: a job that has it at our level (as main for SCH's and GEO's
--- main-only spells and gifts), blue magic set. An unknown spell or player counts as castable.
+-- Whether the magic list offers spell `id` at our jobs' levels (main-only spells and gifts as main; blue magic set).
 function M.castable(id, me)
   local s = res.spell(id)
   if not s or not me then return true end
@@ -173,7 +163,7 @@ function M.castable(id, me)
     local jp = s.job_points or {}
     local lv = function(job, level, main)
       if not (job and s.levels[job]) then return false end
-      -- A gift: main job at 99 (the job points it takes are not known here).
+      -- A gift: main job at 99 (job points unknown).
       if jp[job] then return main and (level or 0) >= 99 end
       return s.levels[job] <= (level or 0)
     end
@@ -186,19 +176,16 @@ function M.castable(id, me)
   return not (id >= 0x200 and id < 0x2e0) or blue_set(id, me)
 end
 
--- Every choice of an action kind: { { name, cells = {...}, icon = {kind, id}, target, title?, tip? }, ... } where
--- `target` is the one a new pick starts on, `title` the macro name it suggests (else `name`) and `tip` its description.
+-- Every choice of a kind: { name, cells, icon, target, title?, tip?, list?, under?, kind? }, sorted by name.
 local function all_of(kind)
   local out = {}
   if kind == "cmd" then
-    -- In the list's order, not by name: the common ones first.
     for _, c in ipairs(M.COMMANDS) do
       out[#out + 1] = { name = c.line, title = c.title, target = c.target or "", icon = c.icon,
         cells = { c.target and ("<" .. c.target .. ">") or "", c.does }, search = c.title .. " " .. c.does }
     end
     return out
   elseif kind == "ma" then
-    -- Learned spells our jobs can cast at their levels, as the magic list shows.
     local me = game.player()
     for _, id in ipairs(game.spells()) do
       local s = res.spell(id)
@@ -208,7 +195,7 @@ local function all_of(kind)
       end
     end
   elseif ABILITY_KIND[kind] then
-    -- An opener's row stands for its list (`list` its rows' kind); a row of a list names its opener (`under`).
+    -- An opener has `list` (its rows' kind); a row has `under` (its opener).
     local seen, op = {}, openers()
     for _, id in ipairs(game.abilities()) do
       local a = res.ability(id)
@@ -229,7 +216,7 @@ local function all_of(kind)
       end
     end
   elseif kind == "item" or kind == "equip" then
-    -- Usable items from the inventory and the temporary items; equipment from the inventory and the wardrobes.
+    -- Items: inventory and temporary. Equipment: inventory and wardrobes.
     local bags = kind == "item" and { 0, 3 } or { 0, 8, 10, 11, 12, 13, 14, 15, 16 }
     local by_id = {}
     for _, bag in ipairs(bags) do
@@ -258,7 +245,7 @@ end
 
 M.MAX_RESULTS = 150
 
--- Whether action `name` of a kind can take only yourself (a rune, Utsusemi...): a group's Target leaves it on <me>.
+-- Whether action `name` targets only yourself.
 function M.self_only(kind, name)
   if not ABILITY_KIND[kind] and kind ~= "ma" then return false end
   for _, e in ipairs(all_of(kind)) do
@@ -271,9 +258,8 @@ function M.self_only(kind, name)
   return false
 end
 
--- The choices of an action kind whose names hold `query` (any case), by name; `more` is true when there were more
--- than MAX_RESULTS. With `list` (an opener's), the rows of that list; else the openers and the other rows, and with a
--- query the rows of every list too.
+-- Choices matching `query`, at most MAX_RESULTS (`more` when cut). With `list`, that opener's rows in game order;
+-- else openers and plain rows, plus every list's rows when searching.
 function M.find(kind, query, list)
   local q = tostring(query or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
   local found = {}
@@ -288,7 +274,6 @@ function M.find(kind, query, list)
       found[#found + 1] = e
     end
   end
-  -- An opener's rows in the game's order (Ignis, Gelus, ... Tenebrae), as its menu lists them.
   if list then
     table.sort(found, function(a, b) return (a.icon and a.icon.id or 0) < (b.icon and b.icon.id or 0) end)
   end
@@ -299,7 +284,6 @@ function M.find(kind, query, list)
   return found, more
 end
 
--- The column headings of the results list for an action kind.
 function M.columns(kind)
   local t = M.TYPES[M.type_index(kind)]
   local second, third = "", ""

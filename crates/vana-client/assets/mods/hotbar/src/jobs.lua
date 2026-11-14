@@ -1,10 +1,9 @@
--- Job abbreviations ("RDM") for the player's main and support job.
+-- Job abbreviations ("RDM").
 
 local M = {}
 
 local names = nil
 
--- Abbreviation for a job id, or nil for none (0 / nil).
 function M.abbr(id)
   if not id or id == 0 then
     return nil
@@ -12,13 +11,13 @@ function M.abbr(id)
   return res.job(id)
 end
 
--- Main and sub abbreviations of the current character, and the Player table.
+-- Main, sub, and game.player().
 function M.current()
   local p = game.player()
   return M.abbr(p.main_job), M.abbr(p.sub_job), p
 end
 
--- Normalises typed text ("rdm " -> "RDM") and returns it if it is a real job, else nil.
+-- "rdm " -> "RDM" when it is a job, else nil.
 function M.parse(text)
   local up = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", ""):upper()
   if up == "" then

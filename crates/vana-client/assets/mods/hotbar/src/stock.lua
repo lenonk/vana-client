@@ -1,11 +1,5 @@
--- The game's macro palette: back up and wipe (or restore) the set you are on.
---
---   //hb wipestock     asks first, saves a backup, then clears the current set's 20 macros
---   //hb restorestock  puts the backup of the current set back
---
--- The backup is stock-macros-backup.json in the mod's data folder, keyed "<book>:<set>":
---   { "1:1": { book = 1, set = 1, book_title = "Book01", saved = <os.time>, ctrl = {...}, alt = {...} } }
--- Each macro is { title = "...", lines = { 6 strings } }, as game.macros() returns it.
+-- //hb wipestock and //hb restorestock: back up and clear, or restore, the game's current macro set.
+-- Backups: stock-macros-backup.json, keyed "<book>:<set>" -> { book, set, book_title, saved, ctrl, alt }.
 
 local M = {}
 
@@ -31,7 +25,7 @@ local function macro_empty(mac)
   return true
 end
 
--- How many of the current set's 20 macros hold anything.
+-- How many of the set's 20 macros are filled.
 function M.used(m)
   local n = 0
   for _, row in ipairs(ROWS) do
@@ -71,7 +65,7 @@ local function read_backups()
   return nil, "the existing backup file could not be read"
 end
 
--- Saves the set. A set that is already empty never replaces an earlier backup of it.
+-- An empty set never replaces an earlier backup.
 function M.backup(m)
   local db, why = read_backups()
   if not db then
@@ -84,13 +78,13 @@ function M.backup(m)
   return true
 end
 
--- Applies `texts[row][i] = { title, lines }` to the current set; returns edits made and failures.
+-- get(row, i) -> title, lines (nil title: leave it). Returns edits done and failed.
 local function apply(get)
   local done, failed = 0, 0
   for _, row in ipairs(ROWS) do
     for i = 1, 10 do
       local title, lines = get(row, i)
-      if title ~= nil then -- nil: leave this macro alone
+      if title ~= nil then
         local function edit(line, text)
           local ok = pcall(actions.macro_edit, row, i, line, text)
           if ok then

@@ -1,5 +1,4 @@
--- What follows the pointer while a slot or a palette tile is dragged: a see-through copy of it (its icon or its
--- label). It has no handler, so the slot under it still gets the drop.
+-- A see-through HUD copy of a dragged tile under the pointer. It has no handler, so the drop reaches what is under it.
 
 local M = {}
 
@@ -14,12 +13,11 @@ local function place(x, y)
   return x - size / 2, y - size / 2
 end
 
--- A drop rebuilds the bars (hud.clear), so an element may be gone by the time its drag ends.
+-- Elements may be gone after a drop rebuilt the HUD.
 local function set(id, fields)
   pcall(hud.set, id, fields)
 end
 
--- Starts it at the pointer (x, y): `act` is the macro's first action ({kind, id}) or nil, `label` its text.
 function M.start(x, y, s, act, label)
   local u = hud.screen().ui_scale
   size = s
@@ -58,15 +56,14 @@ function M.stop()
   end
 end
 
--- Handles the drag events of an element: `look()` gives (size, act, label) when the drag starts; the element `id`
--- is dimmed (to `dim`, back to `colour`) while it is dragged.
+-- Drag events of HUD element `id`: look() -> size, act, label; the element shows `dim` while dragged.
 function M.follow(e, id, colour, dim, look)
   if e.kind == "drag_start" then
     local s, act, label = look()
     M.start(e.x, e.y, s, act, label)
     set(id, { colour = dim })
   elseif e.kind == "drag" then
-    -- Over one of our windows (drawn over the HUD) it hides: the window draws its copy.
+    -- Over a window the window draws its own copy.
     if e.window then
       M.move(-10000, -10000)
     else

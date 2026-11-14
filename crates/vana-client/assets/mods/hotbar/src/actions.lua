@@ -1,6 +1,4 @@
--- What a macro does first, for its slot's icon and recast: the first line naming a spell (/ma, /magic, /so, /song,
--- /nin), a job ability or pet command (/ja, /pet), a weapon skill (/ws), an item (/item, /equip) or one of the
--- Builder's system commands (/attack, /heal, ...: the game icon standing in for it).
+-- A macro's first action, for its icon, recast and usability.
 
 local builder = require("src.builder")
 local data = require("src.data")
@@ -31,10 +29,8 @@ local KIND = { ["/ma"] = "spell", ["/magic"] = "spell", ["/so"] = "spell", ["/so
 
 local cache = {}
 
--- {kind = 'spell' | 'ability' | 'item', id, recast_id} for the macro's first action, or false. A macro built on an
--- action whose own line names none (a line this does not read) takes the action's.
+-- {kind, id, recast_id?, ws?, no_recast?} or false. A group gives its last-picked member's.
 function M.of(macro)
-  -- A group shows the member picked last.
   if macro.group then
     local m = data.current_member(macro)
     return m and M.of(m) or false
@@ -46,7 +42,6 @@ function M.of(macro)
   if hit ~= nil then return hit end
   hit = false
   for _, line in ipairs(macro.lines or {}) do
-    -- /equip names its slot before the piece: /equip ring1 "Warp Ring".
     local cmd, name = line:match('^(/[Ee][Qq][Uu][Ii][Pp])%s+%w+%s+"([^"]+)"')
     if not cmd then cmd, name = line:match('^(/%a+)%s+"([^"]+)"') end
     if not cmd then cmd, name = line:match("^(/%a+)%s+(%S+)") end
@@ -67,7 +62,6 @@ function M.of(macro)
       end
       break
     end
-    -- A system command (/attack <t>, /heal) shows the icon that stands in for it, with no recast.
     local bare = line:gsub("%s*<[^>]*>%s*$", ""):gsub("%s+$", ""):lower()
     local c = bare:find("^/") and builder.command(bare)
     if c then
@@ -83,7 +77,7 @@ function M.of(macro)
   return hit
 end
 
--- Seconds left on its recast and the fraction of the whole still to go (0 when ready).
+-- Seconds left and the fraction remaining (0, 0 when ready).
 function M.recast(a, recasts)
   if not a or a.no_recast then return 0, 0 end
   local left, total = 0, 0
@@ -96,9 +90,7 @@ function M.recast(a, recasts)
   return left, total > 0 and math.min(1, left / total) or 1
 end
 
--- Whether we can use it now, apart from its recast (shaded separately): a weapon skill needs 1000 TP, a pet command a
--- pet, a spell what the magic list asks (builder.castable) and its MP. Nil `a` (a macro with no known action) counts
--- as usable.
+-- Usable now, recast aside: TP for weapon skills, a pet for pet commands, castable and MP for spells.
 function M.usable(a, me)
   if not a or not me or a.no_recast then return true end
   if a.kind == "spell" then

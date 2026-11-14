@@ -1,6 +1,5 @@
--- The palette: the main job's library as tiles on the HUD, wherever the player drags it (its place kept per
--- character). Drag a tile onto a slot of the bars to put that macro there (the bars' window gets the drop); click one
--- to edit it. //hb palette (or the manager's Palette button) shows and hides it for the session.
+-- The palette: the main job's library as HUD tiles. Drag one onto a slot to assign it; click to edit. The panel moves
+-- by dragging (place kept per character).
 
 local data = require("src.data")
 local actions = require("src.actions")
@@ -8,12 +7,10 @@ local ghost = require("src.ghost")
 
 local M = {}
 
--- Set by init.lua: edit(id) opens the builder on an entry, drag_ended() when a tile's drag ends.
+-- Set by init.lua: edit(id), drag_ended().
 M.hooks = {}
 
--- The tile being dragged ({id, act, label}: here or in the manager's library), for the bars' window to draw over
--- itself (the HUD's ghost is under it); `last` the library id of the last one, for its drop (which may come after
--- the drag's end).
+-- The tile being dragged ({id, act, label}, here or in the manager); `last` its id, kept for a drop after drag end.
 M.dragging = nil
 M.last = nil
 
@@ -30,9 +27,9 @@ end
 local COLS, ROWS = 8, 2
 local open = false
 local page = 1
-local drawn = {}  -- the element ids shown now
-local main = nil  -- the job whose library it shows
-local moving = nil -- the panel's top left when a move of it started
+local drawn = {}   -- HUD element ids
+local main = nil
+local moving = nil -- panel origin at drag start
 
 local TILE_BG = { 10, 17, 24, 235 }
 local TILE_DIM = { 10, 17, 24, 90 }
@@ -43,7 +40,7 @@ local TITLE = { 232, 210, 156 }
 local INK = { 236, 230, 214 }
 local OUTLINE = { 0, 0, 0, 230 }
 
--- The library id a dragged element stands for, or nil.
+-- The library id of a dragged HUD element, or nil.
 function M.dragged_id(element_id)
   return element_id and tostring(element_id):match("^p_(.+)$")
 end
@@ -73,7 +70,7 @@ local function sizes()
   return u, tile, gap, pad, head, w, h
 end
 
--- Its top left: where the player left it, kept inside the window; at first above the middle of the screen's foot.
+-- Top left: where it was left, clamped on screen.
 local function place(w, h)
   local scr = hud.screen()
   local at = type(storage.character.hb_palette) == "table" and storage.character.hb_palette or {}
@@ -99,7 +96,6 @@ function M.draw()
   local pages = math.max(1, math.ceil(#items / per))
   page = math.min(page, pages)
 
-  -- The panel: dragging it (anywhere but a tile) moves it.
   add("rect", "pal_f", { x = x0 - 1, y = y0 - 1, w = w + 2, h = h + 2, round = 8 * u, colour = PANEL_EDGE,
     line = 1.2 * u, layer = 0 })
   add("rect", "pal_bg", { x = x0, y = y0, w = w, h = h, round = 7 * u, colour = PANEL_BG, layer = 0 })
@@ -144,17 +140,12 @@ function M.draw()
     local x = x0 + pad + col * (tile + gap)
     local y = y0 + head + pad + row * (tile + gap)
     local id = "p_" .. it.id
-    local lines = data.entry_lines(it.entry)
     local name = it.entry.name or ""
     local label = data.display_label(it.entry)
     local macro = data.macro_of(main, it.id)
-    if macro and macro.group then
-      lines = {}
-      for k, m in ipairs(macro.group) do lines[k] = ("%d. %s"):format(k, m.lines[1] or m.name) end
-    end
     local act = macro and actions.of(macro)
     add("rect", id, { x = x, y = y, w = tile, h = tile, round = 6 * u, colour = TILE_BG, layer = 1,
-      tip = { title = name, text = table.concat(lines, "\n") .. "\n\nDrag onto a slot; click to edit." } })
+      tip = { title = name, text = (macro and data.tip_text(macro) or "") .. "\n\nDrag onto a slot; click to edit." } })
     add("rect", id .. "_f", { x = x, y = y, w = tile, h = tile, round = 6 * u, colour = TILE_EDGE, line = 1.2 * u,
       layer = 2 })
     hud.on(id, function(_, e)
@@ -181,7 +172,6 @@ function M.draw()
   end
 end
 
--- Shows the library of `job` (the current main job) when open.
 function M.set_job(job)
   if job ~= main then page = 1 end
   main = job
