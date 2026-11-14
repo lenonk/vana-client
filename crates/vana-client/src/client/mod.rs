@@ -17547,6 +17547,12 @@ impl App {
             if let Some(k) = dik("up:") {
                 self.input.set(k, false);
             }
+            // act:hold-w / act:release-w: run forward as a held W does, whatever the keyboard layout.
+            match action.as_deref() {
+                Some("hold-w") => _ = self.keys.insert(KeyCode::KeyW),
+                Some("release-w") => _ = self.keys.remove(&KeyCode::KeyW),
+                _ => {}
+            }
             // act:relogin (test drives): after a logout the drive logs in again, opens Select Character and
             // waits 8 s there.
             if action.as_deref() == Some("relogin") {
