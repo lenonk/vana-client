@@ -24034,3 +24034,15 @@ All of it is the mod's Lua over the general API; the client gained nothing.
   effects) is kept *(ours: only the colour is reset)*.
 - Op 0x62 with tag 0xfefefe00 (25 sites in this scene) finds no scheduler (FUN_10071310 compares the name exactly) and
   only loads and pins the file (FUN_10072200, +0x1a |= 0x10); ours logs "no scheduler" for them.
+
+## Event files: EventNum2 0 picks file-zone 1000 (2026-11-13)
+
+- User report: no Naja Salaheem cutscene at all in Aht Urhgan Whitegate on our client; the retail client on our LSB
+  server plays them. LSB starts them with text_table 0 (ToAU 3 "President Salaheem": events 73, 3020, 3003), which it
+  sends as 0x034 EventNum2 (and the login event's EventNo, 0x00A @0x40).
+- FUN_100ad2c0: unless the area is already 1000..0x513, the file zone is EventNum2 + 1000 whenever EventNum2 differs
+  from the event's zone, 0 included, else the zone. Ours kept the zone when EventNum2 was 0, so it read Whitegate's
+  event file 5870, where Naja's block (0x103208c, 133 events) has no event 73; file-zone 1000 (event file 57881, Naja
+  212 events) has it with her Mog Locker lines (#7144..#7150).
+- Ours: client/event.rs file_zone without the 0 case (test file_zones). Live (Lnxcsfix with !addmission 4 2): Naja's
+  event 73 plays to its end; the user confirmed.

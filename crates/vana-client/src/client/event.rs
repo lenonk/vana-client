@@ -38,11 +38,12 @@ fn angle_to(a: f32, b: f32) -> f32 {
     (b - a + std::f32::consts::PI).rem_euclid(TAU) - std::f32::consts::PI
 }
 
-/// FUN_100ad2c0: the zone whose event and dialogue files the event reads.
+/// FUN_100ad2c0: the zone whose event and dialogue files the event reads. Any EventNum2 but the zone's own picks
+/// EventNum2 + 1000, 0 included (LSB's text_table 0: Whitegate's second file, Naja Salaheem's scenes).
 pub fn file_zone(s: &EventStart, current: u16) -> u16 {
     if (1000..=0x513).contains(&current) {
         current + 1000
-    } else if s.zone == s.zone2 || s.zone2 == 0 {
+    } else if s.zone == s.zone2 {
         s.zone
     } else {
         s.zone2 + 1000
@@ -4143,6 +4144,8 @@ mod tests {
         assert_eq!(file_zone(&s, 230), 230);
         let s = EventStart { zone: 230, zone2: 12, ..Default::default() };
         assert_eq!(file_zone(&s, 230), 1012);
+        let s = EventStart { zone: 50, zone2: 0, ..Default::default() };
+        assert_eq!(file_zone(&s, 50), 1000);
         assert_eq!(dir_of(rad_of(200)), 200);
     }
 
