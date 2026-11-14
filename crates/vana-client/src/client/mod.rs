@@ -13368,7 +13368,9 @@ impl App {
         }
         // Scheduler op 0x2e: the effect of our action holds the walk input (FUN_100a5ec0 skips FUN_100a6240).
         // `res2` (rest.rs) holds the walk the same way, from the frame it starts.
-        let move_locked = world.opts.move_lock && (world.effects.rooted.contains(&world.my_id) || rest::rising(world));
+        let move_locked = (world.opts.move_lock
+            && (world.effects.rooted.contains(&world.my_id) || rest::rising(world)))
+            || ride::dismounting(world);
         if resting || move_locked {
             (ax, ay) = (0.0, 0.0);
         }
