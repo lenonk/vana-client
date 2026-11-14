@@ -24052,3 +24052,12 @@ All of it is the mod's Lua over the general API; the client gained nothing.
   the Wide Scan rows and the modern plates); quotes kept. The battle menu's title is left: it breaks after the colon
   as retail's target window (name_lines). Entity names stay as the files and the server give them, so the classic UI,
   the chat log and a mod's plate name (render.look) are as given.
+
+## Name plates: the hidden-name bit
+
+- FUN_10096000 (the plate name getter) returns no name when actor +0x130 bit 7 is set (0x00E u8 @0x2B bit 0x08),
+  unless the actor is bound (+0x120 bit 7) to a running event, where its own +0x12e bit 0 / bit 17 rule applies. So
+  no plate. LSB sets this bit (HideName) on stealth roamers and on Chigoes, which clear it when engaged and set it
+  again when disengaged: retail shows the model with no plate until the fight. Ours: the plate filter in
+  client/mod.rs skips `untargetable` actors that are not in the running event's bound list. Live (Caedarva Mire,
+  Chigoe 11): the plate is up while it attacks.
