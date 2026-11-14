@@ -6,7 +6,8 @@
 
 use super::super::resttick::Shown;
 use super::super::{
-    App, World, buffs, event, hudtop, items::JOBS, monstrosity, objective, radar, self_entity, target, vana_now,
+    App, World, buffs, colon_space, event, hudtop, items::JOBS, monstrosity, objective, radar, self_entity, target,
+    vana_now,
 };
 use super::{Look, Modern, Panels, Title, chat, paint};
 use egui::{Align2, Color32, FontFamily, FontId, Painter, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
@@ -1105,8 +1106,12 @@ fn compass_view(w: &World) -> Option<CompassView> {
         None => target::call_for_help(w).and_then(|id| w.entities.get(&id)).map(|e| (e.pos.x, e.pos.z, "hp")),
     };
     let name = match w.scan.tracking() {
-        Some(t) => w.npc_names.iter().find(|(id, _)| (*id & 0x3ff) as u16 == t.index & 0x3ff).map(|(_, n)| n.clone()),
-        None => target::call_for_help(w).and_then(|id| w.entities.get(&id)).map(|e| e.name.clone()),
+        Some(t) => w
+            .npc_names
+            .iter()
+            .find(|(id, _)| (*id & 0x3ff) as u16 == t.index & 0x3ff)
+            .map(|(_, n)| colon_space(n).into_owned()),
+        None => target::call_for_help(w).and_then(|id| w.entities.get(&id)).map(|e| colon_space(&e.name).into_owned()),
     };
     let arrow = aim.and_then(|(x, z, col)| {
         let d = vec2(w.pos.x - x, z - w.pos.z);
@@ -1433,8 +1438,9 @@ pub(super) fn other_views(
             let id = r.entity;
             let member = w.party.slots().slots.iter().flatten().find(|m| m.id == id).cloned();
             let e = w.entities.get(&id);
-            let name =
-                e.map(|e| monstrosity::name(e).to_string()).or_else(|| member.as_ref().map(|m| m.name.clone()))?;
+            let name = e
+                .map(|e| colon_space(monstrosity::name(e)).into_owned())
+                .or_else(|| member.as_ref().map(|m| m.name.clone()))?;
             let hpp = member.as_ref().map(|m| m.hpp).or_else(|| e.filter(|e| !e.no_gauge).map(|e| e.hpp));
             Some(OtherRow {
                 label: r.label.clone(),
@@ -1466,7 +1472,11 @@ fn target_view(w: &World, gu: Option<&super::super::game_ui::GameUi>) -> Option<
     let id = w.target?;
     let me = (id == w.my_id).then(|| self_entity(w));
     let e = me.as_ref().or_else(|| w.entities.get(&id))?;
-    let name = if id == w.my_id { monstrosity::my_name(w).to_string() } else { monstrosity::name(e).to_string() };
+    let name = if id == w.my_id {
+        monstrosity::my_name(w).to_string()
+    } else {
+        colon_space(monstrosity::name(e)).into_owned()
+    };
     // The pack's target rings by relation.
     let ring = if matches!(e.motion.status, 2 | 3) {
         "indicators/target_dead"
