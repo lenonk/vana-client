@@ -765,15 +765,18 @@ pub(super) fn update(w: &mut World, dt: f32) {
         if !held {
             a.appear = (a.appear + ticks / rate / 32.0).min(1.0);
         }
+        // The status motion restarts on the new files: on foot and riding share names ("run"), so the old run played on.
         if ride != a.ride_on {
             if ride.is_empty() {
                 drop_kind(&mut a.extra, Kind::Ride);
                 a.ride_on.clear();
+                a.status_blank();
             } else if let Some(files) = w.motion_files.all(&index, &ride) {
                 drop_kind(&mut a.extra, Kind::Ride);
                 add(&mut a.extra, Kind::Ride, files);
                 log::info!("actor {id:#x}: riding files {ride:?}");
                 a.ride_on = ride;
+                a.status_blank();
             }
         }
         let fx_want: Vec<u32> = a
@@ -876,9 +879,11 @@ pub(super) fn update(w: &mut World, dt: f32) {
             }
             m.next -= ticks;
         }
+        // FUN_100d2340(1) drops the battle files; the status motion restarts on foot (the battle "run" played on).
         if a.battle.leaving && a.play.is_none() {
             drop_kind(&mut a.extra, Kind::Battle);
             a.battle = Battle::default();
+            a.status_blank();
         }
         if let Some(f) = &mut a.fade {
             let done = f.tick(ticks);

@@ -390,6 +390,11 @@ fn finish(w: &mut World, id: u32) {
     }
 }
 
+/// FUN_1008b3a0 (the local walk's gate): no walk while our ride ends, states 0xf (the stand) and 0x10 (`coff`).
+pub fn dismounting(w: &World) -> bool {
+    w.rides.get(&w.my_id).is_some_and(|r| matches!(r.phase, Phase::Stopping | Phase::Leaving { .. }))
+}
+
 /// Op 0x6e on a leaving animal: it runs along its facing.
 pub fn self_move(w: &mut World, id: u32, ticks: f32, speed: f32) {
     if id & ANIMAL != 0

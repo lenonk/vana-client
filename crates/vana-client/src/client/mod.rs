@@ -13390,7 +13390,9 @@ impl App {
         }
         // Scheduler op 0x2e: the effect of our action holds the walk input (FUN_100a5ec0 skips FUN_100a6240).
         // `res2` (rest.rs) holds the walk the same way, from the frame it starts.
-        let move_locked = world.opts.move_lock && (world.effects.rooted.contains(&world.my_id) || rest::rising(world));
+        let move_locked = (world.opts.move_lock
+            && (world.effects.rooted.contains(&world.my_id) || rest::rising(world)))
+            || ride::dismounting(world);
         if resting || move_locked {
             (ax, ay) = (0.0, 0.0);
         }
@@ -17568,6 +17570,12 @@ impl App {
             }
             if let Some(k) = dik("up:") {
                 self.input.set(k, false);
+            }
+            // act:hold-w / act:release-w: run forward as a held W does, whatever the keyboard layout.
+            match action.as_deref() {
+                Some("hold-w") => _ = self.keys.insert(KeyCode::KeyW),
+                Some("release-w") => _ = self.keys.remove(&KeyCode::KeyW),
+                _ => {}
             }
             // act:relogin (test drives): after a logout the drive logs in again, opens Select Character and
             // waits 8 s there.
