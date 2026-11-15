@@ -24507,3 +24507,24 @@ From a full pass over retail's dispatcher (FUN_100bc280) against event_vm.rs / c
   what the old look's equipment part files started, and what files that left the look started, goes; the race and
   body files' tasks run on *(inferred: retail spells survive gear swaps)*. fx-shot's stand-in actors count as
   ready again, so it can run spells (category 4).
+
+## Effect draw order: tied keys draw newest element first (Qufim's whitecaps, 2026-11-15)
+
+- Corrects "Effect draw order: equal clamped keys draw in insertion order" (2026-10-29), which took the elements to
+  run just before their generator (FUN_10074170). The element factory (FUN_1004e8d0 at 0x100511a4; FUN_1004d920 at
+  0x100501f9 in the 2019 build) puts every new element into task bucket 0xb (FUN_100749b0 -> FUN_10074f80 with
+  FUN_10054410 = DAT_10353710 = 0xb; 2019: FUN_10073fd0 with DAT_10348578 = 11): just before that bucket's anchor.
+  The anchors are pushed at the list head in order 0..15 (FUN_10073e40: +0xd54 head, +0xd50 the first one), and the
+  runner (FUN_10073c80) starts at +0xd50 and follows +0xc, so buckets run 0 upward and within bucket 0xb the newest
+  element runs first. Unattached generators (FUN_10074170 with no task running: after anchor 9 on its +8 side) run
+  oldest first. Elements insert into the ordering table in their update (FUN_10044c00 -> FUN_10044ab0 ->
+  FUN_10054600), and a key at the 512 clamp goes after the bucket's nodes (FUN_10054410 compares the clamped key with
+  the nodes' raw keys), so ties draw in the elements' run order: ours `run_order`, which the camera shake already
+  used. fx/mod.rs `insert_order` now is that order.
+- Qufim (f_qu/effe/umi1): the sea is effect meshes (uma1 / uma2 bias 10000 / 7800, umb1; MMB `umna`, uma1 with
+  depth writes) and the whitecaps are `umw1` / `umw2` meshes (ubn*, uan*, ucn*, uck*: bias 6000, texture `umw1`
+  white with the foam in alpha, colour 0x76 alpha 0x1c..0x62), all at y -1.8. The wave generators come first in
+  the file; drawn first, the opaque sea covered them. Newest first, the sea draws first and the foam lies on it, as
+  the user's retail recording of the Zilart ending shows (foam bands and rings at the rock bases).
+- Port Bastok's harbour (t_ba/effe/esea col1 / 1sea / down, made in one tick) now draws down, 1sea, col1, which is
+  darker than before (1sea's depth hides col1) *(not compared with retail: to check)*.

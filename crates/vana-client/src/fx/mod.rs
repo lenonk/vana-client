@@ -24,6 +24,7 @@ use crate::dat::zone;
 use elem::{Elem, NONE, SLOT_WORDS, ctl, slot, w};
 use glam::{Mat4, Vec3};
 use lib::Library;
+use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -3111,17 +3112,16 @@ impl Effects {
     }
 
     /// The tie order for equal clamped keys: the ordering table (FUN_10054410) puts a key at its 512 clamp after the
-    /// bucket's nodes, so they draw as inserted, i.e. as the task list updates them. FUN_10074170 puts a generator's
-    /// new elements just before it: generators in start order, each one's elements oldest first.
-    fn insert_order(&self, c: &ElemCpu) -> (u32, u32) {
-        (self.insts.get(c.inst).and_then(|x| x.as_ref()).map_or(0, |x| x.started), c.serial)
+    /// bucket's nodes, so they draw as inserted, i.e. as the elements update: `run_order`, newest first.
+    fn insert_order(&self, c: &ElemCpu) -> Reverse<(u32, (u8, u32), u32)> {
+        Reverse(self.run_order(c))
     }
 
     /// The draw order with the after-images among the elements (`TRAIL_ITEM | slot`), farthest first (ties by
     /// `insert_order`), each with its sort key (view depth: larger is farther).
     pub fn draw_items_keyed(&self) -> Vec<(f32, u32)> {
         let view = self.last_frame.map_or(Mat4::IDENTITY, |f| f.view);
-        let mut v: Vec<(f32, (u32, u32), u32)> = self
+        let mut v: Vec<(f32, Reverse<(u32, (u8, u32), u32)>, u32)> = self
             .elems
             .iter()
             .enumerate()
@@ -3131,7 +3131,7 @@ impl Effects {
                     .map(|c| (c.key.clamp(0.0, 512.0), self.insert_order(c), i as u32))
             })
             .chain(self.trails.iter().enumerate().filter_map(|(i, t)| {
-                t.as_ref().filter(|t| t.count >= 2).map(|t| (t.key(&view), (0, 0), TRAIL_ITEM | i as u32))
+                t.as_ref().filter(|t| t.count >= 2).map(|t| (t.key(&view), Reverse((u32::MAX, (0, 0), 0)), TRAIL_ITEM | i as u32))
             }))
             .collect();
         v.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
@@ -3140,7 +3140,7 @@ impl Effects {
 
     /// Live elements to draw, back to front (the CMoOT walk: larger keys first, insertion order within one).
     pub fn draw_order(&self) -> Vec<u32> {
-        let mut v: Vec<(f32, (u32, u32), u32)> = self
+        let mut v: Vec<(f32, Reverse<(u32, (u8, u32), u32)>, u32)> = self
             .elems
             .iter()
             .enumerate()
