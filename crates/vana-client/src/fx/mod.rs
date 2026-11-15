@@ -3131,7 +3131,9 @@ impl Effects {
                     .map(|c| (c.key.clamp(0.0, 512.0), self.insert_order(c), i as u32))
             })
             .chain(self.trails.iter().enumerate().filter_map(|(i, t)| {
-                t.as_ref().filter(|t| t.count >= 2).map(|t| (t.key(&view), Reverse((u32::MAX, (0, 0), 0)), TRAIL_ITEM | i as u32))
+                t.as_ref()
+                    .filter(|t| t.count >= 2)
+                    .map(|t| (t.key(&view), Reverse((u32::MAX, (0, 0), 0)), TRAIL_ITEM | i as u32))
             }))
             .collect();
         v.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
