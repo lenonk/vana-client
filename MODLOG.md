@@ -24528,3 +24528,19 @@ From a full pass over retail's dispatcher (FUN_100bc280) against event_vm.rs / c
   the user's retail recording of the Zilart ending shows (foam bands and rings at the rock bases).
 - Port Bastok's harbour (t_ba/effe/esea col1 / 1sea / down, made in one tick) now draws down, 1sea, col1, which is
   darker than before (1sea's depth hides col1) *(not compared with retail: to check)*.
+
+## Effect draw order: keys below 0 tie oldest first ("New Challenge", 2026-11-16)
+
+- Corrects the 2026-11-15 entry above for keys below the clamp. The ordering table's insert (FUN_10054410, 2019
+  build) clamps the key to [+0xc, +0x10] (0 and 512), subtracts the minimum, picks the bucket from that, then walks
+  the bucket past every node while the clamped key <= the node's raw key, and inserts there. At 512 a new node passes
+  every node at or over 512 (insertion order: as the elements update, newest first). Below 0 the clamped 0 passes
+  only nodes of raw key 0 or more, and stops at the first negative one: each new negative key goes before the
+  others, so they draw in reverse insertion order, oldest first, after any raw 0. Their own raw values never decide.
+- "New Challenge" (file 3718, op 0x111's banner): the shadow `sdw1` (mesh shdw, key -0.2) starts a tick before the
+  lettering `lge1` (newe, -0.3), with the `lge2` / `cls1` / `cls2` glows; all clamp to 0. Newest first drew the
+  shadow over the letters, so they stayed dark gray until the shadow faded out at tick 290. Oldest first, the
+  lettering lies on the shadow and its glows flash white and settle to silver by tick 60, as before the 11-15 change
+  (fx-shot --file 3718: crop mean 126 / 94 / 113 / 61 at ticks 20 / 40 / 60 / 100, as 1.0.13).
+- Ours: fx/mod.rs `tie_order` (`Tie::At` newest first, then `Tie::Below` oldest first); test
+  `ties_below_the_clamp_draw_oldest_first`.

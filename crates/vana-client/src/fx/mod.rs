@@ -470,6 +470,14 @@ pub struct Instance {
     pub started: u32,
 }
 
+/// An element's place among equal clamped draw keys (Effects::tie_order): keys of 0 and up first, newest first; then
+/// keys clamped up from below 0, oldest first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Tie {
+    At(Reverse<(u32, (u8, u32), u32)>),
+    Below((u32, (u8, u32), u32)),
+}
+
 /// `Effects::run_order`'s key: the tick the element was made in, its generator's place in the walk (attach mode,
 /// start serial), its serial.
 fn run_key(born: u32, mode: u8, started: u32, serial: u32) -> (u32, (u8, u32), u32) {
@@ -3111,29 +3119,32 @@ impl Effects {
         }
     }
 
-    /// The tie order for equal clamped keys: the ordering table (FUN_10054410) puts a key at its 512 clamp after the
-    /// bucket's nodes, so they draw as inserted, i.e. as the elements update: `run_order`, newest first.
-    fn insert_order(&self, c: &ElemCpu) -> Reverse<(u32, (u8, u32), u32)> {
-        Reverse(self.run_order(c))
+    /// The order among equal clamped keys. The ordering table's walk (FUN_10054410, 2019 build) puts a new node after
+    /// every node whose raw key is at least its clamped key: at the 512 clamp, as for any tie, that keeps insertion
+    /// order (as the elements update: `run_order`, newest first). A key below 0 clamps to 0 but meets the others' raw
+    /// keys, so it goes after a raw 0 and before every other negative one: those draw oldest first.
+    fn tie_order(&self, c: &ElemCpu) -> Tie {
+        let run = self.run_order(c);
+        if c.key < 0.0 { Tie::Below(run) } else { Tie::At(Reverse(run)) }
     }
 
     /// The draw order with the after-images among the elements (`TRAIL_ITEM | slot`), farthest first (ties by
-    /// `insert_order`), each with its sort key (view depth: larger is farther).
+    /// `tie_order`), each with its sort key (view depth: larger is farther).
     pub fn draw_items_keyed(&self) -> Vec<(f32, u32)> {
         let view = self.last_frame.map_or(Mat4::IDENTITY, |f| f.view);
-        let mut v: Vec<(f32, Reverse<(u32, (u8, u32), u32)>, u32)> = self
+        let mut v: Vec<(f32, Tie, u32)> = self
             .elems
             .iter()
             .enumerate()
             .filter_map(|(i, c)| {
                 c.as_ref()
                     .filter(|c| c.draw != Draw::None && !c.hidden)
-                    .map(|c| (c.key.clamp(0.0, 512.0), self.insert_order(c), i as u32))
+                    .map(|c| (c.key.clamp(0.0, 512.0), self.tie_order(c), i as u32))
             })
             .chain(self.trails.iter().enumerate().filter_map(|(i, t)| {
                 t.as_ref()
                     .filter(|t| t.count >= 2)
-                    .map(|t| (t.key(&view), Reverse((u32::MAX, (0, 0), 0)), TRAIL_ITEM | i as u32))
+                    .map(|t| (t.key(&view), Tie::At(Reverse((u32::MAX, (0, 0), 0))), TRAIL_ITEM | i as u32))
             }))
             .collect();
         v.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
@@ -3142,14 +3153,14 @@ impl Effects {
 
     /// Live elements to draw, back to front (the CMoOT walk: larger keys first, insertion order within one).
     pub fn draw_order(&self) -> Vec<u32> {
-        let mut v: Vec<(f32, Reverse<(u32, (u8, u32), u32)>, u32)> = self
+        let mut v: Vec<(f32, Tie, u32)> = self
             .elems
             .iter()
             .enumerate()
             .filter_map(|(i, c)| {
                 c.as_ref()
                     .filter(|c| c.draw != Draw::None && !c.hidden)
-                    .map(|c| (c.key.clamp(0.0, 512.0), self.insert_order(c), i as u32))
+                    .map(|c| (c.key.clamp(0.0, 512.0), self.tie_order(c), i as u32))
             })
             .collect();
         v.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
@@ -3366,6 +3377,16 @@ fn sky_point(sun: bool, dayfrac: f32, eye: Vec3, voyage: Mat4) -> Vec3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// "New Challenge" (file 3718): the shadow sdw1 (key -0.2) starts before the lettering lge1 (key -0.3); both clamp
+    /// to 0 and draw oldest first, the lettering over the shadow. Keys of 0 and up keep newest first, before them.
+    #[test]
+    fn ties_below_the_clamp_draw_oldest_first() {
+        let (old, new) = (run_key(1, 0, 1, 1), run_key(2, 0, 2, 2));
+        let mut v = [Tie::Below(new), Tie::At(Reverse(old)), Tie::Below(old), Tie::At(Reverse(new))];
+        v.sort();
+        assert_eq!(v, [Tie::At(Reverse(new)), Tie::At(Reverse(old)), Tie::Below(old), Tie::Below(new)]);
+    }
 
     /// Retail's element walk (task bucket 0xb, each new element at its front): newest first. Within one tick the
     /// generators ran unattached first in start order, then the attached ones newest first, so their elements come
