@@ -3383,25 +3383,25 @@
     },
     {
       "authors": [],
-      "description": "Changes how the world looks: brightness, colour, a cel-shaded look with outlines, or wireframe (the render tweak add-ons). The menus are not changed.",
+      "description": "Changes how the world looks: brightness, colour, a cel-shaded look, a painted look, outlines, or wireframe (the render tweak add-ons). The menus are not changed.",
       "files": [
         {
           "path": "init.lua",
-          "sha256": "fcb9a0d1f9982c0b6db6fb7a18192e7ef32335415fd6e8daa965ce14bca34dd0",
-          "size": 1878,
+          "sha256": "fdb20093becaa8867e4d8487879f0808604e05ab6760f234c5a8dd98ba1b4c42",
+          "size": 6599,
           "url": "https://raw.githubusercontent.com/lenonk/vana-client/master/crates/vana-client/assets/mods/visual-tweaks/init.lua"
         },
         {
           "path": "mod.toml",
-          "sha256": "0a20f2ed4746691ec5c9d34edb8479f0961146753a24b2854d7a1c461a751713",
-          "size": 879,
+          "sha256": "45dfa71c944fd95f1326bba4e705d1d2c54757f955806782e8ee3340ff7a2356",
+          "size": 2022,
           "url": "https://raw.githubusercontent.com/lenonk/vana-client/master/crates/vana-client/assets/mods/visual-tweaks/mod.toml"
         }
       ],
       "id": "visual-tweaks",
       "kind": "lua",
       "name": "Visual Tweaks",
-      "version": "1.0.0"
+      "version": "1.2.0"
     },
     {
       "authors": [],

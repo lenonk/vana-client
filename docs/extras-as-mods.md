@@ -347,7 +347,8 @@ Each conversion removes the Rust it replaces, keeps the extra's look in both UIs
   and the name colour table.
 - **Visual Tweaks** (assets/mods/visual-tweaks; toon, shades, clearcolor, Render knobs): Brightness, Colour
   (saturation) and Cel Shading (brightness in four bands with the hue kept, outlines where the depth jumps) as one
-  post pass (render.shader), Wireframe through the client's switch; the menus untouched. Seen live: the cel look in
+  post pass (render.shader), Painting (Kuwahara) before it and Sobel Outlines (depth, optionally colour) after it as
+  their own passes, Wireframe through the client's switch; the menus untouched. Seen live: the cel look in
   Southern San d'Oria. Not yet: the weather shown, Indi- bubbles hidden.
 - **Window Placement** (assets/mods/window-placement; position_manager, WinControl, affinity and kin): `//winpos save`
   keeps the character's window size (and place where the system tells it; not on Wayland), restored at the next

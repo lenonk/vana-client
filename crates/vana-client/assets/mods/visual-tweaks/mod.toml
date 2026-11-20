@@ -1,6 +1,6 @@
 name = "Visual Tweaks"
-version = "1.0.0"
-description = "Changes how the world looks: brightness, colour, a cel-shaded look with outlines, or wireframe (the render tweak add-ons). The menus are not changed."
+version = "1.2.0"
+description = "Changes how the world looks: brightness, colour, a cel-shaded look, a painted look, outlines, or wireframe (the render tweak add-ons). The menus are not changed."
 permissions = []
 
 [settings.on]
@@ -26,11 +26,64 @@ step = 0.05
 label = "Colour"
 help = "0 is black and white, 1 the game's colours, 2 twice as vivid."
 
+[settings.anime_grade]
+type = "number"
+default = 0.0
+min = 0.0
+max = 1.0
+step = 0.05
+label = "Anime Grade"
+help = "Soft warm highlights and cool shadows for a 2D anime look. 0 leaves colour unchanged."
+
 [settings.toon]
 type = "bool"
 default = false
 label = "Cel Shading"
 help = "Flat bands of colour with dark outlines, as a cartoon."
+
+[settings.paint]
+type = "bool"
+default = false
+label = "Painting"
+help = "Smooths the world into flat strokes of colour with the edges kept, as an oil painting (a Kuwahara filter)."
+
+[settings.paint_radius]
+type = "number"
+default = 3
+min = 1
+max = 6
+step = 1
+label = "Brush Size"
+help = "How wide each stroke is. Larger is heavier on the GPU."
+
+[settings.sobel]
+type = "bool"
+default = false
+label = "Outlines"
+help = "Dark lines around shapes, found from the depth (a Sobel filter)."
+
+[settings.sobel_sensitivity]
+type = "number"
+default = 1.0
+min = 0.3
+max = 3.0
+step = 0.1
+label = "Outline Sensitivity"
+help = "Higher draws lines at smaller edges."
+
+[settings.sobel_width]
+type = "number"
+default = 1
+min = 1
+max = 3
+step = 1
+label = "Outline Width"
+
+[settings.sobel_colour]
+type = "bool"
+default = false
+label = "Outline Colour Edges"
+help = "Also outlines where the colour changes sharply, not only the shapes (busier)."
 
 [settings.wireframe]
 type = "bool"
