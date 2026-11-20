@@ -73,6 +73,34 @@ pub struct Ctx {
     pub strings: [String; 2],
     /// The name tables, for the items, objectives and key items a message names.
     pub names: Option<Tables>,
+    /// The point tables, for 7f b0 / b1 / b7.
+    pub points: Option<Points>,
+}
+
+/// The merit, job point and alter ego point tables (7f b0 / b1 / b7, FUN_10161070 and its twins).
+#[derive(Clone, Default)]
+pub struct Points {
+    pub merits: Option<std::sync::Arc<super::merits::MeritTables>>,
+    pub jp: Option<std::sync::Arc<super::merits::JobPointTables>>,
+    pub ae: Option<std::sync::Arc<super::merits::AeTables>>,
+}
+
+impl Points {
+    /// The name of work[n] for 7f : b0 a merit or merit category, b1 a job point entry, b7 an alter ego point.
+    pub fn name(&self, sub: u8, id: u16) -> Option<String> {
+        let t = match sub {
+            0xb0 => self.merits.as_ref()?.name_of_id(id)?,
+            0xb1 => self.jp.as_ref()?.name(id),
+            _ => self.ae.as_ref()?.name(id),
+        };
+        Some(t).filter(|t| !t.is_empty())
+    }
+}
+
+impl std::fmt::Debug for Points {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("Points")
+    }
 }
 
 /// The client's name tables (one item reader for all text).
@@ -686,6 +714,14 @@ impl BattleText {
                         out.extend(format!("{} gil", separated(v as u32)).bytes());
                         3
                     }
+                    // 7f b0 / b1 / b7 n: the merit, job point or alter ego point named by work[n] (u16).
+                    0xb0 | 0xb1 | 0xb7 => {
+                        let id = work(s.get(i + 2).copied().unwrap_or(0)) as u16;
+                        if let Some(t) = ctx.points.as_ref().and_then(|p| p.name(a, id)) {
+                            out.extend(encode_sjis(&t));
+                        }
+                        3
+                    }
                     0x34..=0x36 => 3,
                     0x38 => 4,
                     0x84 => {
@@ -1073,6 +1109,30 @@ mod tests {
         // Spell names (55702) and two-line messages.
         let cure = Ctx { actor: pc("Tuxedo"), target: pc("Tuxedo"), work: [1, 12, 0, 0, 0], ..named() };
         assert_eq!(b.expand(7, &cure).unwrap().plain(), ["Tuxedo casts Cure.", "Tuxedo recovers 12 HP."]);
+    }
+
+    /// 7f b0 / b1 (LSB's 380 / 720, work[0] the merit or job point id): the name between "Your" and "modification".
+    #[test]
+    fn point_names() {
+        use crate::dat::merits::{JobPointTables, MeritTables};
+        let Some(b) = load() else { return };
+        let cfg = crate::config::Config::load();
+        let (Ok(ix), Ok(dll)) = (DatIndex::open(&cfg.ffxi_dir()), std::fs::read(crate::dat::ffximain(&cfg.ffxi_dir())))
+        else {
+            return;
+        };
+        let slot = |s| crate::dat::msg::current_slot_file(&dll, 1, s);
+        let points = Points {
+            merits: Some(std::sync::Arc::new(MeritTables::load(&ix, slot(0x1d)))),
+            jp: Some(std::sync::Arc::new(JobPointTables::load(&ix, slot(0x1e)))),
+            ae: None,
+        };
+        let ctx = |id| Ctx { work: [id, 11, 0, 0, 0], points: Some(points.clone()), ..named() };
+        let jp = b.expand(720, &ctx(0x20)).unwrap().plain();
+        let name = JobPointTables::load(&ix, slot(0x1e)).name(0x20);
+        assert!(!name.is_empty());
+        assert_eq!(jp, [format!("Your {name} modification has risen to level 11.")]);
+        assert_eq!(b.expand(380, &ctx(0x40)).unwrap().plain(), ["Your STR modification has risen to level 11."]);
     }
 
     #[test]

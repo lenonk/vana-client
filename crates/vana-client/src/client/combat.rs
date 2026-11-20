@@ -402,6 +402,16 @@ pub(super) fn tables(w: &World) -> Option<crate::dat::battle::Tables> {
     w.names.clone().map(crate::dat::battle::Tables)
 }
 
+/// The point tables, loaded for a message that names a merit, job point or alter ego point (7f b0 / b1 / b7).
+fn points(w: &mut World, bt: &battle::BattleText, id: u16) -> Option<battle::Points> {
+    let raw = bt.raw(id)?;
+    raw.windows(2).any(|p| p[0] == 0x7f && matches!(p[1], 0xb0 | 0xb1 | 0xb7)).then(|| battle::Points {
+        merits: super::merits::tables(w),
+        jp: super::jobpoints::tables(w),
+        ae: super::aepoints::tables(w),
+    })
+}
+
 pub(super) fn who(w: &World, id: u32) -> Option<Who> {
     if id == w.my_id {
         // Our gender from the race (inf: retail reads 0x40db0): 2, 4, 6 and 7 are female.
@@ -819,6 +829,7 @@ fn print(w: &mut World, m: Msg) {
         me: w.name.clone(),
         work: m.work,
         names: tables(w),
+        points: points(w, &bt, m.id),
         ..Default::default()
     };
     let rel = relation(w, m.actor, m.target);
@@ -981,6 +992,7 @@ pub(super) fn on_message_std(w: &mut World, id: u16, cas: u32, para: [i32; 4], s
         work: [para[0], para[1], para[2], para[3], 0],
         strings,
         names: tables(w),
+        ..Default::default()
     };
     match bt.system(id, &ctx) {
         Some(line) => {
