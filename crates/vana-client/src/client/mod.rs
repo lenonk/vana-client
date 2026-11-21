@@ -10270,7 +10270,7 @@ impl App {
         }
         // The lobby art loads in the background; nobody is waiting on it. A timed-out run's link comes back after its
         // time-out freed the UI (update_netwait), maybe during the next job.
-        if !matches!(
+        let background = matches!(
             task,
             Task::GameUi(_)
                 | Task::Flyover(_)
@@ -10284,7 +10284,10 @@ impl App {
                 | Task::AreaLoaded(..)
                 | Task::SubAreaLoaded(..)
                 | Task::LobbyBack(_)
-        ) {
+        );
+        #[cfg(target_os = "android")]
+        let background = background || matches!(task, Task::GameDataWarm(_));
+        if !background {
             self.busy = false;
         }
         match task {
