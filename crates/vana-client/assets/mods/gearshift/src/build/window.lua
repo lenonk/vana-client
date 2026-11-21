@@ -86,7 +86,11 @@ local function slot_rows(name, def, r)
     if o then
       if o.share and o.pick and not h then share = ("%d%%"):format(math.floor(o.share * 100 + 0.5)) end
       if o.ref then ref = item_name(o.ref.id) end
-      if o.worth then worth = item_name(o.worth.id) .. " (" .. ((pick.item(o.worth.id) or {}).level or "?") .. ")" end
+      if o.worth and o.worth_bag then
+        worth = item_name(o.worth.id) .. " (in " .. (BAG_LABEL[o.worth_bag] or "storage") .. ")"
+      elseif o.worth then
+        worth = item_name(o.worth.id) .. " (" .. ((pick.item(o.worth.id) or {}).level or "?") .. ")"
+      end
     end
     local icon_id = (o and o.pick and o.pick.id)
     rows[#rows + 1] = { SLOT_LABEL[slot], wearing, share, ref, worth,
@@ -135,7 +139,12 @@ local function detail(name, def, r)
   local parts = { SLOT_LABEL[view.slot] .. ":" }
   if o.pick then parts[#parts + 1] = item_name(o.pick.id) .. " " .. summary(o.pick.s, def) end
   if o.ref then parts[#parts + 1] = "| best in slot " .. item_name(o.ref.id) .. " " .. summary(o.ref.s, def) end
-  if o.worth then parts[#parts + 1] = "| worth getting " .. item_name(o.worth.id) .. " " .. summary(o.worth.s, def) end
+  if o.worth and o.worth_bag then
+    parts[#parts + 1] = "| in your " .. (BAG_LABEL[o.worth_bag] or "storage") .. " (move it to a wardrobe to wear it): "
+      .. item_name(o.worth.id) .. " " .. summary(o.worth.s, def)
+  elseif o.worth then
+    parts[#parts + 1] = "| worth getting " .. item_name(o.worth.id) .. " " .. summary(o.worth.s, def)
+  end
   return table.concat(parts, " ")
 end
 

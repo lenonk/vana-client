@@ -155,10 +155,11 @@ end
 local function ctx()
   local p = M.H.player() or {}
   local me = M.H.me() or {}
-  local owns = {}
+  local owns, kept = {}, {}
   for _, o in ipairs(state.owned or {}) do owns[o.id] = true end
+  for _, e in ipairs(state.elsewhere or {}) do kept[e.id] = kept[e.id] or e.bag end
   return { job = state.job, job_id = p.main_job, race = me.race, level = state.level, cap = M.cap(),
-    owned = state.owned or {}, owns = owns, at_cap = state.at_cap or {}, at_level = state.at_level or {},
+    owned = state.owned or {}, owns = owns, kept = kept, at_cap = state.at_cap or {}, at_level = state.at_level or {},
     names = state.names,
     mage = sets.MAGE_JOBS[state.job], melee_sets = sets.MELEE_SETS, bis = nil }
 end
@@ -214,7 +215,7 @@ end
 
 -- Puts a set first in the queue (the one the window shows, or an action wants).
 function M.want_first(name)
-  if state.fresh and state.fresh[name] then return end
+  if not name or (state.fresh and state.fresh[name]) then return end
   for i, s in ipairs(state.queue) do
     if s == name then table.remove(state.queue, i) break end
   end
@@ -255,7 +256,10 @@ function M.step()
     return true
   end
   if #state.queue > 0 then
-    M.build(table.remove(state.queue, 1))
+    -- One set that fails to build must not end the worker (no set would be built again this session).
+    local name = table.remove(state.queue, 1)
+    local ok, err = pcall(M.build, name)
+    if not ok then chat.add("Gearshift: the " .. tostring(name) .. " set could not be built: " .. tostring(err)) end
     return true
   end
   return false
@@ -415,11 +419,12 @@ function M.default_set()
   end
   if modes.pdt and job_sets.PDT then return "PDT" end
   if modes.mdt and job_sets.MDT then return "MDT" end
+  -- A job with no TP set (BLM, SMN...) stays in its Idle set while engaged.
   if p.status == 1 then
-    if modes.hybrid then return first("TP_Hybrid", "TP_MNK", "TP") end
-    if modes.acc then return first("TP_Acc", "TP_MNK", "TP") end
-    if M.H.pet() then return first("TP_Pet", "Automaton", "TP_MNK", "TP") end
-    return first("TP_MNK", "TP")
+    if modes.hybrid then return first("TP_Hybrid", "TP_MNK", "TP", "Idle") end
+    if modes.acc then return first("TP_Acc", "TP_MNK", "TP", "Idle") end
+    if M.H.pet() then return first("TP_Pet", "Automaton", "TP_MNK", "TP", "Idle") end
+    return first("TP_MNK", "TP", "Idle")
   end
   if p.status == 33 then return first("Resting", "Idle") end
   if M.H.pet() then return first("Idle_Avatar", "Idle_Luopan", "Idle_Pet", "Idle") end
