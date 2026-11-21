@@ -99,6 +99,8 @@ pub struct UiBatch {
     pub ttf: bool,
     /// The opacity of the window being drawn (per-window opacity), multiplied into what is pushed; None = 1.
     opacity: Option<f32>,
+    /// The hand drawn last (the focused window's cursor): the window, its cursor child and that child's rect.
+    pub hand: Option<(String, u16, [f32; 4])>,
 }
 
 impl UiBatch {
@@ -602,6 +604,14 @@ impl UiBatch {
             r.first += base;
             self.runs.push(r);
         }
+        if other.hand.is_some() {
+            self.hand = other.hand;
+        }
+    }
+
+    /// The hand was drawn on element `e` of window `m` placed at (x, y).
+    pub fn hand_on(&mut self, m: &crate::dat::ui::Menu, e: &crate::dat::ui::MenuElement, x: f32, y: f32) {
+        self.hand = Some((m.name.clone(), e.id, [x + e.x as f32, y + e.y as f32, e.w as f32, e.h as f32]));
     }
 
     /// One cell at (x, y) scaled by (sx, sy); `tint` is ARGB with 0x80 = 1.0, as the client passes it.

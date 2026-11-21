@@ -147,6 +147,7 @@ pub fn title_screen(lobby: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &Titl
                 && st.hand
                 && let Some(anc) = lobby.lib("anc     anc_s")
             {
+                b.hand = Some((m.name.clone(), c.id, [cx, cy, c.w as f32 * sx, c.h as f32 * sy]));
                 // Cursor at child pos + child/window header (+6, +8) (FUN_10116b10), unscaled.
                 let ox = (i16::from_le_bytes([c.head[6], c.head[7]])
                     + i16::from_le_bytes([m.elements[0].head[6], m.elements[0].head[7]]))
@@ -277,6 +278,7 @@ pub fn select_list(
         if i == cursor
             && let (Some(frame), Some(anc)) = (hand, lobby.lib("anc     anc_s"))
         {
+            b.hand_on(m, c, ox, oy);
             b.push_sprite(lobby, anc, frame % anc.sprites.len().max(1), x, y, 1.0, 1.0, 0x8080_8080, 0);
         }
     }
@@ -1049,6 +1051,7 @@ pub fn push_menu(
         );
         if on && let Some(anc) = ui.lib("anc     anc_s") {
             b.push_sprite(ui, anc, 0, cx, cy, 1.0, 1.0, 0x8080_8080, 0);
+            b.hand_on(m, c, x, y);
         }
         if label {
             rects.push([cx, cy, c.w as f32, c.h as f32]);
@@ -1089,6 +1092,7 @@ pub fn push_menu_sel(
         );
         if on && let Some(anc) = ui.lib("anc     anc_s") {
             b.push_sprite(ui, anc, 0, cx, cy, 1.0, 1.0, 0x8080_8080, 0);
+            b.hand_on(m, c, x, y);
         }
     }
     Some((x, y))
@@ -1273,6 +1277,7 @@ pub fn hud_screen(ui: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &HudState)
                 && st.menu_focused
                 && let Some(anc) = ui.lib("anc     anc_s")
             {
+                b.hand_on(m, c, x, y);
                 b.push_sprite(ui, anc, 0, cx, cy, 1.0, 1.0, 0x8080_8080, 0);
             }
         }

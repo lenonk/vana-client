@@ -53,6 +53,7 @@ pub fn push_children(b: &mut UiBatch, ui: &UiFile, m: &Menu, wx: f32, wy: f32) {
 pub fn push_cursor(b: &mut UiBatch, ui: &UiFile, m: &Menu, wx: f32, wy: f32, child: usize, frame: usize) {
     let Some(r) = m.elements[0].refs.iter().find(|r| r.kind == 6) else { return };
     let (Some(lib), Some(e)) = (ui.lib(&r.lib), m.elements.get(child)) else { return };
+    b.hand_on(m, e, wx, wy);
     b.push_sprite(
         ui,
         lib,
