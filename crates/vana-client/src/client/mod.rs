@@ -255,7 +255,7 @@ struct TrustReply {
 #[cfg(target_os = "android")]
 struct GameDataWarmDone {
     generation: u64,
-    dir: PathBuf,
+    dir: std::path::PathBuf,
     result: Result<GameDataLoaded>,
 }
 
@@ -22219,7 +22219,7 @@ mod android;
 #[cfg(target_os = "android")]
 pub(crate) use android::{
     android_activity_ptr, android_block_reentry, android_event_loop_running, android_resume_after_activity,
-    android_run_on_ui_thread, set_android_app,
+    set_android_app,
 };
 
 /// The window's egui context: no egui keyboard zoom (Ctrl+0 / Ctrl+Plus / Ctrl+Minus are macro keys), and no quit
