@@ -61,26 +61,30 @@ include!("entry.rs");
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 fn android_main(app: winit::platform::android::activity::AndroidApp) {
-    android_logger::init_once(android_logger::Config::default().with_max_level(log::LevelFilter::Debug));
-    if let Some(dir) = app.internal_data_path() {
-        // SAFETY: only the android_main thread runs before other Rust code reads these.
-        unsafe {
-            std::env::set_var("VANA_CLIENT_DATA", &dir);
-            std::env::set_var("HOME", &dir);
-            // GLES compute culling often leaves every scenery run invisible (actors still draw). Use the unculled path.
-            std::env::set_var("FFXI_NO_CULL", "1");
+    use std::sync::Once;
+    static PROCESS_INIT: Once = Once::new();
+    PROCESS_INIT.call_once(|| {
+        android_logger::init_once(android_logger::Config::default().with_max_level(log::LevelFilter::Debug));
+        if let Some(dir) = app.internal_data_path() {
+            // SAFETY: set once before `entry()` spawns worker threads that read the environment.
+            unsafe {
+                std::env::set_var("VANA_CLIENT_DATA", &dir);
+                std::env::set_var("HOME", &dir);
+                // GLES compute culling often leaves every scenery run invisible (actors still draw). Use the unculled path.
+                std::env::set_var("FFXI_NO_CULL", "1");
+            }
         }
-    }
-    let default = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        log::error!("panic: {info}");
-        default(info);
-    }));
+        let default = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            log::error!("panic: {info}");
+            default(info);
+        }));
+    });
     client::set_android_app(app);
-    // Coming back from another activity (Settings, the browser) runs android_main again; winit allows one EventLoop.
+    // Activity recreate: the event loop from the first call is still running; hand the new activity in and stay alive.
     if client::android_event_loop_running() {
         client::android_resume_after_activity();
-        return;
+        client::android_block_reentry();
     }
     if let Err(e) = entry() {
         log::error!("entry: {e:#}");

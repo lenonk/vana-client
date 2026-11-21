@@ -58,6 +58,14 @@ pub(crate) fn android_resume_after_activity() {
     }
 }
 
+/// A second `android_main` on an activity recreate must not return (NativeActivity would exit). The game loop already
+/// runs in the first call; this thread waits until the process ends.
+pub(crate) fn android_block_reentry() -> ! {
+    loop {
+        std::thread::park();
+    }
+}
+
 impl App {
     /// Before the event loop waits: the window until it is up, the surface after another activity, and frames
     /// while a window of ours (first start, Game data) or the title's loading has nothing else to wake it.

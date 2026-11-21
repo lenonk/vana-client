@@ -22185,8 +22185,8 @@ pub fn run(cfg: Config, drive: Drive) -> Result<()> {
 mod android;
 #[cfg(target_os = "android")]
 pub(crate) use android::{
-    android_activity_ptr, android_event_loop_running, android_resume_after_activity, android_run_on_ui_thread,
-    set_android_app,
+    android_activity_ptr, android_block_reentry, android_event_loop_running, android_resume_after_activity,
+    android_run_on_ui_thread, set_android_app,
 };
 
 /// The window's egui context: no egui keyboard zoom (Ctrl+0 / Ctrl+Plus / Ctrl+Minus are macro keys), and no quit
