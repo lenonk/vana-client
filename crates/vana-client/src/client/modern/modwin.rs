@@ -245,6 +245,31 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     }
 }
 
+/// A list's columns widened to its cells in the modern list's font, and the width its rows need (an icon 24, each
+/// cell 8 beside its text).
+fn fit_list(
+    ctx: &egui::Context,
+    m: &super::Modern,
+    rows: &[model::Row],
+    columns: &[model::Col],
+) -> (Vec<model::Col>, f32) {
+    let small = FontId::proportional(m.theme.small);
+    model::fit_columns(columns, rows, 24.0, 8.0, |t| {
+        ctx.fonts_mut(|f| f.layout_no_wrap(t.to_string(), small.clone(), Color32::WHITE).size().x)
+    })
+}
+
+/// The panel width a window's lists need: the rows, the scroll bar's 28 and the panel's margins (44).
+fn list_need(ctx: &egui::Context, m: &super::Modern, win: &model::Window) -> f32 {
+    win.elems
+        .iter()
+        .map(|e| match e {
+            Elem::List { rows, columns, .. } => fit_list(ctx, m, rows, columns).1 + 28.0 + 44.0,
+            _ => 0.0,
+        })
+        .fold(0.0, f32::max)
+}
+
 /// One window as a panel, `t` of the way open (an animated one: faded, and grown up from its bottom edge): the clicks
 /// on it and its rect.
 fn panel(
@@ -258,6 +283,8 @@ fn panel(
     let (ctx, gu) = (p.ctx, p.gu);
     {
         let width = if win.width > 0.0 { win.width } else { 360.0 };
+        // Wider when a list's cells need it, up to half the screen.
+        let width = width.max(list_need(ctx, m, win).min(ctx.content_rect().width() * 0.5)).ceil();
         let mut clicks: Vec<Click> = Vec::new();
         let title = (!win.title.is_empty()).then_some(Title { icon: None, text: &win.title, note: None, name: false });
         let frame = if win.framed { "window_normal" } else { "none" };
@@ -364,6 +391,8 @@ pub(super) fn body(
             }
             Elem::List { id, rows, columns, at, height, .. } => {
                 let h = 26.0;
+                let (columns, _) = fit_list(ctx, m, rows, columns);
+                let columns = &columns;
                 let cols = model::columns(columns, ui.available_width() - 28.0);
                 if model::has_header(columns) {
                     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::hover());
