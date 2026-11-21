@@ -89,7 +89,7 @@ cargo fetch --target aarch64-linux-android --locked
 apply_android_crate_patches
 
 echo "Building libvana_client.so (release, arm64, no pipewire)..."
-cargo ndk -t arm64-v8a build --release -p vana-client --lib --no-default-features
+cargo ndk -t arm64-v8a rustc -p vana-client --lib --release --no-default-features --crate-type cdylib
 
 SO="$ROOT/target/aarch64-linux-android/release/libvana_client.so"
 JNI="$ROOT/android/app/src/main/jniLibs/arm64-v8a"

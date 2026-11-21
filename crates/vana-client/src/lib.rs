@@ -1,5 +1,5 @@
-//! Android loads this crate as `libvana_client.so` (`NativeActivity`'s `android.app.lib_name`).
-//! Desktop builds the same crate as a library and a thin `vana-client` binary.
+//! The desktop binary links this crate as an rlib and calls [`entry`]. Android's APK build turns
+//! the same crate into `libvana_client.so` (`NativeActivity`'s `android.app.lib_name`).
 
 #[cfg(target_os = "android")]
 mod android_fs;
