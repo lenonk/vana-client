@@ -42,6 +42,14 @@ fn shown(w: &World) -> bool {
         && w.fe_main.is_none()
 }
 
+/// The English help of statcom2 row 13 since build 30261102 (menu message file 55651: "View Faith Points and change
+/// Celestite for each alter ego type.") keeps "Faith Points", the Japanese name; every other English line calls them
+/// alter ego points (its neighbours: "Consumes alter ego points to increase this attribute."). The modern page says
+/// alter ego points; the classic window shows retail's text unchanged.
+fn alter_ego_wording(help: String) -> String {
+    help.replace("Faith Points", "alter ego points")
+}
+
 fn cursor_row(sel: u16) -> usize {
     ROWS.iter().position(|r| r.0 == sel || (sel == 10 && r.0 == 6)).unwrap_or(0)
 }
@@ -254,7 +262,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let race = status::RACES.get(w.my_race as usize).copied().unwrap_or("");
     let mon = w.monstrosity.filter(|x| x.0 & 0x18 == 0x18);
     let (mentor, mastery) = w.job_info.map_or((0, 0), |j| (j.mentor, j.mastery));
-    let help = gu.focus_text(STATCOM, sel)[0].clone().unwrap_or_default();
+    let help = alter_ego_wording(gu.focus_text(STATCOM, sel)[0].clone().unwrap_or_default());
     let mut held_only = m.held_only.get();
     let played = super::super::textcmd::played(w);
     let played_line = super::super::textcmd::playtime_text(w);
@@ -597,5 +605,19 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     }
     if open {
         status::enter(w);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::alter_ego_wording;
+
+    #[test]
+    fn alter_ego_help() {
+        assert_eq!(
+            alter_ego_wording("View Faith Points and change Celestite for each alter ego type.".into()),
+            "View alter ego points and change Celestite for each alter ego type."
+        );
+        assert_eq!(alter_ego_wording("View your merit points.".into()), "View your merit points.");
     }
 }

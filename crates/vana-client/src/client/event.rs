@@ -4189,7 +4189,19 @@ pub fn text_ctx(w: &World) -> dialog::Ctx {
         let group10 = Box::new(move |id: u16| bt.group10_raw(id as usize));
         Arc::new(dialog::Dates { group10, date_key: (w.game.get(0x95) & 3) as usize, h12: w.game.get(0x96) & 1 != 0 })
     });
-    let texts = EventTexts {
+    dialog::Ctx {
+        dates,
+        party: w.party.indexed().map(|(i, m)| (i as u8, m.id, m.number, m.name.clone())).collect(),
+        concierge: super::concierge::names(w),
+        me: w.my_id,
+        texts: Some(point_texts(w)),
+        ..Default::default()
+    }
+}
+
+/// The name tables FUN_100c1650 reads besides the item names (the point and Monstrosity names load on first use).
+pub fn point_texts(w: &World) -> Arc<dyn dialog::Texts> {
+    Arc::new(EventTexts {
         bt: w.battle.clone(),
         index: w.index.clone(),
         files: w.point_files,
@@ -4199,15 +4211,7 @@ pub fn text_ctx(w: &World) -> dialog::Ctx {
         mon: Default::default(),
         words: Default::default(),
         logs: w.logs.clone().map(std::sync::OnceLock::from).unwrap_or_default(),
-    };
-    dialog::Ctx {
-        dates,
-        party: w.party.indexed().map(|(i, m)| (i as u8, m.id, m.number, m.name.clone())).collect(),
-        concierge: super::concierge::names(w),
-        me: w.my_id,
-        texts: Some(Arc::new(texts)),
-        ..Default::default()
-    }
+    })
 }
 
 /// s2c 0x036 / 0x02A: zone dialogue by server id (mapped to the install with MsgShift), into the log.

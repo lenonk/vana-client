@@ -148,6 +148,7 @@ fn line(w: &mut World, id: u16, actor: Option<u32>, target: u32, para0: i32, str
         work: [para0, 0, 0, 0, 0],
         strings,
         names: super::combat::tables(w),
+        texts: super::combat::texts(w),
     };
     match bt.system(id, &ctx) {
         Some(l) => {

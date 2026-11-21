@@ -280,6 +280,7 @@ pub(super) fn system_line(w: &mut World, id: u16, work: [i32; 5], text: String) 
         work,
         strings: [text, String::new()],
         names,
+        texts: super::combat::texts(w),
         ..Default::default()
     };
     if let Some(line) = bt.system(id, &ctx) {

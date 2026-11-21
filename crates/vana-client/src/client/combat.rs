@@ -402,6 +402,11 @@ pub(super) fn tables(w: &World) -> Option<crate::dat::battle::Tables> {
     w.names.clone().map(crate::dat::battle::Tables)
 }
 
+/// The point names (`7f b0` / `b1` / `b7`) for a line's codes.
+pub(super) fn texts(w: &World) -> Option<crate::dat::battle::Texts> {
+    Some(crate::dat::battle::Texts(super::event::point_texts(w)))
+}
+
 pub(super) fn who(w: &World, id: u32) -> Option<Who> {
     if id == w.my_id {
         // Our gender from the race (inf: retail reads 0x40db0): 2, 4, 6 and 7 are female.
@@ -819,6 +824,7 @@ fn print(w: &mut World, m: Msg) {
         me: w.name.clone(),
         work: m.work,
         names: tables(w),
+        texts: texts(w),
         ..Default::default()
     };
     let rel = relation(w, m.actor, m.target);
@@ -945,6 +951,7 @@ pub(super) fn on_system_message(w: &mut World, id: u16, work: [i32; 2]) {
         me: w.name.clone(),
         work: [work[0], work[1], 0, 0, 0],
         names: tables(w),
+        texts: texts(w),
         ..Default::default()
     };
     match bt.system(id, &ctx) {
@@ -981,6 +988,7 @@ pub(super) fn on_message_std(w: &mut World, id: u16, cas: u32, para: [i32; 4], s
         work: [para[0], para[1], para[2], para[3], 0],
         strings,
         names: tables(w),
+        texts: texts(w),
     };
     match bt.system(id, &ctx) {
         Some(line) => {
