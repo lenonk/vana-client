@@ -16496,6 +16496,8 @@ impl App {
                                 (Some(s), _) => s.help(),
                                 (None, Some(c)) => match c.focus() {
                                     Some((_, configui::SETTINGS)) => configui::SETTINGS_HELP.to_string(),
+                                    #[cfg(target_os = "android")]
+                                    Some((_, configui::GAME_DATA)) => configui::GAME_DATA_HELP.to_string(),
                                     // lobyhelp ids 0x24.. (FUN_10236b40) -> group 8 0xf5..0x101 by child.
                                     Some((_, child)) => {
                                         let id = match child {
@@ -16626,6 +16628,11 @@ impl App {
                                             (s.s.music, s.s.effects) = (v, v);
                                             self.lobby_settings = Some(s);
                                             settings_new = true;
+                                        }
+                                        #[cfg(target_os = "android")]
+                                        if out.open_game_data {
+                                            self.game_data = Some(game_data::Editor::new(self.cfg.game_dir.clone()));
+                                            self.lobby_cfg = None;
                                         }
                                         if out.closed {
                                             self.lobby_cfg = None;

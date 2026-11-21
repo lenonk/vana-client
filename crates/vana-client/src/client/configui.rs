@@ -315,6 +315,9 @@ pub struct Out {
 /// Our Settings button under lobycwin and our rows under configwi's list (not retail): virtual children.
 pub const SETTINGS: u16 = 100;
 pub const EXTRAS: u16 = 101;
+/// Android: Game data under lobycwin (client/game_data.rs).
+#[cfg(target_os = "android")]
+pub const GAME_DATA: u16 = 102;
 
 /// configwi's rows of ours, under Gamepad (child 13, y 198) at its pitch: (child, label).
 const OUR_ROWS: [(u16, &str); 2] = [(EXTRAS, "Extras"), (SETTINGS, "Settings")];
@@ -342,6 +345,8 @@ pub fn our_help(menu: &str, child: u16) -> Option<&'static str> {
     }
     match child {
         SETTINGS => Some(SETTINGS_HELP),
+        #[cfg(target_os = "android")]
+        GAME_DATA => Some(GAME_DATA_HELP),
         EXTRAS => Some(
             "Gameplay additions from the add-ons: the map overlay, the synthesis amount, timestamps on every line, timers.",
         ),
@@ -365,6 +370,12 @@ pub fn settings_rect(gu: &GameUi, w: &Win, sw: f32, sh: f32) -> Option<[f32; 4]>
     Some([r[0] + dx, r[1] + dy + r[3] + 2.0, 112.0, 24.0])
 }
 
+/// Android: under the Settings button on lobycwin.
+#[cfg(target_os = "android")]
+pub fn game_data_rect(gu: &GameUi, w: &Win, sw: f32, sh: f32) -> Option<[f32; 4]> {
+    settings_rect(gu, w, sw, sh).map(|r| [r[0], r[1] + r[3] + 2.0, r[2], r[3]])
+}
+
 /// The Camera Keys options' help.
 pub const CAM_HELP: [&str; 3] = [
     "The camera keys turn as the camera rows above set it, as the mouse does.",
@@ -374,6 +385,8 @@ pub const CAM_HELP: [&str; 3] = [
 
 /// Our text for the button in the help bar.
 pub const SETTINGS_HELP: &str = "Window, resolution, frame limit and the other settings of the Windows Config tool.";
+#[cfg(target_os = "android")]
+pub const GAME_DATA_HELP: &str = "Change which folder on the device holds FINAL FANTASY XI.";
 
 /// The open Config windows, bottom first, and page state that is not a config id.
 #[derive(Default)]
@@ -588,23 +601,46 @@ impl ConfigUi {
             }
         }
         if let Some((bottom, first)) = settings_host(&w.name) {
-            let to = match key {
-                egui::Key::ArrowDown if w.cursor == bottom => Some(SETTINGS),
-                egui::Key::ArrowDown if w.cursor == SETTINGS => Some(first),
-                egui::Key::ArrowUp if w.cursor == SETTINGS => Some(bottom),
-                // The row under the list wraps both ways (the first row has no up link).
-                egui::Key::ArrowUp if w.cursor == first => Some(SETTINGS),
-                egui::Key::Enter if w.cursor == SETTINGS => {
-                    out.sounds.push(Se::Select);
-                    out.open_settings = true;
-                    return out;
-                }
-                _ if w.cursor == SETTINGS && key != egui::Key::Escape => return out,
+            #[cfg(target_os = "android")]
+            if w.name == "lobycwin" && key == egui::Key::Enter && w.cursor == GAME_DATA {
+                out.sounds.push(Se::Select);
+                out.open_game_data = true;
+                return out;
+            }
+            if key == egui::Key::Enter && w.cursor == SETTINGS {
+                out.sounds.push(Se::Select);
+                out.open_settings = true;
+                return out;
+            }
+            let to = match (key, w.cursor) {
+                #[cfg(target_os = "android")]
+                (egui::Key::ArrowDown, c) if w.name == "lobycwin" && c == bottom => Some(SETTINGS),
+                #[cfg(target_os = "android")]
+                (egui::Key::ArrowDown, SETTINGS) if w.name == "lobycwin" => Some(GAME_DATA),
+                #[cfg(target_os = "android")]
+                (egui::Key::ArrowDown, GAME_DATA) if w.name == "lobycwin" => Some(first),
+                #[cfg(target_os = "android")]
+                (egui::Key::ArrowUp, c) if w.name == "lobycwin" && c == first => Some(GAME_DATA),
+                #[cfg(target_os = "android")]
+                (egui::Key::ArrowUp, GAME_DATA) if w.name == "lobycwin" => Some(SETTINGS),
+                #[cfg(target_os = "android")]
+                (egui::Key::ArrowUp, SETTINGS) if w.name == "lobycwin" => Some(bottom),
+                (egui::Key::ArrowDown, c) if c == bottom => Some(SETTINGS),
+                (egui::Key::ArrowDown, SETTINGS) => Some(first),
+                (egui::Key::ArrowUp, SETTINGS) => Some(bottom),
+                (egui::Key::ArrowUp, c) if c == first => Some(SETTINGS),
                 _ => None,
             };
             if let Some(to) = to {
                 w.cursor = to;
                 out.sounds.push(Se::Cursor);
+                return out;
+            }
+            #[cfg(target_os = "android")]
+            if w.name == "lobycwin" && matches!(w.cursor, SETTINGS | GAME_DATA) && key != egui::Key::Escape {
+                return out;
+            }
+            if w.cursor == SETTINGS && key != egui::Key::Escape {
                 return out;
             }
         }
@@ -742,6 +778,26 @@ impl ConfigUi {
             }
             return out;
         }
+        #[cfg(target_os = "android")]
+        if let Some(r) = game_data_rect(gu, w, sw, sh)
+            && p.0 >= r[0]
+            && p.1 >= r[1]
+            && p.0 < r[0] + r[2]
+            && p.1 < r[1] + r[3]
+        {
+            gu.hover.set(true);
+            if (moved || clicked) && w.cursor != GAME_DATA {
+                out.sounds.push(Se::Cursor);
+                if let Some(w) = self.stack.last_mut() {
+                    w.cursor = GAME_DATA;
+                }
+            }
+            if clicked {
+                out.sounds.push(Se::Select);
+                out.open_game_data = true;
+            }
+            return out;
+        }
         let Some(m) = gu.menu_def(&w.full()) else { return out };
         let Some((x, y)) = Self::win_xy(gu, w, sw, sh) else { return out };
         if w.name == "configwi"
@@ -867,6 +923,25 @@ impl ConfigUi {
                     gu.cursor(bx, by);
                 }
                 rects.push(r);
+                #[cfg(target_os = "android")]
+                if let Some(gr) = game_data_rect(gu, w, sw, sh) {
+                    gu.frame(gr[0], gr[1], gr[2], gr[3]);
+                    let on = top && w.cursor == GAME_DATA;
+                    let (bx, by) = (gr[0] + 16.0, gr[1] + 4.0);
+                    gu.sprite_cells(
+                        "menu    windowps",
+                        105,
+                        0..2,
+                        bx - on as i32 as f32,
+                        by - on as i32 as f32,
+                        if on { 0x8080_5020 } else { 0x8080_8080 },
+                    );
+                    gu.text("Game data", bx + 44.0, by, 1, [0x80; 4]);
+                    if on {
+                        gu.cursor(bx, by);
+                    }
+                    rects.push(gr);
+                }
             }
             let (dx, dy) = Self::offset(w, sw, sh);
             rects.extend(gu.window_rect(&w.full(), sw, sh).map(|r| [r[0] + dx, r[1] + dy, r[2], r[3] + grow(&w.name)]));
@@ -1031,9 +1106,12 @@ pub fn draw_page(ui: &ConfigUi, w: &Win, top: bool, gu: &mut GameUi, v: &Values,
             }
         }
     }
+    let on_our_button = w.cursor == SETTINGS;
+    #[cfg(target_os = "android")]
+    let on_our_button = on_our_button || w.cursor == GAME_DATA;
     if top
         && w.edit.is_none()
-        && w.cursor != SETTINGS
+        && !on_our_button
         && let Some((_, cx, cy, ..)) = kids.iter().find(|k| k.0 == w.cursor)
     {
         gu.cursor(*cx, *cy);
