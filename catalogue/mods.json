@@ -2552,6 +2552,44 @@
     },
     {
       "authors": [],
+      "commands": {
+        "buffs": {
+          "args": "",
+          "forms": [
+            {
+              "args": "list",
+              "help": "Lists the missing buffs in the chat log."
+            },
+            {
+              "args": "cancel",
+              "help": "Stops casting after the spell under way."
+            }
+          ],
+          "help": "Casts every missing buff on yourself, in order."
+        }
+      },
+      "description": "Lists the Red Mage self-buffs that are down or wearing off in an edge window; Cast All (or /buffs) casts them.",
+      "files": [
+        {
+          "path": "init.lua",
+          "sha256": "62ab4a17f3ebeabf686fbd81c18c168523866e31b397bdc3e79f3f77296b4cbe",
+          "size": 9762,
+          "url": "https://raw.githubusercontent.com/lenonk/vana-client/master/crates/vana-client/assets/mods/rdm-buffs/init.lua"
+        },
+        {
+          "path": "mod.toml",
+          "sha256": "cd093ed880f9b325a76049a6d7749b8dfa7496bdd19919ec925f7faea939e471",
+          "size": 2235,
+          "url": "https://raw.githubusercontent.com/lenonk/vana-client/master/crates/vana-client/assets/mods/rdm-buffs/mod.toml"
+        }
+      ],
+      "id": "rdm-buffs",
+      "kind": "lua",
+      "name": "RDM Buffs",
+      "version": "1.0.2"
+    },
+    {
+      "authors": [],
       "description": "The Fields or Grounds of Valor regime in force and your kills, in a window beside the timers.",
       "files": [
         {

@@ -1,0 +1,109 @@
+name = "RDM Buffs"
+version = "1.0.2"
+description = "Lists the Red Mage self-buffs that are down or wearing off in an edge window; Cast All (or /buffs) casts them."
+permissions = ["actions"]
+
+[settings.window]
+type = "bool"
+default = true
+label = "Buff Window"
+help = "Shows the missing buffs in a window on a screen edge while you are a Red Mage."
+
+[settings.early]
+type = "int"
+default = 20
+min = 0
+max = 120
+step = 5
+label = "Recast Early"
+help = "A buff with fewer seconds than this left counts as missing."
+
+[settings.composure]
+type = "bool"
+default = true
+label = "Composure"
+help = "Composure first, so the buffs cast on yourself last three times as long."
+
+[settings.haste]
+type = "bool"
+default = true
+label = "Haste"
+
+[settings.refresh]
+type = "bool"
+default = true
+label = "Refresh"
+
+[settings.phalanx]
+type = "bool"
+default = true
+label = "Phalanx"
+
+[settings.temper]
+type = "bool"
+default = true
+label = "Temper"
+help = "Multi-attack for meleeing."
+
+[settings.gain]
+type = "enum"
+options = ["Off", "STR", "DEX", "VIT", "AGI", "INT", "MND", "CHR"]
+default = "STR"
+label = "Gain Spell"
+
+[settings.enspell]
+type = "enum"
+options = ["Off", "Fire", "Ice", "Wind", "Earth", "Thunder", "Water"]
+default = "Fire"
+label = "Enspell"
+help = "The tier II enspell when you have it, else tier I."
+
+[settings.protect]
+type = "bool"
+default = true
+label = "Protect / Shell"
+
+[settings.regen]
+type = "bool"
+default = true
+label = "Regen"
+
+[settings.stoneskin]
+type = "bool"
+default = true
+label = "Stoneskin"
+
+[settings.aquaveil]
+type = "bool"
+default = true
+label = "Aquaveil"
+
+[settings.shadows]
+type = "bool"
+default = true
+label = "Blink / Utsusemi"
+help = "Utsusemi with NIN as the support job (it needs Shihei), else Blink."
+
+[settings.spikes]
+type = "enum"
+options = ["Off", "Blaze", "Ice", "Shock"]
+default = "Shock"
+label = "Spikes"
+
+[settings.reraise]
+type = "bool"
+default = true
+label = "Reraise (WHM)"
+
+[settings.sublimation]
+type = "bool"
+default = true
+label = "Sublimation (SCH)"
+
+[commands.buffs]
+help = "Casts every missing buff on yourself, in order."
+args = ""
+forms = [
+  { args = "list", help = "Lists the missing buffs in the chat log." },
+  { args = "cancel", help = "Stops casting after the spell under way." },
+]
