@@ -36,47 +36,6 @@ SYSROOT_LIB="$NDK_PREBUILT/$NDK_HOST/sysroot/usr/lib/aarch64-linux-android/26"
 export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-L$STUB_DIR -C link-arg=-L$SYSROOT_LIB -C link-arg=-lc++_shared"
 export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
 
-apply_android_crate_patches() {
-  local registry="${CARGO_HOME:-$HOME/.cargo}/registry/src" patched=0
-
-  # unrar_sys: bionic has no lutimes.
-  local ULINKS
-  while IFS= read -r ULINKS; do
-    [[ -z "$ULINKS" ]] && continue
-    if grep -q 'lutimes' "$ULINKS"; then
-      sed -i 's/lutimes(/utimes(/g' "$ULINKS"
-      patched=1
-    fi
-  done < <(find "$registry" -path '*/unrar_sys-*/vendor/unrar/ulinks.cpp' 2>/dev/null)
-
-  # unrar_sys: OpenArchiveDataEx must use ArcName (UTF-8) on Android, not ArcNameW (do not touch link lines).
-  local UNRAR_SYS_LIB
-  while IFS= read -r UNRAR_SYS_LIB; do
-    [[ -z "$UNRAR_SYS_LIB" ]] && continue
-    if grep -q 'target_os = "android"' "$UNRAR_SYS_LIB"; then
-      continue
-    fi
-    python3 - "$UNRAR_SYS_LIB" <<'PY'
-import sys
-path = sys.argv[1]
-text = open(path).read()
-o = '    #[cfg(any(target_os = "linux", target_os = "netbsd"))]\n    pub fn new(archive: *const c_char, mode: c_uint) -> Self {'
-n = '    #[cfg(any(target_os = "linux", target_os = "netbsd", target_os = "android"))]\n    pub fn new(archive: *const c_char, mode: c_uint) -> Self {'
-o2 = '    #[cfg(not(any(target_os = "linux", target_os = "netbsd")))]\n    pub fn new(archive: *const wchar_t, mode: c_uint) -> Self {'
-n2 = '    #[cfg(not(any(target_os = "linux", target_os = "netbsd", target_os = "android")))]\n    pub fn new(archive: *const wchar_t, mode: c_uint) -> Self {'
-if o not in text:
-    sys.exit("unrar_sys lib.rs changed; update android patch")
-open(path, "w").write(text.replace(o, n, 1).replace(o2, n2, 1))
-PY
-    patched=1
-  done < <(find "$registry" -path '*/unrar_sys-0.5.8/src/lib.rs' 2>/dev/null)
-
-  # A build of unrar_sys from before the patches would be reused.
-  if [[ "$patched" == 1 ]]; then
-    rm -rf "$ROOT"/target/aarch64-linux-android/release/build/unrar_sys-*
-  fi
-}
-
 cd "$ROOT"
 unset CARGO_TARGET_DIR
 export ANDROID_NDK_HOME
@@ -84,9 +43,8 @@ if ! rustup target list --installed | grep -q '^aarch64-linux-android$'; then
   rustup target add aarch64-linux-android
 fi
 
-echo "Fetching dependencies (the registry patches need the crates on disk)..."
+echo "Fetching dependencies..."
 cargo fetch --target aarch64-linux-android --locked
-apply_android_crate_patches
 
 echo "Building libvana_client.so (release, arm64, no pipewire)..."
 cargo ndk -t arm64-v8a rustc -p vana-client --lib --release --no-default-features --crate-type cdylib

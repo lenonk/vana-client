@@ -14,3 +14,5 @@ release/android-link-stubs/libpthread.a
 release/*.apk
 patches/winit/.cargo-ok
 patches/winit/.cargo_vcs_info.json
+patches/unrar_sys/.cargo-ok
+patches/unrar_sys/.cargo_vcs_info.json
