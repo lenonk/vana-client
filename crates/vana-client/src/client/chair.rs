@@ -208,6 +208,12 @@ pub fn update(w: &mut World) {
     }
 }
 
+/// The sitter's model was freed (event::free_model, which took the chair actor): the seat starts over with the new
+/// model, the chair's `init` and the sitter's `chi0` with it.
+pub fn model_freed(w: &mut World, id: u32) {
+    w.seats.remove(&id);
+}
+
 /// The seat and its chair actor go.
 fn remove(w: &mut World, id: u32) {
     w.seats.remove(&id);

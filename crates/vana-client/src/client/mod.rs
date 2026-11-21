@@ -7619,6 +7619,9 @@ struct World {
     event_voices: bool,
     /// Looks set by event op 0xb6 (and the riding animals, ride.rs), for the model loader.
     event_looks: Vec<(u32, Source)>,
+    /// The actors whose model FUN_10095900 freed for an unload mark, and the look each is made from again
+    /// (event::unload_models).
+    unloaded: HashMap<u32, Option<Source>>,
     /// CMoSkeletonElem models (fx MODEL_IDS): each one's place, from its element (position, rotation x / y / z).
     fx_models: HashMap<u32, (Vec3, Vec3)>,
     /// Other characters' costumes (0x00D @0x30), and the look each actor in costume would have without it.
@@ -10672,6 +10675,7 @@ impl App {
                             carriers: Default::default(),
                             event_voices: false,
                             event_looks: Vec::new(),
+                            unloaded: HashMap::new(),
                             fx_models: HashMap::new(),
                             costumes: HashMap::new(),
                             costume_base: HashMap::new(),
@@ -13027,8 +13031,12 @@ impl App {
                 }
             }
         }
+        // FUN_10095900: models under an unload mark are freed, the ones whose mark is gone are asked for again.
+        // Their looks go first: a newer one that came with the update that ended the mark wins.
+        let back = event::unload_models(world);
         // Looks the event scripts changed (op 0xb6) load like the server's; held ones go first, newer ones win.
         looks.extend(std::mem::take(&mut world.event_looks));
+        looks.splice(0..0, back);
         looks.splice(0..0, std::mem::take(&mut world.held_looks));
         // The mods' looks changed (render.look): every player look in sight again, before the newer ones.
         let models_ver = world.lua.models_ver();
@@ -13069,6 +13077,11 @@ impl App {
                 }
                 _ => source,
             };
+            // FUN_10095900 makes no model for an actor under an unload mark: its look waits for the mark to go.
+            if let Some(kept) = world.unloaded.get_mut(&id) {
+                *kept = Some(base);
+                continue;
+            }
             let key = format!("{source:?}");
             let spawn_fx = world.entities.get(&id).is_some_and(|e| e.spawn_fx);
             let shadow =

@@ -87,10 +87,13 @@ pub(super) fn step_all(w: &mut World) {
         match on {
             Some(model) => {
                 // The look underneath is kept once; a costume swapped for another keeps the same one.
+                // An actor whose model is freed for an unload mark has it in World::unloaded, as the base already.
+                let drawn = w.actors.get(&id).and_then(|a| a.source).map(|s| super::base_source(w, id, s));
+                let under = drawn.or_else(|| w.unloaded.get(&id).copied().flatten());
                 if !w.costume_base.contains_key(&id)
-                    && let Some(s) = w.actors.get(&id).and_then(|a| a.source).filter(|s| !is_model(s, model))
+                    && let Some(s) = under.filter(|s| !is_model(s, model))
                 {
-                    w.costume_base.insert(id, super::base_source(w, id, s));
+                    w.costume_base.insert(id, s);
                 }
                 w.event_looks.push((id, Source::Npc(crate::dat::npc::NpcLook::Model(model))));
             }

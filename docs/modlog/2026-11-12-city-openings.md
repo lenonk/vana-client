@@ -53,10 +53,10 @@ Mode 0x83) played live on the test bed and set against retail footage. Addresses
 - Ops 0x34 / 0x35 (evop_34 0x100b5a90 / evop_35 0x100b5b70), first frame: FUN_10092900 on every entity, ours
   included, so all models go and load again in the new area with their load fade; the scripts' `80 <actor>` waits
   after the swap wait for that. Already handled here by the event models' area swap (`models.free`, `remade`).
-- Not built: 0x037 Flags0 bits 1 and 3 on our own actor (+0x120 bits 18 and 22). Not retail, and already so before
-  this change (left open): a zone-in event starts as soon as its bound actors are there, where retail first waits for the King NPC count of the 0x00A
-  (DAT_104840f3, or 600 ticks); LSB sends a count of 1 and no King NPC, so retail's order would hold every zone-in
-  event 10 s on black.
+- 0x037 Flags0 bits 1 and 3 on our own actor (+0x120 bits 18 and 22): see 2026-11-19, SleepFlag and the unload marks
+  (item 166). Not retail, and already so before this change (left open): a zone-in event starts as soon as its bound
+  actors are there, where retail first waits for the King NPC count of the 0x00A (DAT_104840f3, or 600 ticks); LSB
+  sends a count of 1 and no King NPC, so retail's order would hold every zone-in event 10 s on black.
 - Live (test bed, character Opencs, 2026-11-12): Port Windurst 305 and Windurst Waters 531 start with 6 and 4 actors
   hidden, ours among them; the player is not drawn through the flyover and appears from the script's `4e 0` on, and
   after the swap back every actor is there again for the talk.
