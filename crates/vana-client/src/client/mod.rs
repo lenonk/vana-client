@@ -1873,7 +1873,9 @@ fn push_chat_line(world: &mut World, line: String, mode: u8, kind: u8, gm: bool,
     }
     let (colour, line, indent) = match world.battle.clone() {
         Some(bt) => {
-            let line = expand_phrases(world, &line);
+            // FUN_10129090: a line whose mode word's second byte has no low bits (every chat line) takes German's
+            // quotation marks after the expansion (its 0x800-byte buffer).
+            let line = crate::dat::font::german_quotes_str(&expand_phrases(world, &line), 0x800);
             (bt.colour_in(mode, &world.game), line, bt.indents(mode))
         }
         None => (cfgapply::chat_colour(&world.game, kind), line, false),
@@ -4660,7 +4662,12 @@ fn world_hud(
         // the right (inf: retail's scroll is not traced; as the event input window).
         let at = fep::caret(world);
         let mut before = fep::pieces(world, &world.chat_input.chars().take(at).collect::<String>());
-        let after = fep::pieces(world, &world.chat_input.chars().skip(at).collect::<String>());
+        let mut after = fep::pieces(world, &world.chat_input.chars().skip(at).collect::<String>());
+        // FUN_101b9c30: German's quotation marks over the drawn line (its 0x968-byte buffer).
+        crate::dat::font::german_quotes_parts(
+            &mut before.iter_mut().chain(after.iter_mut()).map(|p| &mut p.0).collect::<Vec<_>>(),
+            0x968,
+        );
         // FUN_10190280 cuts the line to inline +0x34 = the log's text width - 86.
         let room = tw - 86.0;
         let width = |p: &[(String, bool)]| p.iter().map(|(t, _)| gu.text_width(t)).sum::<f32>();

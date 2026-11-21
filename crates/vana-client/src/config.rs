@@ -249,6 +249,10 @@ pub struct Config {
     /// on and only to a private server. No Settings row: only a server with its GM extension can use it, so it is set
     /// in config.json by hand.
     pub gm_window: bool,
+    /// The client language PlayOnline would hand the game (retail DAT_10457bd8 +8, dat::lang): "ja", "en", "de" or
+    /// "fr". Only the auto-translate dictionary (its file, word keys and compares) and German's quotation marks follow
+    /// it so far; every other text of the client stays English. No Settings row; set in config.json by hand.
+    pub language: String,
     /// The version whose change notes were last shown (client/notes.rs): a newer client shows the notes since. A
     /// config from before the notes has none, so its first newer build shows that build's.
     #[serde(default)]
@@ -582,6 +586,7 @@ impl Default for Config {
             party_tp: true,
             window_opacity: Default::default(),
             gm_window: false,
+            language: "en".into(),
             notes_seen: env!("CARGO_PKG_VERSION").into(),
             lamp_lights: true,
             smooth_lights: false,
@@ -669,6 +674,8 @@ impl Config {
         }
         c.modern_modes.split_timers();
         c.follow_applied_version();
+        // The process's language, as retail's global (an unknown value stays English).
+        crate::dat::lang::set(crate::dat::items::Lang::parse(&c.language).unwrap_or(crate::dat::items::Lang::En));
         c
     }
 

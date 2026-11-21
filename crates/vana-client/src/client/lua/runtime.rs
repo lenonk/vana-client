@@ -391,9 +391,12 @@ pub(super) fn install(lua: &Lua, g: &Table, vm: &super::vm::Vm) -> mlua::Result<
             let want = s.trim().to_lowercase();
             let hit = d.groups.iter().find_map(|g| {
                 if g.title.to_lowercase().trim_matches(|c| c == '【' || c == '】') == want.as_str() {
-                    return Some([2, 2, g.id, 0]);
+                    return Some(crate::dat::autotrans::phrase_block(g.id, 0));
                 }
-                g.phrases.iter().find(|p| p.1.to_lowercase() == want).map(|p| [2, 2, g.id, p.0])
+                g.phrases
+                    .iter()
+                    .find(|p| p.1.to_lowercase() == want)
+                    .map(|p| crate::dat::autotrans::phrase_block(g.id, p.0))
             });
             // The groups the game builds (Key Items, Items), as they stand since the category list last opened.
             let hit = hit.or_else(|| {
@@ -604,10 +607,14 @@ fn phrase_group(group: &Value) -> mlua::Result<Result<u8, u8>> {
 }
 
 /// The block a line holds for (group, id): a phrase's group and id; an item or key item id as the game writes it
-/// (`id_block`: no 00 byte, so id 0, the built group's title, is [8 | 0x14, 2, FF, FF]).
+/// (`id_block`: no 00 byte, so id 0, the built group's title, is [8 | 0x14, language, FF, FF]; the language byte is
+/// the dictionary's).
 pub(super) fn phrase_block(group: &Value, id: u32) -> mlua::Result<[u8; 4]> {
     match phrase_group(group)? {
-        Ok(g) => Ok([2, 2, g, u8::try_from(id).map_err(|_| mlua::Error::runtime("id: 0 to 255"))?]),
+        Ok(g) => Ok(crate::dat::autotrans::phrase_block(
+            g,
+            u8::try_from(id).map_err(|_| mlua::Error::runtime("id: 0 to 255"))?,
+        )),
         Err(kind) => match u16::try_from(id) {
             Ok(id) => Ok(crate::dat::autotrans::id_block(kind, id)),
             Err(_) => Err(mlua::Error::runtime("id: 0 to 65535")),
@@ -619,8 +626,8 @@ pub(super) fn phrase_block(group: &Value, id: u32) -> mlua::Result<[u8; 4]> {
 /// never goes into a line: the 00 would end it.
 pub(super) fn phrase_category(group: &Value) -> mlua::Result<[u8; 4]> {
     Ok(match phrase_group(group)? {
-        Ok(g) => [2, 2, g, 0],
-        Err(kind) => [kind, 2, 0, 0],
+        Ok(g) => crate::dat::autotrans::phrase_block(g, 0),
+        Err(kind) => [kind, crate::dat::autotrans::lang_byte(), 0, 0],
     })
 }
 

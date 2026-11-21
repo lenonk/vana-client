@@ -38,7 +38,7 @@ const PNG_FONTS: Sig = Sig {
     len: 0x18,
     md5: "29ad3dbe3499efcd1c150f200ee8502b",
 };
-/// Language file-id tables: ja, en, fr, de (FUN_10250de0 / retail FUN_1025b510).
+/// Language file-id tables: ja, en, de, fr (FUN_1025cb20 by the client language) (FUN_10250de0 / retail FUN_1025b510).
 const LANGS: [Sig; 4] = [
     Sig {
         name: "language ja",
@@ -53,13 +53,13 @@ const LANGS: [Sig; 4] = [
         md5: "6546f5a771b7cef7fe0399f37cd02ad8",
     },
     Sig {
-        name: "language fr",
+        name: "language de",
         hint: &[0xc2, 0xd9, 0x00, 0x00, 0xc1, 0xd9, 0x00, 0x00],
         len: 0x20,
         md5: "3d0a638cd18612bc1cd79118c95da551",
     },
     Sig {
-        name: "language de",
+        name: "language fr",
         hint: &[0x66, 0xdb, 0x00, 0x00, 0x65, 0xdb, 0x00, 0x00],
         len: 0x20,
         md5: "8fff1aa6789f5f74960df9aef2236e95",

@@ -208,6 +208,7 @@ pub mod furniture;
 pub mod generator;
 pub mod items;
 pub mod journal;
+pub mod lang;
 pub mod maze;
 pub mod merits;
 pub mod motionfile;

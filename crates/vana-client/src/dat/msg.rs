@@ -32,7 +32,7 @@ const GROUP_SLOT: [(u8, usize); 22] = [
     (0x1b, 0x06),
 ];
 
-/// File id of a message group for a language (0 ja, 1 en, 2 fr, 3 de).
+/// File id of a message group for a language (0 ja, 1 en, 2 de, 3 fr: FUN_1025cb20).
 pub fn group_file(ffximain: &[u8], lang: u8, group: u8) -> Option<u32> {
     slot_file(ffximain, lang, GROUP_SLOT.iter().find(|(g, _)| *g == group)?.1)
 }
