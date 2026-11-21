@@ -3,14 +3,10 @@
 
 use super::Gpu;
 
-/// What every pass's source is put after: its bindings and the full-screen triangle. The mod writes
-/// `@fragment fn fs_main(in: VsOut) -> @location(0) vec4<f32>`.
-pub const HEADER: &str = r#"
-struct Post { size: vec2<f32>, time: f32, pad: f32, p: array<vec4<f32>, 4> };
-@group(0) @binding(0) var scene: texture_2d<f32>;
-@group(0) @binding(1) var samp: sampler;
-@group(0) @binding(2) var<uniform> post: Post;
-@group(0) @binding(3) var depth: texture_depth_2d;
+/// The full-screen triangle both headers end with.
+macro_rules! vertex {
+    () => {
+        r#"
 struct VsOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
 @vertex fn vs_main(@builtin(vertex_index) i: u32) -> VsOut {
     let p = vec2<f32>(f32((i << 1u) & 2u), f32(i & 2u));
@@ -19,7 +15,118 @@ struct VsOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
     o.uv = vec2<f32>(p.x, 1.0 - p.y);
     return o;
 }
-"#;
+"#
+    };
+}
+
+/// What every pass's source is put after: its bindings and the full-screen triangle. The mod writes
+/// `@fragment fn fs_main(in: VsOut) -> @location(0) vec4<f32>`.
+pub const HEADER: &str = concat!(
+    r#"
+struct Post { size: vec2<f32>, time: f32, pad: f32, p: array<vec4<f32>, 4> };
+@group(0) @binding(0) var scene: texture_2d<f32>;
+@group(0) @binding(1) var samp: sampler;
+@group(0) @binding(2) var<uniform> post: Post;
+@group(0) @binding(3) var depth: texture_depth_2d;"#,
+    vertex!()
+);
+
+/// The same header on the GL backend, whose GLSL output can't `textureLoad` a `texture_depth_2d`: `depth` is bound as
+/// an unfilterable float texture (the same Depth32Float view, the same values in `.x`) and the mod's
+/// `textureLoad(depth, ...)` calls are rewritten to take `.x` (`gl_source`), so the header keeps its line count.
+const HEADER_GL: &str = concat!(
+    r#"
+struct Post { size: vec2<f32>, time: f32, pad: f32, p: array<vec4<f32>, 4> };
+@group(0) @binding(0) var scene: texture_2d<f32>;
+@group(0) @binding(1) var samp: sampler;
+@group(0) @binding(2) var<uniform> post: Post;
+@group(0) @binding(3) var depth: texture_2d<f32>;"#,
+    vertex!()
+);
+
+/// A mod's source for `HEADER_GL`: every `textureLoad(depth, ...)` becomes `textureLoad(depth, ...).x`, the f32 a
+/// `texture_depth_2d` load gives. Read as WGSL tokens, so spaces and comments anywhere in the call don't hide it.
+fn gl_source(src: &str) -> String {
+    let toks = wgsl_tokens(src);
+    let text = |k: usize| toks.get(k).map(|&(a, b)| &src[a..b]);
+    let mut at = Vec::new();
+    for k in 0..toks.len() {
+        if text(k) != Some("textureLoad") || text(k + 1) != Some("(") || text(k + 2) != Some("depth") {
+            continue;
+        }
+        if text(k + 3) != Some(",") {
+            continue;
+        }
+        let mut level = 0i32;
+        for j in k + 1..toks.len() {
+            match text(j) {
+                Some("(") => level += 1,
+                Some(")") => {
+                    level -= 1;
+                    if level == 0 {
+                        at.push(toks[j].1);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    // Found in call order; a load inside another closes first.
+    at.sort_unstable();
+    let mut out = String::with_capacity(src.len() + 2 * at.len());
+    let mut last = 0;
+    for p in at {
+        out.push_str(&src[last..p]);
+        out.push_str(".x");
+        last = p;
+    }
+    out.push_str(&src[last..]);
+    out
+}
+
+/// WGSL's tokens as byte ranges: identifiers and numbers whole, every other character alone; whitespace, line comments
+/// and (nesting) block comments left out.
+fn wgsl_tokens(src: &str) -> Vec<(usize, usize)> {
+    let b = src.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i..].starts_with(b"//") {
+            i = b[i..].iter().position(|&c| c == b'\n').map_or(b.len(), |n| i + n);
+        } else if b[i..].starts_with(b"/*") {
+            let mut depth = 0;
+            while i < b.len() {
+                if b[i..].starts_with(b"/*") {
+                    depth += 1;
+                    i += 2;
+                } else if b[i..].starts_with(b"*/") {
+                    depth -= 1;
+                    i += 2;
+                    if depth == 0 {
+                        break;
+                    }
+                } else {
+                    i += 1;
+                }
+            }
+        } else if b[i].is_ascii_whitespace() {
+            i += 1;
+        } else if b[i].is_ascii_alphanumeric() || b[i] == b'_' {
+            let start = i;
+            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
+                i += 1;
+            }
+            out.push((start, i));
+        } else {
+            // One character (a multi-byte one whole).
+            let n = src[i..].chars().next().map_or(1, char::len_utf8);
+            out.push((i, i + n));
+            i += n;
+        }
+    }
+    out
+}
 
 /// One mod pass as the mods want it this frame: (mod, id, version, source, parameters).
 pub type Want = (String, String, u64, std::sync::Arc<str>, [[f32; 4]; 4]);
@@ -34,6 +141,8 @@ struct Pass {
 
 pub struct PostFx {
     format: wgpu::TextureFormat,
+    /// On the GL backend (`HEADER_GL`).
+    gl: bool,
     layout: wgpu::BindGroupLayout,
     pl_layout: wgpu::PipelineLayout,
     sampler: wgpu::Sampler,
@@ -45,6 +154,7 @@ impl PostFx {
     /// Passes drawing into views of `format` (the scene's plain view).
     pub fn new(gpu: &Gpu, format: wgpu::TextureFormat) -> Self {
         let d = &gpu.device;
+        let gl = gpu.adapter.get_info().backend == wgpu::Backend::Gl;
         let entry = |binding, ty| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -74,7 +184,11 @@ impl PostFx {
                 entry(
                     3,
                     wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Depth,
+                        sample_type: if gl {
+                            wgpu::TextureSampleType::Float { filterable: false }
+                        } else {
+                            wgpu::TextureSampleType::Depth
+                        },
                         view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
                     },
@@ -91,7 +205,7 @@ impl PostFx {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
-        Self { format, layout, pl_layout, sampler, copy: None, passes: Vec::new() }
+        Self { format, gl, layout, pl_layout, sampler, copy: None, passes: Vec::new() }
     }
 
     /// A pass's pipeline from its source, or the WGSL / validation error.
@@ -99,7 +213,13 @@ impl PostFx {
         let scope = gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let module = gpu.device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("mod post"),
-            source: wgpu::ShaderSource::Wgsl(format!("{HEADER}\n{src}").into()),
+            source: wgpu::ShaderSource::Wgsl(
+                match self.gl {
+                    true => format!("{HEADER_GL}\n{}", gl_source(src)),
+                    false => format!("{HEADER}\n{src}"),
+                }
+                .into(),
+            ),
         });
         let pipeline = gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("mod post"),
@@ -227,5 +347,36 @@ impl PostFx {
             rp.set_bind_group(0, &group, &[]);
             rp.draw(0..3, 0..1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gl_source_takes_x_of_depth_loads_only() {
+        let src = "let a = textureLoad(depth, p + vec2<i32>(1, 0), 0);\n\
+                   let b = textureLoad(scene, p, 0).rgb;\n\
+                   let c = f(textureLoad( depth , q, 0), textureLoad(depth_x, q, 0));\n\
+                   let d = textureLoad(scene, vec2<i32>(textureLoad(depth, q, 0) * 4.0), 0);\n\
+                   let e = textureLoad (/* a */ depth // b\n , q, 0); // textureLoad(depth, q, 0)\n\
+                   let f = textureLoad(depth, p + vec2<i32>(i32(textureLoad(depth, p, 0)), 0), 0);";
+        assert_eq!(
+            gl_source(src),
+            "let a = textureLoad(depth, p + vec2<i32>(1, 0), 0).x;\n\
+             let b = textureLoad(scene, p, 0).rgb;\n\
+             let c = f(textureLoad( depth , q, 0).x, textureLoad(depth_x, q, 0));\n\
+             let d = textureLoad(scene, vec2<i32>(textureLoad(depth, q, 0).x * 4.0), 0);\n\
+             let e = textureLoad (/* a */ depth // b\n , q, 0).x; // textureLoad(depth, q, 0)\n\
+             let f = textureLoad(depth, p + vec2<i32>(i32(textureLoad(depth, p, 0).x), 0), 0).x;"
+        );
+    }
+
+    #[test]
+    fn gl_header_keeps_the_line_count() {
+        // Mods' WGSL errors count the header's lines (vana.lua: "15 header lines", with the line build joins on).
+        assert_eq!(HEADER.lines().count(), HEADER_GL.lines().count());
+        assert_eq!(format!("{HEADER}\n").lines().count(), 15);
     }
 }

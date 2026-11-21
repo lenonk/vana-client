@@ -286,7 +286,7 @@ impl DistIter {
                 buf_entry(5, cs, rw, false),
                 buf_entry(6, cs, rw, false),
                 tex_entry(8, wgpu::TextureSampleType::Float { filterable: false }),
-                tex_entry(9, wgpu::TextureSampleType::Depth),
+                tex_entry(9, wgpu::TextureSampleType::Float { filterable: false }),
                 buf_entry(10, cs, rw, false),
             ],
         });
@@ -489,6 +489,20 @@ struct Staging {
     words: usize,
 }
 
+/// The effects update pass's storage buffers in one stage.
+pub const STORAGE_NEEDED: u32 = 9;
+
+/// Whether `gpu` can build the effects pipelines (headless tools check before EffectsGpu::new; the game stops at
+/// start-up, Gpu::with_adapter).
+pub fn fits(gpu: &super::Gpu) -> anyhow::Result<()> {
+    let n = gpu.device.limits().max_storage_buffers_per_shader_stage;
+    anyhow::ensure!(
+        n >= STORAGE_NEEDED,
+        "the effects need {STORAGE_NEEDED} storage buffers per shader stage; this GPU has {n}"
+    );
+    Ok(())
+}
+
 pub struct EffectsGpu {
     update: wgpu::ComputePipeline,
     update_layout: wgpu::BindGroupLayout,
@@ -684,7 +698,7 @@ impl EffectsGpu {
                     binding: 10,
                     visibility: cs,
                     ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Depth,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
                         view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
                     },
@@ -746,7 +760,7 @@ impl EffectsGpu {
                     binding: 7,
                     visibility: wgpu::ShaderStages::FRAGMENT | cs,
                     ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Depth,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
                         view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
                     },
@@ -844,7 +858,7 @@ impl EffectsGpu {
                     binding: 4,
                     visibility: cs,
                     ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Depth,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
                         view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
                     },

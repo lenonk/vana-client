@@ -25,7 +25,7 @@ struct U {
     lin: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: U;
-@group(0) @binding(1) var depth: texture_depth_2d;
+@group(0) @binding(1) var depth: texture_2d<f32>;
 @group(0) @binding(2) var ao: texture_2d<f32>;
 
 struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
@@ -39,7 +39,7 @@ struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
 
 fn size() -> vec2<f32> { return vec2<f32>(textureDimensions(depth)); }
 fn depth_at(px: vec2<f32>) -> f32 {
-    return textureLoad(depth, vec2<i32>(clamp(px, vec2<f32>(0.0), size() - 1.0)), 0);
+    return textureLoad(depth, vec2<i32>(clamp(px, vec2<f32>(0.0), size() - 1.0)), 0).x;
 }
 // The distance along the view axis of a depth value (a 0..1 perspective projection).
 fn linear(d: f32) -> f32 {
@@ -162,7 +162,7 @@ impl Ssao {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Depth,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
                         view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
                     },

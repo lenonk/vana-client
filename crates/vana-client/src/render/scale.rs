@@ -112,6 +112,16 @@ struct Target {
     group: wgpu::BindGroup,
 }
 
+/// `size` scaled down (aspect kept) until neither side is over `max`.
+pub fn fit(size: [u32; 2], max: u32) -> [u32; 2] {
+    let over = size[0].max(size[1]);
+    if over <= max {
+        return size;
+    }
+    let k = max as f64 / over as f64;
+    [((size[0] as f64 * k) as u32).clamp(1, max), ((size[1] as f64 * k) as u32).clamp(1, max)]
+}
+
 pub struct SceneScale {
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
@@ -330,6 +340,13 @@ impl SceneScale {
 
 #[cfg(test)]
 mod tests {
+    /// A 2x background in a 2560x1440 window on a 4096 device: 4096x2304; sizes within the limit are untouched.
+    #[test]
+    fn fit_keeps_aspect_under_the_limit() {
+        assert_eq!(super::fit([5120, 2880], 4096), [4096, 2304]);
+        assert_eq!(super::fit([1280, 720], 4096), [1280, 720]);
+        assert_eq!(super::fit([300, 9000], 4096), [136, 4096]);
+    }
     use super::*;
 
     fn read(gpu: &Gpu, tex: &wgpu::Texture, w: u32, h: u32) -> Vec<u8> {

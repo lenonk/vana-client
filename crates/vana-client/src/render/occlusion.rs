@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 const WGSL: &str = r#"
-@group(0) @binding(0) var depth: texture_depth_2d;
+@group(0) @binding(0) var depth: texture_2d<f32>;
 @group(0) @binding(1) var<storage, read> queries: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read_write> out: array<u32>;
 
@@ -30,7 +30,7 @@ fn occlusion(@builtin(global_invocation_id) gid: vec3<u32>) {
         for (var y = 0u; y < 8u; y = y + 1u) {
             for (var x = 0u; x < 8u; x = x + 1u) {
                 let p = p0 + (vec2<f32>(f32(x), f32(y)) + 0.5) / 8.0 * (p1 - p0);
-                let d = textureLoad(depth, vec2<i32>(min(p, dims - 1.0)), 0);
+                let d = textureLoad(depth, vec2<i32>(min(p, dims - 1.0)), 0).x;
                 if (z <= d) { hits = hits + 1u; }
             }
         }
@@ -83,7 +83,7 @@ impl Occlusion {
             binding: 0,
             visibility: wgpu::ShaderStages::COMPUTE,
             ty: wgpu::BindingType::Texture {
-                sample_type: wgpu::TextureSampleType::Depth,
+                sample_type: wgpu::TextureSampleType::Float { filterable: false },
                 view_dimension: wgpu::TextureViewDimension::D2,
                 multisampled: false,
             },

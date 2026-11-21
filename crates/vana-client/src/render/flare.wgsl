@@ -15,7 +15,7 @@ struct FP {
 @group(0) @binding(1) var<storage, read> el: array<u32>;
 @group(0) @binding(2) var<storage, read> slots: array<u32>;
 @group(0) @binding(3) var<storage, read_write> outs: array<f32>;
-@group(0) @binding(4) var depth: texture_depth_2d;
+@group(0) @binding(4) var depth: texture_2d<f32>;
 
 @compute @workgroup_size(64)
 fn flare_vis(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -76,7 +76,7 @@ fn flare_vis(@builtin(global_invocation_id) gid: vec3<u32>) {
             let px = f32(ux1 + 1) + (f32(tx) + 0.5) / f32(cw16) * f32(ux2 - ux1 - 1);
             let py = f32(uy1 + 1) + (f32(ty) + 0.5) / f32(ch16) * f32(uy2 - uy1 - 1);
             if (px < 0.0 || py < 0.0 || px >= w || py >= h) { continue; }
-            if (textureLoad(depth, vec2<i32>(i32(px), i32(py)), 0) >= 0.99999988) { n = n + 1u; }
+            if (textureLoad(depth, vec2<i32>(i32(px), i32(py)), 0).x >= 0.99999988) { n = n + 1u; }
         }
     }
     outs[o + 27u] = f32(4u * n);

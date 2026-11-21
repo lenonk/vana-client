@@ -293,7 +293,7 @@ struct U {
     misc: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: U;
-@group(0) @binding(1) var scene_depth: texture_depth_2d;
+@group(0) @binding(1) var scene_depth: texture_2d<f32>;
 @group(0) @binding(2) var maps: texture_depth_2d_array;
 @group(0) @binding(3) var cmp: sampler_comparison;
 // The zone's point lights (zone.wgsl plights): per slot (position, range), (colour, intensity).
@@ -310,7 +310,7 @@ struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
 
 @fragment fn fs(i: VOut) -> @location(0) vec4<f32> {
     let px = vec2<i32>(clamp(i.pos.xy, vec2<f32>(0.0), vec2<f32>(textureDimensions(scene_depth)) - 1.0));
-    let d = textureLoad(scene_depth, px, 0);
+    let d = textureLoad(scene_depth, px, 0).x;
     let ndc = vec4<f32>(i.uv.x * 2.0 - 1.0, 1.0 - i.uv.y * 2.0, d, 1.0);
     let h = u.inv_view_proj * ndc;
     let world = h.xyz / h.w;
@@ -373,7 +373,7 @@ fn receive_pipeline(
                 binding: 1,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Depth,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
                     view_dimension: wgpu::TextureViewDimension::D2,
                     multisampled: false,
                 },

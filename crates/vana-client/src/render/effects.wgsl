@@ -37,7 +37,7 @@ struct Params {
 // The zone's point-light table (render/mod.rs LIGHTS x two vec4s).
 @group(0) @binding(9) var<storage, read_write> lights: array<vec4<f32>>;
 // This frame's scene depth (drawn before the update pass), for op 0x53.
-@group(0) @binding(10) var scene_depth: texture_depth_2d;
+@group(0) @binding(10) var scene_depth: texture_2d<f32>;
 
 // FUN_10044f10: the element's view-space position (+0x188) as the transform places it: camera-relative (flags bit 2)
 // elements are view_rot x pos (bit 3 too: pos itself), flag 0x20000 the parent's translation in view space plus pos
@@ -84,7 +84,7 @@ fn occlusion_hits(c: vec3<f32>, half: f32) -> u32 {
     for (var y = 0u; y < 16u; y = y + 1u) {
         for (var x = 0u; x < 16u; x = x + 1u) {
             let s = p0 + (vec2<f32>(f32(x), f32(y)) + 0.5) / 16.0 * (p1 - p0);
-            if (z <= textureLoad(scene_depth, vec2<i32>(min(s, dims - 1.0)), 0)) { hits = hits + 1u; }
+            if (z <= textureLoad(scene_depth, vec2<i32>(min(s, dims - 1.0)), 0).x) { hits = hits + 1u; }
         }
     }
     return hits;
@@ -1026,7 +1026,7 @@ struct Draw {
 @group(0) @binding(4) var<storage, read> sverts: array<u32>;
 @group(0) @binding(5) var<storage, read> sframes: array<vec2<u32>>;
 @group(0) @binding(6) var<storage, read> mdata: array<u32>;
-@group(0) @binding(7) var scene_depth: texture_depth_2d;
+@group(0) @binding(7) var scene_depth: texture_2d<f32>;
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
 @group(2) @binding(0) var spec2d: texture_2d<f32>;
@@ -1905,7 +1905,7 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
     // Ours: a glow or light volume (flag 27) fades out within a yalm of the scenery behind it, so it no longer cuts
     // straight into walls and pillars. The scene depth is NDC z of the plain projection (near d.clip.x, far d.clip.y).
     if (d.fog.w > 0.5 && (flags & 0x8000000u) != 0u) {
-        let z = textureLoad(scene_depth, vec2<i32>(i.clip.xy), 0);
+        let z = textureLoad(scene_depth, vec2<i32>(i.clip.xy), 0).x;
         let k = d.clip.y / (d.clip.x - d.clip.y);
         let scene = d.clip.x * k / (z + k);
         a = a * sat(scene - i.depth);
@@ -1933,7 +1933,7 @@ struct DistJob { e: u32, pad0: u32, pad1: u32, pad2: u32 };
 @group(1) @binding(8) var dsrc: texture_2d<f32>;
 // Per element: the geometry the repeats share (dist_region; DIST_GEO vec4s).
 @group(1) @binding(10) var<storage, read_write> dgeo: array<vec4<f32>>;
-@group(1) @binding(9) var dsrc_depth: texture_depth_2d;
+@group(1) @binding(9) var dsrc_depth: texture_2d<f32>;
 
 fn srgb_dec(c: f32) -> f32 {
     if (c <= 0.04045) { return c / 12.92; }
@@ -2140,7 +2140,7 @@ fn dist_load(@builtin(global_invocation_id) g: vec3<u32>) {
     if (p.x >= r.z || p.y >= r.w) { return; }
     let i = u32(p.y * i32(d.clip.z) + p.x);
     dscene[i] = pack4x8unorm(textureLoad(dsrc, p, 0));
-    ddepth[i] = textureLoad(dsrc_depth, p, 0);
+    ddepth[i] = textureLoad(dsrc_depth, p, 0).x;
 }
 
 // vs_dist_copy / fs_dist_copy: the tips at (P - min) k + 0.5 in the copy, the scene at (P - 0.5) / (W, H) under each
@@ -2200,7 +2200,7 @@ fn dist_fan(@builtin(global_invocation_id) g: vec3<u32>) {
         if (d.fog.z > 0.5) { rgb = pow(rgb, vec3<f32>(2.2)); }
         let flags = dels[e * E_WORDS + E_FLAGS];
         if (d.fog.w > 0.5 && (flags & 0x8000000u) != 0u) {
-            let sz = textureLoad(scene_depth, px, 0);
+            let sz = textureLoad(scene_depth, px, 0).x;
             let k = d.clip.y / (d.clip.x - d.clip.y);
             a = a * sat(d.clip.x * k / (sz + k) - uvd.z);
         }

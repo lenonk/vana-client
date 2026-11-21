@@ -33,8 +33,19 @@ pub const INDOOR_STRENGTH: f32 = STRENGTH;
 const FADE_START: f32 = 3.0;
 const FADE_END: f32 = 7.0;
 
-/// The format of the map's companion target: per texel, the feet height (world y) of the caster nearest the sun.
-pub const FEET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
+/// The formats the map's companion target can take, best first: per texel, the feet height (world y) of the caster
+/// nearest the sun. R32Float isn't renderable on every GL driver (wgpu's GL backend wants
+/// `GL_EXT_color_buffer_float` listed, which Mesa's core profiles leave out); R16Float is close enough for the fade
+/// (`FADE_START` / `FADE_END` are metres).
+const FEET_FORMATS: [wgpu::TextureFormat; 2] = [wgpu::TextureFormat::R32Float, wgpu::TextureFormat::R16Float];
+
+/// The feet target's format on this adapter, or None when it can render to none of them (no character shadows).
+pub fn feet_format(adapter: &wgpu::Adapter) -> Option<wgpu::TextureFormat> {
+    FEET_FORMATS.into_iter().find(|&f| {
+        let u = adapter.get_texture_format_features(f).allowed_usages;
+        u.contains(wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING)
+    })
+}
 
 const WGSL: &str = r#"
 struct U {
@@ -49,8 +60,8 @@ struct U {
     misc: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: U;
-@group(0) @binding(1) var scene_depth: texture_depth_2d;
-@group(0) @binding(2) var map: texture_depth_2d;
+@group(0) @binding(1) var scene_depth: texture_2d<f32>;
+@group(0) @binding(2) var map: texture_2d<f32>;
 @group(0) @binding(3) var cmp: sampler_comparison;
 @group(0) @binding(4) var feet: texture_2d<f32>;
 
@@ -65,7 +76,7 @@ struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
 
 @fragment fn fs(i: VOut) -> @location(0) vec4<f32> {
     let px = vec2<i32>(clamp(i.pos.xy, vec2<f32>(0.0), vec2<f32>(textureDimensions(scene_depth)) - 1.0));
-    let d = textureLoad(scene_depth, px, 0);
+    let d = textureLoad(scene_depth, px, 0).x;
     let ndc = vec4<f32>(i.uv.x * 2.0 - 1.0, 1.0 - i.uv.y * 2.0, d, 1.0);
     let h = u.inv_view_proj * ndc;
     let world = h.xyz / h.w;
@@ -93,7 +104,7 @@ struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
             for (var k = 0; k < 4; k++) {
                 let o = vec2<f32>(f32(k & 1), f32(k >> 1u));
                 let t = vec2<i32>(clamp(b + o, vec2<f32>(0.0), dim - 1.0));
-                let caster = textureLoad(map, t, 0);
+                let caster = textureLoad(map, t, 0).x;
                 let drop = world.y - textureLoad(feet, t, 0).x;
                 c[k] = select(0.0, 1.0 - smoothstep(u.misc.z, u.misc.w, drop), lp.z > caster);
             }
@@ -190,7 +201,7 @@ pub struct SunShadow {
     /// The receive pass's group, by the depth, the map and the feet it binds.
     group: super::BindCache<[wgpu::TextureView; 3]>,
     pub map: wgpu::TextureView,
-    /// Beside the map: each texel's caster's feet height (FEET_FORMAT), written by the same pass.
+    /// Beside the map: each texel's caster's feet height (feet_format), written by the same pass.
     pub feet: wgpu::TextureView,
     /// The map's size in texels.
     pub size: u32,
@@ -204,8 +215,14 @@ pub struct SunShadow {
 }
 
 impl SunShadow {
-    /// `format`: the scene's colour format (the plain view the world draws through).
-    pub fn new(gpu: &Gpu, sil_layout: &wgpu::BindGroupLayout, format: wgpu::TextureFormat, size: u32) -> Self {
+    /// `format`: the scene's colour format (the plain view the world draws through); `feet`: feet_format's.
+    pub fn new(
+        gpu: &Gpu,
+        sil_layout: &wgpu::BindGroupLayout,
+        format: wgpu::TextureFormat,
+        feet: wgpu::TextureFormat,
+        size: u32,
+    ) -> Self {
         let device = &gpu.device;
         let map = device
             .create_texture(&wgpu::TextureDescriptor {
@@ -226,7 +243,7 @@ impl SunShadow {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: FEET_FORMAT,
+                format: feet,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             })
@@ -253,7 +270,7 @@ impl SunShadow {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
             ty: wgpu::BindingType::Texture {
-                sample_type: wgpu::TextureSampleType::Depth,
+                sample_type: wgpu::TextureSampleType::Float { filterable: false },
                 view_dimension: wgpu::TextureViewDimension::D2,
                 multisampled: false,
             },
@@ -474,113 +491,122 @@ mod tests {
     #[test]
     fn receive_darkens_shadowed_floor() {
         let Ok(gpu) = Gpu::headless() else { return };
-        let format = wgpu::TextureFormat::Rgba8Unorm;
-        let silly = gpu.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: true,
-                    min_binding_size: wgpu::BufferSize::new(64),
-                },
-                count: None,
-            }],
-        });
-        let sh = SunShadow::new(&gpu, &silly, format, 1024);
-        let n = 16u32;
-        // y is down: the eye 10 above the floor at y = 0, looking down.
-        let cam =
-            crate::render::Camera { eye: Vec3::new(0.0, -10.0, 0.0), target: Vec3::ZERO, up: Vec3::Z, fov_y: 0.8 };
-        let vp = cam.view_proj(1.0);
-        let floor_z = vp.project_point3(Vec3::ZERO).z;
-        let sun = Vec3::Y;
-        let light = light_matrix(sun, Vec3::ZERO, MAP_SIZE).unwrap();
-        let depth = crate::render::depth_view(&gpu.device, n, n);
-        let color = gpu.device.create_texture(&wgpu::TextureDescriptor {
-            label: None,
-            size: wgpu::Extent3d { width: n, height: n, depth_or_array_layers: 1 },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        let cv = color.create_view(&Default::default());
-        // The floor's depth in the map: a caster just above it shadows, one far above does not.
-        let floor_lz = light.project_point3(Vec3::ZERO).z;
-        let run = |map_depth: f32, feet_y: f32| {
-            let mut enc = gpu.device.create_command_encoder(&Default::default());
-            {
-                let _p = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: None,
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &cv,
-                        depth_slice: None,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.8, g: 0.8, b: 0.8, a: 1.0 }),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &depth,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(floor_z),
-                            store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
-                    }),
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                });
-            }
-            {
-                let _p = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: None,
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &sh.feet,
-                        depth_slice: None,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color { r: feet_y as f64, g: 0.0, b: 0.0, a: 1.0 }),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &sh.map,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(map_depth),
-                            store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
-                    }),
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                });
-            }
-            sh.receive(&gpu, &mut enc, &cv, &depth, vp, light, sun, STRENGTH, cam.eye, 1.0);
-            gpu.queue.submit([enc.finish()]);
-            read(&gpu, &color, n, n)
+        // Every feet format this adapter renders (R16Float, the GL fallback, as well as R32Float); with none,
+        // feet_format says so and the sun shadows stay off (ZonePipes::sun_depth None).
+        let renders = |f: wgpu::TextureFormat| {
+            let u = gpu.adapter.get_texture_format_features(f).allowed_usages;
+            u.contains(wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING)
         };
-        let lit = (0.8f32 * 255.0).round() as i32;
-        let dark = (0.8 * (1.0 - STRENGTH) * 255.0).round() as i32;
-        for p in run(1.0, 0.0).as_chunks::<4>().0 {
-            assert!((p[0] as i32 - lit).abs() <= 2, "unshadowed {p:?}");
-        }
-        for p in run(floor_lz - 1.0 / DEPTH, 0.0).as_chunks::<4>().0 {
-            assert!((p[0] as i32 - dark).abs() <= 3, "shadowed {p:?} want {dark}");
-        }
-        // y is down: feet 20 above the floor.
-        for p in run(floor_lz - 20.0 / DEPTH, -20.0).as_chunks::<4>().0 {
-            assert!((p[0] as i32 - lit).abs() <= 2, "caster far above {p:?}");
-        }
-        for p in run(floor_lz - 20.0 / DEPTH, -1.0).as_chunks::<4>().0 {
-            assert!((p[0] as i32 - dark).abs() <= 3, "caster a step above {p:?} want {dark}");
+        assert_eq!(feet_format(&gpu.adapter), FEET_FORMATS.into_iter().find(|&f| renders(f)));
+        for feet in FEET_FORMATS.into_iter().filter(|&f| renders(f)) {
+            let format = wgpu::TextureFormat::Rgba8Unorm;
+            let silly = gpu.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: None,
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: true,
+                        min_binding_size: wgpu::BufferSize::new(64),
+                    },
+                    count: None,
+                }],
+            });
+            let sh = SunShadow::new(&gpu, &silly, format, feet, 1024);
+            let n = 16u32;
+            // y is down: the eye 10 above the floor at y = 0, looking down.
+            let cam =
+                crate::render::Camera { eye: Vec3::new(0.0, -10.0, 0.0), target: Vec3::ZERO, up: Vec3::Z, fov_y: 0.8 };
+            let vp = cam.view_proj(1.0);
+            let floor_z = vp.project_point3(Vec3::ZERO).z;
+            let sun = Vec3::Y;
+            let light = light_matrix(sun, Vec3::ZERO, MAP_SIZE).unwrap();
+            let depth = crate::render::depth_view(&gpu.device, n, n);
+            let color = gpu.device.create_texture(&wgpu::TextureDescriptor {
+                label: None,
+                size: wgpu::Extent3d { width: n, height: n, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+            let cv = color.create_view(&Default::default());
+            // The floor's depth in the map: a caster just above it shadows, one far above does not.
+            let floor_lz = light.project_point3(Vec3::ZERO).z;
+            let run = |map_depth: f32, feet_y: f32| {
+                let mut enc = gpu.device.create_command_encoder(&Default::default());
+                {
+                    let _p = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: None,
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &cv,
+                            depth_slice: None,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.8, g: 0.8, b: 0.8, a: 1.0 }),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                            view: &depth,
+                            depth_ops: Some(wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(floor_z),
+                                store: wgpu::StoreOp::Store,
+                            }),
+                            stencil_ops: None,
+                        }),
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    });
+                }
+                {
+                    let _p = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: None,
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &sh.feet,
+                            depth_slice: None,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color { r: feet_y as f64, g: 0.0, b: 0.0, a: 1.0 }),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                            view: &sh.map,
+                            depth_ops: Some(wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(map_depth),
+                                store: wgpu::StoreOp::Store,
+                            }),
+                            stencil_ops: None,
+                        }),
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    });
+                }
+                sh.receive(&gpu, &mut enc, &cv, &depth, vp, light, sun, STRENGTH, cam.eye, 1.0);
+                gpu.queue.submit([enc.finish()]);
+                read(&gpu, &color, n, n)
+            };
+            let lit = (0.8f32 * 255.0).round() as i32;
+            let dark = (0.8 * (1.0 - STRENGTH) * 255.0).round() as i32;
+            for p in run(1.0, 0.0).as_chunks::<4>().0 {
+                assert!((p[0] as i32 - lit).abs() <= 2, "unshadowed {p:?}");
+            }
+            for p in run(floor_lz - 1.0 / DEPTH, 0.0).as_chunks::<4>().0 {
+                assert!((p[0] as i32 - dark).abs() <= 3, "shadowed {p:?} want {dark}");
+            }
+            // y is down: feet 20 above the floor.
+            for p in run(floor_lz - 20.0 / DEPTH, -20.0).as_chunks::<4>().0 {
+                assert!((p[0] as i32 - lit).abs() <= 2, "caster far above {p:?}");
+            }
+            for p in run(floor_lz - 20.0 / DEPTH, -1.0).as_chunks::<4>().0 {
+                assert!((p[0] as i32 - dark).abs() <= 3, "caster a step above {p:?} want {dark} ({feet:?})");
+            }
         }
     }
 }

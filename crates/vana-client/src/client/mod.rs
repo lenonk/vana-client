@@ -18567,6 +18567,8 @@ impl App {
         } else {
             (bg, aspect)
         };
+        // Within the device's texture size (4096 on some GLES parts), the aspect kept.
+        let bg = crate::render::scale::fit(bg, gfx.gpu.device.limits().max_texture_dimension_2d);
         if lcd {
             self.lcd_frame = (self.lcd_frame + 1) % 4;
         }
