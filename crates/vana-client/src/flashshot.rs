@@ -34,6 +34,8 @@ pub fn run(zone: u32, hour: f32, pos: [f32; 3], out_dir: &std::path::Path) -> Re
     let format = wgpu::TextureFormat::Rgba8Unorm;
     let mut r = render::ZoneRenderer::new(&gpu, &scene, format);
     r.lighting = lighting;
+    r.material_maps = crate::material::available();
+    r.material_strength = crate::material::env_strength();
     let p = Vec3::from(pos);
     let (w, h) = (800u32, 600u32);
     let camera = render::Camera {

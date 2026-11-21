@@ -24848,3 +24848,45 @@ modern/search.rs (the "roe" list).
 - Tests: items::order_tests::kept_order_survives_a_resend, changed_item_goes_last, view_change_sorts.
 - Seen live (Lnxcsfix, slots pearlsack / wind crystal / cotton cloth / cipher), before the 0x52 reset: sorted at
   login, still sorted after zoning to Northern San d'Oria and back.
+
+## Material Maps: normal, roughness and metal maps for the textures (ours, not retail; 2026-11-20)
+
+User request: generate normal, roughness and metal maps for our HD pack and use them. Retail has no such maps; its
+only per-pixel relief is config 0017's Bp height maps on some zones' walls ("Config tool 0017").
+- Maps: PBRify Remix (Kim2091, CC0 models trained on CC0 ambientCG / Poly Haven materials; SPAN, 1x) makes the
+  normal map (DirectX: green along +v, checked against its height model's gradients) and the roughness. Run on our
+  pack's images (Upscayl Standard 4x) at half their size (2x stock): at the full 4x the models see only soft
+  gradients and the normals come out nearly flat, at stock size they are strongest but coarse. No CC0 model makes
+  metal maps (Ubisoft's CHORD does, research-only licence), so metal is a guess for equipment textures (name `tim`)
+  only: grey or gold, bright, and smooth by the roughness map; scenery keeps metal 0 (lava and sand read as gold).
+  Only the world's and characters' images (names `model`, `ship`, `ship_f`, `tim`, `timws`: 17,060 of the 33,363) get
+  maps; effect sprites never go through these shaders.
+- `mat-pack --manifest DIR --maps DIR [--hd MODDIR] --out DIR` (texpack.rs): each image's maps once as
+  `maps/<2 hex>/<key>.vmat` (BC5 normal x / y renormalised per mip, BC5 roughness / metal, mips down to 4 texels), and
+  `index.bin` from Texture::content_key (FNV-1a over the size and the stored DXT blocks, else RGBA, by 64-bit words,
+  splitmix finish) of the stock image and of the tex-pack copy to the map key. So the maps follow the stock textures
+  and ours; another HD pack's images are not indexed.
+- Client (material.rs): config `material_maps`, Settings > Textures > Material Maps (both UIs): Off (default) / Low /
+  Medium / High, strength 1 / 2 / 3 (Uniforms modes.w; FFXI_MATERIAL_STRENGTH for the tools). Turning it on takes
+  effect at the next zone (the maps are attached as zone and character files load: dat::zone::load_scene,
+  dat::character::load_file). The pack is `<data>/materials` (VANA_MATERIALS elsewhere; FFXI_MATERIAL_MAPS=1 for the
+  offscreen tools). It follows the setting at the top of every frame (App::frame_updates), before loader tasks start:
+  opened first in draw_scene, it came after the login zone's load, so that zone kept no maps at any strength (the
+  user's log: zone 243's textures on the GPU at 04:45:37.879, the pack at .881).
+- Render: the texture group (group 1) gains bindings 2 / 3 (the two maps; a flat 1 x 1 pair for textures without),
+  so every pipeline keeps its layout. zone.wgsl surface(): the normal map in a frame from the screen derivatives of
+  the world position and uv (no vertex tangents), taken before any branch on varyings. lit_zone / lit_actor use it
+  for the sun / moon (and in two-light mode both) N.L and the point lights, add GGX specular from the roughness (F0
+  0.04, the colour for metal; faded out toward roughness 1, the flat default) under the baked vertex light (scenery)
+  or the model tint (actors), take half the diffuse for metal (no reflections), and scale the ambient by
+  1 + 0.4 (n.y - n'.y) (Y down): FFXI's ambient has no direction, so without it bumps would show only where the sun
+  falls. The strength scales the maps' tilt and that ambient term, and shades the baked vertex light (most of the
+  scenery's light) by 1 + 0.5 k (n'.L - n.L) against the key light (the sun, or the first of the two), clamped
+  0.3..2, as config 0017's bump scales it. A flat map changes nothing. Type-3 (Bp) meshes draw through lit_zone
+  with our maps in place of the Bp ones.
+- Generation: 17,060 images (1.9 Gpx at half size) in 12 min on the 7900 XTX (ROCm PyTorch, fp16, 1024 tiles);
+  the pack is 17,079 maps, 34,179 indexed textures, 4.8 GB.
+- Seen: zone-shot 230 at 15:00 at strengths 1..4: at 1 hardly a change (the ambient carries most of the light),
+  2 the walls' stone blocks and mortar lines and the floor's wear stand out, 4 the floor turns to noise.
+  flash-shot (zone 101, the Hume in body 8): the wall and the beam carved, the leather and boots a little raised
+  and glossy. Not seen live yet.

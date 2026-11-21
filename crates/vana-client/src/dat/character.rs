@@ -838,6 +838,7 @@ pub fn load_file(file: &[u8]) -> Result<CharFile> {
             out.warnings.push(format!("chunk {} at {:#x}: {e}", c.name(), c.offset));
         }
     }
+    crate::material::attach(&mut out.textures);
     Ok(out)
 }
 

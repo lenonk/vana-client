@@ -41,6 +41,7 @@ mod unrar_isnt {
 mod inventory;
 mod invitems;
 mod invshot;
+mod material;
 mod modpack;
 mod motion;
 mod motionq;
@@ -319,6 +320,20 @@ enum Cmd {
         /// Image keys (one per line, first column) whose files are rebuilt even when already built.
         #[arg(long)]
         redo: Option<PathBuf>,
+    },
+    /// The material pack (material.rs) from generated normal / roughness / metal maps for tex-export's images.
+    MatPack {
+        /// The tex-export folder (its manifest.tsv).
+        #[arg(long)]
+        manifest: PathBuf,
+        /// The maps: `<key>.n.png`, `<key>.r.png`, `<key>.m.png`.
+        #[arg(long)]
+        maps: PathBuf,
+        /// A tex-pack folder whose copies are indexed too.
+        #[arg(long)]
+        hd: Option<PathBuf>,
+        #[arg(long)]
+        out: PathBuf,
     },
     /// Install a pack archive into `root` as Settings > Mods does, to check a pack before publishing it.
     ModInstall {
@@ -1213,6 +1228,10 @@ fn main() -> Result<()> {
         }));
     }
     log.init();
+    // FFXI_MATERIAL_MAPS: the offscreen tools load the material pack (material.rs); play follows Settings.
+    if std::env::var_os("FFXI_MATERIAL_MAPS").is_some() {
+        material::set_enabled(true);
+    }
     let Some(cmd) = cli.cmd else {
         return client::run(config::Config::load(), client::Drive::default());
     };
@@ -1666,6 +1685,8 @@ fn main() -> Result<()> {
                 r.bump_mode = bump;
                 // FFXI_SMOOTH_LIGHTS: Settings' Light Shading Smooth (ours) in place of retail's per-vertex lights.
                 r.smooth_lights = std::env::var_os("FFXI_SMOOTH_LIGHTS").is_some();
+                r.material_maps = crate::material::available();
+                r.material_strength = crate::material::env_strength();
                 if let Some(v) = voyage_v {
                     r.voyage = v;
                 }
@@ -2305,6 +2326,7 @@ fn main() -> Result<()> {
         }
         Cmd::TexPack { manifest, upscaled, out, redo } => texpack::pack(&manifest, &upscaled, &out, redo.as_deref()),
         Cmd::TexSlim { pack, out } => texpack::slim(&pack, &out),
+        Cmd::MatPack { manifest, maps, hd, out } => texpack::mat_pack(&manifest, &maps, hd.as_deref(), &out),
         Cmd::ModInstall { archive, root } => {
             let pack = modpack::pack_of(&archive)?;
             let n = modpack::install(&pack, &root, &std::sync::atomic::AtomicU32::new(0))?;

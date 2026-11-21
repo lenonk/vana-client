@@ -589,6 +589,219 @@ pub fn slim(pack: &Path, out: &Path) -> Result<()> {
     Ok(())
 }
 
+/// A PNG of any colour type as RGBA8 (grey into all three channels).
+fn load_any_png(path: &Path) -> Result<(u32, u32, Vec<u8>)> {
+    let mut d = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(path)?));
+    d.set_transformations(png::Transformations::normalize_to_color8());
+    let mut r = d.read_info()?;
+    let mut buf = vec![0u8; r.output_buffer_size().context("png size")?];
+    let info = r.next_frame(&mut buf)?;
+    buf.truncate(info.buffer_size());
+    let rgba = match info.color_type {
+        png::ColorType::Rgba => buf,
+        png::ColorType::Rgb => buf.as_chunks::<3>().0.iter().flat_map(|p| [p[0], p[1], p[2], 255]).collect(),
+        png::ColorType::Grayscale => buf.iter().flat_map(|&g| [g, g, g, 255]).collect(),
+        png::ColorType::GrayscaleAlpha => {
+            buf.as_chunks::<2>().0.iter().flat_map(|p| [p[0], p[0], p[0], p[1]]).collect()
+        }
+        c => anyhow::bail!("{}: {c:?}", path.display()),
+    };
+    Ok((info.width, info.height, rgba))
+}
+
+/// A material map image as BC5 with its mips down to 4 texels; `normal` renormalises each level (x, y kept, z from the
+/// blue channel).
+fn bc5_chain(w: u32, h: u32, rgba: &[u8], levels: u32, normal: bool) -> Vec<u8> {
+    let mut px: Vec<[f32; 3]> = rgba
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|p| {
+            let v = [p[0] as f32 / 255.0, p[1] as f32 / 255.0, p[2] as f32 / 255.0];
+            if normal { [v[0] * 2.0 - 1.0, v[1] * 2.0 - 1.0, v[2] * 2.0 - 1.0] } else { v }
+        })
+        .collect();
+    let (mut lw, mut lh) = (w as usize, h as usize);
+    let mut out = Vec::with_capacity(crate::material::Material::chain_size(w, h, levels));
+    for l in 0..levels {
+        if l > 0 {
+            let (nw, nh) = (lw / 2, lh / 2);
+            let mut next = vec![[0f32; 3]; nw * nh];
+            for y in 0..nh {
+                for x in 0..nw {
+                    let mut s = [0f32; 3];
+                    for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                        let p = px[(2 * y + dy) * lw + 2 * x + dx];
+                        for c in 0..3 {
+                            s[c] += p[c] * 0.25;
+                        }
+                    }
+                    next[y * nw + x] = s;
+                }
+            }
+            (px, lw, lh) = (next, nw, nh);
+        }
+        let enc: Vec<u8> = px
+            .iter()
+            .flat_map(|p| {
+                let q = if normal {
+                    let n = (p[0] * p[0] + p[1] * p[1] + p[2].max(0.0) * p[2].max(0.0)).sqrt().max(1e-6);
+                    [p[0] / n * 0.5 + 0.5, p[1] / n * 0.5 + 0.5]
+                } else {
+                    [p[0], p[1]]
+                };
+                [(q[0] * 255.0 + 0.5).clamp(0.0, 255.0) as u8, (q[1] * 255.0 + 0.5).clamp(0.0, 255.0) as u8, 0, 255]
+            })
+            .collect();
+        let mut data = vec![0u8; texpresso::Format::Bc5.compressed_size(lw, lh)];
+        texpresso::Format::Bc5.compress(&enc, lw, lh, Default::default(), &mut data);
+        out.extend_from_slice(&data);
+    }
+    out
+}
+
+/// One image's maps from `maps/<key>.n.png`, `.r.png` and (equipment only) `.m.png`; None when they are missing or
+/// not a multiple of 4.
+fn material_from(maps: &Path, key: &str) -> Option<crate::material::Material> {
+    let (w, h, n) = load_any_png(&maps.join(format!("{key}.n.png"))).ok()?;
+    let (rw, rh, r) = load_any_png(&maps.join(format!("{key}.r.png"))).ok()?;
+    if (rw, rh) != (w, h) || w % 4 != 0 || h % 4 != 0 {
+        return None;
+    }
+    let m = load_any_png(&maps.join(format!("{key}.m.png"))).ok().filter(|m| (m.0, m.1) == (w, h)).map(|m| m.2);
+    let rm: Vec<u8> =
+        (0..(w * h) as usize).flat_map(|i| [r[i * 4], m.as_ref().map_or(0, |m| m[i * 4]), 0, 255]).collect();
+    let mut levels = 1;
+    while (w >> levels) >= 4 && (h >> levels) >= 4 {
+        levels += 1;
+    }
+    Some(crate::material::Material {
+        width: w,
+        height: h,
+        levels,
+        normal: bc5_chain(w, h, &n, levels, true),
+        rough_metal: bc5_chain(w, h, &rm, levels, false),
+    })
+}
+
+/// `mat-pack`: the material pack (material.rs) from generated maps (`maps/<key>.n.png`, `.r.png`, `.m.png`) for the
+/// images in tex-export's manifest: each map once as `out/maps/../<key>.vmat`, and `out/index.bin` holding every
+/// stock image's content key and, with `hd` (a tex-pack folder), its copy's there. Maps already written are kept.
+pub fn mat_pack(manifest_dir: &Path, maps: &Path, hd: Option<&Path>, out: &Path) -> Result<()> {
+    use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+    let cfg = crate::config::Config::load();
+    let index = dat::DatIndex::open_stock(&cfg.ffxi_dir())?;
+    let stock_root = cfg.ffxi_dir();
+    let manifest = std::fs::read_to_string(manifest_dir.join("manifest.tsv"))?;
+    let mut by_file: HashMap<u32, Vec<(usize, String)>> = HashMap::new();
+    for l in manifest.lines() {
+        let f: Vec<&str> = l.split('\t').collect();
+        let (Some(id), Some(k), Some(key)) = (f.first(), f.get(1), f.get(2)) else { continue };
+        by_file.entry(id.parse()?).or_default().push((k.parse()?, key.to_string()));
+    }
+    let mut keys: Vec<String> = by_file.values().flatten().map(|(_, k)| k.clone()).collect();
+    keys.sort();
+    keys.dedup();
+    // The maps, once each.
+    let (next, made, missing) = (AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0));
+    let have: Mutex<std::collections::HashSet<String>> = Mutex::new(Default::default());
+    std::thread::scope(|s| {
+        for _ in 0..THREADS {
+            s.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, Relaxed);
+                    let Some(key) = keys.get(i) else { break };
+                    let Ok(k) = u64::from_str_radix(key, 16) else { continue };
+                    let path = crate::material::map_path(out, k);
+                    if !path.exists() {
+                        let Some(m) = material_from(maps, key) else {
+                            missing.fetch_add(1, Relaxed);
+                            continue;
+                        };
+                        let _ = std::fs::create_dir_all(path.parent().unwrap());
+                        let tmp = path.with_extension("part");
+                        if std::fs::write(&tmp, m.write()).is_err() || std::fs::rename(&tmp, &path).is_err() {
+                            continue;
+                        }
+                        made.fetch_add(1, Relaxed);
+                    }
+                    have.lock().unwrap().insert(key.clone());
+                    if (i + 1) % 2000 == 0 {
+                        println!("maps: {} / {}", i + 1, keys.len());
+                    }
+                }
+            });
+        }
+    });
+    let have = have.into_inner().unwrap();
+    // The index: each image's content key, stock and (with `hd`) the pack's copy, to its map.
+    let files: Vec<(&u32, &Vec<(usize, String)>)> = by_file.iter().collect();
+    let next = AtomicUsize::new(0);
+    let entries = Mutex::new(Vec::new());
+    std::thread::scope(|s| {
+        for _ in 0..THREADS {
+            s.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, Relaxed);
+                    let Some(&(&id, rows)) = files.get(i) else { break };
+                    if !rows.iter().any(|(_, k)| have.contains(k)) {
+                        continue;
+                    }
+                    let mut versions = Vec::new();
+                    if let Ok(b) = index.read(id) {
+                        versions.push(b);
+                    }
+                    if let Some(hd) = hd
+                        && let Some(p) = index.path(id)
+                        && let Ok(rel) = p.strip_prefix(&stock_root)
+                        && let Ok(b) = std::fs::read(hd.join(rel))
+                    {
+                        versions.push(b);
+                    }
+                    let mut found = Vec::new();
+                    for b in &versions {
+                        let Ok(chunks) = dat::chunks(b) else { continue };
+                        for (k, key) in rows {
+                            if !have.contains(key) {
+                                continue;
+                            }
+                            let Some(c) = chunks.get(*k).filter(|c| c.kind == 0x20) else { continue };
+                            if let (Ok(t), Ok(m)) = (dat::zone::parse_img(c.data), u64::from_str_radix(key, 16)) {
+                                found.push((t.content_key(), m));
+                            }
+                        }
+                    }
+                    entries.lock().unwrap().extend(found);
+                }
+            });
+        }
+    });
+    let mut entries = entries.into_inner().unwrap();
+    entries.sort_unstable();
+    entries.dedup();
+    let before = entries.len();
+    entries.dedup_by_key(|e| e.0);
+    let mut b = Vec::with_capacity(8 + entries.len() * 16);
+    b.extend_from_slice(crate::material::INDEX_MAGIC);
+    b.extend_from_slice(&(entries.len() as u32).to_le_bytes());
+    for (c, m) in &entries {
+        b.extend_from_slice(&c.to_le_bytes());
+        b.extend_from_slice(&m.to_le_bytes());
+    }
+    std::fs::create_dir_all(out)?;
+    std::fs::write(out.join("index.bin"), b)?;
+    println!(
+        "{} maps ({} new, {} without maps), index of {} textures ({} keys mapped twice dropped) in {}",
+        have.len(),
+        made.into_inner(),
+        missing.into_inner(),
+        entries.len(),
+        before - entries.len(),
+        out.display()
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

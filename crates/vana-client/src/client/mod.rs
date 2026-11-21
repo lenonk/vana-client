@@ -18036,6 +18036,8 @@ impl App {
     /// The frame's work before any drawing: finished loader tasks, the network, area switches, then the world's
     /// (or the lobby's) per-frame updates and the mods' frame.
     fn frame_updates(&mut self) {
+        // Material Maps: the pack follows the setting before any load starts, so the first zone's textures get maps.
+        crate::material::set_enabled(self.cfg.material_maps != 0);
         while let Ok(t) = self.tasks.try_recv() {
             let name = t.name();
             perf::timed(|| format!("task {name}"), || self.handle_task(t));
@@ -20585,6 +20587,9 @@ fn draw_scene(
     r.bump_mode = cx.cfg.tool("0017") != 0 && w.zone != Some(182);
     // Light Shading (ours): Smooth lights the scenery's lamps per pixel, Retail per vertex.
     r.smooth_lights = cx.cfg.smooth_lights;
+    // Material Maps (ours): the pack (App::frame_updates) gives maps to textures loaded while it is open.
+    r.material_maps = cx.cfg.material_maps != 0 && crate::material::available();
+    r.material_strength = cx.cfg.material_maps as f32;
     // Windowed (0034 != 0, no gamma ramp): lights boosted by the channels' ramps (render::light_boost),
     // gamma base 0028 + 1 + Gameplay R / G / B / 100 (FUN_101aa650).
     r.light_boost = if cx.cfg.window_mode() != 0 {

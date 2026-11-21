@@ -23,6 +23,7 @@ pub struct Settings {
     pub party_tp: bool,
     pub lamp_lights: bool,
     pub smooth_lights: bool,
+    pub material_maps: u32,
     pub actor_shadows: u32,
     pub shadow_map: u32,
     pub ssao: bool,
@@ -66,6 +67,7 @@ impl Settings {
             party_tp: c.party_tp,
             lamp_lights: c.lamp_lights,
             smooth_lights: c.smooth_lights,
+            material_maps: c.material_maps,
             actor_shadows: c.actor_shadows,
             shadow_map: c.shadow_map,
             ssao: c.ssao,
@@ -105,6 +107,7 @@ impl Settings {
         c.party_tp = self.party_tp;
         c.lamp_lights = self.lamp_lights;
         c.smooth_lights = self.smooth_lights;
+        c.material_maps = self.material_maps;
         c.actor_shadows = self.actor_shadows;
         c.shadow_map = self.shadow_map;
         c.ssao = self.ssao;
@@ -154,6 +157,7 @@ enum Val {
     PartyTp,
     LampLights,
     SmoothLights,
+    MaterialMaps,
     ActorShadows,
     ShadowMap,
     Ssao,
@@ -400,6 +404,13 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [SRow] 
             Tool("0036"),
             &[(0, "Compressed"), (1, "Full"), (2, "High")],
             Restart,
+        ),
+        row(
+            "Material Maps",
+            "Gives textures bumps and shine from a material pack (installed beside the game as materials), lit by the sun, the moon and lamps. Higher makes the bumps deeper. Not retail.",
+            MaterialMaps,
+            &[(0, "Off"), (1, "Low"), (2, "Medium"), (3, "High")],
+            NextZone,
         ),
     ];
     const EFFECTS: &[SRow] = &[
@@ -946,6 +957,7 @@ impl SettingsUi {
             Val::MouseCamSpeed => self.s.mouse_camera_speed,
             Val::LampLights => self.s.lamp_lights as u32,
             Val::SmoothLights => self.s.smooth_lights as u32,
+            Val::MaterialMaps => self.s.material_maps,
             Val::ActorShadows => self.s.actor_shadows,
             Val::ShadowMap => self.s.shadow_map,
             Val::Ssao => self.s.ssao as u32,
@@ -980,6 +992,7 @@ impl SettingsUi {
             Val::MouseCamSpeed => self.s.mouse_camera_speed = x,
             Val::LampLights => self.s.lamp_lights = x != 0,
             Val::SmoothLights => self.s.smooth_lights = x != 0,
+            Val::MaterialMaps => self.s.material_maps = x,
             Val::ActorShadows => self.s.actor_shadows = x,
             Val::ShadowMap => self.s.shadow_map = x,
             Val::Ssao => self.s.ssao = x != 0,

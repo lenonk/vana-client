@@ -57,6 +57,8 @@ pub struct PipeCache {
     anim: std::sync::OnceLock<(wgpu::ComputePipeline, wgpu::BindGroupLayout)>,
     cloth: std::sync::OnceLock<(wgpu::ComputePipeline, wgpu::ComputePipeline, wgpu::BindGroupLayout)>,
     zone: std::sync::Mutex<HashMap<wgpu::TextureFormat, ZonePipes>>,
+    /// The material maps of a texture without any: a flat normal, roughness 1, metal 0.
+    flat_material: std::sync::OnceLock<(wgpu::TextureView, wgpu::TextureView)>,
 }
 
 impl PipeCache {
@@ -184,6 +186,7 @@ impl Gpu {
             anim: Default::default(),
             cloth: Default::default(),
             zone: Default::default(),
+            flat_material: Default::default(),
         });
         Ok(Self { instance, adapter, device, queue, mips: Default::default(), uploads: Default::default(), pipes })
     }
@@ -449,6 +452,11 @@ pub struct ZoneRenderer {
     /// Settings' Light Shading (ours): false Retail (the scenery's point lights per vertex, hard cut at the range),
     /// true Smooth (per pixel, soft edge; not retail).
     pub smooth_lights: bool,
+    /// Settings' Material Maps (ours, material.rs): textures' normal / roughness / metal maps light the scenery and
+    /// actors.
+    pub material_maps: bool,
+    /// Their strength: the normal maps' tilt and the relief they put on the baked light (1 = as generated).
+    pub material_strength: f32,
     /// Windowed mode's light boost (light_boost; zero = off).
     pub light_boost: [f32; 4],
     /// The zone's scenery culled on the GPU (render/cull.rs) when the device draws indirectly, and its passes.
@@ -794,14 +802,96 @@ fn view_bind_group(
     sampler: &wgpu::Sampler,
     view: &wgpu::TextureView,
 ) -> wgpu::BindGroup {
+    material_bind_group(gpu, layout, sampler, view, None)
+}
+
+fn material_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled: false,
+        },
+        count: None,
+    }
+}
+
+/// A texture's group with its material maps (material.rs), or the flat ones.
+fn material_bind_group(
+    gpu: &Gpu,
+    layout: &wgpu::BindGroupLayout,
+    sampler: &wgpu::Sampler,
+    view: &wgpu::TextureView,
+    material: Option<&crate::material::Material>,
+) -> wgpu::BindGroup {
+    let own = material.map(|m| upload_material(gpu, m));
+    let (normal, rm) = match &own {
+        Some((n, r)) => (n, r),
+        None => {
+            let f = flat_material(gpu);
+            (&f.0, &f.1)
+        }
+    };
     gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout,
         entries: &[
             wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(view) },
             wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(sampler) },
+            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(normal) },
+            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(rm) },
         ],
     })
+}
+
+fn flat_material(gpu: &Gpu) -> &(wgpu::TextureView, wgpu::TextureView) {
+    gpu.pipes.flat_material.get_or_init(|| {
+        let one = |rg: [u8; 2]| {
+            let t = gpu.device.create_texture_with_data(
+                &gpu.queue,
+                &wgpu::TextureDescriptor {
+                    label: Some("flat material"),
+                    size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rg8Unorm,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                },
+                wgpu::util::TextureDataOrder::LayerMajor,
+                &rg,
+            );
+            t.create_view(&Default::default())
+        };
+        (one([128, 128]), one([255, 0]))
+    })
+}
+
+/// The two BC5 chains as they are stored.
+fn upload_material(gpu: &Gpu, m: &crate::material::Material) -> (wgpu::TextureView, wgpu::TextureView) {
+    let one = |data: &[u8]| {
+        let t = gpu.device.create_texture_with_data(
+            &gpu.queue,
+            &wgpu::TextureDescriptor {
+                label: Some("material"),
+                size: wgpu::Extent3d { width: m.width, height: m.height, depth_or_array_layers: 1 },
+                mip_level_count: m.levels,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Bc5RgUnorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            data,
+        );
+        TEXTURE_BYTES.fetch_add(data.len() as u64, std::sync::atomic::Ordering::Relaxed);
+        t.create_view(&Default::default())
+    };
+    (one(&m.normal), one(&m.rough_metal))
 }
 
 /// Which shadow depth pass draw_actor_depth draws.
@@ -1210,6 +1300,9 @@ impl ZonePipes {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // Material maps (material.rs): the normal map and roughness / metal.
+                material_entry(2),
+                material_entry(3),
             ],
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -2576,6 +2669,8 @@ impl ZoneRenderer {
             bump_groups,
             bump_mode: true,
             smooth_lights: false,
+            material_maps: false,
+            material_strength: 1.0,
             light_boost: [0.0; 4],
             scenery_bump: p.scenery_bump,
             scenery: p.scenery,
@@ -3306,7 +3401,8 @@ impl ZoneRenderer {
         view: &wgpu::TextureView,
         seq: u64,
     ) {
-        self.textures[slot] = view_bind_group(gpu, &self.texture_layout, &self.sampler, view);
+        self.textures[slot] =
+            material_bind_group(gpu, &self.texture_layout, &self.sampler, view, t.material.as_deref());
         self.mips_seq = self.mips_seq.max(seq);
         self.tex_bytes.1 += (t.width * t.height * 4) as u64;
         self.tex_bytes.2 += 1;
@@ -3387,8 +3483,9 @@ impl ZoneRenderer {
                 let up = up.get_or_insert_with(|| upload::TexUp::new(gpu, t, true));
                 let Some(seq) = up.step(gpu, t, false) else { break };
                 let view = up.texture.create_view(&Default::default());
-                let (slot, _, _) = m.pending.pop_front().unwrap();
-                m.textures[slot] = view_bind_group(gpu, &self.texture_layout, &self.sampler, &view);
+                let (slot, t, _) = m.pending.pop_front().unwrap();
+                m.textures[slot] =
+                    material_bind_group(gpu, &self.texture_layout, &self.sampler, &view, t.material.as_deref());
                 m.mips = m.mips.max(seq);
             }
             m.up = m.pending.is_empty() && gpu.mips_done() >= m.mips;
@@ -3436,7 +3533,8 @@ impl ZoneRenderer {
             let up = b.cur.get_or_insert_with(|| upload::TexUp::new(gpu, t, true));
             let Some(seq) = up.step(gpu, t, false) else { return false };
             let view = up.texture.create_view(&Default::default());
-            b.actor.textures[b.tex + 1] = view_bind_group(gpu, &self.texture_layout, &self.sampler, &view);
+            b.actor.textures[b.tex + 1] =
+                material_bind_group(gpu, &self.texture_layout, &self.sampler, &view, t.material.as_deref());
             b.actor.mips = b.actor.mips.max(seq);
             b.cur = None;
             b.tex += 1;
@@ -3672,7 +3770,7 @@ impl ZoneRenderer {
             slot.entry(t.name.clone()).or_insert(textures.len());
             let (view, seq) = upload_texture_seq(gpu, t, true);
             mips = mips.max(seq);
-            textures.push(view_bind_group(gpu, &self.texture_layout, &self.sampler, &view));
+            textures.push(material_bind_group(gpu, &self.texture_layout, &self.sampler, &view, t.material.as_deref()));
         }
         let instance = gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("actor instance"),
@@ -3789,7 +3887,12 @@ impl ZoneRenderer {
             area_info: [0.0; 4],
             voyage: self.voyage.to_cols_array_2d(),
             two: [[0.0; 4]; 4],
-            modes: [self.bump_mode as u32 as f32, self.smooth_lights as u32 as f32, 0.0, 0.0],
+            modes: [
+                self.bump_mode as u32 as f32,
+                self.smooth_lights as u32 as f32,
+                self.material_maps as u32 as f32,
+                self.material_strength,
+            ],
             boost: self.light_boost,
         };
         let mut clear = self.fog_color;

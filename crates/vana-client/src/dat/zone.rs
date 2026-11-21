@@ -482,11 +482,41 @@ pub struct Texture {
     rgba: std::sync::OnceLock<Vec<u8>>,
     /// The DXT blocks as stored (true = DXT3, its alpha doubled as the RGBA's is): the GPU's level 0.
     pub dxt: Option<(bool, Vec<u8>)>,
+    /// Material maps from the material pack (material.rs), when on and the pack has this image.
+    pub material: Option<std::sync::Arc<crate::material::Material>>,
 }
 
 impl Texture {
     pub fn new(name: String, format: u8, width: u32, height: u32, rgba: Vec<u8>) -> Self {
-        Texture { name, format, width, height, rgba: rgba.into(), dxt: None }
+        Texture { name, format, width, height, rgba: rgba.into(), dxt: None, material: None }
+    }
+
+    /// A key over the size and the stored pixels (the DXT blocks, else RGBA): what a material pack indexes.
+    pub fn content_key(&self) -> u64 {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        let mut mix = |v: u64| {
+            h ^= v;
+            h = h.wrapping_mul(0x0100_0000_01b3);
+        };
+        mix(((self.width as u64) << 32) | self.height as u64);
+        let data = match &self.dxt {
+            Some((dxt3, b)) => {
+                mix(1 + *dxt3 as u64);
+                b.as_slice()
+            }
+            None => self.rgba(),
+        };
+        let (words, rest) = data.as_chunks::<8>();
+        for w in words {
+            mix(u64::from_le_bytes(*w));
+        }
+        for &b in rest {
+            mix(b as u64);
+        }
+        // splitmix64's finish: FNV over whole words mixes the high bits poorly.
+        h = (h ^ (h >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        h = (h ^ (h >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        h ^ (h >> 31)
     }
 
     pub fn rgba(&self) -> &[u8] {
@@ -657,7 +687,7 @@ pub fn parse_img(p: &[u8]) -> Result<Texture> {
         }
     }
     let rgba = if lazy(&dxt) { std::sync::OnceLock::new() } else { rgba.into() };
-    Ok(Texture { name, format: flag, width: w, height: h, rgba, dxt })
+    Ok(Texture { name, format: flag, width: w, height: h, rgba, dxt, material: None })
 }
 
 /// A RID region: an oriented box. Names starting with 'z' are zone lines, '_' doors, 'E' events, 'm' / 'M'
@@ -947,6 +977,7 @@ pub fn load_scene(keys: &Keys, file: &[u8]) -> Result<ZoneScene> {
     if let Some(c) = scene.collision.as_mut() {
         c.add_door_boxes(&scene.regions);
     }
+    crate::material::attach(&mut scene.textures);
     Ok(scene)
 }
 

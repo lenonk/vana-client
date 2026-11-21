@@ -26,7 +26,8 @@ struct Uniforms {
     // Config 0017 off: the sun and the moon (direction the light travels, colour) as two lights (FUN_10181b50).
     two: array<vec4<f32>, 4>,
     // x: 1 with bump mapping on (one eased light, vertex range fog), 0 off (two lights, table fog); y: 1 with
-    // Settings' Light Shading Smooth (point lights per pixel, ours), 0 Retail (per vertex).
+    // Settings' Light Shading Smooth (point lights per pixel, ours), 0 Retail (per vertex); z: 1 with Material Maps, w
+    // their strength.
     modes: vec4<f32>,
     // Windowed mode's light boost (render light_boost, FUN_1000be50): rgb factors, w = 1 on.
     boost: vec4<f32>,
@@ -110,6 +111,10 @@ fn part_matrix(slot: u32) -> mat4x4<f32> {
 }
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
+// Material maps (ours, material.rs): the normal map's x, y (DirectX: y along +v) and roughness, metal. Textures
+// without maps get a flat normal and roughness 1.
+@group(1) @binding(2) var mat_normal: texture_2d<f32>;
+@group(1) @binding(3) var mat_rm: texture_2d<f32>;
 
 struct VertexIn {
     @location(0) pos: vec3<f32>,
@@ -155,6 +160,65 @@ struct VertexOut {
     // Scenery: the transformed normal's length, which scales every N.L (NORMALIZENORMALS off); 1 for actors.
     @location(12) nscale: f32,
 };
+
+struct Surface {
+    n: vec3<f32>,
+    rough: f32,
+    metal: f32,
+    // The ambient's change from the map's tilt toward the sky (1 on a flat map): FFXI's ambient has no direction,
+    // so without it bumps would only show in direct light.
+    sky: f32,
+};
+
+// The normal from the material's map in a frame from the screen derivatives (no vertex tangents). Call it before
+// any branch on varyings: it takes derivatives.
+fn surface(in: VertexOut) -> Surface {
+    var s = Surface(normalize(in.normal), 1.0, 0.0, 1.0);
+    if (u.modes.z < 0.5) {
+        return s;
+    }
+    let dp1 = dpdx(in.world);
+    let dp2 = dpdy(in.world);
+    let du1 = dpdx(in.uv);
+    let du2 = dpdy(in.uv);
+    let m = textureSample(mat_normal, samp, in.uv).rg * 2.0 - 1.0;
+    let rm = textureSample(mat_rm, samp, in.uv).rg;
+    s.rough = rm.x;
+    s.metal = rm.y;
+    let n = s.n;
+    let p2 = cross(dp2, n);
+    let p1 = cross(n, dp1);
+    let t = p2 * du1.x + p1 * du2.x;
+    let b = p2 * du1.y + p1 * du2.y;
+    let len = max(dot(t, t), dot(b, b));
+    if (len > 1e-20) {
+        let k = inverseSqrt(len);
+        let z = sqrt(max(1.0 - dot(m, m), 0.0));
+        let tilt = m * u.modes.w;
+        s.n = normalize(t * k * tilt.x + b * k * tilt.y + n * z);
+        // Y points down.
+        s.sky = 1.0 + 0.4 * u.modes.w * (n.y - s.n.y);
+    }
+    return s;
+}
+
+// GGX specular for a light toward `l`, x N.L. Fades out at roughness 1, the value of textures without maps.
+fn specular(s: Surface, v: vec3<f32>, l: vec3<f32>, f0: vec3<f32>) -> vec3<f32> {
+    let nl = dot(s.n, l);
+    if (nl <= 0.0) {
+        return vec3<f32>(0.0);
+    }
+    let h = normalize(l + v);
+    let nh = max(dot(s.n, h), 0.0);
+    let nv = max(dot(s.n, v), 1e-3);
+    let a = max(s.rough * s.rough, 0.02);
+    let a2 = a * a;
+    let d = a2 / (3.14159265 * pow(nh * nh * (a2 - 1.0) + 1.0, 2.0));
+    let k = a * 0.5;
+    let vis = 0.25 / ((nl * (1.0 - k) + k) * (nv * (1.0 - k) + k));
+    let f = f0 + (1.0 - f0) * pow(1.0 - max(dot(l, h), 0.0), 5.0);
+    return d * vis * f * nl * (1.0 - smoothstep(0.85, 1.0, s.rough));
+}
 
 // FUN_100c94a0: of the floor's lights, the strongest w = 1 / max(d^2 Att2, 1e-4) at the actor's position within
 // its range (an unlit one competes too), as a directional light from the lamp: C x w x max(N.L, 0).
@@ -692,6 +756,7 @@ fn d3d_out_fog(in: VertexOut, rgb: vec3<f32>, fog_color: vec3<f32>) -> vec4<f32>
 // lit = clamp(vc * (ambient bytes / 255 + sun * max(N.-L, 0))); out = tex * lit * 2. The light, ambient and fog are the zone's,
 // or the area's (FUN_10183da0: FUN_10188ca0 lights, FUN_10188e00 ambient, FUN_10189120 fog).
 fn lit_zone(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
+    let s = surface(in);
     var sun = u.sun.xyz;
     var sun_color = u.sun_color.rgb;
     var ambient = u.ambient.rgb;
@@ -706,10 +771,14 @@ fn lit_zone(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
         fog_color = a.fog_color.rgb;
         fog = select(a.fog.xy, u.fog.xy, (in.area & 0x8000u) != 0u);
     }
-    let n = normalize(in.normal);
+    let n = s.n;
+    let v = normalize(u.eye.xyz - in.world);
+    let albedo = to_gamma(t.rgb);
+    let f0 = mix(vec3<f32>(0.04), albedo, s.metal);
     // Config 0017 (FUN_10174610): on, the one eased light and vertex fog over the eye range; off, the sun and the
     // moon as two lights (the zone's, or the area's) and table fog over the view depth.
     var direct = boost(sun_color) * max(dot(n, -sun), 0.0);
+    var spec = boost(sun_color) * specular(s, v, -sun, f0);
     var d = in.range;
     if (u.modes.x < 0.5) {
         var two = u.two;
@@ -717,11 +786,21 @@ fn lit_zone(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
             two = areas[slot].two;
         }
         direct = boost(two[1].rgb) * max(dot(n, -two[0].xyz), 0.0) + boost(two[3].rgb) * max(dot(n, -two[2].xyz), 0.0);
+        spec = boost(two[1].rgb) * specular(s, v, -two[0].xyz, f0) + boost(two[3].rgb) * specular(s, v, -two[2].xyz, f0);
         d = in.depth;
     }
     // Every N.L takes the normal's length (NORMALIZENORMALS off).
-    let lit = clamp(in.color.rgb * (ambient_rs(ambient) / 255.0 + in.nscale * (direct + point_lights(in.lights, in.world, n))) + in.point, vec3<f32>(0.0), vec3<f32>(1.0));
-    let rgb = clamp(to_gamma(t.rgb) * lit * 2.0, vec3<f32>(0.0), vec3<f32>(1.0));
+    // The baked vertex light shaded by the map against the key light, as config 0017's bump scales it.
+    var key = -sun;
+    if (u.modes.x < 0.5) {
+        key = -u.two[0].xyz;
+    }
+    let geo = normalize(in.normal);
+    let relief = clamp(1.0 + 0.5 * u.modes.w * (dot(n, key) - dot(geo, key)), 0.3, 2.0);
+    let lit = clamp(in.color.rgb * relief * (ambient_rs(ambient) / 255.0 * s.sky + in.nscale * (direct + point_lights(in.lights, in.world, n))) + in.point, vec3<f32>(0.0), vec3<f32>(1.0));
+    // Material Maps: metal takes half the diffuse (no reflections to stand in), specular under the baked vertex light.
+    let shadow = clamp(in.color.rgb * 2.0, vec3<f32>(0.0), vec3<f32>(1.0)) * in.nscale;
+    let rgb = clamp(albedo * lit * 2.0 * (1.0 - 0.5 * s.metal) + spec * shadow, vec3<f32>(0.0), vec3<f32>(1.0));
     let f = clamp((fog.y - d) / (fog.y - fog.x), 0.0, 1.0);
     let c = mix(fog_color, rgb, f);
     return vec4<f32>(select(pow(c, vec3<f32>(2.2)), c, u.fog.z > 0.5), 1.0);
@@ -736,6 +815,10 @@ fn lit_zone(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
 
 @fragment
 fn fs_bump(in: VertexOut) -> @location(0) vec4<f32> {
+    // Material Maps: our maps in place of the Bp height maps.
+    if (u.modes.z > 0.5) {
+        return lit_zone(in, textureSample(tex, samp, in.uv));
+    }
     let t0 = textureSample(tex, samp, in.uv);
     let t1 = textureSample(bump_tex, bump_samp, in.uv).rgb;
     var sun_color = u.sun_color.rgb;
@@ -764,6 +847,7 @@ fn fs_bump(in: VertexOut) -> @location(0) vec4<f32> {
 // zone, or by the area they stand in (the actor update FUN_1018b9a0 and draw FUN_1018b9e0 / FUN_1018ba20 with vtable
 // +0x188's area).
 fn lit_actor(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
+    let s = surface(in);
     // Area 0x10000: model +0xa8 set (event op 0x59 7 / 8), the scenery's lights (FUN_1018b9a0 mode 0).
     let bg = (in.area & 0x10000u) != 0u;
     let slot = in.area & 0xffffu;
@@ -781,7 +865,9 @@ fn lit_actor(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
         fog = a.fog.xy;
     }
     color = boost(color);
-    let ndl = max(dot(normalize(in.normal), -sun), 0.0);
+    let ndl = max(dot(s.n, -sun), 0.0);
+    let albedo = to_gamma(t.rgb);
+    let spec = color * specular(s, normalize(u.eye.xyz - in.world), -sun, mix(vec3<f32>(0.04), albedo, s.metal));
     // D3DRS_AMBIENT (ambient_rs); the target flash mixes those bytes toward 220 and scales the fog colour
     // (FUN_100c94a0).
     let amb = floor(mix(ambient_rs(ambient), vec3<f32>(220.0), in.flash.x)) / 255.0;
@@ -791,8 +877,8 @@ fn lit_actor(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
     let cloth = in.color.g > 0.5;
     let ga = select(min(floor(amb * 255.0 * mf) / 255.0, vec3<f32>(1.0)), amb, cloth);
     let em = select(0.0, max(mf - 1.5, 0.0), cloth);
-    let lit = clamp((ga + 0.5 * mf * (color * ndl + in.point)) * in.tint + em, vec3<f32>(0.0), vec3<f32>(1.0));
-    let rgb = clamp(to_gamma(t.rgb) * lit * 2.0, vec3<f32>(0.0), vec3<f32>(1.0));
+    let lit = clamp((ga * s.sky + 0.5 * mf * (color * ndl + in.point)) * in.tint + em, vec3<f32>(0.0), vec3<f32>(1.0));
+    let rgb = clamp(albedo * lit * 2.0 * (1.0 - 0.5 * s.metal) + spec * in.tint, vec3<f32>(0.0), vec3<f32>(1.0));
     let f = clamp((fog.y - in.depth) / (fog.y - fog.x), 0.0, 1.0);
     let c = mix(fog_color * in.flash.y, rgb, f);
     return vec4<f32>(select(pow(c, vec3<f32>(2.2)), c, u.fog.z > 0.5), 1.0);
