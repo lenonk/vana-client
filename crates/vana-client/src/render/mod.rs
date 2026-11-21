@@ -240,8 +240,10 @@ impl Gpu {
         // Not BC on GL: wgpu's GL backend drops a compressed copy from a buffer whose rows are padded (it passes the
         // padded size to glCompressedTexSubImage2D), so the GPU-made mips of BC textures (render/mipgen.rs) would
         // stay black. GL takes the RGBA path instead.
+        // GLES compute scenery culling often drops every run (actors still draw); Vulkan on the same device keeps
+        // INDIRECT_FIRST_INSTANCE. FFXI_NO_CULL still forces the unculled path for debugging.
         if info.backend == wgpu::Backend::Gl {
-            wanted.remove(wgpu::Features::TEXTURE_COMPRESSION_BC);
+            wanted.remove(wgpu::Features::TEXTURE_COMPRESSION_BC | wgpu::Features::INDIRECT_FIRST_INSTANCE);
         }
         let required_features = adapter.features() & wanted;
         log::info!("device features {required_features:?}");

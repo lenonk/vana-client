@@ -70,8 +70,6 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
             unsafe {
                 std::env::set_var("VANA_CLIENT_DATA", &dir);
                 std::env::set_var("HOME", &dir);
-                // GLES compute culling often leaves every scenery run invisible (actors still draw). Use the unculled path.
-                std::env::set_var("FFXI_NO_CULL", "1");
             }
         }
         let default = std::panic::take_hook();
