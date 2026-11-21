@@ -53,6 +53,7 @@ pub(crate) fn android_run_on_ui_thread(f: impl FnOnce() + Send + 'static) {
 /// Another activity handed back: the next wait refreshes the surface and draws.
 pub(crate) fn android_resume_after_activity() {
     RESUMED.store(true, Ordering::Relaxed);
+    crate::android_fs::stale_all_files_access();
     if let Some(app) = APP.lock().unwrap().as_ref() {
         app.create_waker().wake();
     }

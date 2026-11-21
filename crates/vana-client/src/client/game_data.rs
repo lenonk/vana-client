@@ -7,7 +7,7 @@ use std::path::PathBuf;
 /// All files access's state and a button to its Settings page. The game files are read as plain paths, so nothing
 /// loads without it.
 pub fn all_files_access_row(ui: &mut egui::Ui) {
-    let ok = crate::android_fs::has_all_files_access();
+    let ok = crate::android_fs::poll_all_files_access().unwrap_or(false);
     ui.horizontal(|ui| {
         if ui.button("Open settings").clicked() {
             crate::android_fs::request_all_files_access();
@@ -42,6 +42,7 @@ impl Editor {
     }
 
     pub fn ui(&mut self, ctx: &egui::Context) -> Action {
+        let _ = crate::android_fs::poll_all_files_access();
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
         let mut action = Action::None;
         let screen = ctx.content_rect();
@@ -100,7 +101,8 @@ impl Editor {
                     }
                     ui.add_space(8.0);
                     if let Some(cwd) = self.browser_at.clone() {
-                        match folder_pick::browser(ui, &cwd) {
+                        let listing = folder_pick::dir_listing(&cwd);
+                        match folder_pick::browser(ui, &cwd, listing) {
                             folder_pick::BrowserAction::Up => self.browser_at = Some(folder_pick::go_up(&cwd)),
                             folder_pick::BrowserAction::Enter(dir) => self.browser_at = Some(dir),
                             folder_pick::BrowserAction::Use => {

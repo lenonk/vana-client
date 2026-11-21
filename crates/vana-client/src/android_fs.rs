@@ -2,6 +2,17 @@
 
 use jni::JNIEnv;
 use jni::objects::JObject;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+enum AllFilesPoll {
+    Unknown,
+    Loading,
+    Ready(bool),
+}
+
+static ALL_FILES: Mutex<AllFilesPoll> = Mutex::new(AllFilesPoll::Unknown);
+static ALL_FILES_STALE: AtomicBool = AtomicBool::new(true);
 
 /// Runs `f` with this thread attached to the JVM and the activity object.
 pub fn with_activity<R>(f: impl FnOnce(&mut JNIEnv<'_>, &JObject<'_>) -> anyhow::Result<R>) -> anyhow::Result<R> {
@@ -24,6 +35,33 @@ pub fn has_all_files_access() -> bool {
     with_activity(|env, activity| Ok(env.call_method(activity, "hasAllFilesAccess", "()Z", &[])?.z()?)).unwrap_or(false)
 }
 
+/// Back from Settings or another activity: the next [`poll_all_files_access`] refresh runs off the UI thread.
+pub fn stale_all_files_access() {
+    ALL_FILES_STALE.store(true, Ordering::Release);
+    let mut g = ALL_FILES.lock().unwrap();
+    if !matches!(*g, AllFilesPoll::Loading) {
+        *g = AllFilesPoll::Unknown;
+    }
+}
+
+/// Last known All files access, if any. Kicks a JNI refresh on the stale flag (see [`stale_all_files_access`]).
+pub fn poll_all_files_access() -> Option<bool> {
+    if ALL_FILES_STALE.swap(false, Ordering::AcqRel) {
+        let mut g = ALL_FILES.lock().unwrap();
+        if !matches!(*g, AllFilesPoll::Loading) {
+            *g = AllFilesPoll::Loading;
+            std::thread::spawn(|| {
+                let ok = has_all_files_access();
+                *ALL_FILES.lock().unwrap() = AllFilesPoll::Ready(ok);
+            });
+        }
+    }
+    match &*ALL_FILES.lock().unwrap() {
+        AllFilesPoll::Ready(ok) => Some(*ok),
+        _ => None,
+    }
+}
+
 /// Opens the system Settings page for All files access.
 pub fn request_all_files_access() {
     if let Err(e) = with_activity(|env, activity| {
@@ -32,6 +70,7 @@ pub fn request_all_files_access() {
     }) {
         log::warn!("All files access settings: {e:#}");
     }
+    stale_all_files_access();
 }
 
 /// Opens `url` in the system browser.

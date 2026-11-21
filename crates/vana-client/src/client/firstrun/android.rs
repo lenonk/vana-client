@@ -249,7 +249,8 @@ impl FirstRun {
             ui.label(egui::RichText::new(&self.note).size(13.0).color(egui::Color32::from_rgb(0xe0, 0xa0, 0x70)));
         }
         let cwd = self.browser_at.clone();
-        match crate::client::folder_pick::browser(ui, &cwd) {
+        let listing = crate::client::folder_pick::dir_listing(&cwd);
+        match crate::client::folder_pick::browser(ui, &cwd, listing) {
             crate::client::folder_pick::BrowserAction::Up => {
                 self.browser_at = crate::client::folder_pick::go_up(&cwd);
             }
@@ -313,14 +314,14 @@ impl FirstRun {
 
     /// Start loads an existing install, or unpacks the five volumes into Install to.
     fn can_start(&self) -> bool {
-        if !crate::android_fs::has_all_files_access() {
+        if !crate::android_fs::poll_all_files_access().unwrap_or(false) {
             return false;
         }
         if self.resolved_game_dir().is_some() {
             return true;
         }
         let archives = PathBuf::from(self.archive_path_input.trim());
-        installer_dir(&self.install_parent(), &archives).is_some()
+        poll_installer_ready(&self.install_parent(), &archives) == Some(true)
     }
 
     fn on_start(&mut self, action: &mut Action) {
@@ -337,7 +338,9 @@ impl FirstRun {
         }
         let install_parent = self.install_parent();
         let archives = PathBuf::from(self.archive_path_input.trim());
-        let all_files = crate::android_fs::has_all_files_access();
+        let _ = crate::android_fs::poll_all_files_access();
+        request_installer_ready(install_parent.clone(), archives.clone());
+        let all_files = crate::android_fs::poll_all_files_access().unwrap_or(false);
         let step = |n: &str| egui::RichText::new(n).size(14.0).color(egui::Color32::LIGHT_GRAY);
         let green = egui::Color32::from_rgb(0x90, 0xc8, 0x90);
 
@@ -396,7 +399,7 @@ impl FirstRun {
                 self.on_start(action);
             }
         });
-        if !crate::android_fs::has_all_files_access() {
+        if !crate::android_fs::poll_all_files_access().unwrap_or(false) {
             ui.label(egui::RichText::new("All files access must be Active before Start.").size(12.0).weak());
         }
     }
@@ -446,6 +449,36 @@ impl FirstRun {
                 *action = Action::Quit;
             }
         });
+    }
+}
+
+enum InstallerPoll {
+    Loading,
+    Ready(bool),
+}
+
+static INSTALLER: Mutex<Option<(PathBuf, PathBuf, InstallerPoll)>> = Mutex::new(None);
+
+fn request_installer_ready(parent: PathBuf, archives: PathBuf) {
+    let mut g = INSTALLER.lock().unwrap();
+    if g.as_ref().is_some_and(|(p, a, s)| *p == parent && *a == archives && !matches!(s, InstallerPoll::Loading)) {
+        return;
+    }
+    if g.as_ref().is_some_and(|(p, a, s)| *p == parent && *a == archives && matches!(s, InstallerPoll::Loading)) {
+        return;
+    }
+    *g = Some((parent.clone(), archives.clone(), InstallerPoll::Loading));
+    std::thread::spawn(move || {
+        let ok = installer_dir(&parent, &archives).is_some();
+        *INSTALLER.lock().unwrap() = Some((parent, archives, InstallerPoll::Ready(ok)));
+    });
+}
+
+fn poll_installer_ready(parent: &Path, archives: &Path) -> Option<bool> {
+    request_installer_ready(parent.to_path_buf(), archives.to_path_buf());
+    match &*INSTALLER.lock().unwrap() {
+        Some((p, a, InstallerPoll::Ready(ok))) if p == parent && a == archives => Some(*ok),
+        _ => None,
     }
 }
 
