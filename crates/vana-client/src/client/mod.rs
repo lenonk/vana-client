@@ -21571,7 +21571,8 @@ impl ApplicationHandler for App {
         if let (Phase::World(w), Some(gfx)) = (&mut self.phase, &self.gfx) {
             lua::input::set_over_ui(w, gfx.egui_ctx.is_pointer_over_egui());
         }
-        // Android: egui takes the pointer first, as it drops a button press with no pointer position yet.
+        // Android: pointer goes to egui through `synth_events` (`android_egui_pointer`), with a move before each
+        // button so a tap is not dropped. egui-winit would turn the same winit touch or mouse event into a second press.
         let pointer_first = cfg!(target_os = "android")
             && matches!(
                 event,
@@ -21585,7 +21586,12 @@ impl ApplicationHandler for App {
             return;
         }
         let Some(gfx) = &mut self.gfx else { return };
-        let consumed = gfx.egui_state.on_window_event(&gfx.window, &event).consumed;
+        let consumed = if pointer_first {
+            egui_winit::EventResponse { consumed: false, repaint: true }
+        } else {
+            gfx.egui_state.on_window_event(&gfx.window, &event)
+        }
+        .consumed;
         if pointer_first
             && self.opening.is_none()
             && let Phase::World(w) = &mut self.phase

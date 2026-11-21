@@ -147,8 +147,8 @@ impl App {
         self.gamepad.reload_retail(self.cfg.game_dir.clone());
     }
 
-    /// A pointer move (and a button) for egui: egui-winit drops a button that comes with no pointer position, which
-    /// a tap (or Scrcpy's mouse) often does.
+    /// A pointer move (and a button) for egui on Android. `window_event` does not call egui-winit for touch or mouse
+    /// (that would duplicate each press); a move is sent before a button so a tap is not dropped.
     pub(super) fn android_egui_pointer(&mut self, physical: (f64, f64), button: Option<(MouseButton, bool)>) {
         let ppp = self.gfx.as_ref().map_or(1.0, |g| g.egui_ctx.pixels_per_point() as f64).max(0.01);
         let pos = egui::pos2((physical.0 / ppp) as f32, (physical.1 / ppp) as f32);
