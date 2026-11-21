@@ -80,6 +80,11 @@ impl App {
         if RESUMED.swap(false, Ordering::Relaxed) {
             self.android_refresh_surface();
             self.android_unstick_game_data();
+        } else if self.gfx.as_ref().is_some_and(|g| g.surface.is_none()) {
+            self.android_refresh_surface();
+        }
+        if self.gfx.as_ref().is_some_and(|g| g.surface.is_none()) {
+            return;
         }
         if self.next_frame.is_none() && (self.first_run.is_some() || self.game_data.is_some() || self.game_ui.is_none())
         {
@@ -87,16 +92,34 @@ impl App {
         }
     }
 
+    /// winit's `Suspended`: the native window is gone; drop the wgpu surface before returning (Android lifecycle).
+    pub(super) fn android_drop_surface(&mut self) {
+        let Some(gfx) = &mut self.gfx else { return };
+        gfx.surface = None;
+        NATIVE_WINDOW.store(std::ptr::null_mut(), Ordering::Relaxed);
+        self.shown = false;
+        self.next_frame = None;
+    }
+
     /// The swapchain at the window's size, and a frame. Going to the background destroys the native window the
     /// surface drew to: a new one gets a new surface (the same one cannot have two).
     pub(super) fn android_refresh_surface(&mut self) {
         let Some(gfx) = &mut self.gfx else { return };
         let native = APP.lock().unwrap().as_ref().and_then(|a| a.native_window()).map(|w| w.ptr().as_ptr().cast());
-        let Some(native) = native else { return };
+        let Some(native) = native else {
+            if gfx.surface.is_some() {
+                gfx.surface = None;
+                NATIVE_WINDOW.store(std::ptr::null_mut(), Ordering::Relaxed);
+                self.shown = false;
+                self.next_frame = None;
+            }
+            return;
+        };
         let before = NATIVE_WINDOW.swap(native, Ordering::Relaxed);
-        if !before.is_null() && before != native {
+        let need_surface = gfx.surface.is_none() || (!before.is_null() && before != native);
+        if need_surface {
             match gfx.gpu.instance.create_surface(gfx.window.clone()) {
-                Ok(surface) => gfx.surface = surface,
+                Ok(surface) => gfx.surface = Some(surface),
                 Err(e) => {
                     log::warn!("creating the surface: {e}");
                     return;

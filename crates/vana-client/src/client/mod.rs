@@ -8883,7 +8883,8 @@ impl Phase {
 struct Gfx {
     window: Arc<Window>,
     gpu: Gpu,
-    surface: wgpu::Surface<'static>,
+    /// None while Android has released the native window (`ApplicationHandler::suspended`).
+    surface: Option<wgpu::Surface<'static>>,
     config: wgpu::SurfaceConfiguration,
     depth: wgpu::TextureView,
     egui_ctx: egui::Context,
@@ -18082,6 +18083,10 @@ impl App {
             return;
         }
         let Some(mut gfx) = self.gfx.take() else { return };
+        if gfx.surface.is_none() {
+            self.gfx = Some(gfx);
+            return;
+        }
         if !self.shown {
             self.shown = true;
             gfx.window.set_visible(true);
@@ -18112,7 +18117,7 @@ impl App {
         }
         let size = [gfx.config.width, gfx.config.height];
         let movie = self.movie.get_or_insert_with(|| crate::render::movie::Movie::new(&gfx.gpu, gfx.config.format));
-        match gfx.surface.get_current_texture() {
+        match gfx.surface.as_ref().unwrap().get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
                 let Some(o) = self.opening.as_mut() else {
                     drop(frame);
@@ -18157,7 +18162,7 @@ impl App {
                 gfx.gpu.queue.present(frame);
             }
             wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                gfx.surface.configure(&gfx.gpu.device, &gfx.config);
+                gfx.surface.as_ref().unwrap().configure(&gfx.gpu.device, &gfx.config);
             }
             // Timeout while the last movie frame is still on the GPU: configuring here waits it out on this thread.
             _ => self.next_frame = Some(Instant::now() + std::time::Duration::from_millis(16)),
@@ -18269,9 +18274,11 @@ impl App {
             }
         }
         if std::mem::take(&mut self.present_dirty) {
-            gfx.config.present_mode =
-                present_mode(&gfx.surface.get_capabilities(&gfx.gpu.adapter), self.frame_limit, &gfx.window);
-            gfx.surface.configure(&gfx.gpu.device, &gfx.config);
+            if let Some(surface) = &gfx.surface {
+                gfx.config.present_mode =
+                    present_mode(&surface.get_capabilities(&gfx.gpu.adapter), self.frame_limit, &gfx.window);
+                surface.configure(&gfx.gpu.device, &gfx.config);
+            }
         }
         self.perf.limit = format!(
             "limit {}  present {:?}",
@@ -18495,8 +18502,14 @@ impl App {
             return false;
         }
         #[cfg(target_os = "android")]
-        if self.gfx.is_some() {
-            return true;
+        {
+            if self.gfx.as_ref().is_some_and(|g| g.surface.is_some()) {
+                return true;
+            }
+            if self.gfx.is_some() {
+                self.next_frame = None;
+                return false;
+            }
         }
         // Nothing is shown until the title can draw.
         if !self.shown {
@@ -19613,6 +19626,10 @@ impl App {
         let m_update = Instant::now();
 
         let Some(mut gfx) = self.gfx.take() else { return };
+        if gfx.surface.is_none() {
+            self.gfx = Some(gfx);
+            return;
+        }
         let mut raw = self.frame_input(&mut gfx, dt);
         let size = [gfx.config.width, gfx.config.height];
         let mut script_shot = self.drive_frame(&gfx, &mut raw);
@@ -19621,13 +19638,13 @@ impl App {
         let (jobs, pixels_per_point) = self.frame_ui(&mut gfx, raw, size, dt);
         let m_ui = Instant::now();
 
-        let frame = match gfx.surface.get_current_texture() {
+        let frame = match gfx.surface.as_ref().unwrap().get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
             other => {
                 // Outdated or lost (KWin's full-screen re-ask makes the swapchain stale): rebuilt, and the next frame
                 // asked for here, or the loop waits on events with nothing scheduled and the window stays frozen.
                 log::debug!("surface: no frame ({other:?}), configured again");
-                gfx.surface.configure(&gfx.gpu.device, &gfx.config);
+                gfx.surface.as_ref().unwrap().configure(&gfx.gpu.device, &gfx.config);
                 self.next_frame = Some(Instant::now() + std::time::Duration::from_millis(16));
                 self.gfx = Some(gfx);
                 return;
@@ -21423,11 +21440,18 @@ impl ApplicationHandler for App {
                         event_loop.set_control_flow(ControlFlow::WaitUntil(t));
                     }
                 } else if let Some(g) = &self.gfx {
-                    g.window.request_redraw();
+                    if g.surface.is_some() {
+                        g.window.request_redraw();
+                    }
                 }
             }
             None => event_loop.set_control_flow(ControlFlow::Wait),
         }
+    }
+
+    fn suspended(&mut self, _: &ActiveEventLoop) {
+        #[cfg(target_os = "android")]
+        self.android_drop_surface();
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -21557,7 +21581,7 @@ impl ApplicationHandler for App {
             self.shown = true;
             window.set_visible(true);
         }
-        self.gfx = Some(Gfx { window, gpu, surface, config, depth, egui_ctx, egui_state, egui_renderer });
+        self.gfx = Some(Gfx { window, gpu, surface: Some(surface), config, depth, egui_ctx, egui_state, egui_renderer });
     }
 
     /// The raw motion while a look drag holds the pointer locked.
@@ -21923,9 +21947,10 @@ fn monitor_list(all: impl Iterator<Item = winit::monitor::MonitorHandle>) -> Vec
 
 /// The swapchain and depth buffer at a new window size.
 fn resize_surface(gfx: &mut Gfx, size: winit::dpi::PhysicalSize<u32>) {
+    let Some(surface) = &gfx.surface else { return };
     gfx.config.width = size.width.max(1);
     gfx.config.height = size.height.max(1);
-    gfx.surface.configure(&gfx.gpu.device, &gfx.config);
+    surface.configure(&gfx.gpu.device, &gfx.config);
     gfx.depth = depth_view(&gfx.gpu.device, gfx.config.width, gfx.config.height);
 }
 
