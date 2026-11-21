@@ -14,10 +14,6 @@
         android:extractNativeLibs="true"
         android:requestLegacyExternalStorage="true">
         <activity
-            android:name="org.vanaclient.FolderPickerProxyActivity"
-            android:exported="false"
-            android:theme="@android:style/Theme.NoTitleBar" />
-        <activity
             android:name="org.vanaclient.VanaClientNativeActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|uiMode|keyboard|keyboardHidden|navigation|locale|layoutDirection|fontScale|colorMode"
             android:launchMode="singleTask"

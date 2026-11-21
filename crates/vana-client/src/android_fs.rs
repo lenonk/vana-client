@@ -34,27 +34,6 @@ pub fn request_all_files_access() {
     }
 }
 
-/// Folder picker file written by `FolderPickerProxyActivity`. `None` = still open.
-pub fn consume_folder_pick() -> Option<Option<std::path::PathBuf>> {
-    let dir = with_activity(|env, activity| {
-        let file = env.call_method(activity, "getFilesDir", "()Ljava/io/File;", &[])?.l()?;
-        let path = env.call_method(&file, "getAbsolutePath", "()Ljava/lang/String;", &[])?.l()?;
-        let jstr = jni::objects::JString::from(path);
-        Ok(env.get_string(&jstr)?.to_string_lossy().into_owned())
-    })
-    .inspect_err(|e| log::warn!("folder pick file: {e:#}"))
-    .ok()?;
-    let marker = std::path::Path::new(&dir).join("folder-pick.txt");
-    if !marker.is_file() {
-        return None;
-    }
-    let text = std::fs::read_to_string(&marker).unwrap_or_default();
-    let _ = std::fs::remove_file(&marker);
-    let text = text.trim();
-    log::info!("folder pick file: '{text}'");
-    if text.is_empty() { Some(None) } else { Some(Some(std::path::PathBuf::from(text))) }
-}
-
 /// Opens `url` in the system browser.
 pub fn open_url(url: &str) {
     if let Err(e) = with_activity(|env, activity| {

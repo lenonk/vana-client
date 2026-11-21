@@ -261,6 +261,16 @@ pub(crate) fn tls_trust_port(message: &str, auth_port: u16) -> Option<u16> {
 }
 
 /// Trust-server: forgets pins the way `vana-client trust-server` does and returns its status lines.
+/// JNI: `VanaClientNativeActivity.onResume` after Settings or the browser.
+#[allow(non_snake_case)]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_vanaclient_VanaClientNativeActivity_nativeAfterUiActivity(
+    _env: jni::JNIEnv<'_>,
+    _class: jni::objects::JClass<'_>,
+) {
+    let _ = std::panic::catch_unwind(android_resume_after_activity);
+}
+
 pub(crate) fn forget_server_tls_pins(host: &str, port: Option<u16>) -> anyhow::Result<Vec<String>> {
     let store = crate::config::known_servers_path();
     Ok(crate::net::tls::trust(&store, host.trim(), port, None)?)
