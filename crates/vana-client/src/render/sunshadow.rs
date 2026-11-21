@@ -491,8 +491,13 @@ mod tests {
         let sh = SunShadow::new(&gpu, &silly, format, 1024);
         let n = 16u32;
         // y is down: the eye 10 above the floor at y = 0, looking down.
-        let cam =
-            crate::render::Camera { eye: Vec3::new(0.0, -10.0, 0.0), target: Vec3::ZERO, up: Vec3::Z, fov_y: 0.8 };
+        let cam = crate::render::Camera {
+            jitter: glam::Vec2::ZERO,
+            eye: Vec3::new(0.0, -10.0, 0.0),
+            target: Vec3::ZERO,
+            up: Vec3::Z,
+            fov_y: 0.8,
+        };
         let vp = cam.view_proj(1.0);
         let floor_z = vp.project_point3(Vec3::ZERO).z;
         let sun = Vec3::Y;

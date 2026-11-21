@@ -291,6 +291,22 @@ pub fn tokens(line: &str, tabs: bool) -> Vec<String> {
     out
 }
 
+/// /upcapture [frames] [label] (ours): a capture of the upscaler's inputs (render/upscale/capture.rs), 1..240
+/// frames in a row; the upscaler must be on.
+fn upcapture(w: &mut World, line: &str) {
+    let mut args = line.split_whitespace().skip(1);
+    let (mut frames, mut label) = (1, String::new());
+    for a in args.by_ref() {
+        match a.parse::<u32>() {
+            Ok(n) if label.is_empty() => frames = n,
+            _ => label = a.to_string(),
+        }
+    }
+    let req = crate::render::upscale::capture::Request::new(&label, frames);
+    w.chat.push(format!("Upscaler capture: {} frame(s) to {}", req.frames, req.dir.display()));
+    w.upscale_capture = Some(req);
+}
+
 /// FUN_100769f0: cut to 150 bytes without splitting a character.
 fn cut(s: &mut String) {
     let mut n = s.len().min(150);
@@ -678,6 +694,17 @@ pub(super) fn run_unfiltered(w: &mut World, line: &str, mode: Mode) {
             None => w.timers.toggle(),
             _ => {}
         }
+        return;
+    }
+    // Ours (not retail): /upcapture [frames] [label] writes the upscaler's inputs of the next frames to disk.
+    if first.eq_ignore_ascii_case("/upcapture") {
+        upcapture(w, &line);
+        return;
+    }
+    // Ours (not retail): /updebug [0..4] shows an upscaler input in place of the scene (0 none, 1 motion, 2 depth,
+    // 3 reactive, 4 composition); alone it steps to the next.
+    if first.eq_ignore_ascii_case("/updebug") {
+        w.upscale_debug = Some(line.split_whitespace().nth(1).and_then(|a| a.parse().ok()).unwrap_or(u32::MAX));
         return;
     }
     // Ours (not retail; the modern UI's mode presets): /uimodes opens or closes their editor.

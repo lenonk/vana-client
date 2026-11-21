@@ -3542,7 +3542,13 @@ pub fn camera(w: &World) -> Option<Camera> {
         (true, Some(m)) => (m.transform_point3(k.eye), m.transform_point3(k.target)),
         (true, None) => return w.last_camera,
     };
-    Some(Camera { eye, target, up: crate::dat::title::up_of(eye, target, k.roll), fov_y: fov_y(k.focal) })
+    Some(Camera {
+        jitter: glam::Vec2::ZERO,
+        eye,
+        target,
+        up: crate::dat::title::up_of(eye, target, k.roll),
+        fov_y: fov_y(k.focal),
+    })
 }
 
 /// The running shot's path name (test drives wait for it).

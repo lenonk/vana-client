@@ -220,6 +220,20 @@ pub struct Config {
     /// Colour grading of the 3D scene: 0 off (retail), 1 Vivid, 2 Warm, 3 Cool, 4 Film (render/scale.rs). Not a
     /// retail option.
     pub grading: u32,
+    /// The scene's temporal upscaler (render/upscale): 0 off (the scaling pass alone), 1 AMD FSR 3.1, 2 an external
+    /// engine fed the same inputs (the neural pass, through the raw Vulkan handles). Not a retail option.
+    pub upscaler: u32,
+    /// The upscaler's quality mode, the output-to-render ratio: 0 Native AA (1.0), 1 Quality (1.5), 2 Balanced (1.7),
+    /// 3 Performance (2.0), 4 Ultra Performance (3.0).
+    pub upscale_quality: u32,
+    /// FSR's RCAS sharpening, 0 (off) .. 100.
+    pub upscale_sharpness: u32,
+    /// The upscaler's input shown in place of the scene: 0 none, 1 motion vectors, 2 depth, 3 reactive mask,
+    /// 4 transparency and composition mask.
+    pub upscale_debug: u32,
+    /// Neural rendering by the engine library (vana_nr_dispatch) on the render-size colour before the upscale, with
+    /// any Upscaling, Off included. Not a retail option.
+    pub neural: bool,
     /// How far scenery, actors and effects draw, in percent of retail's distance (the zone's, scaled by the
     /// Clipping setting); 0 = no limit. Not a retail option.
     pub draw_distance: u32,
@@ -577,6 +591,11 @@ impl Default for Config {
             anisotropy: 16,
             antialias: 0,
             grading: 0,
+            upscaler: 0,
+            upscale_quality: 1,
+            upscale_sharpness: 50,
+            upscale_debug: 0,
+            neural: false,
             draw_distance: 0,
             send_interval: 400,
             party_tp: true,

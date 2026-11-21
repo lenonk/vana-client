@@ -86,6 +86,10 @@ fn grade(c: vec3<f32>) -> vec3<f32> {
     } else {
         c = up(i.uv);
     }
+    // lcd.w: the source is the upscaler's linear output (render/upscale), filtered linear and encoded here.
+    if (u.lcd.w > 0.5) {
+        c = pow(max(c, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2));
+    }
     c = grade(c);
     return vec4<f32>(pow(clamp(c, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0 / u.gamma.rgb), 1.0);
 }
@@ -122,6 +126,8 @@ pub struct SceneScale {
     smaa: Option<super::smaa::Smaa>,
     /// The scale pass's group over the SMAA output, by that view.
     smaa_group: super::BindCache<wgpu::TextureView>,
+    /// Its group over the upscaler's output, by that view.
+    upscaled_group: super::BindCache<wgpu::TextureView>,
 }
 
 impl SceneScale {
@@ -201,7 +207,17 @@ impl SceneScale {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        Self { pipeline, layout, sampler, uniform, format, target: None, smaa: None, smaa_group: Default::default() }
+        Self {
+            pipeline,
+            layout,
+            sampler,
+            uniform,
+            format,
+            target: None,
+            smaa: None,
+            smaa_group: Default::default(),
+            upscaled_group: Default::default(),
+        }
     }
 
     /// The offscreen colour and depth views at `size`, made on first use or a size change, and the colour texture.
@@ -252,6 +268,8 @@ impl SceneScale {
     /// 3D LCD Mode's side-by-side eyes (the scene `extra` wider) and whether this frame carries the strip. `smaa`: the
     /// anti-aliasing filter (not retail; skipped in 3D LCD Mode and when downscaling). The SMAA passes are made on
     /// first use; turning it off leaves them idle. `grading`: the colour grading preset (`grading`, 0 off).
+    /// `upscaled`: the upscaler's linear output and its size, read in place of the scene (no SMAA then).
+    #[allow(clippy::too_many_arguments)]
     pub fn blit(
         &mut self,
         gpu: &Gpu,
@@ -262,10 +280,15 @@ impl SceneScale {
         lcd: Option<(f32, bool)>,
         smaa: bool,
         grading: u32,
+        upscaled: Option<(&wgpu::TextureView, [u32; 2])>,
     ) {
         let Some(t) = &self.target else { return };
         let dst_size = [dst_size[0].max(1), dst_size[1].max(1)];
-        let smaa = smaa && lcd.is_none() && t.size[0] <= dst_size[0] && t.size[1] <= dst_size[1];
+        let smaa = smaa && upscaled.is_none() && lcd.is_none() && t.size[0] <= dst_size[0] && t.size[1] <= dst_size[1];
+        if upscaled.is_none() {
+            self.upscaled_group.clear();
+        }
+        let src_size = upscaled.map_or(t.size, |u| u.1);
         if !smaa {
             // Off: its targets and the scene texture it holds go (the kept group binds its output too).
             self.smaa = None;
@@ -273,8 +296,8 @@ impl SceneScale {
         }
         let (on, strip, extra) = lcd.map_or((0.0, 0.0, 0.0), |(e, s)| (1.0, s as u32 as f32, e));
         let mut u = [
-            t.size[0] as f32,
-            t.size[1] as f32,
+            src_size[0] as f32,
+            src_size[1] as f32,
             dst_size[0] as f32,
             dst_size[1] as f32,
             gamma[0],
@@ -284,7 +307,7 @@ impl SceneScale {
             on,
             strip,
             extra,
-            0.0,
+            upscaled.is_some() as u32 as f32,
             0.0,
             0.0,
             0.0,
@@ -308,6 +331,19 @@ impl SceneScale {
                 })
             })
         });
+        let up_group = upscaled.map(|(view, _)| {
+            self.upscaled_group.get(view.clone(), || {
+                gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("scene scale upscaled"),
+                    layout: &self.layout,
+                    entries: &[
+                        wgpu::BindGroupEntry { binding: 0, resource: self.uniform.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(view) },
+                        wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                    ],
+                })
+            })
+        });
         let Some(t) = &self.target else { return };
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("scene scale"),
@@ -323,7 +359,7 @@ impl SceneScale {
             multiview_mask: None,
         });
         pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, smaa_group.as_ref().unwrap_or(&t.group), &[]);
+        pass.set_bind_group(0, up_group.as_ref().or(smaa_group.as_ref()).unwrap_or(&t.group), &[]);
         pass.draw(0..3, 0..1);
     }
 }
@@ -393,7 +429,7 @@ mod tests {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             });
-            s.blit(&gpu, &mut enc, &out.create_view(&Default::default()), dst, [1.0; 3], None, false, 0);
+            s.blit(&gpu, &mut enc, &out.create_view(&Default::default()), dst, [1.0; 3], None, false, 0, None);
             gpu.queue.submit([enc.finish()]);
             let px = read(&gpu, &out, dst[0], dst[1]);
             for p in px.as_chunks::<4>().0 {
@@ -427,7 +463,7 @@ mod tests {
             view_formats: &[],
         });
         let mut enc = gpu.device.create_command_encoder(&Default::default());
-        s.blit(&gpu, &mut enc, &out.create_view(&Default::default()), [4, 4], [1.0; 3], None, false, 0);
+        s.blit(&gpu, &mut enc, &out.create_view(&Default::default()), [4, 4], [1.0; 3], None, false, 0, None);
         gpu.queue.submit([enc.finish()]);
         for p in read(&gpu, &out, 4, 4).as_chunks::<4>().0 {
             assert!((p[0] as i32 - 128).abs() <= 3, "{p:?}");
@@ -462,7 +498,7 @@ mod tests {
                 wgpu::Extent3d { width: n, height: n, depth_or_array_layers: 1 },
             );
             let mut enc = gpu.device.create_command_encoder(&Default::default());
-            s.blit(&gpu, &mut enc, &out.create_view(&Default::default()), [n, n], [1.0; 3], None, smaa, 0);
+            s.blit(&gpu, &mut enc, &out.create_view(&Default::default()), [n, n], [1.0; 3], None, smaa, 0, None);
             gpu.queue.submit([enc.finish()]);
             read(&gpu, &out, n, n)
         };
@@ -528,7 +564,7 @@ mod tests {
                     multiview_mask: None,
                 });
             }
-            s.blit(&gpu, &mut enc, &out.create_view(&Default::default()), [4, 4], [1.0; 3], None, false, preset);
+            s.blit(&gpu, &mut enc, &out.create_view(&Default::default()), [4, 4], [1.0; 3], None, false, preset, None);
             gpu.queue.submit([enc.finish()]);
             let px = read(&gpu, &out, 4, 4);
             [px[0] as i32, px[1] as i32, px[2] as i32]
@@ -559,7 +595,7 @@ mod tests {
                     multiview_mask: None,
                 });
             }
-            s.blit(&gpu, &mut enc, &out.create_view(&Default::default()), [4, 4], [1.0; 3], None, false, preset);
+            s.blit(&gpu, &mut enc, &out.create_view(&Default::default()), [4, 4], [1.0; 3], None, false, preset, None);
             gpu.queue.submit([enc.finish()]);
             let px = read(&gpu, &out, 4, 4);
             assert_eq!(&px[..3], &[0, 0, 0], "preset {preset}");

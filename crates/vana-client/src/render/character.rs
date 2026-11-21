@@ -385,7 +385,13 @@ mod queue_shots {
             let size = (mesh.max - mesh.min).max_element();
             let (s, c) = yaw.to_radians().sin_cos();
             let eye = centre + glam::Vec3::new(s, 0.0, c) * size * 1.6;
-            let camera = Camera { eye, target: centre, up: glam::Vec3::NEG_Y, fov_y: 40f32.to_radians() };
+            let camera = Camera {
+                jitter: glam::Vec2::ZERO,
+                eye,
+                target: centre,
+                up: glam::Vec3::NEG_Y,
+                fov_y: 40f32.to_radians(),
+            };
             let path = std::path::Path::new(&dir).join(format!("{name}.png"));
             render_png(&ch, &mesh, &camera, 450, 600, &path).unwrap();
             println!(

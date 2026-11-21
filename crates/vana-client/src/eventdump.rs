@@ -97,6 +97,7 @@ pub fn cs_shot(
                 let k = sample(p, t);
                 println!("  t {t:.2}: eye {} target {} fov_y {:.1}", k.eye, k.target, fov_y(k.focal).to_degrees());
                 cams.push(crate::render::Camera {
+                    jitter: glam::Vec2::ZERO,
                     eye: k.eye,
                     target: k.target,
                     up: glam::Vec3::NEG_Y,

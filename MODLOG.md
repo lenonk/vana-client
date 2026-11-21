@@ -24848,3 +24848,64 @@ modern/search.rs (the "roe" list).
 - Tests: items::order_tests::kept_order_survives_a_resend, changed_item_goes_last, view_change_sorts.
 - Seen live (Lnxcsfix, slots pearlsack / wind crystal / cotton cloth / cipher), before the 0x52 reset: sorted at
   login, still sorted after zoning to Northern San d'Oria and back.
+
+## Upscaling: FSR 3.1 and the inputs for a temporal upscaler (ours, not retail)
+
+Settings > Graphics > Upscaling (config `upscaler` 0 off / 1 FSR / 2 external, `upscale_quality`,
+`upscale_sharpness`, `upscale_debug`), in both UIs; off by default. Code `render/upscale/`, docs/upscaler-engine.md.
+
+- The frame: frame_targets makes the scene target at the render size (FFX's ratios 1.0 / 1.5 / 1.7 / 2.0 / 3.0 of the
+  window size, truncated; not of the Background size: a Background above the window would be upscaled only to be
+  shrunk again, at FSR's cost per output pixel) in the world only, not in 3D LCD Mode. The frame's bg is the render
+  size, as the effects and screen passes take it for the scene target's. `Camera::jitter` adds the Halton(2, 3) offset
+  (render pixels, sequence 8 x ratio² as FFX's) to the projection's z column (NDC x += 2 jx / w, y -= 2 jy / h; minus
+  in the matrix as clip w = -z). Everything drawn into the scene through `camera.proj` (scenery, actors, effects,
+  SSAO, shadows' receive passes) takes it; `Camera::steady` drops it.
+- finish_scene, before the scaling pass: the inputs pass (prep.wgsl) makes linear colour (scene^2.2, Rgba16Float),
+  camera motion (depth through the jittered inverse, then last and this frame's steady view-projection: previous minus
+  current, render pixels, y down), the reactive mask (largest channel change between the snapshot before the effects
+  and the end) and the composition mask (the change between the snapshots after modes 0..1 and after mode 3).
+  The snapshots are texture copies at the zone pass's existing breaks (mode 2, mode 4) and at draw_effects' start.
+- Moving things draw their own motion into an Rgba16Float target over the scene depth (LessEqual, bias -16, no
+  writes), taken where alpha is 1:
+  - skinned actors (vs_skinned_motion): this frame's pose region against last frame's, from a copy of the pose
+    buffer made after the pass (`Skinned::prev_offset`; an actor not posed last frame moves with the camera only);
+  - door and lift parts at this and last frame's part clock, a voyage's world through this and last frame's voyage
+    matrix (vs_scenery_motion, the zone's modes 0..1 with the cull's draws; every other instance is pushed past the
+    far plane). Only while a part moves (`parts_busy`, set by move_part) or the voyage matrix changes.
+  - The scenery pass ran clean with the gate forced open; a moving door, lift or voyage not seen live yet.
+  - Not covered: ship model actors (move_model_actor), furniture, effects and faded / refracting actors (those have
+    the reactive mask instead).
+- Reset: a zone change, a render size change, the first frame, a camera move over 8 units or a turn over 30° in a
+  frame.
+- FSR 3.1 (render/upscale/fsr.rs): AMD's GLSL passes (FidelityFX SDK 1.1.4, vendor/fidelityfx) through glslc,
+  spirv-opt and naga into WGSL (vendor/fidelityfx/gen.py), so they run on every wgpu backend. Changes for naga /
+  wgpu: image atomics as storage buffer atomics (the reconstructed depth, SPD's counter), SPD's coherent mip 5 mirrored
+  in a coherent buffer, SPD without subgroup operations, the samplers' bindings 1000 / 1001 moved to 98 / 99, the
+  output image given a format. The host side follows ffx_fsr3upscaler.cpp: the ping-pong halves by frame parity,
+  the first-frame and reset clears, the reconstructed depth filled with 1.0 each frame (a compute fill: wgpu clears
+  only to zero), the constants (deviceToViewDepth for standard finite depth, the jitter phase count ramp,
+  motionVectorScale 1 / render size for pixel vectors). Needs TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES (read-write
+  R8 / R16F / RG16F / RGBA8 / RGBA32F storage), FLOAT32_FILTERABLE, MEMORY_DECORATION_COHERENT, CLEAR_TEXTURE and 6
+  storage textures per stage; without them the scene draws at full size.
+- The external engine (render/upscale/external.rs): a library's `vana_upscale_dispatch` gets the inputs as Vulkan
+  handles (wgpu-hal) and a raw command buffer. wgpu 30 panics when raw (`as_hal_mut`) and wgpu recording mix in one
+  encoder, so the frame is submitted up to there and the engine's buffer goes in a submit of its own; a settle
+  dispatch first leaves the inputs in SHADER_READ_ONLY_OPTIMAL (depth DEPTH_STENCIL_READ_ONLY_OPTIMAL) and the output
+  in GENERAL (wgpu-hal's layouts by last use). Seen working with a test engine that blits colour to the output.
+- Neural rendering (config `neural`, Settings' Upscaling page, both UIs): the engine library's vana_nr_dispatch runs
+  on the render-size colour after the inputs pass and before the upscaler, writing a render-size Rgba16Float image
+  the upscaler (or with Upscaling off the scaling pass, render size = output size, no jitter) reads instead; a
+  frame it declines keeps the colour. When the library has that export, render/upscale/vkdevice.rs makes the device
+  through wgpu-hal's open_with_callback: SHADER_F16, SHADER_I16 and EXPERIMENTAL_COOPERATIVE_MATRIX for what
+  wgpu-hal enables itself (shaderFloat16 / shaderInt8 / shaderInt16, 16-bit storage, cooperativeMatrix, the memory
+  model with device scope), and on the pNext chain the struct types wgpu-hal never chains (8-bit storage,
+  synchronization2, the optional workgroup explicit layout, pipeline robustness, pipeline binaries with
+  maintenance5; the binaries' struct by hand, newer than the ash in the tree); then create_device_from_hal. A
+  missing required feature keeps the usual device and the row shows Unavailable with the reason. Seen live with the
+  DLSSNR-RDNA3 engine on the 7900 XTX: 14.5 ms of GPU a frame at 1920 x 1080.
+- /updebug [0..4] (motion, depth, reactive, composition in place of the scene) and /upcapture [frames] [label] (raw
+  f32 files and inputs.json under the data folder's captures/).
+- Checked: GPU tests (all passes build; a flat frame stays flat through three dispatches; camera vectors against the
+  pinhole shift). Live: a captured /wave emote, warping by the vectors leaves a third of the error of no warp, and the
+  reversed sign is worse.

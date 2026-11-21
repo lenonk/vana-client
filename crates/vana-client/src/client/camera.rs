@@ -874,7 +874,13 @@ pub fn view(w: &World) -> Camera {
     // Not glam's lerp (a(1 - t) + bt): a camera at rest must not wobble in the last bit with t.
     let (eye, look) = (s.prev.eye + (c.eye - s.prev.eye) * t, s.prev.look + (c.look - s.prev.look) * t);
     let f = if s.first || w.locked || s.out <= 0.0 { 1.0 } else { s.out };
-    Camera { eye: look + (eye - look) * f, target: look, up: Vec3::NEG_Y, fov_y: crate::dat::title::fov_y(focal(w)) }
+    Camera {
+        jitter: glam::Vec2::ZERO,
+        eye: look + (eye - look) * f,
+        target: look,
+        up: Vec3::NEG_Y,
+        fov_y: crate::dat::title::fov_y(focal(w)),
+    }
 }
 
 #[cfg(test)]

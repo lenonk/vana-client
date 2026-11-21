@@ -445,8 +445,13 @@ impl SelectScene {
             let feet = self.data.slots[i % SLOTS].feet;
             zone.update_actor(gpu, actor, &mesh, placement(feet, model.scale(*size)));
         }
-        let camera =
-            Camera { eye: self.eye, target: self.target, up: Vec3::NEG_Y, fov_y: crate::dat::title::fov_y(350.0) };
+        let camera = Camera {
+            jitter: glam::Vec2::ZERO,
+            eye: self.eye,
+            target: self.target,
+            up: Vec3::NEG_Y,
+            fov_y: crate::dat::title::fov_y(350.0),
+        };
         let actors: Vec<&ActorGpu> = self.actors.iter().flatten().collect();
         zone.render(gpu, encoder, view, depth, &camera, aspect, &actors);
         if let Some(fx) = &mut self.effects {

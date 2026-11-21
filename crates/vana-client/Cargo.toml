@@ -84,6 +84,12 @@ zbus = "5.19"
 # gilrs's epoll, and SDL reads them by polling. Built from source and linked in, so nothing new to install.
 sdl2 = { version = "0.38.0", default-features = false, features = ["bundled", "static-link"] }
 
+# The external upscaler's raw Vulkan handles and its library (render/upscale/external.rs); both already in the tree
+# through wgpu-hal.
+[target.'cfg(any(target_os = "linux", windows))'.dependencies]
+ash = "0.38"
+libloading = "0.8"
+
 [target."cfg(target_os = \"macos\")".dependencies]
 # Keeps the system and display awake while a controller plays (client/keepawake.rs); already in the tree through gilrs/winit.
 objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["CFString", "std"] }

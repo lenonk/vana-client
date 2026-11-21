@@ -4607,6 +4607,7 @@ version = "1.0.14"
 dependencies = [
  "ab_glyph",
  "anyhow",
+ "ash",
  "bytemuck",
  "clap",
  "cpal",
@@ -4625,6 +4626,7 @@ dependencies = [
  "indexmap",
  "jiff",
  "libc",
+ "libloading",
  "log",
  "md-5",
  "memchr",

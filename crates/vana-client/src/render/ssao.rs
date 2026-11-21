@@ -349,8 +349,13 @@ mod tests {
         let mut ao = Ssao::new(&gpu, format);
         let n = 32u32;
         ao.resize(&gpu, [n, n]);
-        let cam =
-            crate::render::Camera { eye: Vec3::new(0.0, -10.0, 0.0), target: Vec3::ZERO, up: Vec3::Z, fov_y: 0.8 };
+        let cam = crate::render::Camera {
+            jitter: glam::Vec2::ZERO,
+            eye: Vec3::new(0.0, -10.0, 0.0),
+            target: Vec3::ZERO,
+            up: Vec3::Z,
+            fov_y: 0.8,
+        };
         let vp = cam.view_proj(1.0);
         let depth = crate::render::depth_view(&gpu.device, n, n);
         let color = gpu.device.create_texture(&wgpu::TextureDescriptor {

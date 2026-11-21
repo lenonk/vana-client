@@ -245,6 +245,7 @@ impl Flyover {
         }
         let k = sample(path, (self.tick - s.start) / s.ticks);
         Some(Camera {
+            jitter: glam::Vec2::ZERO,
             eye: k.eye,
             target: k.target,
             up: crate::dat::title::up_of(k.eye, k.target, k.roll),

@@ -163,6 +163,7 @@ pub fn run(file: u32, zone: u32, hour: f32, pos: [f32; 3], steps: u32, out_dir: 
         // Framed on the model's height (y down: the top is negative).
         let look = feet + Vec3::new(0.0, top * 0.5, 0.0);
         let camera = render::Camera {
+            jitter: glam::Vec2::ZERO,
             eye: look + Vec3::new(2.6, -0.5, -1.2) * (top.abs() / 1.8).max(1.0),
             target: look,
             up: Vec3::NEG_Y,

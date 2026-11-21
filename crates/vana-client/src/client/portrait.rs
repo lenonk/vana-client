@@ -58,7 +58,7 @@ pub(super) fn camera(w: &World, places: &HashMap<u32, Place>, id: u32, oval: boo
     let fov_y = 30f32.to_radians();
     let dist = span * if oval { 0.72 } else { 0.66 } / (fov_y / 2.0).tan();
     let f = Vec3::new(p.forward.x, 0.0, p.forward.z).normalize_or(Vec3::X);
-    Some(Camera { eye: centre + f * dist, target: centre, up: Vec3::NEG_Y, fov_y })
+    Some(Camera { jitter: glam::Vec2::ZERO, eye: centre + f * dist, target: centre, up: Vec3::NEG_Y, fov_y })
 }
 
 impl Portraits {

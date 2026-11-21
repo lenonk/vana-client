@@ -126,7 +126,7 @@ pub fn zone_camera(cam: Mat4, fov_y: f32) -> Camera {
     let f = Vec3::new(1.0, -1.0, -1.0);
     let eye = cam.w_axis.truncate() * f * ZONE_SCALE;
     let fwd = -cam.z_axis.truncate() * f;
-    Camera { eye, target: eye + fwd, up: cam.y_axis.truncate() * f, fov_y }
+    Camera { jitter: glam::Vec2::ZERO, eye, target: eye + fwd, up: cam.y_axis.truncate() * f, fov_y }
 }
 
 /// The GPU dancer for a race, face and hair; the 30 Hz frame its "_sort" orders and idle bounds were taken at.
@@ -256,6 +256,7 @@ impl Creator {
         let Some(d) = &mut self.dancer else {
             // Before the first dancer loads: the opening camera of FUN_1022ef00, eye (0, -5, 40) on the origin.
             let camera = Camera {
+                jitter: glam::Vec2::ZERO,
                 eye: Vec3::new(0.0, -5.0, 40.0),
                 target: Vec3::ZERO,
                 up: Vec3::NEG_Y,
