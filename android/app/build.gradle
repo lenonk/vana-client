@@ -1,0 +1,63 @@
+plugins {
+    id "com.android.application"
+}
+
+def localProps = new Properties()
+def localPropsFile = rootProject.file("local.properties")
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { localProps.load(it) }
+}
+
+def vanaKeystore = localProps.getProperty("vana.keystore") ?: System.getenv("VANA_ANDROID_KEYSTORE")
+def vanaStorePassword = localProps.getProperty("vana.keystore.password") ?: System.getenv("VANA_ANDROID_KEYSTORE_PASSWORD")
+def vanaKeyAlias = localProps.getProperty("vana.key.alias") ?: System.getenv("VANA_ANDROID_KEY_ALIAS") ?: "vana-client"
+def vanaKeyPassword = localProps.getProperty("vana.key.password") ?: System.getenv("VANA_ANDROID_KEY_PASSWORD") ?: vanaStorePassword
+def vanaSigningReady = vanaKeystore != null && !vanaKeystore.isEmpty() && vanaStorePassword != null
+
+android {
+    namespace "org.vanaclient"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "org.vanaclient"
+        minSdk 26
+        targetSdk 35
+        versionCode 2
+        versionName "1.0.14-rc1"
+        ndk {
+            abiFilters "arm64-v8a"
+        }
+    }
+
+    signingConfigs {
+        vanaRelease {
+            if (vanaSigningReady) {
+                storeFile file(vanaKeystore)
+                storePassword vanaStorePassword
+                keyAlias vanaKeyAlias
+                keyPassword vanaKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (vanaSigningReady) {
+                signingConfig signingConfigs.vanaRelease
+            } else {
+                // No local.properties / env: debug keystore (fine for dev; unstable across machines).
+                signingConfig signingConfigs.debug
+            }
+        }
+        debug {
+            debuggable true
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging true
+        }
+    }
+}
