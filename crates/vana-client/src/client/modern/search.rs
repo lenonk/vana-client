@@ -3,7 +3,7 @@
 //! list's cursor and Enter (what a click on the row does).
 
 use super::super::listsearch::{Entry, List, count_note};
-use super::super::{World, bluset, equipwin, pupset, shop};
+use super::super::{World, bluset, equipwin, pupset, roe, shop};
 
 pub const SEARCH_LISTS: &[List] = &[
     List {
@@ -76,7 +76,12 @@ pub const SEARCH_LISTS: &[List] = &[
         rows: super::craft::trade_rows,
         pick: super::craft::trade_pick,
     },
+    List { tag: "roe", open: super::journal::roe_search_open, rows: roe::search_rows, pick: roe_pick },
 ];
+
+fn roe_pick(w: &mut World, _: Option<&super::super::game_ui::GameUi>, k: usize) {
+    roe::search_pick(w, k);
+}
 
 /// The Equipment list's pieces: where each is.
 fn equip_rows(w: &World) -> Vec<Entry> {

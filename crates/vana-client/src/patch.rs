@@ -738,7 +738,8 @@ pub fn installed_version(root: &Path, service: Service) -> Option<String> {
     [None, Some("0")].into_iter().find_map(|r| crate::net::pol::patchver::read(&coded, service.title, r))
 }
 
-type Seen = (PathBuf, Option<std::time::SystemTime>, u64, Option<String>);
+type Stamp = Option<(Option<std::time::SystemTime>, u64)>;
+type Seen = (PathBuf, Stamp, Stamp, Option<String>);
 static SEEN: std::sync::Mutex<Option<Seen>> = std::sync::Mutex::new(None);
 
 /// [`applied_version`], read again only when the stamp file or patch.ver changes (every Config::load asks for it).
@@ -748,8 +749,9 @@ pub fn applied_version_cached(root: &Path) -> Option<String> {
     if stamp.is_none() && ver.is_none() {
         return None;
     }
-    let when = |m: &Option<std::fs::Metadata>| m.as_ref().and_then(|m| m.modified().ok());
-    let key = (path, when(&stamp).max(when(&ver)), stamp.map_or(0, |m| m.len()) + ver.map_or(0, |m| m.len()));
+    // Each file's own time and length: a change to either one reads the version again.
+    let mark = |m: Option<std::fs::Metadata>| m.map(|m| (m.modified().ok(), m.len()));
+    let key = (path, mark(stamp), mark(ver));
     let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
     if let Some((p, m, n, v)) = seen.as_ref()
         && (p, m, n) == (&key.0, &key.1, &key.2)

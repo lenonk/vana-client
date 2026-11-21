@@ -27,7 +27,8 @@ local open_builder
 -- Builder state. id: entry edited (nil: new); kind: action kind (nil: typed lines); pick: {name}; line: the
 -- player's line over the built one; opened: {list, name} of an opener shown; group: members ({name, action}).
 local E = { id = nil, kind = "ma", pick = nil, target = "t", line = nil, results = {}, opened = nil, auto_name = nil,
-  group = nil }
+  group = nil, sticky = false }
+local STICKY_ITEMS = { "This job only", "Every job and character" }
 local MAX_MEMBERS = 12
 -- The Keys tab's chosen slot.
 local K = { bar = 1, slot = 1 }
@@ -59,6 +60,7 @@ local COLS = math.floor((CW + TG) / (T + TG))
 local TILE = { 10, 17, 24, 255 }
 local TILE_HOVER = { 20, 33, 44, 255 }
 local TILE_EDGE = { 184, 139, 73, 205 }
+local TILE_STICKY = { 96, 196, 186, 230 }
 local TILE_SEL = { 255, 214, 120, 255 }
 local TILE_TEXT = { 236, 230, 214, 255 }
 local GHOST_BG = { 20, 24, 38, 160 }
@@ -95,7 +97,7 @@ local function draw_tiles()
     add({ type = "rect", x = x, y = y, w = T, h = T, round = 7, colour = L.hover == n and TILE_HOVER or TILE })
     local sel = L.sel == t.id
     add({ type = "rect", x = x, y = y, w = T, h = T, round = 7, line = sel and 2.5 or 1.5,
-      colour = sel and TILE_SEL or TILE_EDGE })
+      colour = sel and TILE_SEL or t.sticky and TILE_STICKY or TILE_EDGE })
     if t.act then
       local isz = math.floor(T * 0.58)
       add({ type = "icon", x = x + (T - isz) / 2, y = y + 4, size = isz, kind = t.act.kind, id = t.act.id })
@@ -115,7 +117,8 @@ local function draw_tiles()
     end
     local uses = data.uses(S.mj, t.id)
     add({ type = "tip", x = x, y = y, w = T, h = T, title = t.entry.name or "",
-      text = t.tip .. ("\n\nOn %d slot%s. Drag onto a slot of the bars; click to choose, "
+      text = t.tip .. (t.sticky and "\n\nSticky: in every job's library, for every character." or "")
+        .. ("\n\nOn %d slot%s. Drag onto a slot of the bars; click to choose, "
         .. "right-click to edit."):format(uses, uses == 1 and "" or "s") })
   end
   local g = L.drag and L.drag.x and tiles[L.drag.n]
@@ -140,8 +143,9 @@ local function show_selected()
   for _, x in ipairs(tiles) do
     if x.id == L.sel then t = x end
   end
-  ui.update(WIN, "lsel", { text = t and ('%s: %s; on %d slot%s.'):format(t.entry.name or "?", does_text(t.entry),
-    data.uses(S.mj, t.id), data.uses(S.mj, t.id) == 1 and "" or "s") or "Click a macro to choose it." })
+  ui.update(WIN, "lsel", { text = t and ('%s%s: %s; on %d slot%s.'):format(t.sticky and "Sticky " or "",
+    t.entry.name or "?", does_text(t.entry), data.uses(S.mj, t.id), data.uses(S.mj, t.id) == 1 and "" or "s")
+    or "Click a macro to choose it." })
 end
 
 local function refresh_library(select_id)
@@ -157,7 +161,7 @@ local function refresh_library(select_id)
   for i, it in ipairs(data.library(S.mj)) do
     local macro = data.macro_of(S.mj, it.id)
     tiles[i] = { id = it.id, entry = it.entry, tip = macro and data.tip_text(macro) or "", act = macro and actions.of(macro),
-      label = data.display_label(it.entry) }
+      label = data.display_label(it.entry), sticky = it.sticky }
     if it.id == L.sel then still = true end
   end
   if not still then L.sel = tiles[1] and tiles[1].id or nil end
@@ -220,7 +224,7 @@ local function copy_selected()
   local copy = {}
   for k, v in pairs(entry) do copy[k] = v end
   copy.name = (entry.name or "") .. " (copy)"
-  refresh_library(data.save_entry(S.mj, nil, copy))
+  refresh_library(data.save_entry(S.mj, nil, copy, data.is_sticky(id)))
   M.hooks.changed()
 end
 
@@ -230,8 +234,10 @@ local function delete_selected()
   if not entry then return end
   local mj = S.mj
   local n = data.uses(mj, id)
-  local text = n > 0 and ('Delete "%s"? It is on %d slot%s, which will be emptied.'):format(entry.name, n,
-    n == 1 and "" or "s") or ('Delete "%s"?'):format(entry.name)
+  local what = data.is_sticky(id) and ('the sticky macro "%s" from every job'):format(entry.name)
+    or ('"%s"'):format(entry.name)
+  local text = n > 0 and ('Delete %s? It is on %d slot%s, which will be emptied.'):format(what, n,
+    n == 1 and "" or "s") or ('Delete %s?'):format(what)
   ui.prompt(text, { "Delete", "Cancel" }, function(i)
     if i == 1 then
       data.delete_entry(mj, id)
@@ -391,6 +397,9 @@ local function refresh_results(query)
 end
 
 local function builder_where()
+  if E.id and data.is_sticky(E.id) then
+    return ('Editing "%s", sticky.'):format((data.get_entry(S.mj, E.id) or {}).name or "?")
+  end
   return E.id and ('Editing "%s" of %s.'):format((data.get_entry(S.mj, E.id) or {}).name or "?", S.mj or "?")
     or ("New macro for %s."):format(S.mj or "?")
 end
@@ -413,6 +422,7 @@ function open_builder(id)
   end
   local entry = id and data.get_entry(S.mj, id) or nil
   E.id = entry and tostring(id) or nil
+  E.sticky = E.id ~= nil and data.is_sticky(E.id)
   E.kind, E.pick, E.target, E.auto_name, E.line, E.opened, E.group = "ma", nil, "t", nil, nil, nil, nil
   local name, label, extra = "", "", ""
   if entry then
@@ -441,6 +451,7 @@ function open_builder(id)
   ui.update(WIN, "label", { text = label })
   ui.update(WIN, "extra", { text = extra })
   ui.update(WIN, "q", { text = "" })
+  ui.update(WIN, "sticky", { at = E.sticky and 2 or 1 })
   ui.update(WIN, "bwhere", { text = builder_where() })
   refresh_results("")
   refresh_choice()
@@ -583,7 +594,7 @@ local function save_builder()
     local c = entry.action and entry.action.kind == "cmd" and builder.command(entry.action.name)
     entry.name = c and c.title or entry.action and entry.action.name or entry.lines[1]:sub(1, 24)
   end
-  local id = data.save_entry(S.mj, E.id, entry)
+  local id = data.save_entry(S.mj, E.id, entry, E.sticky)
   M.hooks.changed()
   leave_builder(id)
 end
@@ -636,6 +647,7 @@ local HELP = {
     "Library tab: New builds a macro for the job; drag a tile onto a slot.",
     "The Palette (Library tab or //hb palette) has the tiles to drag too.",
     "Drag a slot onto another to swap them. Right-click a slot for its menu.",
+    "A sticky macro (Builder: Sticky) shows in every job's library.",
     { "More" },
     "//hb show, hide, more, fewer: the bars; //hb mode: the gamepad's.",
     "The Mods page: bar count, slots, size, key hints, Individual Config.",
@@ -703,6 +715,8 @@ local function spec(drop, build)
         { type = "input", id = "label", label = "Button text (blank = from the name)", text = "", max = 14 },
         { type = "input", id = "extra", label = "Lines after it (| between lines, optional)", text = "", max = 1024,
           tip = 'Example: /p Casting <t> | /wait 2 | /echo done' },
+        { type = "choice", id = "sticky", label = "Sticky", items = STICKY_ITEMS, at = 1,
+          tip = "Every job and character: the macro shows in every job's library, on every character." },
         { type = "text", id = "preview", text = "" },
         { type = "text", id = "tip", text = "Waits: /wait 2 alone on a line, or <wait 2> at the end of one.",
           dim = true },
@@ -775,6 +789,8 @@ local function define()
         set_kind(builder.TYPES[e.index].kind)
       elseif e.id == "target" then
         set_target(e.index)
+      elseif e.id == "sticky" then
+        E.sticky = e.index == 2
       end
     elseif (e.kind == "change" and e.id == "skey") or (e.kind == "press" and e.id == "skeyb") then
       keys.set_slot(K.bar, K.slot, e.id == "skey" and e.text or nil)

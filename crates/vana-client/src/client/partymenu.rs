@@ -31,7 +31,7 @@ pub struct PartyMenu {
     pub stack: Vec<Win>,
     /// menuwind's cursor, back when the bottom window closes (FUN_10205660).
     return_menu: Option<usize>,
-    /// prty5us +0x2c: the language mask while it is open.
+    /// prty5us +0x2c: the language mask while it is open (World::party_langs, set at the zone-in, otherwise).
     langs: u32,
     /// Closed while Focus / Rearrange pick on the party list (FUN_1015e6e0), back after (FUN_1015e530).
     hidden: bool,
@@ -233,9 +233,13 @@ fn close_top(w: &mut World) {
     let Some(m) = w.partymenu.as_mut() else { return };
     let Some(top) = m.stack.pop() else { return };
     let (empty, langs, back) = (m.stack.is_empty(), m.langs, m.return_menu);
-    if top.name == LANGS && langs != w.game.get(0x98) {
-        super::textcmd::cfg(w, 0x98, langs);
-        send_langs(w, langs);
+    // FUN_102070e0: the mask is the handler's (it outlives the window); a change from config 0x98 is saved and sent.
+    if top.name == LANGS {
+        w.party_langs = langs;
+        if langs != w.game.get(0x98) {
+            super::textcmd::cfg(w, 0x98, langs);
+            send_langs(w, langs);
+        }
     }
     if top.name != ALARM && top.name != JOIN {
         w.search = None;
@@ -249,19 +253,31 @@ fn close_top(w: &mut World) {
     }
 }
 
-/// c2s 0x0DB kind 1 (FUN_100e4630): @8..@0x14 the three config words, @0x24 the party languages.
+/// c2s 0x0DB kind 1 (FUN_100e4980 -> FUN_100e46a0): @8..@0x14 the three config words, @0x24 the party languages.
 fn send_langs(w: &World, mask: u32) {
     send_0db(w, 1, mask);
 }
 
-/// c2s 0x0DB (FUN_100e4630(kind, param)): @6 the kind (0 the filters, 1 the party languages), @8..@0x14 the three
+/// prty5's slot 0x30 (FUN_10207070) in the zone-in's handler walk (client/mod.rs `zone_walk`): the mask from config
+/// 0x98 (none: the client language's bit, table 0x10386450) into the handler's +0x2c and out as c2s 0x0DB kind 1.
+/// Once a zone: its sent flag (+0x30) is cleared by slot 0x2c (FUN_10203120) from the zone teardown's walk
+/// FUN_10160470(1) (FUN_10093b70).
+pub(super) fn zone_langs(config: u32) -> u32 {
+    if config == 0 { 1 << LANG_BITS[0] } else { config }
+}
+
+/// c2s 0x0DB (FUN_100e46a0(kind, param)): @6 the kind (0 the filters, 1 the party languages), @8..@0x14 the three
 /// SAVE_CONF words, @0x24 the languages.
 pub(super) fn send_0db(w: &World, kind: u8, mask: u32) {
+    let _ = w.net.commands.send(NetCommand::Packet { id: 0x0DB, body: body_0db(&w.conf_sys, kind, mask) });
+}
+
+pub(super) fn body_0db(conf: &[u8; 12], kind: u8, mask: u32) -> Vec<u8> {
     let mut b = vec![0u8; 0x24];
     b[2] = kind;
-    b[4..16].copy_from_slice(&w.conf_sys);
+    b[4..16].copy_from_slice(conf);
     b[0x20..0x24].copy_from_slice(&mask.to_le_bytes());
-    let _ = w.net.commands.send(NetCommand::Packet { id: 0x0DB, body: b });
+    b
 }
 
 /// Table 0x10385388 for an English client: prty5us row 1..5 (English, French, German, Japanese, Other) -> bit.
@@ -380,16 +396,13 @@ fn enter(w: &mut World, name: &'static str, sel: u16) {
         (PRTY1, 5) | (PRTY2, 6) | (PRTY3 | PRTY7, 11) => request(w),
         (PRTY1, 6) | (PRTY2, 7) | (PRTY3 | PRTY7, 12) => super::search::run_requests(w),
         (PRTY1, 3) => super::textcmd::config_flag(w, 6, !conf(w, 6)),
-        // Languages: the mask from config 0x98 (none: the client language's), sent once on the first show.
+        // Languages: the handler's mask, loaded and sent at the zone-in (zone_in); the open (FUN_102070c0) sends
+        // nothing.
         (PRTY1, 4) => {
-            let mut mask = w.game.get(0x98);
-            if mask == 0 {
-                mask = 1 << LANG_BITS[0];
-            }
+            let mask = w.party_langs;
             if let Some(m) = w.partymenu.as_mut() {
                 m.langs = mask;
             }
-            send_langs(w, mask);
             push(w, LANGS);
         }
         (PRTY1, 7) => push(w, ALARM),
@@ -722,6 +735,23 @@ pub fn draw_invite_icon(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// c2s 0x0DB kind 1 at a retail zone-in (capture, client 30261102_0): config 0x98 unset, English client.
+    #[test]
+    fn zone_in_languages_packet() {
+        let conf = [0x18, 0, 0, 4, 0, 0, 0, 0, 0, 0x18, 0, 0];
+        let mut packet = vec![0xdb, 0x14, 0x03, 0x00];
+        packet.extend(body_0db(&conf, 1, zone_langs(0)));
+        assert_eq!(
+            packet,
+            [
+                0xdb, 0x14, 0x03, 0x00, 0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+            ]
+        );
+        assert_eq!(zone_langs(0b1010), 0b1010);
+    }
 
     #[test]
     fn pronouns() {

@@ -83,10 +83,12 @@ fn distance(w: &World, bits: u16) -> Option<f32> {
 pub fn spell(w: &World, s: u16) -> Option<Info> {
     let r = w.actions.as_ref()?.spell(s)?.clone();
     let why = magic::magic_check(w, s).map(|id| line(w, id)).or_else(|| effect_reason(w, true).map(String::from));
+    // The menu's mask: Pianissimo / Entrust widen a self-only spell to the party (FUN_10102430).
+    let targets = crate::dat::actions::spell_targets(r.targets, r.kind, r.flags, &w.buffs);
     Some(Info {
-        targets: target_names(r.targets),
+        targets: target_names(targets),
         range: Some(crate::dat::actions::RANGES[(r.range & 0xf) as usize] as f32).filter(|&r| r < 255.0),
-        distance: distance(w, r.targets),
+        distance: distance(w, targets),
         why,
     })
 }

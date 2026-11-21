@@ -34,6 +34,7 @@ local moving = nil -- panel origin at drag start
 local TILE_BG = { 10, 17, 24, 235 }
 local TILE_DIM = { 10, 17, 24, 90 }
 local TILE_EDGE = { 184, 139, 73, 205 }
+local TILE_STICKY = { 96, 196, 186, 230 }
 local PANEL_BG = { 6, 10, 16, 200 }
 local PANEL_EDGE = { 184, 139, 73, 120 }
 local TITLE = { 232, 210, 156 }
@@ -145,9 +146,10 @@ function M.draw()
     local macro = data.macro_of(main, it.id)
     local act = macro and actions.of(macro)
     add("rect", id, { x = x, y = y, w = tile, h = tile, round = 6 * u, colour = TILE_BG, layer = 1,
-      tip = { title = name, text = (macro and data.tip_text(macro) or "") .. "\n\nDrag onto a slot; click to edit." } })
-    add("rect", id .. "_f", { x = x, y = y, w = tile, h = tile, round = 6 * u, colour = TILE_EDGE, line = 1.2 * u,
-      layer = 2 })
+      tip = { title = name, text = (macro and data.tip_text(macro) or "")
+        .. (it.sticky and "\n\nSticky: in every job's library." or "") .. "\n\nDrag onto a slot; click to edit." } })
+    add("rect", id .. "_f", { x = x, y = y, w = tile, h = tile, round = 6 * u,
+      colour = it.sticky and TILE_STICKY or TILE_EDGE, line = 1.2 * u, layer = 2 })
     hud.on(id, function(_, e)
       if e.kind == "click" and e.button == "left" then
         M.hooks.edit(it.id)

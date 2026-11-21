@@ -627,6 +627,23 @@ impl Effects {
         }
     }
 
+    /// A skill file its last actor let go (FUN_100d44b0 -> the list entry's FUN_1001b7d0 -> FUN_10073b20): its resource
+    /// tree is deleted, and with it every live clone of its generators (an endless one a missed stop left running,
+    /// Nightmare Scythe's `g000`) and every task on its schedulers.
+    pub fn release_file(&mut self, file: u32) {
+        let Some(l) = self.reg.lib_of(file) else { return };
+        for t in self.tasks.iter_mut() {
+            if t.as_ref().is_some_and(|t| t.res.0 == l) {
+                *t = None;
+            }
+        }
+        for i in 0..self.insts.len() {
+            if self.insts[i].as_ref().is_some_and(|x| x.src.0 == l) {
+                self.kill(i);
+            }
+        }
+    }
+
     /// Vtable +0x298(name, 0, 0) (FUN_100cee40 -> FUN_10056c70): a scheduler on an actor with no second actor, as
     /// the entity's machine starts `bntg` and `klbt` (FUN_1008b460).
     pub fn on_scheduler_alone(&mut self, actor: u32, name: u32) {
@@ -5212,6 +5229,150 @@ mod tests {
         assert!(once.len() == 1 && (139..=142).contains(&once[0]), "{once:?}");
         let twice = run(Some(60));
         assert!(twice.len() == 1 && (199..=202).contains(&twice[0]), "{twice:?}");
+    }
+
+    /// A Mithra with Nightmare Scythe's file (37131) on her motion list.
+    struct MithraWs;
+
+    impl Actors for MithraWs {
+        fn matrix(&self, id: u32) -> Option<Mat4> {
+            Some(Mat4::from_translation(if id == HUME {
+                Vec3::new(20.0, 4.0, -30.0)
+            } else {
+                Vec3::new(23.0, 4.0, -30.0)
+            }))
+        }
+        fn point(&self, _: u32, _: u16) -> Option<Vec3> {
+            Some(Vec3::new(0.0, -1.0, 0.0))
+        }
+        fn scale(&self, _: u32) -> f32 {
+            1.0
+        }
+        fn files(&self, id: u32) -> (Vec<u32>, Vec<u32>) {
+            if id == HUME { (vec![8392], vec![37131]) } else { (Vec::new(), Vec::new()) }
+        }
+        fn hidden(&self, _: u32) -> bool {
+            false
+        }
+        fn models(&self) -> Vec<(u32, Vec<u32>)> {
+            Vec::new()
+        }
+        fn pc(&self, id: u32) -> Option<(u8, i8)> {
+            (id == HUME).then_some((7, 0))
+        }
+    }
+
+    /// Nightmare Scythe's discs: g0a0..g0a2's elements (life 15) clone g0b0..g0b2 (op 0x53) at their place by the
+    /// target; the discs fly the `line` path for 90 ticks after the parents are gone. A mode-0 clone keeps the matrix
+    /// it was given (FUN_10052eb0 returns for mode 0), so they stay by the target, not at the world origin.
+    #[test]
+    fn element_clone_keeps_its_matrix() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let index = std::sync::Arc::new(index);
+        let mut fx = Effects::new();
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        fx.preload(&[8392, 37131]);
+        while [8392, 37131].iter().any(|f| fx.reg.lib_of(*f).is_none()) {
+            fx.poll_loads();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let f = Frame {
+            dt: 1.0,
+            seconds: 1.0 / 60.0,
+            dayfrac: 0.5,
+            view: Mat4::IDENTITY,
+            view_rot: Mat4::IDENTITY,
+            eye: Vec3::new(0.0, -2.0, -10.0),
+            draw_distance: 2000.0,
+            area_light: Vec3::ONE,
+            focal: 350.0,
+            moon_phase: 0,
+            weekday: 0,
+        };
+        let a = Action {
+            actor: HUME,
+            category: 3,
+            arg: 99,
+            info: 0,
+            targets: vec![ActionTarget {
+                id: ORC,
+                results: vec![ActionResult { animation: 64, message: 185, value: 40, ..Default::default() }],
+            }],
+            seq: 0,
+        };
+        fx.on_action(&a, None);
+        let mut checked = 0;
+        for frame in 1..=180 {
+            fx.tick(&f, &MithraWs);
+            if frame < 130 {
+                continue;
+            }
+            for x in fx.insts.iter().flatten().filter(|x| x.name.starts_with(b"g0b")) {
+                let at = x.matrix.map(|m| m.w_axis.truncate());
+                assert!(at.is_some_and(|p| (p - Vec3::new(23.0, 3.0, -30.0)).length() < 3.0), "{at:?}");
+                checked += 1;
+            }
+        }
+        assert!(checked > 0, "no disc clone alive past frame 130");
+    }
+
+    /// Nightmare Scythe's `g000` (endless, flag 0x1000) outlives its stop (`st44` runs on the undolled pair) until the
+    /// skill file is freed at `main`'s end: then nothing from 37131 is left.
+    #[test]
+    fn released_skill_file_takes_its_clones() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let index = std::sync::Arc::new(index);
+        let mut fx = Effects::new();
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        fx.preload(&[8392, 37131]);
+        while [8392, 37131].iter().any(|f| fx.reg.lib_of(*f).is_none()) {
+            fx.poll_loads();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let lib = fx.reg.lib_of(37131).unwrap();
+        let f = Frame {
+            dt: 1.0,
+            seconds: 1.0 / 60.0,
+            dayfrac: 0.5,
+            view: Mat4::IDENTITY,
+            view_rot: Mat4::IDENTITY,
+            eye: Vec3::new(0.0, -2.0, -10.0),
+            draw_distance: 2000.0,
+            area_light: Vec3::ONE,
+            focal: 350.0,
+            moon_phase: 0,
+            weekday: 0,
+        };
+        let a = Action {
+            actor: HUME,
+            category: 3,
+            arg: 99,
+            info: 0,
+            targets: vec![ActionTarget {
+                id: ORC,
+                results: vec![ActionResult { animation: 64, message: 185, value: 40, ..Default::default() }],
+            }],
+            seq: 0,
+        };
+        fx.on_action(&a, None);
+        let mut done = None;
+        for frame in 1..=400 {
+            fx.tick(&f, &MithraWs);
+            if fx.skill_files_done.drain(..).any(|c| c == HUME) {
+                done = Some(frame);
+                break;
+            }
+        }
+        assert!(done.is_some(), "main never ended");
+        let live =
+            |fx: &Effects| fx.insts.iter().flatten().filter(|x| x.src.0 == lib).map(|x| x.name).collect::<Vec<_>>();
+        assert!(live(&fx).contains(b"g000"), "{:?}", live(&fx));
+        fx.release_file(37131);
+        assert!(live(&fx).is_empty() && fx.tasks.iter().flatten().all(|t| t.res.0 != lib));
     }
 }
 

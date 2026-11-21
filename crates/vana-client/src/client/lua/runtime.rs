@@ -85,6 +85,22 @@ fn in_mod(src: &super::vm::Source, r: &Path) -> bool {
     }
 }
 
+/// An OS lock on p (made if missing), held until the file is dropped; None when another holder keeps it past `wait`.
+fn hold(p: &Path, wait: std::time::Duration) -> std::io::Result<Option<std::fs::File>> {
+    let file = std::fs::OpenOptions::new().create(true).write(true).truncate(false).open(p)?;
+    let start = std::time::Instant::now();
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(Some(file)),
+            Err(std::fs::TryLockError::WouldBlock) if start.elapsed() < wait => {
+                std::thread::sleep(std::time::Duration::from_millis(1))
+            }
+            Err(std::fs::TryLockError::WouldBlock) => return Ok(None),
+            Err(std::fs::TryLockError::Error(e)) => return Err(e),
+        }
+    }
+}
+
 fn io_err(path: &str, e: std::io::Error) -> mlua::Error {
     mlua::Error::runtime(format!("{path}: {e}"))
 }
@@ -217,6 +233,24 @@ pub(super) fn install(lua: &Lua, g: &Table, vm: &super::vm::Vm) -> mlua::Result<
                     std::fs::create_dir_all(d).map_err(|e| io_err(&to, e))?;
                 }
                 std::fs::rename(&a, &b).map_err(|e| io_err(&from, e))
+            })?,
+        )?;
+    }
+    {
+        let data = data.clone();
+        fs.set(
+            "lock",
+            lua.create_function(move |lua, (path, f): (String, Function)| {
+                let p = place(lua, &data, &path)?;
+                if let Some(d) = p.parent() {
+                    std::fs::create_dir_all(d).map_err(|e| io_err(&path, e))?;
+                }
+                // Another client holds it for a read and a write at most.
+                let Some(_held) = hold(&p, std::time::Duration::from_secs(2)).map_err(|e| io_err(&path, e))? else {
+                    return Err(mlua::Error::runtime(format!("fs.lock {path:?}: held by another client")));
+                };
+                // Dropping the file releases the lock, on an error too.
+                f.call::<MultiValue>(())
             })?,
         )?;
     }
@@ -649,6 +683,19 @@ fn call(lua: &Lua, id: &str, name: &str, args: mlua::Variadic<Value>) -> mlua::R
 
 #[cfg(test)]
 mod tests {
+    /// fs.lock's lock: a second holder waits, then is refused, until the first lets go.
+    #[test]
+    fn lock_takes_turns() {
+        use std::time::Duration;
+        let p = std::env::temp_dir().join(format!("vana-lua-lock-{}", std::process::id()));
+        let a = super::hold(&p, Duration::ZERO).unwrap();
+        assert!(a.is_some());
+        assert!(super::hold(&p, Duration::from_millis(20)).unwrap().is_none());
+        drop(a);
+        assert!(super::hold(&p, Duration::ZERO).unwrap().is_some());
+        let _ = std::fs::remove_file(&p);
+    }
+
     /// A phrase is (group, id); "item" / "key_item" take the id as the game writes it into a block (FUN_101bc770 /
     /// FUN_101bca80: no 00 byte), id 0 the category.
     #[test]

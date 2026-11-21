@@ -32,6 +32,7 @@ come as "<path>: <reason>".
 | [`fs.mkdir(path)`](#fsmkdir) | Makes a folder. |
 | [`fs.remove(path)`](#fsremove) | Removes a file, or a folder with everything in it. |
 | [`fs.rename(from, to)`](#fsrename) | Moves or renames a file or folder. |
+| [`fs.lock(path, fn)`](#fslock) | Runs a function holding a lock on a file, so clients take turns. |
 
 ## `fs.read`
 
@@ -281,3 +282,46 @@ fs.rename(tmp, "save.json")
 
 Only files in the data folder can be moved: to copy one of the mod's files there, `fs.write` what `fs.read`
 returns.
+
+## `fs.lock`
+
+```lua
+fs.lock(path, fn) -> any
+```
+
+Runs `fn` while holding an operating-system lock on the file at `path` in the data folder (or the shared area). The
+file is made empty if it is missing. Two clients started from the same install share the data folder, so a mod that
+reads a file, changes it and writes it back can lose the other client's change. Doing the read and the write inside
+`fs.lock` makes the clients take turns. The lock is let go when `fn` returns or raises an error, and when the client
+exits. Lock a file kept only for locking (`"save.json.lock"`), not the one being written: on Windows a locked file
+cannot be written through another handle.
+
+When another client holds the lock, the call waits for it, up to 2 seconds, then raises an error. Nothing else runs
+while it waits, so keep `fn` to a read and a write. A nested `fs.lock` on the same file from within `fn` waits on
+itself and fails: run the inner code directly.
+
+**Parameters**
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | `string` | yes | The relative path of the lock file. |
+| `fn` | `function` | yes | Called with no arguments while the lock is held. |
+
+**Returns** what `fn` returns.
+
+**Needs** the `files.shared` permission when `path` is under `shared/`.
+
+**Errors** A refused path; "fs.lock <path>: held by another client" after 2 seconds of waiting; "<path>: <reason>" when
+the file cannot be made or locked; any error `fn` raises, passed on.
+
+**Example**
+
+```lua
+fs.lock("counter.json.lock", function()
+  local t = json.decode(fs.read("counter.json") or "{}")
+  t.n = (t.n or 0) + 1
+  fs.write("counter.json", json.encode(t))
+end)
+```
+
+Older clients have no `fs.lock`; a mod listed in the catalogue checks for it (`if fs.lock then ... end`).

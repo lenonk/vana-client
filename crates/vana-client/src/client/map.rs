@@ -384,6 +384,9 @@ pub struct MapWin {
     /// Flags 1 | 2: the scroll and zoom keys work (not for illustrations).
     keys: bool,
     show_player: bool,
+    /// s2c 0x072's overlay block while valid, and titlewin open: set by the caller each frame for FUN_101fc130.
+    pub battlefield: Option<super::battlefield::Overlay>,
+    pub title_up: bool,
     /// fit = W / 512; zoom within [fit, 4 fit]; base zoom (+0x68); zoom-to target (flag 0x10).
     fit: f32,
     zoom: f32,
@@ -554,6 +557,11 @@ impl MapWin {
     /// The map's zone (for c2s 0x0D2).
     pub fn zone(&self) -> u16 {
         self.region.zone as u16
+    }
+
+    /// The player's record is set (+0x98, FUN_101fa4b0).
+    pub fn shows_player(&self) -> bool {
+        self.show_player
     }
 
     /// FUN_101fa680: c2s 0x0D2 for the map's zone, once per map (+0xa45).
@@ -839,6 +847,8 @@ impl MapWin {
             return_menu: None,
             keys: !matches!(mode, Mode::Illustration | Mode::Preview),
             show_player: show_player && need != Need::Nothing,
+            battlefield: None,
+            title_up: false,
             fit,
             zoom,
             zoom_base: zoom,
@@ -1672,6 +1682,22 @@ impl MapWin {
                 gu.shape_text(&self.region.grid(px as i32, py as i32), 16.0, 49.0, 0x8080_8080, false);
             }
         }
+        // win_mapframe_v10: FUN_101fbfd0 (the arrow and grid above), then FUN_101fc130, the battlefield overlay.
+        if let Some(o) = self
+            .battlefield
+            .as_ref()
+            .filter(|_| super::battlefield::overlay_shown(self.zone(), self.show_player, self.title_up))
+        {
+            // FUN_101f8b80 (our px) to 16-bit map pixels, then FUN_101f11d0: (px - shift - view) x zoom + 0.5,
+            // truncated.
+            let screen = |wx: f32, wz: f32| {
+                let (px, py) = self.region.px(wx, wz);
+                let at =
+                    |p: i32, shift: f32, view: f32| ((p as i16 as f32 - shift - view) * self.zoom + 0.5) as i32 as f32;
+                (at(px, self.shift.0, self.view.0), at(py, self.shift.1, self.view.1))
+            };
+            super::battlefield::draw_overlay(gu, o, screen);
+        }
         // The tracked target's ring (keytops3 105, centred by its bounds).
         if let Some((px, py)) = self.tracked.filter(|_| level == 0.0) {
             gu.sprite(
@@ -2479,7 +2505,10 @@ pub(super) fn apply(w: &mut World, regions: &[Region], c: Cmd, sw: f32, sh: f32)
         // FUN_101f9a50: not while riding a lift (group 7 0x61).
         Cmd::Menu | Cmd::Other { .. } if w.riding => super::textcmd::refuse(w, 0x61),
         Cmd::Menu => match MapWin::open(w, regions, sw, sh) {
-            Some(m) => w.map = Some(m),
+            Some(m) => {
+                w.map = Some(m);
+                super::battlefield::map_set_up(w);
+            }
             None => super::textcmd::refuse(w, 0x62),
         },
         Cmd::Other { zone, key, return_menu } => {
@@ -2505,6 +2534,7 @@ pub(super) fn apply(w: &mut World, regions: &[Region], c: Cmd, sw: f32, sh: f32)
                 m.attach(w, regions);
                 m.return_menu = return_menu;
                 w.map = Some(m);
+                super::battlefield::map_set_up(w);
             }
         }
         Cmd::Open { zone, key, show_player } => {
@@ -2512,7 +2542,10 @@ pub(super) fn apply(w: &mut World, regions: &[Region], c: Cmd, sw: f32, sh: f32)
                 return;
             }
             match MapWin::open_event(w, regions, zone, key, show_player, sw, sh) {
-                Some(m) => w.map = Some(m),
+                Some(m) => {
+                    w.map = Some(m);
+                    super::battlefield::map_set_up(w);
+                }
                 None => super::textcmd::refuse(w, 0x62),
             }
         }
@@ -2577,6 +2610,7 @@ pub(super) fn apply(w: &mut World, regions: &[Region], c: Cmd, sw: f32, sh: f32)
                 return;
             }
             w.map = Some(MapWin::open_preview(w, regions, zone, key, arrow, sw, sh, point_y));
+            super::battlefield::map_set_up(w);
         }
         Cmd::CloseEvent => {
             if let Some(m) = w.map.as_mut().filter(|m| !matches!(m.mode, Mode::Menu | Mode::Other)) {
@@ -2588,6 +2622,7 @@ pub(super) fn apply(w: &mut World, regions: &[Region], c: Cmd, sw: f32, sh: f32)
         Cmd::Primer { first, count, at } => {
             if w.map.as_ref().is_none_or(|m| m.closing()) {
                 w.map = Some(MapWin::primer(w.index.clone(), first, count, at, sw, sh, w.game.get(0x8a)));
+                super::battlefield::map_set_up(w);
             }
         }
         // Opening a map resets the scripted view, so one sent with no map open is dropped.

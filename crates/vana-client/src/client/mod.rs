@@ -40,6 +40,7 @@ pub use hudtop::topbar_shot;
 pub use lua::stubs as lua_stubs;
 pub use modern::shot::{Opts as ModernShotOpts, shot as modern_shot};
 mod augment;
+mod battlefield;
 mod buffs;
 mod bump;
 mod camera;
@@ -1441,6 +1442,18 @@ fn login_window(
     if busy { None } else { chosen }
 }
 
+/// The Ctrl / Alt shortcuts' test (FUN_101ae010 in 30261006_0): no event hold, no sub-target prompt, alive, no Num+
+/// focus (log or status icons), not in layout mode; set 4 (E, I, C, M, J, W, B) also no window with flag 0x20000.
+fn shortcut_ok(w: &World, set4: bool) -> bool {
+    !event::active(w)
+        && !w.dead()
+        && !target::sub_up(w)
+        && !w.log_active
+        && w.log_focus != 2
+        && w.layout.is_none()
+        && !(set4 && w.main_open)
+}
+
 /// A line from a menu or key (text command mode 0).
 fn send_chat(world: &mut World, text: String) {
     textcmd::run(world, &text, textcmd::Mode::Internal);
@@ -2665,6 +2678,7 @@ fn world_hud(
     gu.set_ttf(world.opts.ttf_text);
     let (sw, sh) = (size[0] as f32, size[1] as f32);
     world.ui_wh = (sw, sh);
+    world.battlefield.frame();
     world.lua.set_view_proj(view_proj);
     // The focused list's scroll bar and the wheel, before the windows see the press.
     // Game files from 30261102 on hold fe_main (client/celestite.rs).
@@ -2887,7 +2901,7 @@ fn world_hud(
             }
             egui::Event::Copy if world.log_selection.is_some() => world.copied = world.log_selection.clone(),
             egui::Event::Copy if world.typing => {}
-            egui::Event::Copy if !event::active(world) => check_target(world),
+            egui::Event::Copy if shortcut_ok(world, true) => check_target(world),
             egui::Event::Cut if world.typing && fep::selection(world).is_some() => {
                 world.copied = fep::selected_text(world);
                 fep::delete_selection(world);
@@ -3071,7 +3085,9 @@ fn world_hud(
                     world.log_active = false;
                 }
                 egui::Key::Escape if world.log_active => world.log_active = false,
-                egui::Key::A if modifiers.ctrl || modifiers.alt => send_chat(world, "/attack".into()),
+                egui::Key::A if (modifiers.ctrl || modifiers.alt) && shortcut_ok(world, false) => {
+                    send_chat(world, "/attack".into())
+                }
                 // The palette (FUN_101a3960): Left / Right move the cursor (wrapping), Down / Up the next / previous set,
                 // Enter runs the cell and closes, Escape closes. Other keys pass (Ctrl / Alt + M opens magic).
                 egui::Key::ArrowLeft
@@ -3135,10 +3151,7 @@ fn world_hud(
                 // Ctrl / Alt + M, J, W, B (key functions 0x41, 0x7f, 0x80, 0x9f): magic in list mode without trusts, job
                 // abilities, weapon skills, pet commands; in the field, alive, no prompt.
                 egui::Key::M | egui::Key::J | egui::Key::W | egui::Key::B
-                    if (modifiers.ctrl || modifiers.alt)
-                        && !event::active(world)
-                        && !world.dead()
-                        && !target::sub_up(world) =>
+                    if (modifiers.ctrl || modifiers.alt) && shortcut_ok(world, true) =>
                 {
                     match key {
                         egui::Key::M => magic::open_magic(world, 0, true, 0x100),
@@ -3164,14 +3177,18 @@ fn world_hud(
                         magic::key(world, *key);
                     }
                 }
-                egui::Key::H if modifiers.ctrl || modifiers.alt => {
+                egui::Key::H if (modifiers.ctrl || modifiers.alt) && shortcut_ok(world, false) => {
                     world.sounds.push(crate::audio::Ui::Select as u32);
                     send_chat(world, "/heal".into());
                 }
-                egui::Key::C if modifiers.ctrl || modifiers.alt => check_target(world),
+                egui::Key::C if (modifiers.ctrl || modifiers.alt) && shortcut_ok(world, true) => check_target(world),
                 // FUN_1012ec60 / FUN_101e9f10.
-                egui::Key::E if modifiers.ctrl || modifiers.alt => items::open_equipment(world),
-                egui::Key::I if modifiers.ctrl || modifiers.alt => items::open_items(world),
+                egui::Key::E if (modifiers.ctrl || modifiers.alt) && shortcut_ok(world, true) => {
+                    items::open_equipment(world)
+                }
+                egui::Key::I if (modifiers.ctrl || modifiers.alt) && shortcut_ok(world, true) => {
+                    items::open_items(world)
+                }
                 // Ours (Extras): plain T slides the Timers out or in, with no window open (Ctrl / Alt + T is /tell).
                 egui::Key::T
                     if !modifiers.ctrl
@@ -3593,6 +3610,7 @@ fn world_hud(
                     world.sounds.push(crate::audio::Ui::Select as u32);
                     m.return_menu = world.menu;
                     world.map = Some(m);
+                    battlefield::map_set_up(world);
                     world.menu = None;
                 }
                 // FUN_101f86b0: "There is no map for this area."
@@ -4276,7 +4294,9 @@ fn world_hud(
     }
     region::draw(gu, world, sw, sh);
     let modern = world.modern;
+    world.title_up = gu.was_up("menu    titlewin");
     if let Some(m) = world.map.as_mut() {
+        (m.battlefield, m.title_up) = (world.battlefield.overlay.clone(), world.title_up);
         m.draw(gu, sw, sh, modern);
         world.sounds.append(&mut m.sounds);
         let (zone, key) = (m.zone(), m.asked_key());
@@ -4534,6 +4554,7 @@ fn world_hud(
     world.hud_top = top;
     let party = st.party_window.clone();
     let mut blockers: Vec<[f32; 4]> = [party.as_str()].iter().filter_map(|n| gu.window_rect(n, sw, sh)).collect();
+    let mut sidebar_eases = None;
     winhits::clear(world);
     for (k, n) in ["menu    raid1", "menu    raid2"].iter().enumerate() {
         if st.alliance[k].is_some() {
@@ -4858,6 +4879,8 @@ fn world_hud(
         }
         magic::draw_event_timer(gu, world, sw, sh);
         objective::draw_countdown(gu, world, sw, sh);
+        // The compass draw (FUN_102219c0): FUN_10220a20 first, then the bars (FUN_102212f0).
+        sidebar_eases = battlefield::draw_sidebar(gu, world);
         objective::draw_bars(gu, world);
     }
     racing::draw(gu, world, sw, sh);
@@ -5385,6 +5408,7 @@ fn world_hud(
         credits::draw(gu, world, sw, sh);
         let modern = world.modern;
         if let Some(m) = world.map.as_mut() {
+            (m.battlefield, m.title_up) = (world.battlefield.overlay.clone(), gu.was_up("menu    titlewin"));
             m.draw(gu, sw, sh, modern);
         }
         // cnqframe has flag 0x40 too; its info windows don't.
@@ -5395,6 +5419,10 @@ fn world_hud(
         return Vec::new();
     }
 
+    // FUN_10220f60's gauges ease after its draw.
+    if let Some(t) = sidebar_eases {
+        world.battlefield.ease(t, std::time::Instant::now());
+    }
     blockers
 }
 
@@ -7948,6 +7976,12 @@ struct World {
     /// Region Info: the conquest data and marker tables, the region menu, the map (cnqframe), a /regionmap to open.
     conquest: region::Data,
     region_menu: Option<region::Menu>,
+    /// c2s 0x112 / s2c 0x072: the battlefield info requests and blocks (client/battlefield.rs).
+    battlefield: battlefield::Battlefield,
+    /// prty5's handler +0x2c: the party languages, loaded from config 0x98 at each zone-in (partymenu::zone_in).
+    party_langs: u32,
+    /// titlewin open as the last window walk left it (DAT_10579638 +8), for FUN_101fc0c0 at a map's setup.
+    title_up: bool,
     /// FUN_1015fa00's walk suspends the main menu (mcrmenu over its group): the modern command menu hides too.
     main_off: bool,
     /// The target window is open but suspended by the window walk this frame (world_hud's `target_off`).
@@ -10541,6 +10575,9 @@ impl App {
                             seacom: Default::default(),
                             seacom_edit: None,
                             conquest: region::Data::new(self.cnq_tables.clone()),
+                            battlefield: Default::default(),
+                            party_langs: 0,
+                            title_up: false,
                             region_menu: None,
                             confirm_text: String::new(),
                             confirm_click: None,
@@ -11763,6 +11800,9 @@ impl App {
                     world.index_masks.clear();
                     border::remove(world);
                     (world.region_menu, world.cnq) = (None, None);
+                    // FUN_10093720: the one-shot reply callbacks of c2s 0x05A (not the colonization one) and 0x112.
+                    world.conquest.zone_load();
+                    world.battlefield.zone_load();
                     world.names_hidden = None;
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
                     world.myroom = myroom;
@@ -11784,7 +11824,6 @@ impl App {
                     {
                         world.equipsets = Some(equipsets::EquipSets::new(dir));
                     }
-                    equipsets::field_entry(world);
                     if !world.synth.loaded
                         && let Some(dir) = world.macros.as_ref().map(|m| m.dir().to_path_buf())
                     {
@@ -11836,6 +11875,10 @@ impl App {
                     // FUN_1015ef60 (game mode 0x70 / 0xe0, leaving the field): FUN_10127ea0.
                     event::cancel_queues(world);
                     world.hud_top.enter();
+                    // The zone-in's sends in retail's order (captures, 30261102_0): FUN_10093db0's c2s 0x061 (after its
+                    // 0x00C, which the net thread sends), FUN_10095650's 0x118 / 0x11B, the lockstyle's 0x053, then
+                    // netstat's 0x0E0 / 0x00F and the handler walk (seacom::zone_in, zone_walk below).
+                    let _ = world.net.commands.send(NetCommand::StatusRequest(0));
                     // FUN_10095650 at the world start: the Unity chat setting (config 0xb2) and the job master display
                     // (config 0x99 bit 8 clear) go to the server again.
                     let _ = world
@@ -11846,12 +11889,21 @@ impl App {
                         id: 0x11B,
                         body: vec![(world.game.get(0x99) & 0x100 == 0) as u8, 0, 0, 0],
                     });
+                    equipsets::field_entry(world);
                     world.map = None;
                     world.scan = Default::default();
                     // LSB re-sends every container after c2s 0x00C and empties the temporary items and the recycle
-                    // bin on zoning, so slots kept from the last zone would go stale (retail's reset: inferred).
-                    world.inv =
-                        items::Inventory { sizes: world.inv.sizes, sizes2: world.inv.sizes2, ..Default::default() };
+                    // bin on zoning, so slots kept from the last zone would go stale (retail's reset: inferred). The
+                    // view stays (a sorted list stays sorted): a slot refilled with its item keeps its row, one with
+                    // another item goes last (FUN_1021c210), and slots the resend leaves empty go at the settle.
+                    world.inv = items::Inventory {
+                        sizes: world.inv.sizes,
+                        sizes2: world.inv.sizes2,
+                        order: std::mem::take(&mut world.inv.order),
+                        viewed_ids: std::mem::take(&mut world.inv.viewed_ids),
+                        view_changed: world.inv.view_changed,
+                        ..Default::default()
+                    };
                     // FUN_10093720: DAT_10487ef5 = 0.
                     world.weather_forced = false;
                     // The resend refills the emptied view: Auto-sort's free-slot count starts again once it settles.
@@ -11861,7 +11913,6 @@ impl App {
                         world.screen.hold_black();
                         event::queue(world, ev);
                     }
-                    let _ = world.net.commands.send(NetCommand::StatusRequest(0));
                     world.music.zone_in(music);
                     // FUN_10094190: solo and party battle music 0x46 in Monstrosity.
                     if monstrosity::active(world) {
@@ -11933,6 +11984,7 @@ impl App {
                     world.my_id = char_id;
                     world.name = name;
                     seacom::zone_in(world);
+                    zone_walk(world);
                     world.entities.clear();
                     world.entity_index.clear();
                     world.new_challenge = false;
@@ -12563,6 +12615,9 @@ impl App {
                         world.inv_flags |= 0x0020_0800;
                     }
                     world.inv_loaded = loaded;
+                    if state == 1 {
+                        world.inv.prune_order(loaded);
+                    }
                     if state == 1 && loaded & 1 << items::INVENTORY != 0 && world.inv_free.is_none() {
                         world.inv_free = Some(items::free_slots(world, items::INVENTORY));
                     }
@@ -12576,10 +12631,10 @@ impl App {
                     if matches!(container, 1..=7 | 9) {
                         world.inv_flags |= 0x0020_0000;
                     }
-                    // A slot newly filled in a container kept sorted sorts it once the burst is over.
-                    let fresh = id != 0 && !world.inv.order.get(&container).is_some_and(|o| o.contains(&index));
-                    world.inv.set(container, index, id, count);
-                    // Retail's Auto-sort (config 0x9a) already sorts the inventory on a new slot.
+                    // A slot newly filled (or refilled with another item) in a container kept sorted sorts it once
+                    // the burst is over.
+                    let fresh = world.inv.set(container, index, id, count);
+                    // Retail's Auto-sort (config 0x9a) already sorts the inventory on a new row, the login load too.
                     let retail = container == items::INVENTORY && world.game.get(0x9a) != 0;
                     if fresh && container < 32 && world.auto_sort >> container & 1 != 0 && !retail {
                         world.sort_due = (world.sort_due.0 | 1 << container, items::SORT_DELAY);
@@ -12661,6 +12716,7 @@ impl App {
                 NetEvent::KnownZones(z) => world.known_zones = Some(z),
                 NetEvent::Conquest(p) => region::on_conquest(world, &p),
                 NetEvent::Influence(p) => region::on_influence(world, &p),
+                NetEvent::BattlefieldInfo(p) => world.battlefield.on_reply(&p),
                 // G+0x9808 / +0x980f by linkshell number: its item's slot and bag.
                 NetEvent::LinkshellEquip { num, index, bag } => {
                     if let Some(l) = world.linkshells.get_mut(num as usize) {
@@ -13182,9 +13238,19 @@ impl App {
             }
         }
         for id in std::mem::take(&mut world.effects.skill_files_done) {
+            let mut gone = Vec::new();
             if let Some(a) = world.actors.get_mut(&id) {
                 log::info!("actor {id:#x}: skill files dropped (its last skill main ended)");
+                gone = a.extra.iter().filter(|(k, _)| *k == actmotion::Kind::Skill).map(|(_, f)| f.id).collect();
                 actmotion::drop_kind(&mut a.extra, actmotion::Kind::Skill);
+            }
+            // A file no other actor holds is freed, its effects with it (Effects::release_file).
+            for f in gone {
+                let held =
+                    world.actors.values().any(|a| a.extra.iter().any(|(_, m)| m.id == f) || a.skill_want.contains(&f));
+                if !held {
+                    world.effects.release_file(f);
+                }
             }
         }
         for (id, file) in std::mem::take(&mut world.effects.effect_motions) {
@@ -19441,12 +19507,10 @@ fn world_uploads(gfx: &Gfx, fg: &mut FrameGpu, w: &mut World, r: &mut ZoneRender
 /// areas' lights.
 fn world_lighting(cx: &WorldDraw, w: &mut World, r: &mut ZoneRenderer, wf: &WorldFrame) {
     let (dt, ev_clock) = (wf.dt, wf.ev_clock);
-    // Zone lighting for the Vana'diel time and weather the server gave us. FUN_101880c0: a scene with no weather data
-    // (an event's area, e.g. 516 in the Zilart cutscene) is lit by the default env, not left unlit.
-    static DEFAULT: std::sync::LazyLock<crate::dat::weather::ZoneWeather> =
-        std::sync::LazyLock::new(crate::dat::weather::ZoneWeather::retail_default);
-    let zw = w.zone_weather.as_ref().or_else(|| w.zone.is_some().then(|| &*DEFAULT));
-    if let (Some(zw), Some((t, at))) = (zw, w.clock) {
+    // Zone lighting for the Vana'diel time and weather the server gave us. A scene whose weather data gives no env (none
+    // at all, e.g. 516 in the Zilart cutscene) is not left unlit: Env::scene (FUN_10188a70 -> FUN_10189690).
+    let zw = w.zone_weather.as_ref();
+    if let (true, Some((t, at))) = (zw.is_some() || w.zone.is_some(), w.clock) {
         // Op 0x77 sets the hour and weather while an event runs.
         let ev_weather = w.event.as_ref().and_then(|l| l.st.weather);
         let clock = crate::dat::weather::vana_minute(t, at.elapsed().as_secs_f32());
@@ -19503,7 +19567,8 @@ fn world_lighting(cx: &WorldDraw, w: &mut World, r: &mut ZoneRenderer, wf: &Worl
             )
         };
         let static_env = w.static_env;
-        r.lighting = mix(&|t| zw.at(t, minute)).or(static_env).map(|e| step(&mut w.light_ease, &e));
+        let env = crate::dat::weather::Env::scene(zw.and_then(|zw| mix(&|t| zw.at(t, minute))), static_env);
+        r.lighting = Some(step(&mut w.light_ease, &env));
         // Op 0xc3's yaw turns the sun and moon about x (FUN_10180700: FUN_10026d50 then FUN_100273d0 on both).
         let yaw = w.effects.zone_yaw;
         if let Some(l) = r.lighting.as_mut().filter(|l| yaw != 0 && !l.fixed) {
@@ -19531,8 +19596,8 @@ fn world_lighting(cx: &WorldDraw, w: &mut World, r: &mut ZoneRenderer, wf: &Worl
         }
         let sub_areas = w.sub.weather.iter().flat_map(|s| s.areas.iter());
         w.area_lights = zw
-            .areas
-            .iter()
+            .into_iter()
+            .flat_map(|zw| zw.areas.iter())
             .chain(sub_areas)
             .filter_map(|(&id, a)| Some((id, mix(&|t| a.at(t, minute))?.area_light())))
             .collect();
@@ -19542,7 +19607,7 @@ fn world_lighting(cx: &WorldDraw, w: &mut World, r: &mut ZoneRenderer, wf: &Worl
         let mut lights = Vec::with_capacity(keys.len());
         for k in keys {
             let sub = w.sub.weather.as_ref().and_then(|s| s.areas.get(&k));
-            let e = sub.or_else(|| zw.areas.get(&k)).and_then(|a| mix(&|t| a.at(t, minute)));
+            let e = sub.or_else(|| zw.and_then(|zw| zw.areas.get(&k))).and_then(|a| mix(&|t| a.at(t, minute)));
             lights.push(e.map(|e| step(w.area_ease.entry((sub.is_some(), k)).or_default(), &e)));
         }
         r.set_area_lights(lights);
@@ -19768,6 +19833,28 @@ fn pose_actors(gfx: &Gfx, fg: &mut FrameGpu, w: &mut World, r: &mut ZoneRenderer
                 a.status_force.get_or_insert(-1.0);
             }
         }
+        // Scheduler op 0x05 motions (0x1005cd69): a swing's or a death's one-shot, and the play's whose tick has come.
+        // Each is queued once, from its start (no phase carry), stretched over its op's length.
+        let mut starts: Vec<crate::dat::sched::Motion> = Vec::new();
+        let mut rates: Vec<Option<f32>> = Vec::new();
+        if let Some(o) = shot {
+            rates.push(Some(o.speed));
+            starts.push(crate::dat::sched::Motion {
+                name: o.name,
+                at: 0,
+                speed: 1.0,
+                ticks: 0,
+                count: o.count,
+                blend: o.blend as u16,
+                out: o.out as u16,
+                half: o.half,
+            });
+        }
+        if let Some(p) = a.play.as_mut() {
+            let v = p.take_starts();
+            rates.extend(v.iter().map(|_| None));
+            starts.extend(v);
+        }
         // FUN_100c83c0: re-queued on a name change, a counted end or a blanked +0x7d8; a rate change alone goes on the
         // newest entries. Op 0x28 (0x1005b12e) queues it past the +0x80 hold. *(ours: so does an empty queue, not a rod.)*
         let stance = a.status_force.is_some_and(|b| b >= 0.0);
@@ -19795,13 +19882,16 @@ fn pose_actors(gfx: &Gfx, fg: &mut FrameGpu, w: &mut World, r: &mut ZoneRenderer
             // +0x200), so the corpse motion does not cut the fall short. *(ours: only while a death or other motion
             // of ours is still running; one who arrives dead lies down at once.)*
             let falling = matches!(pick_status, 2 | 3) && !a.q.done && (a.oneshot.is_some() || a.play.is_some());
+            // A region-0 motion queued this frame clears the counted end's mark (+0x79c, vtable +0x1fc(0)) before
+            // FUN_100c6380 tests it: the scheduler's next motion takes over from the last pose, not from the status.
+            let ended = a.q.done && starts.is_empty();
             let force = a.status_force;
             if falling {
-            } else if a.q.done || force.is_some() || s != a.q_status {
+            } else if ended || force.is_some() || s != a.q_status {
                 let (blend, carry, why) = match force {
                     Some(b) if b >= 0.0 => (b, false, "stance op"),
                     // After a counted motion: in over its out length, from the start.
-                    _ if a.q.done => (a.q.back_blend(), false, "counted motion ended"),
+                    _ if ended => (a.q.back_blend(), false, "counted motion ended"),
                     _ => (crate::motion::BLEND_TICKS, !s.starts_with("jmp"), "status"),
                 };
                 let e = crate::motionq::Enq::status(r, blend, carry);
@@ -19820,28 +19910,6 @@ fn pose_actors(gfx: &Gfx, fg: &mut FrameGpu, w: &mut World, r: &mut ZoneRenderer
                 a.q.set_rate(r);
                 a.q_rate = r;
             }
-        }
-        // Scheduler op 0x05 motions (0x1005cd69): a swing's or a death's one-shot, and the play's whose tick has come.
-        // Each is queued once, from its start (no phase carry), stretched over its op's length.
-        let mut starts: Vec<crate::dat::sched::Motion> = Vec::new();
-        let mut rates: Vec<Option<f32>> = Vec::new();
-        if let Some(o) = shot {
-            rates.push(Some(o.speed));
-            starts.push(crate::dat::sched::Motion {
-                name: o.name,
-                at: 0,
-                speed: 1.0,
-                ticks: 0,
-                count: o.count,
-                blend: o.blend as u16,
-                out: o.out as u16,
-                half: o.half,
-            });
-        }
-        if let Some(p) = a.play.as_mut() {
-            let v = p.take_starts();
-            rates.extend(v.iter().map(|_| None));
-            starts.extend(v);
         }
         for (m, rate) in starts.iter().zip(rates) {
             let first = actmotion::find_cached(&mut cache.borrow_mut(), &extra, &ch, &m.name).first().copied();
@@ -21581,6 +21649,34 @@ fn app_egui_context() -> egui::Context {
     ctx
 }
 
+/// FUN_10160530 -> FUN_101604c0: entering game mode 0x60 once the zone is loaded (DAT_1047e5a0, set by FUN_10093db0
+/// with the zone-in's c2s 0x00C and 0x061) runs every registered handler's slot 0x30 in registry order (0x10373320).
+/// Three send: prty5 (entry 94: c2s 0x0DB kind 1), mapframe (204: c2s 0x112 kind 0), cnqframe (210: c2s 0x05A). They
+/// go in the frame of the zone-in's other sends, after netstat's c2s 0x0E0 / 0x00F (its open slot), as here.
+fn zone_walk(world: &mut World) {
+    let (langs, sends) = walk_sends(world.game.get(0x98), &world.conf_sys, &mut world.conquest, &mut world.battlefield);
+    world.party_langs = langs;
+    for (id, body) in sends {
+        let _ = world.net.commands.send(NetCommand::Packet { id, body });
+    }
+}
+
+/// The walk's sends in order, and the party languages prty5 keeps.
+fn walk_sends(
+    config_98: u32,
+    conf: &[u8; 12],
+    conquest: &mut region::Data,
+    bf: &mut battlefield::Battlefield,
+) -> (u32, Vec<(u16, Vec<u8>)>) {
+    let langs = partymenu::zone_langs(config_98);
+    let mut out = vec![(0x0DB, partymenu::body_0db(conf, 1, langs))];
+    out.extend(bf.request(battlefield::Kind::Both).map(|b| (0x112, b)));
+    if conquest.zone_in() {
+        out.push((0x05A, Vec::new()));
+    }
+    (langs, out)
+}
+
 /// A test's egui pass, its texture deltas cleared (epaint debug-asserts on a dropped unapplied one).
 #[cfg(test)]
 pub(crate) fn egui_pass(ctx: &egui::Context, raw: egui::RawInput, ui: impl FnMut(&mut egui::Ui)) {
@@ -21589,6 +21685,28 @@ pub(crate) fn egui_pass(ctx: &egui::Context, raw: egui::RawInput, ui: impl FnMut
 
 #[cfg(test)]
 mod tests {
+    /// The zone-in walk's sends as a retail capture has them after c2s 0x00F: 0x0DB kind 1, 0x112 kind 0, 0x05A; again
+    /// at the next zone-in, within the conquest gate's 120 s and with no reply to either request.
+    #[test]
+    fn zone_walk_sends_in_retail_order() {
+        let mut conquest = super::region::Data::new(None);
+        let mut bf = super::battlefield::Battlefield::default();
+        let conf = [0x18, 0, 0, 4, 0, 0, 0, 0, 0, 0x18, 0, 0];
+        let (langs, sends) = super::walk_sends(0, &conf, &mut conquest, &mut bf);
+        assert_eq!(langs, 2);
+        let ids: Vec<u16> = sends.iter().map(|s| s.0).collect();
+        assert_eq!(ids, [0x0DB, 0x112, 0x05A]);
+        assert_eq!(sends[0].1[2], 1);
+        assert_eq!(&sends[0].1[0x20..], &[2, 0, 0, 0]);
+        assert_eq!(sends[1].1, [0, 0, 0, 0]);
+        assert!(sends[2].1.is_empty());
+        conquest.zone_load();
+        bf.zone_load();
+        let (_, sends) = super::walk_sends(0b10010, &conf, &mut conquest, &mut bf);
+        assert_eq!(sends.iter().map(|s| s.0).collect::<Vec<_>>(), [0x0DB, 0x112, 0x05A]);
+        assert_eq!(&sends[0].1[0x20..], &[0b10010, 0, 0, 0]);
+    }
+
     /// Speed 0 (Bind) is 0, not a default; riding doubles, capped at 30.
     #[test]
     fn run_speed_has_no_default() {

@@ -479,6 +479,7 @@ pub fn open_sub(w: &mut World, flags: u32, then: SubThen, range: Option<f32>, ti
         _ if inc & 0x200 != 0 => Some(w.my_id),
         _ => None,
     };
+    log::info!("prompt open: {:?} (saved {:#x?}, lock {})", sub.then, sub.saved, sub.saved_lock);
     w.prompt = Some(sub);
     let first = first.or_else(|| nearest(w, |_, _| true));
     let Some(first) = first else {

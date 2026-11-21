@@ -1313,6 +1313,24 @@ fn fs_dist_copy(i: VOut) -> @location(0) vec4<f32> {
 // the tips 0x00808080. Variant 9.
 @vertex
 fn vs_dist(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut {
+    return dist_vert(k, inst);
+}
+
+// The compute path's write-back: vs_dist without the triangles dist_fan drops (a point behind the eye), so it writes
+// only pixels dist_load read.
+@vertex
+fn vs_dist_put(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut {
+    let e = inst / PER_ELEM;
+    let o = e * OUT_WORDS;
+    let tri = min(k / 3u, 3u);
+    let ids = vec3<u32>(0u, tri + 1u, (tri + 1u) % 4u + 1u);
+    for (var j = 0u; j < 3u; j = j + 1u) {
+        if (to_clip(dist_fan_view(e, o, ids[j]), douts[o + 24u]).w <= 0.0) { return hidden(); }
+    }
+    return dist_vert(k, inst);
+}
+
+fn dist_vert(k: u32, inst: u32) -> VOut {
     let e = inst / PER_ELEM;
     let o = e * OUT_WORDS;
     if (douts[o + 23u] < 0.5 || k >= 12u) { return hidden(); }
@@ -1893,4 +1911,311 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
         a = a * sat(scene - i.depth);
     }
     return vec4<f32>(rgb, a);
+}
+
+// ---- CMoDist / CMoVuDist repeats in compute (ours) ----
+// FUN_100426f0's two passes (the diamond into the 256x256 copy, then the shifted fan sampling it back over the scene)
+// run on a copy of the element's screen region, once per repeat (CMoVuDist: n), and vs_dist + fs_dist_put write the
+// region back once with the fan's depth state: one break of the effect pass per element, not one per repeat. The copy
+// sampler (linear, MIRROR) is done by hand; coverage is the rasteriser's (pixel centres, 1/256 snapping, top-left).
+
+struct DistJob { e: u32, pad0: u32, pad1: u32, pad2: u32 };
+@group(1) @binding(2) var<uniform> djob: DistJob;
+// Screen-size, packed as stored in the scene; only the job's region is live.
+@group(1) @binding(3) var<storage, read_write> dscene: array<u32>;
+@group(1) @binding(4) var<storage, read_write> ddepth: array<f32>;
+// The 256x256 copy (DAT_1047bb88), packed; never cleared, as retail.
+@group(1) @binding(5) var<storage, read_write> dcopy: array<u32>;
+// Per element: the region (x0, y0, x1, y1), and the 8x8 group counts of the indirect dispatches (the region's at 0,
+// the copy rect's at 4).
+@group(1) @binding(6) var<storage, read_write> dregion: array<vec4<i32>>;
+@group(1) @binding(7) var<storage, read_write> dargs: array<u32>;
+@group(1) @binding(8) var dsrc: texture_2d<f32>;
+// Per element: the geometry the repeats share (dist_region; DIST_GEO vec4s).
+@group(1) @binding(10) var<storage, read_write> dgeo: array<vec4<f32>>;
+@group(1) @binding(9) var dsrc_depth: texture_depth_2d;
+
+fn srgb_dec(c: f32) -> f32 {
+    if (c <= 0.04045) { return c / 12.92; }
+    return pow((c + 0.055) / 1.055, 2.4);
+}
+
+fn srgb_enc(c: f32) -> f32 {
+    if (c <= 0.0031308) { return c * 12.92; }
+    return 1.055 * pow(c, 1.0 / 2.4) - 0.055;
+}
+
+// Stored bytes to the shading value: an sRGB target (linearize) decodes, as its view does.
+fn dist_dec(v: vec3<f32>) -> vec3<f32> {
+    if (d.fog.z > 0.5) { return vec3<f32>(srgb_dec(v.x), srgb_dec(v.y), srgb_dec(v.z)); }
+    return v;
+}
+
+fn dist_enc(v: vec3<f32>) -> vec3<f32> {
+    if (d.fog.z > 0.5) { return vec3<f32>(srgb_enc(v.x), srgb_enc(v.y), srgb_enc(v.z)); }
+    return v;
+}
+
+// MirrorRepeat on a texel index.
+fn dist_mirror(i: i32, n: i32) -> i32 {
+    let p = 2 * n;
+    var m = i % p;
+    if (m < 0) { m = m + p; }
+    if (m >= n) { m = p - 1 - m; }
+    return m;
+}
+
+fn dist_scene_tap(x: i32, y: i32) -> vec3<f32> {
+    let w = i32(d.clip.z);
+    let v = unpack4x8unorm(dscene[u32(dist_mirror(y, i32(d.clip.w)) * w + dist_mirror(x, w))]);
+    return dist_dec(v.rgb);
+}
+
+fn dist_copy_tap(x: i32, y: i32) -> vec3<f32> {
+    let v = unpack4x8unorm(dcopy[u32(dist_mirror(y, 256) * 256 + dist_mirror(x, 256))]);
+    return dist_dec(v.rgb);
+}
+
+// Bilinear at uv over the scene region / the copy (texel centres at +0.5), with the sampler's 8-bit sub-texel weights.
+fn dist_scene_sample(uv: vec2<f32>) -> vec3<f32> {
+    let t = uv * d.clip.zw - 0.5;
+    let i = vec2<i32>(floor(t));
+    let f = floor((t - floor(t)) * 256.0) / 256.0;
+    let a = mix(dist_scene_tap(i.x, i.y), dist_scene_tap(i.x + 1, i.y), f.x);
+    let b = mix(dist_scene_tap(i.x, i.y + 1), dist_scene_tap(i.x + 1, i.y + 1), f.x);
+    return mix(a, b, f.y);
+}
+
+fn dist_copy_sample(uv: vec2<f32>) -> vec3<f32> {
+    let t = uv * 256.0 - 0.5;
+    let i = vec2<i32>(floor(t));
+    let f = floor((t - floor(t)) * 256.0) / 256.0;
+    let a = mix(dist_copy_tap(i.x, i.y), dist_copy_tap(i.x + 1, i.y), f.x);
+    let b = mix(dist_copy_tap(i.x, i.y + 1), dist_copy_tap(i.x + 1, i.y + 1), f.x);
+    return mix(a, b, f.y);
+}
+
+fn dist_snap(v: vec2<f32>) -> vec2<f32> {
+    return round(v * 256.0) / 256.0;
+}
+
+fn dist_edge(a: vec2<f32>, b: vec2<f32>, p: vec2<f32>) -> f32 {
+    return (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+}
+
+// Top-left rule for y-down screen coordinates with the triangle turned to a positive area: a top edge runs right, a
+// left edge runs up.
+fn dist_takes(e: f32, a: vec2<f32>, b: vec2<f32>) -> bool {
+    return e > 0.0 || (e == 0.0 && ((a.y == b.y && b.x > a.x) || b.y < a.y));
+}
+
+// Barycentrics of p in (a, b, c) when the triangle covers it, else w < 0.
+fn dist_cover(a: vec2<f32>, b0: vec2<f32>, c0: vec2<f32>, p: vec2<f32>) -> vec4<f32> {
+    var b = b0;
+    var c = c0;
+    var area = dist_edge(a, b, c);
+    var flip = 0.0;
+    if (area == 0.0) { return vec4<f32>(-1.0); }
+    if (area < 0.0) {
+        b = c0;
+        c = b0;
+        area = -area;
+        flip = 1.0;
+    }
+    let e0 = dist_edge(b, c, p);
+    let e1 = dist_edge(c, a, p);
+    let e2 = dist_edge(a, b, p);
+    if (!(dist_takes(e0, b, c) && dist_takes(e1, c, a) && dist_takes(e2, a, b))) { return vec4<f32>(-1.0); }
+    // Weights for (a, b0, c0) whatever the turn.
+    if (flip > 0.5) { return vec4<f32>(e0 / area, e2 / area, e1 / area, 1.0); }
+    return vec4<f32>(e0 / area, e1 / area, e2 / area, 1.0);
+}
+
+fn dist_fan_view(e: u32, o: u32, i: u32) -> vec3<f32> {
+    let cross = array<vec3<f32>, 5>(vec3<f32>(0.0), vec3<f32>(-1.0, 0.0, 0.0), vec3<f32>(0.0, -1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(0.0, 1.0, 0.0));
+    let off = bitcast<f32>(dels[e * E_WORDS + E_DIST_OFF]);
+    return (out_mat(o) * vec4<f32>(cross[i], 1.0)).xyz + vec3<f32>(off, off, 0.0);
+}
+
+fn dist_to_screen(c: vec4<f32>) -> vec2<f32> {
+    return vec2<f32>((c.x / c.w + 1.0) * 0.5 * d.clip.z, (1.0 - c.y / c.w) * 0.5 * d.clip.w);
+}
+
+// Per element, worked out once by dist_region (DIST_GEO vec4s): 0 the box (min, k); 1 the copy's texel rect; 2..3 the
+// copy tips (strip 1, 2, 4, 3); 4..6 the fan's five screen points; 7 / 8 their clip w and z / w (point 4 in 9); 9 point
+// 4's w, z / w; 10..14 (uv, view depth, 0) per point; 15 the element colour.
+const DIST_GEO: u32 = 16u;
+
+fn dgeo_at(e: u32, k: u32) -> vec4<f32> {
+    return dgeo[e * DIST_GEO + k];
+}
+
+fn dgeo_pt(e: u32, i: u32) -> vec2<f32> {
+    let v = dgeo_at(e, 4u + i / 2u);
+    return select(v.xy, v.zw, (i & 1u) == 1u);
+}
+
+fn dgeo_wz(e: u32, i: u32) -> vec2<f32> {
+    if (i == 4u) { return dgeo_at(e, 9u).xy; }
+    let w = dgeo_at(e, 7u);
+    let z = dgeo_at(e, 8u);
+    return vec2<f32>(w[i], z[i]);
+}
+
+// The region both passes touch (the diamond's box and the shifted fan, 2 pixels wider, on the screen), the copy's
+// texel rect under the tips, and the geometry the repeats share.
+@compute @workgroup_size(1)
+fn dist_region() {
+    let e = djob.e;
+    let o = e * OUT_WORDS;
+    var lo = vec2<f32>(1e30);
+    var hi = vec2<f32>(-1e30);
+    let live = douts[o + 23u] >= 0.5;
+    let b = dist_box(o);
+    let f = douts[o + 24u];
+    var sc: array<vec2<f32>, 5>;
+    var w: array<f32, 5>;
+    var zw: array<f32, 5>;
+    if (live) {
+        for (var i = 0u; i < 5u; i = i + 1u) {
+            let q = dist_screen(o, i);
+            lo = min(lo, q);
+            hi = max(hi, q);
+            let vp = dist_fan_view(e, o, i);
+            let c = to_clip(vp, f);
+            w[i] = c.w;
+            zw[i] = c.z / c.w;
+            sc[i] = dist_snap(dist_to_screen(c));
+            if (c.w > 0.0) {
+                lo = min(lo, sc[i]);
+                hi = max(hi, sc[i]);
+            }
+            let uv = (q - b.xy) * b.zw / 255.0 + vec2<f32>(douts[o + 20u], douts[o + 21u]);
+            dgeo[e * DIST_GEO + 10u + i] = vec4<f32>(uv, -vp.z, 0.0);
+        }
+    }
+    let wd = i32(d.clip.z);
+    let ht = i32(d.clip.w);
+    let x0 = clamp(i32(floor(max(lo.x, -1e6))) - 2, 0, wd);
+    let y0 = clamp(i32(floor(max(lo.y, -1e6))) - 2, 0, ht);
+    let x1 = clamp(i32(ceil(min(hi.x, 1e6))) + 2, 0, wd);
+    let y1 = clamp(i32(ceil(min(hi.y, 1e6))) + 2, 0, ht);
+    if (!live || x1 <= x0 || y1 <= y0) {
+        dregion[e] = vec4<i32>(0);
+        for (var k = 0u; k < 8u; k = k + 1u) { dargs[e * 8u + k] = 0u; }
+        return;
+    }
+    dregion[e] = vec4<i32>(x0, y0, x1, y1);
+    dargs[e * 8u] = u32((x1 - x0 + 7) / 8);
+    dargs[e * 8u + 1u] = u32((y1 - y0 + 7) / 8);
+    dargs[e * 8u + 2u] = 1u;
+    let t0 = dist_snap((dist_screen(o, 1u) - b.xy) * b.zw + 0.5);
+    let t1 = dist_snap((dist_screen(o, 2u) - b.xy) * b.zw + 0.5);
+    let t2 = dist_snap((dist_screen(o, 4u) - b.xy) * b.zw + 0.5);
+    let t3 = dist_snap((dist_screen(o, 3u) - b.xy) * b.zw + 0.5);
+    let tlo = clamp(vec2<i32>(floor(min(min(t0, t1), min(t2, t3)))) - 1, vec2<i32>(0), vec2<i32>(256));
+    let thi = clamp(vec2<i32>(ceil(max(max(t0, t1), max(t2, t3)))) + 1, vec2<i32>(0), vec2<i32>(256));
+    dargs[e * 8u + 4u] = u32(max(thi.x - tlo.x, 0) + 7) / 8u;
+    dargs[e * 8u + 5u] = u32(max(thi.y - tlo.y, 0) + 7) / 8u;
+    dargs[e * 8u + 6u] = 1u;
+    let g = e * DIST_GEO;
+    dgeo[g] = b;
+    dgeo[g + 1u] = vec4<f32>(vec2<f32>(tlo), vec2<f32>(thi));
+    dgeo[g + 2u] = vec4<f32>(t0, t1);
+    dgeo[g + 3u] = vec4<f32>(t2, t3);
+    dgeo[g + 4u] = vec4<f32>(sc[0], sc[1]);
+    dgeo[g + 5u] = vec4<f32>(sc[2], sc[3]);
+    dgeo[g + 6u] = vec4<f32>(sc[4], 0.0, 0.0);
+    dgeo[g + 7u] = vec4<f32>(w[0], w[1], w[2], w[3]);
+    dgeo[g + 8u] = vec4<f32>(zw[0], zw[1], zw[2], zw[3]);
+    dgeo[g + 9u] = vec4<f32>(w[4], zw[4], 0.0, 0.0);
+    dgeo[g + 15u] = vec4<f32>(douts[o + 16u], douts[o + 17u], douts[o + 18u], douts[o + 19u]);
+}
+
+// The region's colour (as stored) and depth.
+@compute @workgroup_size(8, 8)
+fn dist_load(@builtin(global_invocation_id) g: vec3<u32>) {
+    let r = dregion[djob.e];
+    let p = vec2<i32>(r.x + i32(g.x), r.y + i32(g.y));
+    if (p.x >= r.z || p.y >= r.w) { return; }
+    let i = u32(p.y * i32(d.clip.z) + p.x);
+    dscene[i] = pack4x8unorm(textureLoad(dsrc, p, 0));
+    ddepth[i] = textureLoad(dsrc_depth, p, 0);
+}
+
+// vs_dist_copy / fs_dist_copy: the tips at (P - min) k + 0.5 in the copy, the scene at (P - 0.5) / (W, H) under each
+// covered texel, alpha 0x80.
+@compute @workgroup_size(8, 8)
+fn dist_copy(@builtin(global_invocation_id) g: vec3<u32>) {
+    let e = djob.e;
+    let rect = dgeo_at(e, 1u);
+    let tx = vec2<i32>(rect.xy) + vec2<i32>(g.xy);
+    if (tx.x >= i32(rect.z) || tx.y >= i32(rect.w)) { return; }
+    let ta = dgeo_at(e, 2u);
+    let tb = dgeo_at(e, 3u);
+    let pc = vec2<f32>(tx) + 0.5;
+    if (dist_cover(ta.xy, ta.zw, tb.xy, pc).w < 0.0 && dist_cover(ta.zw, tb.xy, tb.zw, pc).w < 0.0) { return; }
+    let b = dgeo_at(e, 0u);
+    let p = (pc - 0.5) / b.zw + b.xy;
+    let s = dist_scene_sample((p - 0.5) / d.clip.zw);
+    dcopy[u32(tx.y * 256 + tx.x)] = pack4x8unorm(vec4<f32>(dist_enc(s), 128.0 / 255.0));
+}
+
+// vs_dist + fs variant 9 + the fan's blend (SRCALPHA / INVSRCALPHA, colour only) and depth (LESSEQUAL, written by flag
+// 12), on the region. A point behind the eye drops the fan's triangles through it *(ours: the rasteriser clips them)*;
+// vs_dist_put drops the same ones.
+@compute @workgroup_size(8, 8)
+fn dist_fan(@builtin(global_invocation_id) g: vec3<u32>) {
+    let e = djob.e;
+    let r = dregion[e];
+    let px = vec2<i32>(r.x + i32(g.x), r.y + i32(g.y));
+    if (px.x >= r.z || px.y >= r.w) { return; }
+    let pc = vec2<f32>(px) + 0.5;
+    let tip = vec4<f32>(vec3<f32>(128.0 / 255.0), 0.0);
+    let c0 = dgeo_pt(e, 0u);
+    let wz0 = dgeo_wz(e, 0u);
+    if (wz0.x <= 0.0) { return; }
+    for (var tri = 0u; tri < 4u; tri = tri + 1u) {
+        let i1 = tri + 1u;
+        let i2 = (tri + 1u) % 4u + 1u;
+        let wz1 = dgeo_wz(e, i1);
+        let wz2 = dgeo_wz(e, i2);
+        if (wz1.x <= 0.0 || wz2.x <= 0.0) { continue; }
+        let l = dist_cover(c0, dgeo_pt(e, i1), dgeo_pt(e, i2), pc);
+        if (l.w < 0.0) { continue; }
+        let q = vec3<f32>(l.x / wz0.x, l.y / wz1.x, l.z / wz2.x);
+        let qs = q.x + q.y + q.z;
+        let a0 = dgeo_at(e, 10u);
+        let a1 = dgeo_at(e, 10u + i1);
+        let a2 = dgeo_at(e, 10u + i2);
+        let dd = (dgeo_at(e, 15u) * q.x + tip * (q.y + q.z)) / qs;
+        let uvd = (a0.xyz * q.x + a1.xyz * q.y + a2.xyz * q.z) / qs;
+        let z = l.x * wz0.y + l.y * wz1.y + l.z * wz2.y;
+        let idx = u32(px.y * i32(d.clip.z) + px.x);
+        if (z > ddepth[idx]) { return; }
+        var t = dist_copy_sample(uvd.xy);
+        if (d.fog.z > 0.5) { t = pow(t, vec3<f32>(1.0 / 2.2)); }
+        var rgb = sat3(2.0 * dd.rgb * t);
+        var a = sat(dd.a * (128.0 / 255.0) * 4.0);
+        if (d.fog.z > 0.5) { rgb = pow(rgb, vec3<f32>(2.2)); }
+        let flags = dels[e * E_WORDS + E_FLAGS];
+        if (d.fog.w > 0.5 && (flags & 0x8000000u) != 0u) {
+            let sz = textureLoad(scene_depth, px, 0);
+            let k = d.clip.y / (d.clip.x - d.clip.y);
+            a = a * sat(d.clip.x * k / (sz + k) - uvd.z);
+        }
+        let dst = unpack4x8unorm(dscene[idx]);
+        let c = rgb * a + dist_dec(dst.rgb) * (1.0 - a);
+        dscene[idx] = pack4x8unorm(vec4<f32>(dist_enc(c), dst.a));
+        if ((flags & 0x1000u) != 0u) { ddepth[idx] = z; }
+        return;
+    }
+}
+
+// The region back under the fan (blend off, colour only), with the fan's depth test and write.
+@fragment
+fn fs_dist_put(i: VOut) -> @location(0) vec4<f32> {
+    let p = vec2<i32>(i.clip.xy);
+    let v = unpack4x8unorm(dscene[u32(p.y * i32(d.clip.z) + p.x)]);
+    return vec4<f32>(dist_dec(v.rgb), 1.0);
 }

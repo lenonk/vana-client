@@ -80,27 +80,66 @@ pub struct Inventory {
     /// The list's view per container (FUN_1021c210 / FUN_1021c5b0 append a new slot, FUN_1021c680 drops an emptied
     /// one; sorting reorders it): slot indexes.
     pub order: BTreeMap<u8, Vec<u8>>,
+    /// The item id each listed slot had when the view took it (the view record's u16 @+0x80 + slot * 0x18):
+    /// FUN_1021c210 keeps a row whose slot holds the same id and drops and re-appends one whose id changed.
+    pub viewed_ids: BTreeMap<(u8, u8), u16>,
+    /// Containers whose view added or dropped a row since Auto-sort last looked (bit = container): FUN_1021c5b0 and
+    /// FUN_1021c680 set the view record's +8 to 0x52 (0x1021c654 / 0x1021c764), above any free-slot count.
+    pub view_changed: u32,
 }
 
 impl Inventory {
-    pub fn set(&mut self, container: u8, index: u8, id: u16, count: u32) {
+    /// Returns true when the slot's row was (re)appended to the view: a new slot, or one whose item changed.
+    pub fn set(&mut self, container: u8, index: u8, id: u16, count: u32) -> bool {
         if id == 0 {
             self.slots.remove(&(container, index));
             self.ext.remove(&(container, index));
             self.locks.remove(&(container, index));
             self.unlist(container, index);
-        } else {
-            self.slots.insert((container, index), (id, count));
-            let o = self.order.entry(container).or_default();
-            if !o.contains(&index) {
-                o.push(index);
-            }
+            return false;
+        }
+        self.slots.insert((container, index), (id, count));
+        // FUN_1021c210: the same id keeps its row; another id drops it (FUN_1021c680) and appends it (FUN_1021c5b0).
+        if self.viewed_ids.get(&(container, index)) == Some(&id)
+            && self.order.get(&container).is_some_and(|o| o.contains(&index))
+        {
+            return false;
+        }
+        self.unlist(container, index);
+        self.order.entry(container).or_default().push(index);
+        self.viewed_ids.insert((container, index), id);
+        self.mark_changed(container);
+        true
+    }
+
+    /// Drops the list entries of slots left empty in the loaded containers (bit = container).
+    pub fn prune_order(&mut self, loaded: u32) {
+        let gone: Vec<(u8, u8)> = self
+            .order
+            .iter()
+            .filter(|(c, _)| **c < 32 && loaded >> **c & 1 != 0)
+            .flat_map(|(&c, o)| o.iter().map(move |&i| (c, i)))
+            .filter(|k| !self.slots.contains_key(k))
+            .collect();
+        for (c, i) in gone {
+            self.unlist(c, i);
         }
     }
 
+    /// FUN_1021c680: drops the slot's row.
     fn unlist(&mut self, container: u8, index: u8) {
-        if let Some(o) = self.order.get_mut(&container) {
-            o.retain(|&i| i != index);
+        self.viewed_ids.remove(&(container, index));
+        if let Some(o) = self.order.get_mut(&container)
+            && let Some(p) = o.iter().position(|&i| i == index)
+        {
+            o.remove(p);
+            self.mark_changed(container);
+        }
+    }
+
+    fn mark_changed(&mut self, container: u8) {
+        if container < 32 {
+            self.view_changed |= 1 << container;
         }
     }
 
@@ -1071,13 +1110,25 @@ pub(super) fn free_slots(w: &World, c: u8) -> u32 {
 /// Auto-sort's sends wait out the second (ours: retail sends at once).
 const SORT_GAP: f32 = 1.0;
 
+/// FUN_1021c5b0 / FUN_1021c680's reset of the view record's last free-slot count (+8).
+const VIEW_CHANGED: u32 = 0x52;
+
+/// FUN_1021c4c0's count to compare against: the last free slots, or 0x52 when the view added or dropped a row since.
+fn auto_sort_last(last: u32, view_changed: bool) -> u32 {
+    if view_changed { VIEW_CHANGED } else { last }
+}
+
 /// FUN_1021c4c0 (each frame in the field, FUN_1015fa00): the inventory's free slots (FUN_100eb8d0) against the last
-/// count; with Auto-sort on (config 0x9a != 0: FUN_101978e0 sets the inventory record's +5) a fall (an item took a new
-/// slot) sorts the inventory (FUN_1021c7c0: the view by config 0xca, c2s 0x03A {0}, which merges the stacks) unless
-/// Manual Sort's split held it (+6); any change clears the hold. Other containers' records never get +5.
+/// count (+8); with Auto-sort on (config 0x9a != 0: FUN_101978e0 sets the inventory record's +5) a fall sorts the
+/// inventory (FUN_1021c7c0: the view by config 0xca, c2s 0x03A {0}, which merges the stacks) unless Manual Sort's split
+/// held it (+6); any change clears the hold. A row added to or dropped from the view resets +8 to 0x52, so the login
+/// load, a slot whose item changed and an emptied slot all sort. Other containers' records never get +5.
 pub(super) fn retail_auto_sort(w: &mut World, dt: f32) {
     w.sort_wait = (w.sort_wait + dt).min(SORT_GAP * 2.0);
     let Some(last) = w.inv_free else { return };
+    let changed = w.inv.view_changed & 1 << INVENTORY != 0;
+    w.inv.view_changed &= !(1 << INVENTORY);
+    let last = auto_sort_last(last, changed);
     let now = free_slots(w, INVENTORY);
     if now == last {
         return;
@@ -2313,5 +2364,75 @@ mod charged_tests {
         assert!(super::charged_ready(&e));
         e[0] = 2;
         assert!(!super::charged_ready(&e));
+    }
+}
+
+#[cfg(test)]
+mod order_tests {
+    use super::Inventory;
+
+    /// A zone's resend refills the kept order: refilled slots keep their places, new ones go last, and the settle
+    /// drops the slots left empty in the loaded containers only.
+    #[test]
+    fn kept_order_survives_a_resend() {
+        let mut inv = Inventory::default();
+        for (i, id) in [(3u8, 30u16), (1, 10), (2, 20)] {
+            inv.set(0, i, id, 1);
+        }
+        inv.set(1, 5, 50, 1);
+        let mut inv = Inventory {
+            order: std::mem::take(&mut inv.order),
+            viewed_ids: std::mem::take(&mut inv.viewed_ids),
+            ..Default::default()
+        };
+        for (i, id) in [(1u8, 10u16), (2, 20), (3, 30), (4, 40)] {
+            inv.set(0, i, id, 1);
+        }
+        inv.prune_order(1);
+        assert_eq!(inv.order[&0], vec![3, 1, 2, 4]);
+        assert_eq!(inv.order[&1], vec![5]);
+        inv.prune_order(1 << 1);
+        assert!(inv.order[&1].is_empty());
+    }
+
+    /// FUN_1021c210: a refilled slot holding another item drops its row and goes last (a Mog House visit's furniture
+    /// in the safe, then our own items back), and only appends and drops flag the view as changed.
+    #[test]
+    fn changed_item_goes_last() {
+        let mut inv = Inventory::default();
+        for (i, id) in [(3u8, 30u16), (1, 10), (2, 20)] {
+            assert!(inv.set(0, i, id, 1));
+        }
+        assert_eq!(inv.view_changed, 1);
+        inv.view_changed = 0;
+        let mut inv = Inventory {
+            order: std::mem::take(&mut inv.order),
+            viewed_ids: std::mem::take(&mut inv.viewed_ids),
+            ..Default::default()
+        };
+        assert!(!inv.set(0, 3, 30, 1));
+        assert!(inv.set(0, 1, 11, 1));
+        assert!(!inv.set(0, 2, 20, 5));
+        assert_eq!(inv.order[&0], vec![3, 2, 1]);
+        assert_eq!(inv.view_changed, 1);
+        inv.view_changed = 0;
+        inv.set(0, 2, 20, 4);
+        inv.count(0, 3, 7);
+        assert_eq!(inv.view_changed, 0);
+        inv.count(0, 3, 0);
+        assert_eq!((inv.order[&0].clone(), inv.view_changed), (vec![2, 1], 1));
+    }
+
+    /// FUN_1021c4c0 against the 0x52 reset: the login load, a drop and a changed item all sort; a stack's count alone
+    /// does not.
+    #[test]
+    fn view_change_sorts() {
+        use super::auto_sort_last;
+        let sorts = |last: u32, now: u32, changed: bool| now < auto_sort_last(last, changed);
+        assert!(sorts(70, 40, true));
+        assert!(sorts(40, 41, true));
+        assert!(sorts(40, 40, true));
+        assert!(!sorts(40, 40, false));
+        assert!(!sorts(40, 41, false));
     }
 }

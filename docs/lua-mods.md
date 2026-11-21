@@ -210,6 +210,8 @@ Built (client/lua/, modern/modwin.rs), each checked live:
   - `os.time`, `os.date`, `os.clock`, `os.difftime` (nothing else of `os`)
   - `fs.read` / `write` / `append` / `exists` / `list` / `mkdir` / `remove` / `rename` in the mod's data folder
     (mod-data/<id>/files), reads falling back to the mod's files; `shared/...` with `files.shared`; no `..`
+  - `fs.lock(path, fn)`: runs `fn` holding an OS lock on a file in the data folder, so two clients sharing it (one
+    install, two characters) take turns on a read and write
   - `json.encode` / `decode`
   - `mods.list` (with each mod's time a frame, memory and errors), `mods.installed` (every mod on disk and bundled:
     enabled, loaded), `mods.provide` / `mods.call` (a function in another mod's VM, values copied; not a suspended

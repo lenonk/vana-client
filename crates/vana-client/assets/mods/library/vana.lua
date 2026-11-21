@@ -1560,6 +1560,12 @@ function fs.remove(path) end
 ---@param to string 
 function fs.rename(from, to) end
 
+--- Runs fn holding an OS lock on a file in the data folder (made if missing), so clients sharing the folder take turns; returns fn's values. Waits up to 2 s for another client, then raises an error. Lock a file of its own, not one being written.
+---@param path string 
+---@param fn function 
+---@return any
+function fs.lock(path, fn) end
+
 --- Plain data as JSON text.
 ---@param value any 
 ---@param options? {pretty: boolean?} 

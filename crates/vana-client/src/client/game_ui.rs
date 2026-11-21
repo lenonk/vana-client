@@ -671,6 +671,12 @@ impl GameUi {
         !self.walk.suspended.contains(&key)
     }
 
+    /// A window the last walk had open and did not suspend; unlike `want`, it does not open it.
+    pub fn was_up(&self, name: &str) -> bool {
+        let key = crate::dat::ui::norm_name(name.as_bytes());
+        self.walk.last.contains_key(&key) && !self.walk.suspended.contains(&key)
+    }
+
     /// The walk (0x1015fe10..0x1015fe9c), newest stamp first from an empty mask: a window sharing a bit with the
     /// mask is suspended and adds none of its bits; any other adds its group. Group 0 windows take no part.
     fn run_walk(&mut self) {

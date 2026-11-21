@@ -71,6 +71,14 @@ impl Env {
         }
     }
 
+    /// The env a scene is lit by (FUN_10188a70, 30261102_0): the area's weather object's env (+0x20) through
+    /// FUN_10189690, which takes DAT_1065dc10 for a null one, as when the weather data has no key for the hour at all
+    /// (no `weat` folder). DAT_1065dc10 is op 0x7e's static env once one was set (FUN_1018c5e0 copies the block over
+    /// it), else the default FUN_1018c740 fills it with (Env::retail_default).
+    pub fn scene(weather: Option<Env>, static_env: Option<Env>) -> Env {
+        weather.or(static_env).unwrap_or_else(Env::retail_default)
+    }
+
     pub fn parse(b: &[u8]) -> Option<Self> {
         if b.len() < 0xac {
             return None;
@@ -499,7 +507,7 @@ pub fn forecast_day(index: &super::DatIndex, zone: u32, day: u32) -> Option<[u8;
 mod tests {
     use glam::Vec3;
 
-    use super::{EasedLight, LightEase, ZoneWeather, sun_moon};
+    use super::{EasedLight, Env, LightEase, ZoneWeather, sun_moon};
 
     /// Event scene 516 (file 616) keeps its envs under data/weat with only rain / thdr: they are the scene's own, and
     /// sunny weather falls back to the first folder (rain). A scene with no weather data takes the default env.
@@ -516,6 +524,30 @@ mod tests {
         assert_eq!(sunny.bg.fog_end, rain.bg.fog_end);
         let d = ZoneWeather::retail_default().at("snow", 0.0).unwrap();
         assert_eq!((d.bg.sun, d.bg.fog_end, d.draw_dist), ([0x80; 4], 100.0, 100.0));
+    }
+
+    /// A scene with no weather data parses to an empty table; its env is the static env (op 0x7e) when one was set,
+    /// else retail's default, never none (FUN_10188a70 -> FUN_10189690).
+    #[test]
+    fn scene_without_weather_is_lit() {
+        let chunk = |name: &[u8; 4], kind: u32| {
+            let mut c = vec![0u8; 16];
+            c[..4].copy_from_slice(name);
+            c[4..8].copy_from_slice(&((1 << 7) | kind).to_le_bytes());
+            c
+        };
+        let file = [chunk(b"z516", 1), chunk(b"\0\0\0\0", 0)].concat();
+        let w = ZoneWeather::parse(&file).unwrap();
+        assert!(w.keys.is_empty() && w.at("suny", 720.0).is_none());
+        let none = Env::scene(w.at("suny", 720.0), None);
+        assert_eq!((none.bg.sun, none.bg.fog_end, none.draw_dist), ([0x80; 4], 100.0, 100.0));
+        let mut fixed = Env::retail_default();
+        fixed.bg.sun = [1, 2, 3, 4];
+        assert_eq!(Env::scene(None, Some(fixed)).bg.sun, [1, 2, 3, 4]);
+        // The weather's own env wins over both.
+        let mut own = Env::retail_default();
+        own.bg.sun = [9; 4];
+        assert_eq!(Env::scene(Some(own), Some(fixed)).bg.sun, [9; 4]);
     }
 
     /// FUN_10187720's step: 0.1 of the way; a large remaining turn fades the colour x 0.7.

@@ -367,7 +367,9 @@ Milestone 1:
   (Current, Objective List, Vana'Bout) in place, the rows and the description in retail's colours (the name as its
   row, the count blue when complete or at its goal, the once-only note); in a category the sibling ones are a Left /
   Right away, or a click on the arrows by its heading (retail's children 9 / 10). Typing searches every key item, quest
-  or mission there is (listsearch.rs).
+  or mission there is (listsearch.rs). On the Records of Eminence tab it searches every objective (2026-11-19): a
+  shown one with its categories, a hidden one greyed with what opens it; a pick opens its list and category and
+  asks as a click on the row. An open category picks up the rows a completion opens at once.
 - Social (modern/social.rs): the Party menu, Search and Linkshell windows drawn from retail's menus (their rows
   named by their label sprites, retail's disabled rows and swaps, a window opened over another shown beside it);
   link12 is the People member list and link11 (naming a new shell) a modern window. Set Bazaar the same way. View House is the storage view itself, opened on the Mog

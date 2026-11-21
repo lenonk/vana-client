@@ -76,63 +76,96 @@ impl Data {
     }
 }
 
-/// FUN_101e8030 (FUN_10098010): c2s 0x05A once 120 s have passed since the last reply and none is out; the data
-/// counts as missing until it comes, and every icon shows "?" (mode 2: none, mode 3: plain).
-fn request(w: &mut World) {
-    let d = &mut w.conquest;
-    if d.pending || d.stamp.is_some_and(|t| t.elapsed() <= Duration::from_secs(120)) {
-        return;
+impl Data {
+    /// FUN_101e9600 (FUN_101e8030 in 30261006_0) with FUN_10098010: once 120 s have passed since the last reply and none
+    /// is out, the request goes (true: send c2s 0x05A, no body); the data counts as missing until it comes, and every
+    /// icon shows "?" (mode 2: none, mode 3: plain).
+    fn ask(&mut self) -> bool {
+        if self.pending || self.stamp.is_some_and(|t| t.elapsed() <= Duration::from_secs(120)) {
+            return false;
+        }
+        (self.pending, self.colon_pending, self.camp_wanted, self.have, self.campaign, self.busy) =
+            (true, true, true, false, None, true);
+        let m = &mut self.markers;
+        for e in m[0].iter_mut().skip(4) {
+            e.icon = 8;
+        }
+        for e in m[1].iter_mut().skip(1).take(5) {
+            (e.flags, e.icon, e.icon2) = (e.flags & !4, 8, 8);
+        }
+        for e in m[2].iter_mut().skip(16).take(26) {
+            (e.flags, e.icon, e.icon2) = (e.flags & !0x200, 0xff, 8);
+        }
+        for e in m[3].iter_mut().skip(1).take(8) {
+            (e.flags, e.icon, e.icon2) = (e.flags & !4, 3, 3);
+        }
+        true
     }
-    let _ = w.net.commands.send(NetCommand::Packet { id: 0x05A, body: Vec::new() });
-    (d.pending, d.colon_pending, d.camp_wanted, d.have, d.campaign, d.busy) = (true, true, true, false, None, true);
-    let m = &mut d.markers;
-    for e in m[0].iter_mut().skip(4) {
-        e.icon = 8;
+
+    /// cnqframe's slot 0x30 (win_cnqframe_v30) in the zone-in's handler walk: the gate's stamp (_DAT_10664744) zeroed,
+    /// then the ask, so the zone-in's c2s 0x05A always goes (the zone load cleared the pending callback).
+    pub fn zone_in(&mut self) -> bool {
+        self.stamp = None;
+        self.ask()
     }
-    for e in m[1].iter_mut().skip(1).take(5) {
-        (e.flags, e.icon, e.icon2) = (e.flags & !4, 8, 8);
-    }
-    for e in m[2].iter_mut().skip(16).take(26) {
-        (e.flags, e.icon, e.icon2) = (e.flags & !0x200, 0xff, 8);
-    }
-    for e in m[3].iter_mut().skip(1).take(8) {
-        (e.flags, e.icon, e.icon2) = (e.flags & !4, 3, 3);
+
+    /// FUN_10093720 (the zone load) clears the 0x05E callback (DAT_10489044) but not the colonization one
+    /// (DAT_10489048); the 0x071 mode 2 callback (session +0x3c200) goes with the session block, zeroed at each map
+    /// connection.
+    pub fn zone_load(&mut self) {
+        (self.pending, self.camp_wanted) = (false, false);
     }
 }
 
-/// s2c 0x05E (FUN_100998a0 -> FUN_101e80f0), taken only while asked for: D, the time, the help line cleared; Besieged's
-/// orb icons; when not calculating, each region's owner icon and its zones' (FUN_101e80f0's loops).
+/// The map's ask (FUN_101e9600 from cnqframe's open): c2s 0x05A when the gate lets it go.
+fn request(w: &mut World) {
+    if w.conquest.ask() {
+        let _ = w.net.commands.send(NetCommand::Packet { id: 0x05A, body: Vec::new() });
+    }
+}
+
+/// s2c 0x05E (FUN_100998a0): handed to the callback the request set (FUN_101e96c0, FUN_101e80f0 in 30261006_0) and
+/// dropped when none is set, so a reply nothing asked for is not taken. The callback: D, the time, the help line
+/// cleared (FUN_1013b720(0, 2)); Besieged's orb icons; when not calculating, each region's owner icon and its zones'.
 pub fn on_conquest(w: &mut World, p: &[u8]) {
-    let d = &mut w.conquest;
-    if !d.pending {
+    if !w.conquest.take(p) {
         return;
     }
-    d.d = (0..0xb0).map(|i| p.get(4 + i).copied().unwrap_or(0)).collect();
-    (d.stamp, d.have, d.pending, d.busy) = (Some(Instant::now()), true, false, false);
     if let Some(m) = w.cnq.as_mut() {
         m.help = None;
     }
-    let d = &mut w.conquest;
-    if d.word(0x98) != 0 {
-        for e in d.markers[1].iter_mut().skip(1).take(5) {
-            (e.icon, e.icon2) = (0x14, 0x14);
+}
+
+impl Data {
+    /// FUN_100998a0 -> FUN_101e96c0 on the data from @4; false when no request is out.
+    fn take(&mut self, p: &[u8]) -> bool {
+        if !self.pending {
+            return false;
         }
-        let k = (d.word(0x9c) & 3) as usize + 1;
-        if let Some(e) = d.markers[1].get_mut(k) {
-            (e.flags, e.icon) = (e.flags | 4, 0x13);
-        }
-    }
-    if d.byte(0x94) == 0 {
-        let clamp = |v: i32| if (0..=0x17).contains(&v) { v as u8 } else { 8 };
-        for r in 0..19 {
-            let owner = d.byte(0x19 + 4 * r) as i8 as i32;
-            let Some(region) = d.markers[0].get_mut(4 + r) else { break };
-            region.icon = clamp(owner + 3);
-            let id = region.id;
-            for z in d.markers[0].iter_mut().skip(23).filter(|z| z.id == id) {
-                z.icon = clamp(if (1..=3).contains(&owner) && z.b7 & 1 != 0 { owner + 0xe } else { owner + 9 });
+        self.d = (0..0xb0).map(|i| p.get(4 + i).copied().unwrap_or(0)).collect();
+        (self.stamp, self.have, self.pending, self.busy) = (Some(Instant::now()), true, false, false);
+        if self.word(0x98) != 0 {
+            for e in self.markers[1].iter_mut().skip(1).take(5) {
+                (e.icon, e.icon2) = (0x14, 0x14);
+            }
+            let k = (self.word(0x9c) & 3) as usize + 1;
+            if let Some(e) = self.markers[1].get_mut(k) {
+                (e.flags, e.icon) = (e.flags | 4, 0x13);
             }
         }
+        if self.byte(0x94) == 0 {
+            let clamp = |v: i32| if (0..=0x17).contains(&v) { v as u8 } else { 8 };
+            for r in 0..19 {
+                let owner = self.byte(0x19 + 4 * r) as i8 as i32;
+                let Some(region) = self.markers[0].get_mut(4 + r) else { break };
+                region.icon = clamp(owner + 3);
+                let id = region.id;
+                for z in self.markers[0].iter_mut().skip(23).filter(|z| z.id == id) {
+                    z.icon = clamp(if (1..=3).contains(&owner) && z.b7 & 1 != 0 { owner + 0xe } else { owner + 9 });
+                }
+            }
+        }
+        true
     }
 }
 
@@ -1319,4 +1352,65 @@ fn forces_gauge(gu: &mut GameUi, x: f32, y: f32, v: i32) {
     };
     gu.sprite_scaled_blend("menu    windowps", 97, x + 4.0, y + 1.0, f, 1.0, tint, blend);
     gu.sprite("menu    windowps", 38, x, y, WHITE);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// s2c 0x05E as a retail zone-in brought it (capture, client 30261102_0): only the head; the rest is zero.
+    fn reply() -> Vec<u8> {
+        let mut p = vec![0x5e, 0x5a, 0x04, 0x00, 0x1e, 0, 0, 0];
+        p.resize(0xb4, 0);
+        p[0x1e..0x26].copy_from_slice(&[0x1e, 0x2d, 0x31, 0x01, 0x36, 0x27, 0x0c, 0x03]);
+        p
+    }
+
+    /// The zone-in asks even right after a reply (win_cnqframe_v30 zeroes the gate's stamp); the map's ask waits.
+    #[test]
+    fn zone_in_ask_skips_the_gate() {
+        let mut d = Data::new(None);
+        assert!(d.zone_in());
+        assert!(d.take(&reply()));
+        assert!(!d.ask(), "the map's ask is held for 120 s after a reply");
+        d.zone_load();
+        assert!(d.zone_in());
+        assert!(d.busy && !d.have);
+    }
+
+    /// A request out: the next ask, zone-in or not, sends nothing until the reply or the zone load.
+    #[test]
+    fn one_request_out() {
+        let mut d = Data::new(None);
+        assert!(d.zone_in());
+        assert!(!d.zone_in());
+        d.zone_load();
+        assert!(d.zone_in());
+    }
+
+    /// FUN_100998a0: a 0x05E nothing asked for is dropped; the zone load drops the callback with it.
+    #[test]
+    fn unasked_reply_dropped() {
+        let mut d = Data::new(None);
+        assert!(!d.take(&reply()));
+        assert!(!d.have);
+        d.zone_in();
+        d.zone_load();
+        assert!(!d.take(&reply()));
+        d.zone_in();
+        assert!(d.take(&reply()));
+        assert!(d.have && !d.pending && !d.busy);
+        assert_eq!(d.byte(0), 0x1e);
+        assert_eq!(&d.d[0x1a..0x22], &[0x1e, 0x2d, 0x31, 0x01, 0x36, 0x27, 0x0c, 0x03]);
+        assert!(!d.take(&reply()), "one-shot");
+    }
+
+    /// The zone load keeps the colonization callback (DAT_10489048 is not among FUN_10093720's clears).
+    #[test]
+    fn zone_load_keeps_colonization() {
+        let mut d = Data::new(None);
+        d.zone_in();
+        d.zone_load();
+        assert!(d.colon_pending && !d.pending && !d.camp_wanted);
+    }
 }

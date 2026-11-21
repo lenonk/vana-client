@@ -1314,7 +1314,7 @@
             },
             {
               "args": "reload",
-              "help": "Reads this world's macros file (macros-<World>.json) again."
+              "help": "Reads this world's macros file (macros-<World>.json) and sticky.json again."
             },
             {
               "args": "wipestock",
@@ -1332,14 +1332,14 @@
       "files": [
         {
           "path": "init.lua",
-          "sha256": "973862ea736c7e265bc7861d650f15f08490f024a34b69948302f8a4de5a769d",
-          "size": 5754,
+          "sha256": "1e6d6f56f37036427d6f6425775109770fc7c3e651c4c3358382b56a3265ed64",
+          "size": 5823,
           "url": "https://raw.githubusercontent.com/lenonk/vana-client/master/crates/vana-client/assets/mods/hotbar/init.lua"
         },
         {
           "path": "mod.toml",
-          "sha256": "ca4e0fb1d17c8a5696972a3c21863f1c7e86bdf24a9b2b05f864f5290678bf02",
-          "size": 4215,
+          "sha256": "e8974ff93048e028fa616ecde296fca91122d402e4c57a39e2d6e60e45ba6b0f",
+          "size": 4231,
           "url": "https://raw.githubusercontent.com/lenonk/vana-client/master/crates/vana-client/assets/mods/hotbar/mod.toml"
         },
         {
@@ -1368,8 +1368,8 @@
         },
         {
           "path": "src/data.lua",
-          "sha256": "14a1039554c699de0410e450f9ea9058bb8c59476bcf673472a8a97832fe7be2",
-          "size": 15962,
+          "sha256": "2e3995e9a232a76de707c26b74601087924a410a549775fe41ab20d8feb101f9",
+          "size": 21259,
           "url": "https://raw.githubusercontent.com/lenonk/vana-client/master/crates/vana-client/assets/mods/hotbar/src/data.lua"
         },
         {
@@ -1392,8 +1392,8 @@
         },
         {
           "path": "src/manager.lua",
-          "sha256": "bca8cbce43b50c74606c553bc5cc825c983ee16174b9745d3e1be5208577f975",
-          "size": 32263,
+          "sha256": "ff2f2936ba7ab6e76221923ccf1f926101ac966ea86e5a1cc17642622c7e998f",
+          "size": 33289,
           "url": "https://raw.githubusercontent.com/lenonk/vana-client/master/crates/vana-client/assets/mods/hotbar/src/manager.lua"
         },
         {
@@ -1416,8 +1416,8 @@
         },
         {
           "path": "src/palette.lua",
-          "sha256": "97102a5fdff6b9705552437dfb13fa82c191a8315d8519bb7f5b7b2fda9e378b",
-          "size": 6355,
+          "sha256": "1da134efa4b918221020edd55001fd9896fdf9108bfa47b4d50ad1ae5da8eede",
+          "size": 6497,
           "url": "https://raw.githubusercontent.com/lenonk/vana-client/master/crates/vana-client/assets/mods/hotbar/src/palette.lua"
         },
         {
@@ -1442,7 +1442,7 @@
       "id": "hotbar",
       "kind": "lua",
       "name": "Hotbars",
-      "version": "1.12.5"
+      "version": "1.13.1"
     },
     {
       "authors": [],

@@ -60,12 +60,20 @@ rune still works as before.
 for anything the Builder gets wrong; the slot keeps the picked action's icon and recast when your line names none.
 Clear the field to go back to the built line.
 
+**Sticky macros:** set **Sticky** to *Every job and character* in the Builder and the macro shows in every job's
+library (a teal edge marks its tile), on every character and world, for a Warp Ring or a mount you want on any job.
+Edit or delete it from any job's library; a slot of any job can name it. Set it back to *This job only* and it goes
+to the job you are viewing, with a copy for each other job of this world that has it on a slot. Copy keeps the
+setting. Two clients open at once share the sticky macros: each change takes turns on `sticky.json` and starts from
+what the other saved, and the other client shows it after `//hb reload` or a relog.
+
 The **palette** (`//hb palette`, or Palette on the Library page) shows the main job's library as tiles on the screen;
 drag its background to move it. Drag a tile onto a slot of the bars to put that macro there; click one to edit it.
 
 The manager's **Config** page sets each bar's modifier and key row, and a slot's key.
 
-The macros are kept in `mod-data/hotbar/files/macros.json`:
+The macros are kept in `mod-data/hotbar/files/macros-<World>.json` (`macros.json` until the world is known), and
+sticky ones in `sticky.json` beside it, with ids `s1`, `s2`, ...; a slot names one as `{ "ref": "s1" }`:
 
 ```json
 {
@@ -86,5 +94,5 @@ The macros are kept in `mod-data/hotbar/files/macros.json`:
 - `//hb show`, `//hb hide`: the bars for this session.
 - `//hb palette` shows or hides the palette.
 - `//hb run <bar> <slot>`: runs a slot (for a key bind).
-- `//hb reload`: reads macros.json again.
+- `//hb reload`: reads the macro files again.
 - `//hb wipestock` empties the game's macro sets after keeping a copy; `//hb restorestock` puts it back.

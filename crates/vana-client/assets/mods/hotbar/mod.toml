@@ -1,5 +1,5 @@
 name = "Hotbars"
-version = "1.12.5"
+version = "1.13.1"
 description = "Hotbars of multi-line macros with their actions' icons and recasts, loaded by main job and sub job; a macro library with a builder and a palette to drag from. Play with the keyboard's hotbars or the gamepad's crossbars (LT, RT or both with the d-pad, face buttons, L1 / R1 and L3 / R3), and switch between them with //hb mode. Gamepad mode needs input.capture (to take the triggers and buttons) and automation (a slot fires from a timer, since a pad filter cannot wait for a macro's waits)."
 authors = ["Arusia"]
 permissions = ["actions", "automation", "input.capture", "ui.native"]
@@ -105,7 +105,7 @@ forms = [
   { args = "mode gamepad", help = "Uses the gamepad crossbars: hold LT, RT or both, then the d-pad, a face button, L1 / R1 or L3 / R3." },
   { args = "assign", help = "Starts or ends assigning crossbar slots with the controller (or hold a trigger and press Back; a trigger and Start open the manager): a slot press opens the library's list, A puts the macro there." },
   { args = "run <bar> <slot>", help = "Fires a slot." },
-  { args = "reload", help = "Reads this world's macros file (macros-<World>.json) again." },
+  { args = "reload", help = "Reads this world's macros file (macros-<World>.json) and sticky.json again." },
   { args = "wipestock", help = "Empties the game's macro palette (it can be restored)." },
   { args = "restorestock", help = "Puts the game's macro palette back." },
 ]

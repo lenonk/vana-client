@@ -3408,7 +3408,8 @@ fn roofed(g: &crate::dat::generator::Generator) -> bool {
 /// FUN_10052eb0 / FUN_1003afd0 for the modes the zone uses; actor modes come with the battle triggers.
 fn attach(inst: &mut Instance, f: &Frame, voyage: Mat4) {
     match inst.mode {
-        0 => inst.matrix = None,
+        // FUN_10052eb0 returns at once for mode 0: the matrix stays (an element sub-clone's, set at its spawn).
+        0 => {}
         // Sun / moon (FUN_10180700): a = day fraction x 2pi; moon dir (sin a, cos a, 0), the sun opposite;
         // placed 1000 / 900 units from the eye against the direction *(inf: the rotation of DAT_105ec978 is
         // left out)*; FUN_1003be10 0xe / 0xf turn that point by the voyage matrix's rotation, eye included.

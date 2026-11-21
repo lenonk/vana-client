@@ -110,20 +110,21 @@ pub fn frame(w: &mut World) {
     }
 }
 
-/// FUN_100973f0's model colour, only while no task holds the actor (actor +0x84 == 0). InvisFlag: 0x27808080 on our
-/// model, alpha 0 on another's (not retail: a party member keeps 0x27, the user's call 2026-10-25), and +0x128 bit
-/// 7 set. Without it: that bit clears to 0x80808080, and any colour with alpha left goes back to 0x80808080.
+/// FUN_100973f0's model colour. InvisFlag, only while no task holds the actor (+0x84 == 0): 0x27808080 on our model,
+/// alpha 0 on another's (not retail: a party member keeps 0x27, the user's call 2026-10-25), and +0x128 bit 7 set.
+/// Without it: that bit clears to 0x80808080 even while held, then (unheld) any colour with alpha left goes back.
 fn colour(w: &mut World, id: u32) {
-    if w.effects.holds(id) {
-        return;
-    }
+    let held = w.effects.holds(id);
     let inv = invisible(w, id);
     let faint = id == w.my_id || w.party.members().any(|r| r.id == id);
     let Some(a) = w.actors.get_mut(&id) else { return };
     let alpha = if inv {
+        if held {
+            return;
+        }
         a.invis_colour = true;
         if faint { 0x27 as f32 } else { 0.0 }
-    } else if std::mem::take(&mut a.invis_colour) || a.alpha >= 1.0 {
+    } else if std::mem::take(&mut a.invis_colour) || (!held && a.alpha >= 1.0) {
         OPAQUE
     } else {
         return;

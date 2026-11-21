@@ -273,7 +273,7 @@ pub fn countdown(w: &World) -> Option<(f32, String, bool, u32)> {
 }
 
 /// FUN_1021f360: the bottom of the first window up of cnttime, casttime, gaugewin and titlewin.
-fn anchor(gu: &GameUi, w: &World) -> f32 {
+pub(super) fn anchor(gu: &GameUi, w: &World) -> f32 {
     let bottom = |name: &str, top: Option<f32>| {
         gu.layout(name).map(|m| top.unwrap_or(m.elements[0].y as f32) + m.elements[0].h as f32)
     };

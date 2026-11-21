@@ -560,6 +560,8 @@ pub enum NetEvent {
     /// s2c 0x05E (GP_SERV_COMMAND_CONQUEST) and 0x071 (campaign / colonization), raw.
     Conquest(Vec<u8>),
     Influence(Vec<u8>),
+    /// s2c 0x072 (FUN_100999a0), the reply to c2s 0x112, raw (client/battlefield.rs).
+    BattlefieldInfo(Vec<u8>),
     InspectMessage(Vec<u8>),
     /// s2c 0x04D (GP_SERV_COMMAND_FRAGMENTS): the whole packet (client/servmes.rs reads it).
     Fragments(Vec<u8>),
@@ -2579,6 +2581,7 @@ impl Session<'_> {
             0x048 => self.tx.send(NetEvent::Concierge(p.data))?,
             0x05E => self.tx.send(NetEvent::Conquest(p.data))?,
             0x071 => self.tx.send(NetEvent::Influence(p.data))?,
+            0x072 => self.tx.send(NetEvent::BattlefieldInfo(p.data))?,
             0x0C9 => self.tx.send(NetEvent::InspectEquip(p.data))?,
             0x008 if p.data.len() >= 4 + 0x30 => {
                 self.tx.send(NetEvent::KnownZones(p.data[4..4 + 0x30].try_into().unwrap()))?

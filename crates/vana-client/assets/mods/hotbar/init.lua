@@ -11,18 +11,19 @@ local chooser = require("src.chooser")
 local mode = require("src.mode")
 local pad = require("src.pad")
 
-local ok, err = data.init({
+local ok, err, bad = data.init({
   read = fs.read,
   write = fs.write,
+  lock = fs.lock,
   decode = json.decode,
   encode = function(value) return json.encode(value, { pretty = true }) end,
   log = log.warn,
 })
-local function read_failed(why)
-  chat.add("Hotbars: " .. data.file() .. " could not be read (" .. tostring(why) .. "); a copy was kept as "
-    .. data.file() .. ".bad.")
+local function read_failed(why, file)
+  file = file or data.file()
+  chat.add("Hotbars: " .. file .. " could not be read (" .. tostring(why) .. "); a copy was kept as " .. file .. ".bad.")
 end
-if not ok then read_failed(err) end
+if not ok then read_failed(err, bad) end
 
 local function lists_changed()
   manager.refresh()
@@ -136,9 +137,9 @@ timer.every(0.5, detect)
 local function use_world()
   local ok, info = pcall(game.info)
   if not ok or type(info) ~= "table" then return end
-  local switched, loaded, why = data.set_world(info.server)
+  local switched, loaded, why, file = data.set_world(info.server)
   if not switched then return end
-  if loaded then changed() else read_failed(why) end
+  if loaded then changed() else read_failed(why, file) end
 end
 
 refresh()
@@ -188,8 +189,8 @@ commands.register("hb", function(cmd, a, b)
   elseif cmd == "restorestock" then
     stock.restore()
   elseif cmd == "reload" then
-    local loaded, why = data.load()
-    if not loaded then read_failed(why) end
+    local loaded, why, file = data.load()
+    if not loaded then read_failed(why, file) end
     changed()
   else
     usage()

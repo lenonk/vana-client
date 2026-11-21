@@ -24646,3 +24646,205 @@ Addresses are 30261006_0's.
 - FUN_100b0960 shifts the choice's hide mask as a signed int (`(int)mask >> 1`), so past row 32 its sign bit hides
   (or shows) every further row. Ours shifted a u32: rows 33 and on always showed (the battlefield menus' trailing
   "." rows, e.g. Horlais Peak 7611).
+
+## InvisFlag cleared under a held actor (2026-11-17)
+
+- FUN_100973f0 gates only two writes on the hold count (+0x84 == 0): the InvisFlag colour (0x27808080 / 0x00808080
+  with +0x128 bit 7 set) and the last step (a colour with alpha left back to 0x80808080). With InvisFlag clear, the
+  bit 7 check (cleared, colour 0x80808080) runs before the hold test, so the flag's colour is undone even while a
+  task holds the actor.
+- Ours returned for all of it while held. A weapon aura's loop (Excalibur, file 65916: `!in1` -> `auon` -> `lop0`,
+  never ending) starts again the moment InvisFlag clears and holds the actor, so `!hide` off left Nine translucent
+  for good (user, 2026-11-17). wepfx::colour now follows the order above.
+- Seen live: Lnxcsfix as RDM 99 with Excalibur 119 III: `!hide` translucent (after a bot's Cure tasks on her ended),
+  `!hide` again solid with the aura, `!hide status` 0.
+
+## Ctrl / Alt shortcuts: the common test (2026-11-17)
+
+Addresses are 30261006_0's.
+
+- The shortcut records (built in FUN_101ae140) run each frame in the field (FUN_101ae3e0), each through FUN_101adf20:
+  the press edge, then its condition set (FUN_101ae010, the set number from the record's +0x100):
+  - Set 1, A "/attack" (0x3b) and H "/heal" (0x3d): no event hold (FUN_10087070(0)), plus the common part.
+  - Set 4, E Equipment (0x36), I Items (0x39), C check / talk (0x3f) and M / J / W / B (0x41 / 0x7f / 0x80 / 0x9f):
+    no event hold, the UI shown, no window with flag 0x20000 (FUN_1015ecc0), plus the common part.
+  - The common part: no sub-target prompt (T +0x59, +0xc4; T = DAT_1057876c), not dead (own status not 2 / 3), no
+    Num+ focus (T +0x68 == 0: neither the log nor the status icons), not in Mog House layout mode (DAT_106631d4 +0x1c
+    == 0).
+- Ours checked M / J / W / B only for an event, death and the prompt, and A / H / E / I / C for nothing.
+  - Alt+A under a forgotten prompt sent /attack. Then the battle menu opened at the engage and cancelled the prompt.
+  - The cancel put back the prompt's saved target and lock: the monster that died before. It was dropped at once
+    with the lock (user, 2026-11-17).
+  - The prompt in that run was most likely the engaged battle menu's Switch Target (Enter on its first row) *(inf:
+    from the key log)*.
+- All of them now share one test (mod.rs shortcut_ok): no event, alive, no prompt (or party cursor), no Num+ focus
+  (log_active, log_focus != 2), no layout; E / I / C / M / J / W / B also no 0x20000 window (World.main_open). The
+  UI-shown part needs nothing: with the UI hidden no key arm runs.
+- egui-winit turns Ctrl+C into a Copy event before any key event, so the Copy arm takes the same test.
+- Opening a prompt is now logged with its callback and the saved target and lock.
+- Seen live: Lnxcsfix with a `/ma "Cure" <st>` prompt up: Alt+A sent nothing; after Escape it sent /attack. Ctrl+C
+  under the prompt checked nothing (after Escape: "examines you"); Ctrl+M over the map opened nothing (after Escape:
+  the magic list).
+
+## Distortion reads the scene in place (2026-11-18)
+
+- User report: many effects, fire spells most, looked like they played at a low frame rate.
+- They did. The cost was in the frame itself, not in effect timing:
+  - Offscreen, Fire's elements change every 0.2-tick step: fx-shot with a fractional step, a temporary
+    FFXI_FX_DT not kept.
+  - Live, FFXI_PERF on Lnxcsfix (BLM 75, Fire III on a Snipper, frame limit 144): 41.7 fps for the 2 s of the impact,
+    GPU 16.96 ms a frame of which fx draw was 13.42 ms (0.3 before), worst gap 62.5 ms.
+- Each CMoDist / CMoVuDist element copied the whole colour target before its 256x256 copy pass (section "Distortion
+  / heat haze"), and so did the squeeze of the DistModel / DistRing / DistMorph variants. A fire spell's dozens of
+  haze elements made dozens of full-size copies a frame. Retail copies only the diamond's screen box.
+- The copy pass draws into the 256x256 target and only reads the scene, so it now samples the colour target itself,
+  through a view in the copy's format, when the target can be bound. The swapchain image cannot, and still takes the
+  copy. What it reads is the same: the scene as drawn up to that element, the earlier distortions included.
+- Seen live (same test): 89..92 fps during the impact, fx draw 2.0..2.4 ms, worst gap 31.7 ms. That run's baseline
+  was about 105 fps.
+- Left: each distortion element still ends the effect pass and opens two (CPU encode up to 3.9 ms a frame in the
+  impact). Batching elements whose boxes do not overlap would need their screen boxes on the CPU.
+
+## CMoVuDist repeats in compute (2026-11-18)
+
+- After "Distortion reads the scene in place", a fire spell's impact still split the effect pass about 600 times a
+  frame. Fire III (file 2946, `fair/g004`) has up to 20 live CMoVuDist elements at n = 10, each repeat ending the pass,
+  running the 256x256 copy pass and opening the pass again. Live: about 4 ms of CPU encode a frame in the impact.
+- Ours now runs an element's repeats in compute (render/effects.rs DistIter, effects.wgsl "repeats in compute"):
+  - dist_region: the screen region both passes touch (the diamond's box and the shifted fan, 2 pixels wider), the
+    copy's texel rect, the shared geometry, and the indirect group counts.
+  - dist_load: the region's colour (as stored) and depth, once.
+  - Per repeat: dist_copy (vs_dist_copy / fs_dist_copy) and dist_fan (vs_dist + fragment variant 9 + SRCALPHA /
+    INVSRCALPHA colour-only blend + LESSEQUAL depth, written by flag 12). They sample by hand as the copy sampler does
+    (linear with 8-bit sub-texel weights, MIRROR), cover as the rasteriser does (pixel centres, 1/256 snapping,
+    top-left rule), and encode / decode sRGB in linearize mode.
+  - vs_dist + fs_dist_put write the region back once, under the fan, with the fan's depth state.
+  - So one break of the effect pass per element, not one per repeat; the repeat cap goes from 64 to retail's 512.
+  - Used when the scene and its depth can be bound; else the passes as before. The offscreen target (render_pngs_lit)
+    can be bound now, so the offscreen tools take the compute path too.
+- Checked offscreen against the passes (fx-shot 232, Fire III, every 20 ticks): identical outside the VuDist frames.
+  Within them, at most 8 levels on a few dozen pixels and 1..2 on the rest (sampling precision over the 10 repeats).
+- Live (Lnxcsfix BLM 75, Fire III on a Snipper, no frame limit, back to back in the same weather): the impact cost
+  +2.0 ms a frame with the passes (CPU encode +2.3 ms) and +1.1 ms with the compute repeats (CPU +0.5, GPU +1.0).
+- Not modelled: a fan triangle with a point behind the eye is dropped where the rasteriser would clip it. The
+  write-back (vs_dist_put) drops the same triangles, so it never writes a pixel dist_load did not read (review). Not
+  seen with Fire III: its VuDist elements face the camera, so their five points share one depth.
+
+## A scheduler motion that follows a counted one takes over its pose (2026-11-17)
+
+- User report: at the end of a trust cast a Mithra holds both hands out in front. Ours dropped them to her sides for
+  a moment, then raised them again.
+- The cast's scheduler (Nine's log, spell 922):
+  - `ms0` (count 8, 150 ticks);
+  - then `ms1` (hands out, count 1), stretched over its op's 80 ticks, out blend 0;
+  - then `ms2` (count 1, 100 ticks, blend in 20), started at the tick `ms1` ends.
+- Ours, in the same frame:
+  - saw `ms1`'s counted end first and brought the status motion back (blend in 0: a snap to idle);
+  - then queued `ms2`, which blended in over 20 ticks from that idle pose.
+- Retail: a counted end with nothing queued after it sets model +0x79c (vtable +0x1fc(1)), and queueing a region-0
+  motion clears it (vtable +0x1fc(0)). FUN_100c6380 brings the status motion back only while it is set (section
+  "Event motions, actor fades, PC battle motions"). So `ms2`, queued as `ms1` ends, keeps the status motion out, and blends from `ms1`'s last pose.
+- Ours now collects the frame's op-0x05 starts (the swing's one-shot and the play's) before the status test. A
+  counted end counts only when none starts that frame.
+- Seen live (Lnxcsfix, Mithra, Lehko Habhoka in West Ronfaure, side view, a shot every 0.15 s): `ms1 -> ms2`, the
+  hands out throughout. Nine's log: 14 of her 15 trust casts went `ms1 -> idl -> ms2` before.
+
+## Mode-0 generators keep their matrix: Nightmare Scythe's discs (2026-11-17)
+
+- User report: Nightmare Scythe was missing its two spinning discs that slice through the target.
+- Mithra file 37131 (37067 + animation 64), its `main`:
+  - At t95, op 0x02 starts `g0a0`..`g0a2` (attach 0xc402; elements of life 15; update op 0x33).
+  - Each of their elements clones `g0b0`..`g0b2` (emission op 0x53).
+  - The `g0b` clones draw D3m 4441, a quad textured with the green crescent blades (texture 4441, 256x128).
+  - They run along the Vtx `line` with keyframe `k004` (emission op 0x54, update op 0x34), each disc living 90 ticks.
+- FUN_10052eb0 (the per-frame generator attach) returns at once for attach mode 0, so the matrix stays.
+- Ours reset a mode-0 instance's matrix to none every frame. That was written for zone generators, before element
+  sub-clones existed.
+  - An element sub-clone (attach `&= 0xfffefff0`: mode 0) kept the matrix ops 0x53 / 0x6a gave it only while the
+    driving element re-placed it every frame (update op 0x33 / 0x46).
+  - Once the parent element died, or at once without those ops, the clone's discs were drawn about the world origin.
+- Ours now leaves a mode-0 instance's matrix as it is. Test fx::tasks::tests::element_clone_keeps_its_matrix.
+- Seen offscreen (`fx-shot 232 --file 37131`): the two discs come in above the target, grow and slice down through it
+  (t108..t174), where before nothing was drawn there.
+
+## A freed skill file takes its effects: Nightmare Scythe's red sphere (2026-11-17)
+
+- User report: Nightmare Scythe's red sphere (file 37131 `g000`, endless, flag 0x1000) stays after the weapon skill.
+  `st44`'s op 0x1e stop misses it in retail too ("Dolls go with their actor"; checked again):
+  - op 0x1e passes the child task's actors (0x10058d5f: FUN_10056c30 / FUN_10056c40), and op 0x03 starts the child
+    on the undolled pair;
+  - FUN_10052a50 compares the clone's own actor 2 (clone +0x30, FUN_1003a8c0, asm 0x10052b38..51), the doll since
+    op 0x23 moved it (FUN_10061da0).
+  - That note's conclusion, that retail ends `g000` only with the target, was wrong.
+- What ends it is the skill file going:
+  - The skill files sit on the caster's model list (+0x7e4) as 0x24-byte entries (FUN_100d4410; class FUN_1001b710,
+    vtable 0x1032a2e0) holding the file's resource at +0x1c, referenced when used (FUN_1001b7b0 -> FUN_10071e90).
+  - At `main`'s end, FUN_100d44b0(caster, 6) unlinks every kind-6 entry and deletes it (vtable +0x18(1)).
+  - The destructor (FUN_1001b760 -> FUN_1001b7d0) releases the resource (FUN_10071ec0) and calls FUN_10073b20, which
+    deletes the file's resource tree once its count is 0.
+  - A clone references only its template (the +0x28 walk of FUN_10071e90 / FUN_10071ec0 stops at a node whose
+    handle is itself), so live clones do not keep the file.
+  - So the clones of its generators go with it *(inf: the tree's delete takes the clones of its templates)*.
+- Ours: Effects::release_file kills every live instance and task of the file. The client calls it for each dropped
+  skill file that no other actor holds (extra list or skill_want). Test fx::tasks::tests::released_skill_file_takes_its_clones.
+- Seen live (Lnxcsfix, Mithra DRK 75, Mythril Scythe, a Snipper in Valkurm Dunes): the sphere goes at +5.4 s, when
+  "skill files dropped" is logged; before, it sat by the corpse until the despawn about 15 s later.
+
+## Records of Eminence: the search, and the modern Journal follows the log (2026-11-19)
+
+Ours (not retail): client/roe.rs (follow_tree, search_all / search_rows / search_pick), modern/journal.rs (roe_search_open),
+modern/search.rs (the "roe" list).
+
+- LSB sends the whole log (s2c 0x112, Offset 0..3) on every completion (roeutils::SetEminenceRecordCompletion), and a
+  record flagged `retro` in roe_records.lua completes as it is taken when its condition already holds (the Windurst
+  mission chain 1355.. does, with its item reward). The four parts land in one frame, so FUN_10231080's wait (flags
+  0x110, 0x111 and the whole 0x112, rows built again from row 0 when one goes) never sees the log go, and an open
+  category keeps hiding the follow-up a completion opens until it is left and entered again. Retail servers do the
+  same: in retail captures (Memoria, 2026-11-17, 9 sessions) 80 of 89 0x112 bursts carry parts 0..3 at one timestamp,
+  including both bursts with no 0x110 / 0x111 beside them (7 split by 1-2 ms, 2 at zone-in by 342 / 375 ms). Part 0
+  clears the log bit and part 3 sets it (quests.rs), so the stale list is retail's too and the classic window keeps it.
+- The modern Journal (ours) follows the log: once built, mode 3's rows are worked out again each frame from the
+  current category (FUN_10231000 over its 28 children at most) and replace the rows when they differ, the cursor kept
+  on its row (follow_tree, only with the modern UI on; test roe::tests::refollow_keeps_the_cursor_row). This covers
+  every condition input (the log, job levels, zones, skills, Unity, the 0x110 bytes). Seen live: Lnxcsfix in Tutorial
+  with 937 (Alter Ego: Joachim) not done, completed by a server timer (setEminenceCompleted), and Intermediate came
+  into the open list under Basics with the cursor left on Basics.
+- The modern Journal's Records of Eminence tab (its entries or any of its lists) is one of the search lists: typing
+  searches every objective of the tree, once each. A shown one has its categories as the note ("Tutorial › Basics"); a
+  hidden one (a condition failing on its way: the walk tests each condition alone) is greyed with the objective that
+  opens it ("after An Eminent Scholar 3", condition type 1) or "hidden"; a set record outside the tree "current".
+  A set record the tree hides (a condition that stopped passing after it was set: the rotation, type 6, or the Unity
+  leader, type 7, which reads 0 until the recasts come after login) is "current" too and opens Current
+  (set_in_current, test roe::tests::set_objective_hidden_in_the_tree_is_current).
+  Shown hits rank before hidden ones among equal scores.
+- A pick: a set objective opens Current, any other the Objective List with the stack built down its categories (each
+  parent left on the row that leads there, for Escape), the cursor on it and its description and prompt as Enter
+  (Set objective? on Yes). The open sends c2s 0x117 and clears the 0x110 flag (FUN_100871a0), so the rows come a frame
+  or more later: List.want holds the pick until they are built. A hidden one opens the deepest category the list
+  reaches on its way, the cursor on row 0. Seen live (Lnxcsfix): "always" found Always Stand on 117 greyed, after An
+  Eminent Scholar 3, and Enter opened Tutorial > Intermediate; "first step" found First Step Forward (Tutorial ›
+  Basics) and Enter put the cursor on it with Set objective? up.
+- LSB refuses a record its Lua lacks: "The record #N is not implemented at this time." (RoE System, NS say); the
+  user's log showed 1064 taken three times for that reason.
+
+## Auto-sort: the list order kept through a zone change (2026-11-19)
+
+- Ours: the zone-in reset of the inventory (LSB re-sends every container after c2s 0x00C) emptied the list order too,
+  so the resend refilled each list in slot order, and #21 had kept our keep-sorted path off for the inventory
+  whenever Auto-sort (config 0x9a) was on.
+- Retail's view (30261006_0): FUN_1021c380 syncs it with the slots each frame the inventory has settled. FUN_1021c210
+  compares the row's item id (record u16 @+0x80 + slot * 0x18) with the slot's: the same id keeps its row, another
+  id drops it (FUN_1021c680) and appends it (FUN_1021c5b0); an emptied slot drops its row. Append and drop both set
+  the view record's +8 to 0x52 (0x1021c654 / 0x1021c764). FUN_1021c4c0 then compares the free slots (FUN_100eb8d0)
+  with +8; 0x52 is above any free count, so with Auto-sort (+5) on and no Manual hold (+6) every frame whose sync
+  added or dropped a row sorts (FUN_1021c7c0) and clears the hold. The login load (every slot appended) is sorted by
+  retail's own Auto-sort, and so is an emptied slot (an item used up, stacks merged).
+- Now the view outlives the reset: Inventory::order with the item id each row took (viewed_ids). A refilled slot with
+  its item keeps its place, one with another item (LSB pushVisitedFurniture fills the Mog Safe with the host's
+  furniture on a Mog House visit) and a new one go last, and at the settle (0x01D State 1) the slots the resend left
+  empty in the loaded containers leave it (Inventory::prune_order). Appends and drops set Inventory::view_changed, and
+  retail_auto_sort compares against 0x52 when the inventory's bit is set. A (re)appended row also counts as new for
+  the keep-sorted path, which stays off for the inventory while 0x9a is on.
+- Tests: items::order_tests::kept_order_survives_a_resend, changed_item_goes_last, view_change_sorts.
+- Seen live (Lnxcsfix, slots pearlsack / wind crystal / cotton cloth / cipher), before the 0x52 reset: sorted at
+  login, still sorted after zoning to Northern San d'Oria and back.

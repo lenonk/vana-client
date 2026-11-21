@@ -213,6 +213,241 @@ fn blend_state(class: usize) -> wgpu::BlendState {
     wgpu::BlendState { color: comp, alpha: comp }
 }
 
+/// CMoDist / CMoVuDist repeats in compute (effects.wgsl "repeats in compute"; ours): per element, the region of the
+/// screen both passes touch is loaded once, FUN_100426f0's copy and fan run on it once per repeat, and the fan writes
+/// it back. Three layouts keep the resources apart: the region pass writes the indirect arguments the others read, and
+/// the write-back draws into the depth the loads read.
+/// Bytes of one element's DistIter geometry (effects.wgsl DIST_GEO vec4s).
+const DIST_GEO: u64 = 16 * 16;
+
+struct DistIter {
+    region_layout: wgpu::BindGroupLayout,
+    iter_layout: wgpu::BindGroupLayout,
+    put_layout: wgpu::BindGroupLayout,
+    region: wgpu::ComputePipeline,
+    load: wgpu::ComputePipeline,
+    copy: wgpu::ComputePipeline,
+    fan: wgpu::ComputePipeline,
+    /// The write-back (vs_dist_put, fs_dist_put) by z write.
+    put: HashMap<bool, wgpu::RenderPipeline>,
+    /// The uniform slot stride (min_uniform_buffer_offset_alignment).
+    stride: u32,
+    /// Job, region, geometry and indirect-argument slots (the region's and the copy's), one per element index, for
+    /// `cap` elements.
+    cap: u32,
+    jobs: wgpu::Buffer,
+    regions: wgpu::Buffer,
+    geo: wgpu::Buffer,
+    args: wgpu::Buffer,
+    /// The 256x256 copy, packed (never cleared).
+    copy_buf: wgpu::Buffer,
+    /// The screen region's colour and depth for `pixels` pixels.
+    pixels: u64,
+    scene: wgpu::Buffer,
+    depth: wgpu::Buffer,
+}
+
+impl DistIter {
+    fn new(
+        device: &wgpu::Device,
+        dmod: &wgpu::ShaderModule,
+        draw_layout: &wgpu::BindGroupLayout,
+        format: wgpu::TextureFormat,
+    ) -> Self {
+        let cs = wgpu::ShaderStages::COMPUTE;
+        let buf_entry = |binding, vis, ty, dynamic| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: vis,
+            ty: wgpu::BindingType::Buffer { ty, has_dynamic_offset: dynamic, min_binding_size: None },
+            count: None,
+        };
+        let rw = wgpu::BufferBindingType::Storage { read_only: false };
+        let job = |vis| buf_entry(2, vis, wgpu::BufferBindingType::Uniform, true);
+        let tex_entry = |binding, sample_type| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: cs,
+            ty: wgpu::BindingType::Texture {
+                sample_type,
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
+        let region_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("effects dist region"),
+            entries: &[job(cs), buf_entry(6, cs, rw, false), buf_entry(7, cs, rw, false), buf_entry(10, cs, rw, false)],
+        });
+        let iter_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("effects dist repeats"),
+            entries: &[
+                job(cs),
+                buf_entry(3, cs, rw, false),
+                buf_entry(4, cs, rw, false),
+                buf_entry(5, cs, rw, false),
+                buf_entry(6, cs, rw, false),
+                tex_entry(8, wgpu::TextureSampleType::Float { filterable: false }),
+                tex_entry(9, wgpu::TextureSampleType::Depth),
+                buf_entry(10, cs, rw, false),
+            ],
+        });
+        let put_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("effects dist write-back"),
+            entries: &[buf_entry(3, wgpu::ShaderStages::FRAGMENT, rw, false)],
+        });
+        let compute = |entry: &str, layout: &wgpu::BindGroupLayout| {
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("effects dist"),
+                layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: None,
+                    bind_group_layouts: &[Some(draw_layout), Some(layout)],
+                    immediate_size: 0,
+                })),
+                module: dmod,
+                entry_point: Some(entry),
+                compilation_options: Default::default(),
+                cache: None,
+            })
+        };
+        let put_pipe_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("effects dist write-back"),
+            bind_group_layouts: &[Some(draw_layout), Some(&put_layout)],
+            immediate_size: 0,
+        });
+        let put = [false, true]
+            .into_iter()
+            .map(|zwrite| {
+                let p = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("effects dist write-back"),
+                    layout: Some(&put_pipe_layout),
+                    vertex: wgpu::VertexState {
+                        module: dmod,
+                        entry_point: Some("vs_dist_put"),
+                        compilation_options: Default::default(),
+                        buffers: &[],
+                    },
+                    primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: super::DEPTH_FORMAT,
+                        depth_write_enabled: Some(zwrite),
+                        depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                        stencil: Default::default(),
+                        bias: Default::default(),
+                    }),
+                    multisample: Default::default(),
+                    fragment: Some(wgpu::FragmentState {
+                        module: dmod,
+                        entry_point: Some("fs_dist_put"),
+                        compilation_options: Default::default(),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format,
+                            blend: None,
+                            write_mask: wgpu::ColorWrites::COLOR,
+                        })],
+                    }),
+                    multiview_mask: None,
+                    cache: None,
+                });
+                (zwrite, p)
+            })
+            .collect();
+        let buf = |label, size: u64, usage| {
+            device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size, usage, mapped_at_creation: false })
+        };
+        use wgpu::BufferUsages as U;
+        let stride = device.limits().min_uniform_buffer_offset_alignment.max(16);
+        Self {
+            region: compute("dist_region", &region_layout),
+            load: compute("dist_load", &iter_layout),
+            copy: compute("dist_copy", &iter_layout),
+            fan: compute("dist_fan", &iter_layout),
+            region_layout,
+            iter_layout,
+            put_layout,
+            put,
+            stride,
+            cap: 0,
+            jobs: buf("effects dist jobs", stride as u64, U::UNIFORM | U::COPY_DST),
+            regions: buf("effects dist regions", 16, U::STORAGE),
+            geo: buf("effects dist geometry", DIST_GEO, U::STORAGE),
+            args: buf("effects dist args", 32, U::STORAGE | U::INDIRECT),
+            copy_buf: buf("effects dist copy", 256 * 256 * 4, U::STORAGE),
+            pixels: 0,
+            scene: buf("effects dist scene", 4, U::STORAGE),
+            depth: buf("effects dist depth", 4, U::STORAGE),
+        }
+    }
+
+    /// Room for `count` elements and a `size` screen; then this frame's bind groups (region, repeats, write-back) over
+    /// the scene `color` (read as stored) and `depth`.
+    fn groups(
+        &mut self,
+        device: &wgpu::Device,
+        count: u32,
+        size: [u32; 2],
+        color: &wgpu::Texture,
+        depth: &wgpu::TextureView,
+    ) -> [wgpu::BindGroup; 3] {
+        use wgpu::BufferUsages as U;
+        let buf = |label, size: u64, usage| {
+            device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size, usage, mapped_at_creation: false })
+        };
+        if count > self.cap {
+            let cap = count.next_power_of_two().max(256);
+            self.jobs = buf("effects dist jobs", cap as u64 * self.stride as u64, U::UNIFORM | U::COPY_DST);
+            self.regions = buf("effects dist regions", cap as u64 * 16, U::STORAGE);
+            self.geo = buf("effects dist geometry", cap as u64 * DIST_GEO, U::STORAGE);
+            self.args = buf("effects dist args", cap as u64 * 32, U::STORAGE | U::INDIRECT);
+            self.cap = cap;
+        }
+        let pixels = size[0] as u64 * size[1] as u64;
+        if pixels > self.pixels {
+            self.scene = buf("effects dist scene", pixels * 4, U::STORAGE);
+            self.depth = buf("effects dist depth", pixels * 4, U::STORAGE);
+            self.pixels = pixels;
+        }
+        let job = wgpu::BindGroupEntry {
+            binding: 2,
+            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                buffer: &self.jobs,
+                offset: 0,
+                size: std::num::NonZeroU64::new(16),
+            }),
+        };
+        fn whole(binding: u32, b: &wgpu::Buffer) -> wgpu::BindGroupEntry<'_> {
+            wgpu::BindGroupEntry { binding, resource: b.as_entire_binding() }
+        }
+        let src = color.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(color.format().remove_srgb_suffix()),
+            ..Default::default()
+        });
+        let region = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("effects dist region"),
+            layout: &self.region_layout,
+            entries: &[job.clone(), whole(6, &self.regions), whole(7, &self.args), whole(10, &self.geo)],
+        });
+        let iter = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("effects dist repeats"),
+            layout: &self.iter_layout,
+            entries: &[
+                job,
+                whole(3, &self.scene),
+                whole(4, &self.depth),
+                whole(5, &self.copy_buf),
+                whole(6, &self.regions),
+                wgpu::BindGroupEntry { binding: 8, resource: wgpu::BindingResource::TextureView(&src) },
+                wgpu::BindGroupEntry { binding: 9, resource: wgpu::BindingResource::TextureView(depth) },
+                whole(10, &self.geo),
+            ],
+        });
+        let put = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("effects dist write-back"),
+            layout: &self.put_layout,
+            entries: &[whole(3, &self.scene)],
+        });
+        [region, iter, put]
+    }
+}
+
 /// A pass into the 256x256 distortion copy that keeps what is there (retail never clears DAT_1047bb88).
 fn dist_copy_pass<'e>(encoder: &'e mut wgpu::CommandEncoder, view: &wgpu::TextureView) -> wgpu::RenderPass<'e> {
     encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -287,6 +522,8 @@ pub struct EffectsGpu {
     wrap_sampler: wgpu::Sampler,
     /// CMoDist: SRCALPHA / INVSRCALPHA, z write by flag 12.
     dist_pipes: HashMap<bool, wgpu::RenderPipeline>,
+    /// CMoDist / CMoVuDist with their repeats in compute (DistIter), when the scene and its depth can be read.
+    dist_iter: DistIter,
     /// DamValueProg by blend class; no z write (flag 0x1000 clear in DAT 27).
     damv_pipes: HashMap<usize, wgpu::RenderPipeline>,
     /// "font    font" of "menu    dmgnum" (file 39542) and its glyph table, once the game UI is in.
@@ -497,16 +734,17 @@ impl EffectsGpu {
         let draw_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("effects draw"),
             entries: &[
-                uniform(0, wgpu::ShaderStages::VERTEX_FRAGMENT),
-                storage(1, true, vs),
-                storage(2, true, vs),
+                // Compute too: the distortion repeats (DistIter) read the element outputs.
+                uniform(0, wgpu::ShaderStages::VERTEX_FRAGMENT | cs),
+                storage(1, true, vs | cs),
+                storage(2, true, vs | cs),
                 storage(3, true, vs),
                 storage(4, true, vs),
                 storage(5, true, vs),
                 storage(6, true, vs),
                 wgpu::BindGroupLayoutEntry {
                     binding: 7,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::FRAGMENT | cs,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Depth,
                         view_dimension: wgpu::TextureViewDimension::D2,
@@ -588,6 +826,7 @@ impl EffectsGpu {
         let pipe = |vs_entry: &str, buffers: &[Option<wgpu::VertexBufferLayout>], class: usize, zwrite: bool| {
             pipe_z(vs_entry, buffers, class, zwrite, wgpu::CompareFunction::LessEqual)
         };
+        let dist_iter = DistIter::new(device, &dmod, &draw_layout, format);
         let flare_pipe = pipe_z("vs_flare", &[], 2, false, wgpu::CompareFunction::Always);
         let glare_pipe = pipe_z("vs_glare", &[], 2, false, wgpu::CompareFunction::Always);
         let fmod = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -931,6 +1170,7 @@ impl EffectsGpu {
             clamp_sampler,
             wrap_sampler,
             dist_pipes,
+            dist_iter,
             damv_pipes,
             dmgnum: None,
             scene_copy: None,
@@ -1631,6 +1871,13 @@ impl EffectsGpu {
                 self.dist_copy_pipe = Some((vf, pipe));
             }
         }
+        // The scene read in place when it can be bound (ours: retail copies only the diamond's box; a full-size copy
+        // per distortion element dropped frames under fire spells). Else the copy, as before.
+        let scene_read = copy_src.filter(|t| t.usage().contains(wgpu::TextureUsages::TEXTURE_BINDING)).map(|t| {
+            let vf = if self.linearize { t.format() } else { t.format().remove_srgb_suffix() };
+            let view = t.create_view(&wgpu::TextureViewDescriptor { format: Some(vf), ..Default::default() });
+            Self::tex_group(&gpu.device, &self.tex_layout, &self.copy_sampler, &view)
+        });
         for &e in &order {
             if let Some(sp) = fx.elems[e as usize].as_ref().and_then(|c| c.spec) {
                 self.spec_group(gpu, fx, sp);
@@ -1667,6 +1914,18 @@ impl EffectsGpu {
             self.gp_vb = Some((b, fx.decal_version, ranges));
         }
         let soft = self.copy_depth(gpu, encoder, target.1, fx, &order);
+        // CMoDist / CMoVuDist through DistIter when the scene and its depth can be read (else the passes below).
+        let has_dist = order.iter().any(|&e| {
+            e < self.count
+                && fx.elems[e as usize].as_ref().is_some_and(|c| matches!(c.draw, Draw::Dist | Draw::VuDist(..)))
+        });
+        let dist_groups = color_tex
+            .filter(|t| {
+                has_dist
+                    && t.usage().contains(wgpu::TextureUsages::TEXTURE_BINDING)
+                    && target.1.texture().usage().contains(wgpu::TextureUsages::TEXTURE_BINDING)
+            })
+            .map(|t| self.dist_iter.groups(&gpu.device, self.count, target.2, t, target.1));
         let Some(group) = self.draw_group.as_ref() else { return 0 };
         let (color, depth, size) = target;
         let (proj, view, eye) = cam;
@@ -1803,10 +2062,12 @@ impl EffectsGpu {
             else {
                 return false;
             };
-            encoder.copy_texture_to_texture(src.as_image_copy(), copy.as_image_copy(), src.size());
+            if scene_read.is_none() {
+                encoder.copy_texture_to_texture(src.as_image_copy(), copy.as_image_copy(), src.size());
+            }
             let mut sp = dist_copy_pass(encoder, &dc.view);
             sp.set_pipeline(sq);
-            sp.set_bind_group(0, cg, &[]);
+            sp.set_bind_group(0, scene_read.as_ref().unwrap_or(cg), &[]);
             sp.draw(0..3, 0..1);
             true
         };
@@ -1847,6 +2108,42 @@ impl EffectsGpu {
                 // FUN_100426f0 (CMoDist pass 1): the diamond copied into the 256x256 target at its screen box, 1:1 up
                 // to 255 pixels a side and squeezed to 255 beyond (vs_dist_copy); pass 2 the shifted fan sampling it.
                 // VuDist: the same diamond n times, each copy holding the last draw (the shift compounds).
+                // DistIter: the element's region loaded once, the n copies and fans in compute, written back once.
+                Draw::Dist | Draw::VuDist(..) if dist_groups.is_some() => {
+                    let (Some([rg, ig, pg]), it) = (dist_groups.as_ref(), &self.dist_iter) else { continue };
+                    let n = match c.draw {
+                        Draw::VuDist(n, weather) => vu_dist_count(n, weather, fx.weather_density).min(512),
+                        _ => 1,
+                    };
+                    drop(pass);
+                    let off = e * it.stride;
+                    gpu.queue.put(&it.jobs, off as u64, bytemuck::cast_slice(&[e, 0u32, 0, 0]));
+                    {
+                        let mut cp = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                            label: Some("effects dist"),
+                            timestamp_writes: None,
+                        });
+                        let args = e as u64 * 32;
+                        cp.set_bind_group(0, group, &[]);
+                        cp.set_bind_group(1, rg, &[off]);
+                        cp.set_pipeline(&it.region);
+                        cp.dispatch_workgroups(1, 1, 1);
+                        cp.set_bind_group(1, ig, &[off]);
+                        cp.set_pipeline(&it.load);
+                        cp.dispatch_workgroups_indirect(&it.args, args);
+                        for _ in 0..n {
+                            cp.set_pipeline(&it.copy);
+                            cp.dispatch_workgroups_indirect(&it.args, args + 16);
+                            cp.set_pipeline(&it.fan);
+                            cp.dispatch_workgroups_indirect(&it.args, args);
+                        }
+                    }
+                    pass = new_pass(encoder);
+                    pass.set_pipeline(&it.put[&(c.flags & 0x1000 != 0)]);
+                    pass.set_bind_group(1, pg, &[]);
+                    pass.draw(0..12, base..base + 1);
+                    bound = None;
+                }
                 Draw::Dist | Draw::VuDist(..) => {
                     let (Some(src), Some((copy, cg)), Some(dc), Some((_, cp))) =
                         (copy_src, self.scene_copy.as_ref(), self.dist_copy.as_ref(), self.dist_copy_pipe.as_ref())
@@ -1859,12 +2156,14 @@ impl EffectsGpu {
                     };
                     for _ in 0..n {
                         drop(pass);
-                        encoder.copy_texture_to_texture(src.as_image_copy(), copy.as_image_copy(), src.size());
+                        if scene_read.is_none() {
+                            encoder.copy_texture_to_texture(src.as_image_copy(), copy.as_image_copy(), src.size());
+                        }
                         {
                             let mut cpass = dist_copy_pass(encoder, &dc.view);
                             cpass.set_pipeline(cp);
                             cpass.set_bind_group(0, group, &[]);
-                            cpass.set_bind_group(1, cg, &[]);
+                            cpass.set_bind_group(1, scene_read.as_ref().unwrap_or(cg), &[]);
                             cpass.draw(0..6, base..base + 1);
                         }
                         pass = new_pass(encoder);

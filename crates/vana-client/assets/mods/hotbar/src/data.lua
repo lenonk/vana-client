@@ -15,6 +15,8 @@
 -- Slot value: a macro { name, label?, lines }, a library reference { ref = "<id>" }, or false in a sub set (blanks
 -- the main set's slot). Library entry: { name, label?, action = { kind, name, target, line? }?, lines } or a group
 -- { name, label?, group = { <entry>, ... } }. Bar and slot keys are strings (JSON object keys).
+--
+-- Sticky entries (ids "s<n>") live in sticky.json, for every world and job: { next_id, library = { "s1": <entry> } }.
 
 local M = {}
 
@@ -25,9 +27,11 @@ M.PAD_BUTTONS = { "up", "right", "down", "left", "y", "b", "a", "x", "lb", "rb",
 
 local LEGACY = "macros.json"
 local FILE = LEGACY
+local STICKY_FILE = "sticky.json"
 
 local deps = nil
 local db = {}
+local sticky = { library = {} }
 
 local function is_table(v) return type(v) == "table" end
 local function key(n) return tostring(n) end
@@ -89,23 +93,32 @@ end
 -- Load and save
 -- ---------------------------------------------------------------------------
 
--- d = { read, write, decode, encode, log? }
+-- d = { read, write, decode, encode, log?, lock? }
 function M.init(d)
   deps = d
   return M.load()
 end
 
+-- A file's table, {} when missing or blank; nil and why when unreadable (a copy kept as <file>.bad).
+local function read_json(file, raw)
+  if not raw or raw:match("^%s*$") then return {} end
+  local ok, parsed = pcall(deps.decode, raw)
+  if ok and is_table(parsed) then return parsed end
+  pcall(deps.write, file .. ".bad", raw)
+  return nil, tostring(parsed)
+end
+
+-- Returns true, or false, why and the file that failed.
 function M.load()
-  db = {}
   local raw = deps.read(FILE)
   if not raw and FILE ~= LEGACY then raw = deps.read(LEGACY) end
-  if not raw or raw:match("^%s*$") then return true end
-  local ok, parsed = pcall(deps.decode, raw)
-  if not ok or not is_table(parsed) then
-    pcall(deps.write, FILE .. ".bad", raw)
-    return false, tostring(parsed)
-  end
-  db = parsed
+  local parsed, why = read_json(FILE, raw)
+  db = parsed or {}
+  local st, swhy = read_json(STICKY_FILE, deps.read(STICKY_FILE))
+  sticky = st or {}
+  if not is_table(sticky.library) then sticky.library = {} end
+  if not parsed then return false, why, FILE end
+  if not st then return false, swhy, STICKY_FILE end
   return true
 end
 
@@ -119,10 +132,38 @@ function M.set_world(name)
   return true, M.load()
 end
 
-function M.save()
-  local ok, err = pcall(function() deps.write(FILE, deps.encode(db)) end)
-  if not ok and deps.log then deps.log("could not save " .. FILE .. ": " .. tostring(err)) end
+local function write(file, t)
+  local ok, err = pcall(function() deps.write(file, deps.encode(t)) end)
+  if not ok and deps.log then deps.log("could not save " .. file .. ": " .. tostring(err)) end
   return ok, err
+end
+
+function M.save() return write(FILE, db) end
+
+local function save_sticky() return write(STICKY_FILE, sticky) end
+
+-- Runs f with sticky.json locked and read afresh, then saves it: every client on this install shares the file, so a
+-- change starts from the others' ids and entries. Without fs.lock (older clients) f just runs.
+local held = false
+local function with_sticky(f)
+  if held then return f() end
+  local lock = deps.lock or function(_, g) return g() end
+  return lock(STICKY_FILE .. ".lock", function()
+    held = true
+    local ok, r = pcall(function()
+      local st = read_json(STICKY_FILE, deps.read(STICKY_FILE))
+      if st then
+        sticky = st
+        if not is_table(sticky.library) then sticky.library = {} end
+      end
+      local out = f()
+      save_sticky()
+      return out
+    end)
+    held = false
+    if not ok then error(r, 0) end
+    return r
+  end)
 end
 
 -- ---------------------------------------------------------------------------
@@ -220,9 +261,19 @@ local function expand(entry, id)
   return m
 end
 
+-- A sticky entry's id: shown in every job's library.
+function M.is_sticky(id)
+  return id ~= nil and tostring(id):match("^s%d+$") ~= nil
+end
+
+local function lib_of(main, id, create)
+  if M.is_sticky(id) then return sticky.library end
+  return job_part(main, "library", create)
+end
+
 function M.get_entry(main, id)
-  local lib = job_part(main, "library", false)
-  local entry = lib and id ~= nil and lib[tostring(id)]
+  local lib = id ~= nil and lib_of(main, id, false)
+  local entry = lib and lib[tostring(id)]
   return is_table(entry) and entry or nil
 end
 
@@ -245,16 +296,22 @@ local function entry_id_order(a, b)
   return tostring(a) < tostring(b)
 end
 
--- The job's entries, oldest first: { { id, entry }, ... }.
+-- The job's entries, oldest first, then the sticky ones: { { id, entry, sticky? }, ... }.
 function M.library(main)
-  local lib = job_part(main, "library", false) or {}
-  local ids = {}
-  for id, entry in pairs(lib) do
-    if is_table(entry) then ids[#ids + 1] = id end
-  end
-  table.sort(ids, entry_id_order)
   local out = {}
-  for n, id in ipairs(ids) do out[n] = { id = id, entry = lib[id] } end
+  local function add(lib, is_sticky)
+    local ids = {}
+    for id, entry in pairs(lib or {}) do
+      if is_table(entry) then ids[#ids + 1] = id end
+    end
+    table.sort(ids, function(a, b)
+      if is_sticky then return entry_id_order(a:sub(2), b:sub(2)) end
+      return entry_id_order(a, b)
+    end)
+    for _, id in ipairs(ids) do out[#out + 1] = { id = id, entry = lib[id], sticky = is_sticky or nil } end
+  end
+  add(job_part(main, "library", false), false)
+  add(sticky.library, true)
   return out
 end
 
@@ -284,18 +341,18 @@ local function clean_entry(e)
   return out
 end
 
--- Saves an entry under `id` (nil: a new id). Returns the id.
-function M.save_entry(main, id, entry)
-  local lib = job_part(main, "library", true)
-  if id == nil then
-    local n = 0
-    for k in pairs(lib) do n = math.max(n, tonumber(k) or 0) end
-    id = n + 1
-  end
-  id = tostring(id)
-  lib[id] = clean_entry(entry)
-  M.save()
-  return id
+local function new_job_id(main)
+  local n = 0
+  for k in pairs(job_part(main, "library", true)) do n = math.max(n, tonumber(k) or 0) end
+  return tostring(n + 1)
+end
+
+-- Sticky ids are never reused: another world's file may still name a deleted one.
+local function new_sticky_id()
+  local n = tonumber(sticky.next_id) or 1
+  for k in pairs(sticky.library) do n = math.max(n, (tonumber(tostring(k):sub(2)) or 0) + 1) end
+  sticky.next_id = n + 1
+  return "s" .. n
 end
 
 local function refers(v, id)
@@ -313,9 +370,14 @@ local function each_set(main, fn)
   end
 end
 
--- How many slots name the entry.
-function M.uses(main, id)
-  id = tostring(id)
+-- fn(job) for every job in this world's file.
+local function each_job(fn)
+  for job, t in pairs(db) do
+    if is_table(t) then fn(job) end
+  end
+end
+
+local function uses_in(main, id)
   local n = 0
   each_set(main, function(set)
     for _, row in pairs(set) do
@@ -329,6 +391,80 @@ function M.uses(main, id)
   return n
 end
 
+-- How many slots name the entry (a sticky one: in every job of this world).
+function M.uses(main, id)
+  id = tostring(id)
+  if not M.is_sticky(id) then return uses_in(main, id) end
+  local n = 0
+  each_job(function(job) n = n + uses_in(job, id) end)
+  return n
+end
+
+-- The job's slots naming `old` name `new`.
+local function repoint(main, old, new)
+  each_set(main, function(set)
+    for _, row in pairs(set) do
+      if is_table(row) then
+        for sk, v in pairs(row) do
+          if refers(v, old) then row[sk] = { ref = new } end
+        end
+      end
+    end
+  end)
+end
+
+local move_last
+
+-- Makes an entry sticky (every job and world) or the job's again. Returns its new id. Unstuck, each job of this
+-- world with a slot naming it gets a copy (`main` always); other worlds' slots naming it go empty.
+function M.set_sticky(main, id, on)
+  return with_sticky(function()
+    id = tostring(id)
+    local entry = M.get_entry(main, id)
+    if not entry or on == M.is_sticky(id) then return id end
+    local nid
+    if on then
+      nid = new_sticky_id()
+      sticky.library[nid] = entry
+      job_part(main, "library", false)[id] = nil
+      repoint(main, id, nid)
+      move_last(main, id, nid)
+    else
+      local function take(job)
+        local jid = new_job_id(job)
+        job_part(job, "library", true)[jid] = clean_entry(entry)
+        repoint(job, id, jid)
+        move_last(job, id, jid)
+        return jid
+      end
+      each_job(function(job)
+        if job ~= main and uses_in(job, id) > 0 then take(job) end
+      end)
+      nid = take(main)
+      sticky.library[id] = nil
+    end
+    M.save()
+    return nid
+  end)
+end
+
+local function save_entry(main, id, entry, want)
+  if id == nil then id = want and new_sticky_id() or new_job_id(main) end
+  id = tostring(id)
+  lib_of(main, id, true)[id] = clean_entry(entry)
+  if want ~= nil and want ~= M.is_sticky(id) then return M.set_sticky(main, id, want) end
+  if not M.is_sticky(id) then M.save() end
+  return id
+end
+
+-- Saves an entry under `id` (nil: a new id), sticky when `want` (nil: as it is). Returns its id.
+function M.save_entry(main, id, entry, want)
+  if want or M.is_sticky(id) then
+    return with_sticky(function() return save_entry(main, id, entry, want) end)
+  end
+  return save_entry(main, id, entry, want)
+end
+
 -- A group's last-picked member, per character.
 local function last_key(macro)
   local ok, mj = pcall(function() return require("src.jobs").current() end)
@@ -339,6 +475,16 @@ function M.last_member(macro)
   local t = storage and storage.character and storage.character.hb_last
   local k = type(t) == "table" and tonumber(t[last_key(macro)]) or 1
   return math.max(1, math.min(k, #(macro.group or {})))
+end
+
+-- A group's last pick follows its entry to a new id.
+function move_last(main, old, new)
+  local t = storage and storage.character and storage.character.hb_last
+  if type(t) ~= "table" then return end
+  local ok = tostring(main) .. ":" .. old
+  if t[ok] == nil then return end
+  t[tostring(main) .. ":" .. new], t[ok] = t[ok], nil
+  pcall(storage.save)
 end
 
 function M.set_last_member(macro, k)
@@ -354,12 +500,9 @@ function M.current_member(macro)
   return macro.group and macro.group[M.last_member(macro)] or nil
 end
 
--- Removes an entry and every slot naming it. A sub set's slot over a filled main slot is blanked (false) so the main
--- macro does not show through.
-function M.delete_entry(main, id)
-  id = tostring(id)
-  local lib = job_part(main, "library", false)
-  if lib then lib[id] = nil end
+-- Empties the job's slots naming `id`. A sub set's slot over a filled main slot is blanked (false) so the main macro
+-- does not show through.
+local function clear_refs(main, id)
   local last = storage and storage.character and storage.character.hb_last
   if type(last) == "table" and last[tostring(main) .. ":" .. id] ~= nil then
     last[tostring(main) .. ":" .. id] = nil
@@ -379,6 +522,21 @@ function M.delete_entry(main, id)
       end
     end
   end)
+end
+
+-- Removes an entry and every slot naming it (a sticky one: in every job of this world).
+function M.delete_entry(main, id)
+  id = tostring(id)
+  if M.is_sticky(id) then
+    with_sticky(function()
+      sticky.library[id] = nil
+      each_job(function(job) clear_refs(job, id) end)
+    end)
+  else
+    local lib = lib_of(main, id, false)
+    if lib then lib[id] = nil end
+    clear_refs(main, id)
+  end
   M.save()
 end
 

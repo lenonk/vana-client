@@ -50,6 +50,11 @@ fn tab(w: &World) -> Option<Tab> {
     }
 }
 
+/// The Records of Eminence tab, its entries or a list: the search goes over every objective (roe::search_rows).
+pub(super) fn roe_search_open(w: &World) -> bool {
+    tab(w) == Some(Tab::Roe)
+}
+
 /// A quest area's name: its "Current Quests" title before the colon.
 pub(super) fn area_title(gu: &GameUi, area: usize) -> String {
     let t = gu.title_msg(quests::TITLES[0][area]).unwrap_or_default();

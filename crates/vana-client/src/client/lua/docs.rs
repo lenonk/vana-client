@@ -1875,6 +1875,13 @@ pub const FUNCS: &[Func] = &[
         ret: "",
     },
     Func {
+        ns: "fs",
+        name: "lock",
+        doc: "Runs fn holding an OS lock on a file in the data folder (made if missing), so clients sharing the folder take turns; returns fn's values. Waits up to 2 s for another client, then raises an error. Lock a file of its own, not one being written.",
+        params: &[("path", "string", ""), ("fn", "function", "")],
+        ret: "any",
+    },
+    Func {
         ns: "json",
         name: "encode",
         doc: "Plain data as JSON text.",
