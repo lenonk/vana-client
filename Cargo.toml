@@ -43,3 +43,6 @@ debug = true
 [patch.crates-io]
 gpu-allocator = { git = "https://github.com/lenonk/gpu-allocator", rev = "eb8f2afb10c87953852422626c68049aa6d2b1ad" }
 cpal = { git = "https://github.com/lenonk/cpal", rev = "813764ce5fceb151e13d236df92f5f09c6a74281" }
+# winit 0.30.13, with Android input taken off NativeActivity's AInputQueue (patches/winit/VANA.md).
+# Other platforms build the same code as the crates.io crate.
+winit = { path = "patches/winit" }
