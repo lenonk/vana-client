@@ -55,7 +55,10 @@ mod texpack;
 mod uishot;
 mod voice;
 
-include!("entry.rs");
+mod entry;
+
+pub use entry::entry;
+pub(crate) use entry::load_zone_scene;
 
 /// NativeActivity calls this once the process is up. The desktop binary calls [`entry`] directly.
 #[cfg(target_os = "android")]

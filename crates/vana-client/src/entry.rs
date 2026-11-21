@@ -5,6 +5,11 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use crate::{
+    client, clothshot, combatshot, config, creatorshot, dat, dialogshot, event_vm, eventdump, flashshot, fx, install,
+    invshot, itemshot, modpack, mpeg1, net, patch, poldic, render, sounddump, texpack, uishot, voice,
+};
+
 #[derive(Parser)]
 #[command(version, about = "Native FINAL FANTASY XI installer and client")]
 struct Cli {
@@ -2752,7 +2757,7 @@ fn text_shot(
     Ok(())
 }
 
-fn load_zone_scene(zone: u32) -> Result<dat::zone::ZoneScene> {
+pub(crate) fn load_zone_scene(zone: u32) -> Result<dat::zone::ZoneScene> {
     let cfg = config::Config::load();
     let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
     let keys = dat::zone::Keys::from_ffximain(&std::fs::read(crate::dat::ffximain(&cfg.ffxi_dir()))?)?;

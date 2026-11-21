@@ -21581,7 +21581,8 @@ impl ApplicationHandler for App {
             self.shown = true;
             window.set_visible(true);
         }
-        self.gfx = Some(Gfx { window, gpu, surface: Some(surface), config, depth, egui_ctx, egui_state, egui_renderer });
+        self.gfx =
+            Some(Gfx { window, gpu, surface: Some(surface), config, depth, egui_ctx, egui_state, egui_renderer });
     }
 
     /// The raw motion while a look drag holds the pointer locked.
