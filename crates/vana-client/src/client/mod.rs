@@ -56,9 +56,15 @@ mod event;
 mod favs;
 mod firstrun;
 mod flash;
+#[cfg(target_os = "android")]
+mod folder_pick;
 mod footsteps;
+#[cfg(target_os = "android")]
+mod game_data;
 mod game_ui;
 mod gamepad;
+#[cfg(target_os = "android")]
+mod gamepad_android;
 #[cfg(target_os = "linux")]
 mod gamepad_sdl;
 mod hudtop;
@@ -231,6 +237,8 @@ impl Task {
             Task::NameChecked(_) => "name check",
             Task::Created(_) => "created",
             Task::TwoFa(_) => "two-factor",
+            #[cfg(target_os = "android")]
+            Task::GameDataWarm(_) => "game data",
         }
     }
 }
@@ -298,6 +306,49 @@ enum Task {
     Furniture(Result<furniture::Loaded>),
     /// A ship's model (client/ships.rs).
     Ship(Result<ships::Loaded>),
+    /// Android: `DatIndex` and FFXiMain tables off the UI thread (client startup).
+    #[cfg(target_os = "android")]
+    GameDataWarm(Result<GameDataLoaded>),
+}
+
+/// What `game_data()` caches after reading the install (may be built on a worker on Android).
+struct GameDataLoaded {
+    index: Arc<DatIndex>,
+    keys_table: Arc<zone::Keys>,
+    knock_table: Option<[[f32; 3]; 8]>,
+    search_words: Option<Arc<crate::dat::tables::SearchWords>>,
+    blu_data: Arc<crate::dat::blumagic::BluData>,
+    cnq_tables: Option<Arc<crate::dat::tables::CnqTables>>,
+    point_files: [Option<u32>; 6],
+    msg_files: [Option<u32>; 11],
+    ffximain: Vec<u8>,
+}
+
+fn read_game_data(ffxi_dir: &std::path::Path) -> Result<GameDataLoaded> {
+    let index = Arc::new(DatIndex::open(ffxi_dir)?);
+    let ffximain = std::fs::read(crate::dat::ffximain(ffxi_dir))?;
+    let keys_table = Arc::new(zone::Keys::from_ffximain(&ffximain)?);
+    let knock_table = crate::dat::tables::knockback(&ffximain).ok();
+    let search_words =
+        crate::dat::tables::search_words(&ffximain).map_err(|e| log::warn!("{e:#}")).ok().map(Arc::new);
+    let blu_desc = crate::dat::msg::current_slot_file(&ffximain, 1, 0x1a);
+    let blu_data = Arc::new(crate::dat::blumagic::BluData::load(&index, blu_desc));
+    let cnq_tables = crate::dat::tables::conquest(&ffximain).map_err(|e| log::warn!("{e:#}")).ok().map(Arc::new);
+    let point_files = [0x1d, 0x1e, 0x1f, 0x20, 0x21, maze::TEXT_SLOT]
+        .map(|slot| crate::dat::msg::current_slot_file(&ffximain, 1, slot));
+    let msg_files = [0, 0, 0x63, 0x64, 0x65, 0x66, 0x68, 0x69, 0, 0, 0x6a]
+        .map(|slot| (slot != 0).then(|| crate::dat::msg::current_slot_file(&ffximain, 1, slot)).flatten());
+    Ok(GameDataLoaded {
+        index,
+        keys_table,
+        knock_table,
+        search_words,
+        blu_data,
+        cnq_tables,
+        point_files,
+        msg_files,
+        ffximain,
+    })
 }
 
 /// A pick read-back key: bit 63, the actor, a bone or 0x8000 | attach point.
@@ -879,6 +930,9 @@ pub(crate) struct LoginField<'a> {
 /// The most rows a combo field's list shows.
 const COMBO_ROWS: usize = 8;
 
+/// The Anisotropy setting's cap: mobile GPUs pay a lot for 16x.
+const MAX_ANISOTROPY: u16 = if cfg!(target_os = "android") { 4 } else { 16 };
+
 /// The server key of PlayOnline logins (Server Type PlayOnline): they sign in through net/pol.
 pub(crate) fn is_playonline(server: &str) -> bool {
     server.trim().eq_ignore_ascii_case(PLAYONLINE)
@@ -913,6 +967,33 @@ pub struct LoginView {
     pub update: Option<([f32; 4], &'static str)>,
     pub focus: usize,
     pub busy: bool,
+}
+
+#[cfg(target_os = "android")]
+pub(crate) struct LobbyIme {
+    rect: [f32; 4],
+    password: bool,
+    retap: bool,
+}
+
+#[cfg(target_os = "android")]
+pub(crate) struct LobbyImeHint {
+    pub rect: egui::Rect,
+    pub retap: bool,
+}
+
+#[cfg(target_os = "android")]
+pub(crate) fn lobby_ime_from_hint(h: LobbyImeHint, ppp: f32, ui_k: (f32, f32)) -> LobbyIme {
+    LobbyIme {
+        rect: [
+            h.rect.min.x * ppp * ui_k.0,
+            h.rect.min.y * ppp * ui_k.1,
+            h.rect.width() * ppp * ui_k.0,
+            h.rect.height() * ppp * ui_k.1,
+        ],
+        password: false,
+        retap: h.retap,
+    }
 }
 
 /// The tail of `text` that fits in `max` pixels, so the caret end stays visible.
@@ -999,6 +1080,7 @@ fn login_window(
     sounds: &mut Vec<crate::audio::Ui>,
     modern: Option<&mut Option<LoginView>>,
     monitor_scale: f32,
+    #[cfg(target_os = "android")] ime: &mut Option<LobbyIme>,
 ) -> Option<LoginChoice> {
     const CHOICES: [LoginChoice; 3] = [LoginChoice::LogIn, LoginChoice::Create, LoginChoice::Exit];
     let n = fields.len();
@@ -1345,6 +1427,14 @@ fn login_window(
             _ => "Enter your account information to log in.",
         }
     };
+    #[cfg(target_os = "android")]
+    {
+        *ime = (!busy && *focus < n && !fields[*focus].read_only).then(|| LobbyIme {
+            rect: field_rect(*focus),
+            password: fields[*focus].secret,
+            retap: input.clicked && input.pointer.is_some_and(|p| inside(&field_rect(*focus), p)),
+        });
+    }
     let slots = lu.title_with(sw, sh, None, 0, [true; 5], 0, None, true, modern.is_some());
     let help_colour = if help_over.is_some() || busy || status.is_empty() { WHITE } else { YELLOW };
     let shown = |x: &LoginField| if x.secret { "*".repeat(x.text.chars().count()) } else { x.text.clone() };
@@ -8919,6 +9009,8 @@ pub struct App {
     monitors: Vec<(String, String)>,
     gpus: Vec<String>,
     index: Option<Arc<DatIndex>>,
+    #[cfg(target_os = "android")]
+    index_warm: LoadState,
     /// Installed-content mask (ROM2..): title music and lobycwin's tracks (FUN_1023ae80).
     installed: u32,
     keys_table: Option<Arc<zone::Keys>>,
@@ -9002,6 +9094,8 @@ pub struct App {
     mouse: mousecur::MouseCursor,
     /// A lobby or login error (or the new account's notice) waiting in the OK window on the login screen.
     login_error: Option<String>,
+    #[cfg(target_os = "android")]
+    lobby_ime: std::cell::Cell<Option<LobbyIme>>,
     /// The backdrop behind a lobby run (lobbywin 85): ptcbgwin at the lobby entry, hnbackwi at the log-in.
     backdrop: Option<Backdrop>,
     /// A failed log-in run's popup over its backdrop; OK goes back to the title menu (FUN_10241200's -1).
@@ -9025,6 +9119,9 @@ pub struct App {
     updates: Option<updater::Shared>,
     /// No game files yet: the download window (not retail).
     first_run: Option<firstrun::FirstRun>,
+    /// Android: the title Config's Game data window (client/game_data.rs).
+    #[cfg(target_os = "android")]
+    game_data: Option<game_data::Editor>,
     update_ui: Option<updater::UpdateUi>,
     /// The Update window opened by itself for an out-of-date PlayOnline Viewer (once a run).
     viewer_asked: bool,
@@ -9143,7 +9240,7 @@ impl App {
             cfg.username = user.clone();
         }
         let frame_limit = cfg.frame_limit();
-        crate::render::ANISOTROPY.store(cfg.anisotropy.clamp(1, 16), std::sync::atomic::Ordering::Relaxed);
+        crate::render::ANISOTROPY.store(cfg.anisotropy.clamp(1, MAX_ANISOTROPY), std::sync::atomic::Ordering::Relaxed);
         crate::render::MIPMAPS.store(cfg.tool("0000") != 0, std::sync::atomic::Ordering::Relaxed);
         crate::render::set_uncompressed(cfg.tool("0018") >= 2);
         crate::render::MAP_COMPRESSED.store(cfg.tool("0019") == 0, std::sync::atomic::Ordering::Relaxed);
@@ -9169,7 +9266,8 @@ impl App {
         let notes_check = drive_checks || std::env::var_os("FFXI_NOTES_CHECK").is_some();
         let notes_fetch = (whats_new.is_none() && notes_check && notes::due(&cfg.notes_seen))
             .then(|| notes::fetch_since(cfg.notes_seen.clone()));
-        Self {
+        #[cfg_attr(not(target_os = "android"), allow(unused_mut))]
+        let mut app = Self {
             cfg,
             applied_volumes: None,
             drive,
@@ -9188,6 +9286,8 @@ impl App {
             drag_from: None,
             stand_sent: false,
             mouse: Default::default(),
+            #[cfg(target_os = "android")]
+            lobby_ime: std::cell::Cell::new(None),
             wheel: 0.0,
             list_wheel: 0.0,
             mods: Default::default(),
@@ -9227,6 +9327,8 @@ impl App {
             gpus: Vec::new(),
             nation: NationShow::default(),
             index: None,
+            #[cfg(target_os = "android")]
+            index_warm: LoadState::Idle,
             installed,
             keys_table: None,
             knock_table: None,
@@ -9292,6 +9394,8 @@ impl App {
             lobby_settings: None,
             updates,
             first_run: None,
+            #[cfg(target_os = "android")]
+            game_data: None,
             update_ui: None,
             viewer_asked: false,
             whats_new,
@@ -9309,7 +9413,12 @@ impl App {
             audio_tried: false,
             music_scene: MusicScene::None,
             music_created: false,
+        };
+        #[cfg(target_os = "android")]
+        if app.cfg.ffxi_dir().join("VTABLE.DAT").is_file() && crate::android_fs::has_all_files_access() {
+            app.start_index_warm();
         }
+        app
     }
 
     /// Puts changed settings into effect: window size and mode, frame limit, anisotropy (new samplers), volumes.
@@ -9317,7 +9426,8 @@ impl App {
     fn apply_settings(&mut self) {
         self.frame_limit = self.cfg.frame_limit();
         self.present_dirty = true;
-        crate::render::ANISOTROPY.store(self.cfg.anisotropy.clamp(1, 16), std::sync::atomic::Ordering::Relaxed);
+        crate::render::ANISOTROPY
+            .store(self.cfg.anisotropy.clamp(1, MAX_ANISOTROPY), std::sync::atomic::Ordering::Relaxed);
         crate::render::MIPMAPS.store(self.cfg.tool("0000") != 0, std::sync::atomic::Ordering::Relaxed);
         crate::render::set_uncompressed(self.cfg.tool("0018") >= 2);
         crate::render::MAP_COMPRESSED.store(self.cfg.tool("0019") == 0, std::sync::atomic::Ordering::Relaxed);
@@ -9885,22 +9995,49 @@ impl App {
         self.drive.input.as_ref().map_or(self.drive.shot_taken, |s| s.finished())
     }
 
+    fn apply_game_data(&mut self, g: GameDataLoaded) {
+        self.index = Some(g.index);
+        self.keys_table = Some(g.keys_table);
+        self.knock_table = g.knock_table;
+        self.search_words = g.search_words;
+        self.blu_data = Some(g.blu_data);
+        self.cnq_tables = g.cnq_tables;
+        self.point_files = g.point_files;
+        self.msg_files = g.msg_files;
+        self.input.load(&g.ffximain);
+    }
+
+    #[cfg(target_os = "android")]
+    fn start_index_warm(&mut self) {
+        if !crate::android_fs::has_all_files_access() {
+            return;
+        }
+        if self.index.is_some() || self.index_warm == LoadState::Loading {
+            return;
+        }
+        self.index_warm = LoadState::Loading;
+        let dir = self.cfg.ffxi_dir();
+        let tx = self.tasks_tx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(Task::GameDataWarm(read_game_data(&dir)));
+        });
+    }
+
     fn game_data(&mut self) -> Result<(Arc<DatIndex>, Arc<zone::Keys>)> {
         if self.index.is_none() {
-            self.index = Some(Arc::new(DatIndex::open(&self.cfg.ffxi_dir())?));
-            let dll = std::fs::read(crate::dat::ffximain(&self.cfg.ffxi_dir()))?;
-            self.keys_table = Some(Arc::new(zone::Keys::from_ffximain(&dll)?));
-            self.knock_table = crate::dat::tables::knockback(&dll).ok();
-            self.search_words =
-                crate::dat::tables::search_words(&dll).map_err(|e| log::warn!("{e:#}")).ok().map(Arc::new);
-            let blu_desc = crate::dat::msg::current_slot_file(&dll, 1, 0x1a);
-            self.blu_data = Some(Arc::new(crate::dat::blumagic::BluData::load(self.index.as_ref().unwrap(), blu_desc)));
-            self.cnq_tables = crate::dat::tables::conquest(&dll).map_err(|e| log::warn!("{e:#}")).ok().map(Arc::new);
-            self.point_files = [0x1d, 0x1e, 0x1f, 0x20, 0x21, maze::TEXT_SLOT]
-                .map(|slot| crate::dat::msg::current_slot_file(&dll, 1, slot));
-            self.msg_files = [0, 0, 0x63, 0x64, 0x65, 0x66, 0x68, 0x69, 0, 0, 0x6a]
-                .map(|slot| (slot != 0).then(|| crate::dat::msg::current_slot_file(&dll, 1, slot)).flatten());
-            self.input.load(&dll);
+            #[cfg(target_os = "android")]
+            {
+                match self.index_warm {
+                    LoadState::Loading => anyhow::bail!("game data loading"),
+                    LoadState::Failed => anyhow::bail!("game data failed to load"),
+                    LoadState::Idle => {
+                        self.start_index_warm();
+                        anyhow::bail!("game data loading");
+                    }
+                }
+            }
+            #[cfg(not(target_os = "android"))]
+            self.apply_game_data(read_game_data(&self.cfg.ffxi_dir())?);
         }
         Ok((self.index.clone().unwrap(), self.keys_table.clone().unwrap()))
     }
@@ -10152,6 +10289,23 @@ impl App {
             self.busy = false;
         }
         match task {
+            #[cfg(target_os = "android")]
+            Task::GameDataWarm(r) => {
+                self.index_warm = if r.is_ok() { LoadState::Idle } else { LoadState::Failed };
+                match r {
+                    Ok(g) => {
+                        log::info!("game data ready");
+                        self.apply_game_data(g);
+                        if self.game_ui_state == LoadState::Loading && self.game_ui.is_none() {
+                            self.load_game_ui();
+                        }
+                        if self.flyover_state == LoadState::Loading && self.flyover.is_none() {
+                            self.load_flyover();
+                        }
+                    }
+                    Err(e) => log::warn!("game data: {e:#}"),
+                }
+            }
             Task::Names(res) => match (res, &mut self.phase) {
                 (Ok((n, m)), Phase::World(w)) => {
                     log::info!("names loaded; text id map for {} zones", m.zones.len());
@@ -15204,14 +15358,15 @@ impl App {
         // A release is a drag past 65 square UI pixels or 25 ticks held, or when mouse look turned the camera more than
         // 4 pixels meanwhile (the look holds the pointer, so it barely moves): a camera drag that starts on an actor
         // opens no menu and makes no double click.
-        let looked = self.look_travel > 4.0;
+        let looked = self.look_travel > 4.0 && !cfg!(target_os = "android");
+        let drag = if cfg!(target_os = "android") { 400.0 } else { 65.0 };
         let release = |from: Option<((f64, f64), Instant)>,
                        at: Option<(f64, f64)>,
                        k: (f32, f32)|
          -> Option<((f64, f64), bool)> {
             let ((a, t), b) = (from?, at?);
             let (dx, dy) = ((b.0 - a.0) as f32 * k.0, (b.1 - a.1) as f32 * k.1);
-            Some((b, looked || dx * dx + dy * dy >= 65.0 || t.elapsed().as_secs_f32() * 60.0 >= 25.0))
+            Some((b, looked || dx * dx + dy * dy >= drag || t.elapsed().as_secs_f32() * 60.0 >= 25.0))
         };
         let size = self.window_size;
         let (k, retail_aspect) = (self.ui_k, self.cfg.retail_aspect);
@@ -15459,6 +15614,13 @@ impl App {
     fn ui(&mut self, ctx: &egui::Context, window: [u32; 2]) {
         let mut action: Option<Box<dyn FnOnce(&mut App)>> = None;
         self.ui_drawn = false;
+        #[cfg(target_os = "android")]
+        {
+            self.lobby_ime.set(None);
+            if let Some(m) = self.modern.as_mut() {
+                m.lobby_ime.set(None);
+            }
+        }
         // Config-tool 0037 / 0038: the UI is laid out at its size and stretched to the window.
         let size = self.cfg.ui_size(window);
         self.ui_k = (size[0] as f32 / window[0].max(1) as f32, size[1] as f32 / window[1].max(1) as f32);
@@ -15509,23 +15671,32 @@ impl App {
             match fr.ui(ctx) {
                 firstrun::Action::Quit => self.exit_requested = true,
                 firstrun::Action::Ready => {
-                    // The folder may have been changed in the window: the config keeps it.
-                    self.cfg.game_dir = fr.game_dir().to_path_buf();
+                    let dir = fr.game_dir().to_path_buf();
                     self.first_run = None;
-                    // Audio opened on the empty folder (and the title music failed): open it on the new files.
-                    self.audio = None;
-                    self.audio_tried = false;
-                    self.index = None;
-                    self.keys_table = None;
-                    self.game_ui_state = LoadState::Idle;
-                    self.flyover_state = LoadState::Idle;
-                    self.cfg.installed = true;
-                    // From the fixed first-start window to the configured one.
-                    self.window_dirty = true;
-                    if let Err(e) = self.cfg.save() {
-                        log::warn!("saving the config: {e:#}");
+                    #[cfg(target_os = "android")]
+                    {
+                        log::info!("first start ready: {}", dir.display());
+                        self.status = "Loading game data…".into();
+                        self.android_use_game_dir(dir);
+                        self.window_dirty = true;
+                        self.scene_loads();
                     }
-                    self.updates = Some(updater::start(self.cfg.ffxi_dir(), uses_playonline(&self.cfg)));
+                    #[cfg(not(target_os = "android"))]
+                    {
+                        self.cfg.game_dir = dir;
+                        self.audio = None;
+                        self.audio_tried = false;
+                        self.index = None;
+                        self.keys_table = None;
+                        self.game_ui_state = LoadState::Idle;
+                        self.flyover_state = LoadState::Idle;
+                        self.cfg.installed = true;
+                        self.window_dirty = true;
+                        if let Err(e) = self.cfg.save() {
+                            log::warn!("saving the config: {e:#}");
+                        }
+                        self.updates = Some(updater::start(self.cfg.ffxi_dir(), uses_playonline(&self.cfg)));
+                    }
                 }
                 firstrun::Action::Begin(dir) => {
                     self.cfg.game_dir = dir;
@@ -15535,6 +15706,24 @@ impl App {
                 }
                 firstrun::Action::None => {}
             }
+            // Android: the window takes the touches (no mouse invalidation for an undrawn UI).
+            #[cfg(target_os = "android")]
+            {
+                self.ui_drawn = true;
+            }
+            return;
+        }
+        #[cfg(target_os = "android")]
+        if let Some(editor) = self.game_data.as_mut() {
+            match editor.ui(ctx) {
+                game_data::Action::Close => self.game_data = None,
+                game_data::Action::Apply(dir) => {
+                    self.game_data = None;
+                    self.android_use_game_dir(dir);
+                }
+                game_data::Action::None => {}
+            }
+            self.ui_drawn = true;
             return;
         }
         if self.game_ui.is_none() {
@@ -15667,6 +15856,8 @@ impl App {
                     let mut sounds = Vec::new();
                     let modern_ui = self.cfg.modern_ui;
                     let mut view = None;
+                    #[cfg(target_os = "android")]
+                    let mut field_ime = None;
                     let update_help = self.update_ui.as_ref().map(|u| u.help());
                     let help_over = update_help.as_deref().or_else(|| self.twofa.as_ref().map(|t| t.help()));
                     // Not retail: Update while something is out of date.
@@ -15689,7 +15880,13 @@ impl App {
                         &mut sounds,
                         modern_ui.then_some(&mut view),
                         ctx.native_pixels_per_point().unwrap_or(1.0),
+                        #[cfg(target_os = "android")]
+                        &mut field_ime,
                     );
+                    #[cfg(target_os = "android")]
+                    if self.login_error.is_none() && self.update_ui.is_none() && self.twofa.is_none() && !busy {
+                        self.lobby_ime.set(field_ime);
+                    }
                     drop(fields);
                     // Trust this computer is the account's: unticked, its token goes at once.
                     if trusted != self.cfg.trust_computer {
@@ -15762,9 +15959,25 @@ impl App {
                         }
                     }
                     // The two-factor window over the form (client/twofa.rs).
+                    #[cfg(target_os = "android")]
+                    let mut account_ime = None;
                     if let Some(t) = self.twofa.as_mut() {
                         let mut tv = None;
                         let act = twofa::window(lu, &input, size, t, busy, &mut sounds, modern_ui.then_some(&mut tv));
+                        #[cfg(target_os = "android")]
+                        {
+                            account_ime = (!busy && !matches!(act, Some(twofa::Act::Close)))
+                                .then(|| t.keyboard())
+                                .flatten()
+                                .map(|password| LobbyIme {
+                                    rect: tv
+                                        .as_ref()
+                                        .and_then(|v| v.fields.get(v.focus).map(|(r, _)| *r))
+                                        .unwrap_or([0.0, 0.0, 2.0, 16.0]),
+                                    password,
+                                    retap: input.clicked,
+                                });
+                        }
                         if let Some(v) = &tv {
                             self.modern.get_or_insert_with(|| modern::Modern::new(ctx)).twofa_window(
                                 ctx,
@@ -15793,6 +16006,10 @@ impl App {
                             }
                             None => {}
                         }
+                    }
+                    #[cfg(target_os = "android")]
+                    if self.twofa.is_some() && self.login_error.is_none() {
+                        self.lobby_ime.set(account_ime);
                     }
                     // The Update window over the form (client/updater.rs): before the login, so an old client can
                     // always reach it.
@@ -15958,36 +16175,102 @@ impl App {
                             None => e.clone(),
                         };
                         let (sw, sh) = (size[0] as f32, size[1] as f32);
-                        let key = input.events.iter().any(|ev| {
-                            matches!(
-                                ev,
-                                egui::Event::Key { key: egui::Key::Enter | egui::Key::Escape, pressed: true, .. }
-                            )
-                        });
-                        let click = if modern_ui {
-                            let r = lu.popup_rects("menu    ok", sw, sh);
-                            let frame = r.as_ref().map_or([0.0; 4], |r| lift(r.frame));
-                            let ok = r
-                                .as_ref()
-                                .and_then(|r| r.children.first().map(|c| place(r.frame, c.1)))
-                                .unwrap_or(frame);
-                            self.modern.get_or_insert_with(|| modern::Modern::new(ctx)).ok_popup(
-                                ctx,
-                                window,
-                                self.cfg.modern_scale,
-                                self.ui_k,
-                                frame,
-                                ok,
-                                &text,
-                            )
-                        } else {
-                            let ok = lu.ok_window(&text, sw, sh);
-                            input.clicked && ok.is_some_and(|r| input.pointer.is_some_and(|p| inside(&r, p)))
-                        };
-                        if key || click {
-                            self.login_error = None;
-                            if let Some(a) = self.audio.as_mut() {
-                                a.ui(crate::audio::Ui::Select);
+                        #[cfg(not(target_os = "android"))]
+                        let login_err_ok = false;
+                        #[cfg(target_os = "android")]
+                        let mut login_err_ok = false;
+                        #[cfg(target_os = "android")]
+                        if android::tls_pin_mismatch_message(&text) {
+                            login_err_ok = true;
+                            let ack = if modern_ui {
+                                    let r = lu.popup_rects("menu    ok", sw, sh);
+                                    let frame = r.as_ref().map_or([0.0; 4], |r| lift(r.frame));
+                                    self.modern
+                                        .get_or_insert_with(|| modern::Modern::new(ctx))
+                                        .ok_trust_popup(ctx, window, self.cfg.modern_scale, self.ui_k, frame, &text)
+                                } else {
+                                    match android::cert_trust_dialog(lu, &text, &input, sw, sh) {
+                                        android::CertTrustAction::Trust => {
+                                            modern::LoginErrorAck::Trust
+                                        }
+                                        android::CertTrustAction::Dismiss => modern::LoginErrorAck::Ok,
+                                        _ => modern::LoginErrorAck::None,
+                                    }
+                                };
+                                let key_dismiss = input.events.iter().any(|ev| {
+                                    matches!(
+                                        ev,
+                                        egui::Event::Key {
+                                            key: egui::Key::Enter | egui::Key::Escape,
+                                            pressed: true,
+                                            ..
+                                        }
+                                    )
+                                });
+                                let ack = if key_dismiss && ack == modern::LoginErrorAck::None {
+                                    modern::LoginErrorAck::Ok
+                                } else {
+                                    ack
+                                };
+                                match ack {
+                                    modern::LoginErrorAck::Trust => {
+                                        let host = self.cfg.server.clone();
+                                        match android::forget_server_tls_pins(&host) {
+                                            Ok(()) => {
+                                                self.login_error = None;
+                                                self.status =
+                                                    "The server's certificate was reset. Try logging in again.".into();
+                                            }
+                                            Err(err) => {
+                                                self.login_error =
+                                                    Some(format!("Could not trust the server: {err:#}"));
+                                            }
+                                        }
+                                        if let Some(a) = self.audio.as_mut() {
+                                            a.ui(crate::audio::Ui::Select);
+                                        }
+                                    }
+                                    modern::LoginErrorAck::Ok => {
+                                        self.login_error = None;
+                                        if let Some(a) = self.audio.as_mut() {
+                                            a.ui(crate::audio::Ui::Select);
+                                        }
+                                    }
+                                    modern::LoginErrorAck::None => {}
+                                }
+                        }
+                        if !login_err_ok {
+                            let key = input.events.iter().any(|ev| {
+                                matches!(
+                                    ev,
+                                    egui::Event::Key { key: egui::Key::Enter | egui::Key::Escape, pressed: true, .. }
+                                )
+                            });
+                            let click = if modern_ui {
+                                let r = lu.popup_rects("menu    ok", sw, sh);
+                                let frame = r.as_ref().map_or([0.0; 4], |r| lift(r.frame));
+                                let ok = r
+                                    .as_ref()
+                                    .and_then(|r| r.children.first().map(|c| place(r.frame, c.1)))
+                                    .unwrap_or(frame);
+                                self.modern.get_or_insert_with(|| modern::Modern::new(ctx)).ok_popup(
+                                    ctx,
+                                    window,
+                                    self.cfg.modern_scale,
+                                    self.ui_k,
+                                    frame,
+                                    ok,
+                                    &text,
+                                )
+                            } else {
+                                let ok = lu.ok_window(&text, sw, sh);
+                                input.clicked && ok.is_some_and(|r| input.pointer.is_some_and(|p| inside(&r, p)))
+                            };
+                            if key || click {
+                                self.login_error = None;
+                                if let Some(a) = self.audio.as_mut() {
+                                    a.ui(crate::audio::Ui::Select);
+                                }
                             }
                         }
                     }
@@ -16264,6 +16547,10 @@ impl App {
                                     }
                                     lobby_changes(&out.changed, &mut lobby_apply);
                                     closed |= out.closed;
+                                    #[cfg(target_os = "android")]
+                                    if out.open_game_data {
+                                        self.game_data = Some(game_data::Editor::new(self.cfg.game_dir.clone()));
+                                    }
                                 }
                                 if closed {
                                     self.lobby_cfg = None;
@@ -16530,6 +16817,28 @@ impl App {
                             out.action = out.action.or(more.action);
                             out.moved = more.moved.or(out.moved);
                             out.input |= more.input;
+                            #[cfg(target_os = "android")]
+                            if !busy && matches!(self.select_ui.focus, select::Focus::Rename(_))
+                                && let Some(h) = m.lobby_ime.take()
+                            {
+                                self.lobby_ime.set(Some(lobby_ime_from_hint(
+                                    h,
+                                    ctx.pixels_per_point(),
+                                    self.ui_k,
+                                )));
+                            }
+                        }
+                        #[cfg(target_os = "android")]
+                        if !modern_ui
+                            && !busy
+                            && matches!(self.select_ui.focus, select::Focus::Rename(_))
+                        {
+                            let r = gu.chmkname_field_rect(sw, sh);
+                            self.lobby_ime.set(Some(LobbyIme {
+                                rect: r,
+                                password: false,
+                                retap: input.clicked && input.pointer.is_some_and(|p| inside(&r, p)),
+                            }));
                         }
                         if let Some(a) = self.audio.as_mut() {
                             for s in &out.sounds {
@@ -16768,6 +17077,32 @@ impl App {
                         } else {
                             (creator::draw_ui(gu, &view, sw, sh, status_line, None), creator::Pointer::default())
                         };
+                        #[cfg(target_os = "android")]
+                        if step == 5
+                            && !name_hidden
+                            && self.creator_world.is_none()
+                            && self.creator_ok.is_none()
+                            && !busy
+                        {
+                            if modern_ui {
+                                if let Some(m) = self.modern.as_ref()
+                                    && let Some(h) = m.lobby_ime.take()
+                                {
+                                    self.lobby_ime.set(Some(lobby_ime_from_hint(
+                                        h,
+                                        ctx.pixels_per_point(),
+                                        self.ui_k,
+                                    )));
+                                }
+                            } else {
+                                let r = gu.chmkname_field_rect(sw, sh);
+                                self.lobby_ime.set(Some(LobbyIme {
+                                    rect: r,
+                                    password: false,
+                                    retap: input.clicked && input.pointer.is_some_and(|p| inside(&r, p)),
+                                }));
+                            }
+                        }
                         let pointer = input.pointer.filter(|_| !busy);
                         let mut check = false;
                         if modern_ui {
@@ -17628,13 +17963,30 @@ impl App {
     fn load_game_ui(&mut self) {
         self.game_ui_state = LoadState::Loading;
         if firstrun::needed(&self.cfg.ffxi_dir()) {
-            self.first_run = Some(firstrun::FirstRun::new(self.cfg.game_dir.clone()));
-            self.game_ui_state = LoadState::Failed;
+            // scene_loads runs every frame while the UI is idle. Replacing the window drops the button's result.
+            if self.first_run.is_none() {
+                self.first_run = Some(firstrun::FirstRun::new(self.cfg.game_dir.clone()));
+            }
+            self.game_ui_state = LoadState::Idle;
             return;
+        }
+        #[cfg(target_os = "android")]
+        if self.index.is_none() {
+            if self.index_warm == LoadState::Loading {
+                return;
+            }
+            if self.index_warm == LoadState::Idle {
+                self.start_index_warm();
+                return;
+            }
         }
         let index = match self.game_data() {
             Ok((index, _)) => index,
             Err(e) => {
+                #[cfg(target_os = "android")]
+                if self.index_warm == LoadState::Loading {
+                    return;
+                }
                 log::warn!("lobby UI: {e:#}");
                 self.game_ui_state = LoadState::Failed;
                 return;
@@ -17659,7 +18011,21 @@ impl App {
     /// Loads a random title movie and its zone on a worker thread.
     fn load_flyover(&mut self) {
         self.flyover_state = LoadState::Loading;
+        #[cfg(target_os = "android")]
+        if self.index.is_none() {
+            if self.index_warm == LoadState::Loading {
+                return;
+            }
+            if self.index_warm == LoadState::Idle {
+                self.start_index_warm();
+                return;
+            }
+        }
         let Ok((index, keys)) = self.game_data() else {
+            #[cfg(target_os = "android")]
+            if self.index_warm == LoadState::Loading {
+                return;
+            }
             self.flyover_state = LoadState::Failed;
             return;
         };
@@ -17731,10 +18097,13 @@ impl App {
         }
         let size = [gfx.config.width, gfx.config.height];
         let movie = self.movie.get_or_insert_with(|| crate::render::movie::Movie::new(&gfx.gpu, gfx.config.format));
-        if let Some(o) = self.opening.as_mut()
-            && let wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) =
-                gfx.surface.get_current_texture()
-        {
+        match gfx.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
+        let Some(o) = self.opening.as_mut() else {
+            drop(frame);
+            self.gfx = Some(gfx);
+            return;
+        };
             if let Some(f) = o.fresh.take() {
                 movie.upload(&gfx.gpu, &f);
             }
@@ -17771,8 +18140,12 @@ impl App {
                 }
             }
             gfx.gpu.queue.present(frame);
-        } else {
-            gfx.surface.configure(&gfx.gpu.device, &gfx.config);
+            }
+            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                gfx.surface.configure(&gfx.gpu.device, &gfx.config);
+            }
+            // Timeout while the last movie frame is still on the GPU: configuring here waits it out on this thread.
+            _ => self.next_frame = Some(Instant::now() + std::time::Duration::from_millis(16)),
         }
         self.gfx = Some(gfx);
     }
@@ -18105,6 +18478,10 @@ impl App {
         if self.opening.is_some() {
             self.draw_opening();
             return false;
+        }
+        #[cfg(target_os = "android")]
+        if self.gfx.is_some() {
+            return true;
         }
         // Nothing is shown until the title can draw.
         if !self.shown {
@@ -18520,7 +18897,59 @@ impl App {
         } else {
             self.mouse.invalidate();
         }
-        // The open chat line takes an IME (ours): its caret places the candidate window; closed, the IME is off.
+        #[cfg(target_os = "android")]
+        if platform.ime.is_none()
+            && let Some(ime) = self.lobby_ime.take()
+        {
+            let (ppp, k) = (ctx.pixels_per_point(), self.ui_k);
+            let rect = egui::Rect::from_min_size(
+                egui::pos2(ime.rect[0] / k.0 / ppp, ime.rect[1] / k.1 / ppp),
+                egui::vec2(ime.rect[2] / k.0 / ppp, ime.rect[3] / k.1 / ppp),
+            );
+            platform.ime = Some(egui::output::IMEOutput {
+                purpose: if ime.password { egui::IMEPurpose::Password } else { egui::IMEPurpose::Normal },
+                rect,
+                cursor_rect: rect,
+                should_interrupt_composition: ime.retap,
+            });
+        }
+        #[cfg(target_os = "android")]
+        if let Phase::World(w) = &self.phase
+            && text_field_open(w)
+            && platform.ime.is_none()
+        {
+            let (ppp, k) = (ctx.pixels_per_point(), self.ui_k);
+            let rect = if w.typing {
+                if w.modern {
+                    self.modern.as_ref().and_then(|m| m.ime_caret.take())
+                } else {
+                    w.ime_at.take().map(|r| {
+                        egui::Rect::from_min_size(
+                            egui::pos2(r[0] / k.0 / ppp, r[1] / k.1 / ppp),
+                            egui::vec2(r[2] / k.0 / ppp, r[3] / k.1 / ppp),
+                        )
+                    })
+                }
+            } else {
+                None
+            };
+            let rect = rect.or_else(|| {
+                let (sw, sh) = (size[0] as f32, size[1] as f32);
+                Some(egui::Rect::from_min_size(
+                    egui::pos2(16.0 / k.0 / ppp, (sh - 56.0) / k.1 / ppp),
+                    egui::vec2((sw - 32.0) / k.0 / ppp, 40.0 / k.1 / ppp),
+                ))
+            });
+            if let Some(rect) = rect {
+                platform.ime = Some(egui::output::IMEOutput {
+                    purpose: egui::IMEPurpose::Normal,
+                    rect,
+                    cursor_rect: rect,
+                    should_interrupt_composition: false,
+                });
+            }
+        }
+        #[cfg(not(target_os = "android"))]
         if let Phase::World(w) = &self.phase
             && w.typing
             && platform.ime.is_none()
@@ -19518,7 +19947,15 @@ fn world_uploads(gfx: &Gfx, fg: &mut FrameGpu, w: &mut World, r: &mut ZoneRender
     // This frame's copies: a zone going up (more while its indicator hides the world), then the models
     // actors are waiting for.
     use crate::render::upload::{FRAME_MS, LOADING_MS};
+    #[cfg(not(target_os = "android"))]
     gfx.gpu.begin_uploads(if w.downloading.is_some() { LOADING_MS } else { FRAME_MS });
+    // GLES copies are slow: at the desktop's budget only the sky is up for a long time.
+    #[cfg(target_os = "android")]
+    gfx.gpu.begin_uploads(if w.zone_uploading.is_some() || w.downloading.is_some() {
+        LOADING_MS * 15.0
+    } else {
+        FRAME_MS * 8.0
+    });
     perf::timed(|| "uploads".into(), || r.upload_step(&gfx.gpu, &mut fg.encoder));
     // A preloaded zone streams in whatever room is left (client/preload.rs).
     if let Some(p) = w.preload.as_mut().and_then(|p| p.ready.as_mut()) {
@@ -20953,6 +21390,8 @@ impl FrameGpu {
 impl ApplicationHandler for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         use winit::event_loop::ControlFlow;
+        #[cfg(target_os = "android")]
+        self.android_about_to_wait(event_loop);
         match self.next_frame {
             Some(t) if Instant::now() < t => event_loop.set_control_flow(ControlFlow::WaitUntil(t)),
             Some(_) => {
@@ -20978,6 +21417,8 @@ impl ApplicationHandler for App {
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.gfx.is_some() {
+            #[cfg(target_os = "android")]
+            self.android_refresh_surface();
             return;
         }
         // Hidden (and on Wayland unmapped, nothing being presented) until the title can draw. Driven test runs
@@ -21013,7 +21454,15 @@ impl ApplicationHandler for App {
             let attrs = WindowAttributesExtWayland::with_name(attrs, "vana-client", "vana-client");
             WindowAttributesExtX11::with_name(attrs, "vana-client", "vana-client")
         };
-        let window = Arc::new(event_loop.create_window(attrs).expect("creating the window"));
+        let window = match event_loop.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            // Android's native window may not be up yet: about_to_wait tries again.
+            Err(e) if cfg!(target_os = "android") => {
+                log::warn!("creating the window: {e}");
+                return;
+            }
+            Err(e) => panic!("creating the window: {e:?}"),
+        };
         #[cfg(windows)]
         windpi::keep_size(&window);
         // A first start (no config yet): Menu Size and Interface Size from the screen's size (client/screen.rs).
@@ -21031,7 +21480,14 @@ impl ApplicationHandler for App {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(Box::new(
             event_loop.owned_display_handle(),
         )));
-        let surface = instance.create_surface(window.clone()).expect("creating the surface");
+        let surface = match instance.create_surface(window.clone()) {
+            Ok(s) => s,
+            Err(e) if cfg!(target_os = "android") => {
+                log::warn!("creating the surface: {e}");
+                return;
+            }
+            Err(e) => panic!("creating the surface: {e:?}"),
+        };
         self.gpus = crate::render::adapter_names(&instance, Some(&surface));
         let gpu = Gpu::with_adapter(instance, Some(&surface), &self.cfg.gpu).expect("opening the GPU");
         let size = window.inner_size();
@@ -21081,6 +21537,11 @@ impl ApplicationHandler for App {
         gpu.warm(&[config.format]);
         window.request_redraw();
         self.next_frame = Some(Instant::now());
+        #[cfg(target_os = "android")]
+        {
+            self.shown = true;
+            window.set_visible(true);
+        }
         self.gfx = Some(Gfx { window, gpu, surface, config, depth, egui_ctx, egui_state, egui_renderer });
     }
 
@@ -21120,7 +21581,14 @@ impl ApplicationHandler for App {
         if let (Phase::World(w), Some(gfx)) = (&mut self.phase, &self.gfx) {
             lua::input::set_over_ui(w, gfx.egui_ctx.is_pointer_over_egui());
         }
-        if self.opening.is_none()
+        // Android: egui takes the pointer first, as it drops a button press with no pointer position yet.
+        let pointer_first = cfg!(target_os = "android")
+            && matches!(
+                event,
+                WindowEvent::CursorMoved { .. } | WindowEvent::MouseInput { .. } | WindowEvent::Touch(_)
+            );
+        if !pointer_first
+            && self.opening.is_none()
             && let Phase::World(w) = &mut self.phase
             && lua::input::window_event(w, &event)
         {
@@ -21128,6 +21596,13 @@ impl ApplicationHandler for App {
         }
         let Some(gfx) = &mut self.gfx else { return };
         let consumed = gfx.egui_state.on_window_event(&gfx.window, &event).consumed;
+        if pointer_first
+            && self.opening.is_none()
+            && let Phase::World(w) = &mut self.phase
+            && lua::input::window_event(w, &event)
+        {
+            return;
+        }
         match event {
             // Retail takes Close off its window menu (RemoveMenu SC_CLOSE). Ours logs out first in the world
             // ("/shutdown on", exit when the server ends the session); at once elsewhere, with the link quiet for
@@ -21263,9 +21738,18 @@ impl ApplicationHandler for App {
                     }
                 }
             }
+            #[cfg(not(target_os = "android"))]
             WindowEvent::MouseInput { state, button, .. } if !consumed || state == ElementState::Released => {
                 self.mouse_button(button, state == ElementState::Pressed, consumed);
             }
+            #[cfg(target_os = "android")]
+            WindowEvent::MouseInput { state, button, .. } => self.android_mouse_input(button, state),
+            #[cfg(target_os = "android")]
+            WindowEvent::Touch(touch) if self.opening.is_some() && touch.phase == winit::event::TouchPhase::Started => {
+                self.skip_opening();
+            }
+            #[cfg(target_os = "android")]
+            WindowEvent::Touch(touch) => self.android_touch(touch),
             WindowEvent::CursorMoved { position, .. } => {
                 // FUN_100016c0: window-message motion shows the cursor only past 2 px (not while a look drag holds it).
                 if self.look_grab.is_none()
@@ -21275,9 +21759,11 @@ impl ApplicationHandler for App {
                 {
                     self.mouse.visible = true;
                 }
+                // Android: a left drag never looks (a tap's jitter would turn it into a drag with no click).
                 let looking = self.dragging
                     || self.middle_down
                     || (self.left_down
+                        && !cfg!(target_os = "android")
                         && self.press_at.is_some_and(|a| (a.0 - position.x).abs() + (a.1 - position.y).abs() >= 5.0));
                 if let (true, Some((x, y))) = (looking, self.last_cursor) {
                     if self.look_grab.is_none() {
@@ -21295,6 +21781,8 @@ impl ApplicationHandler for App {
                     }
                 }
                 self.last_cursor = Some((position.x, position.y));
+                #[cfg(target_os = "android")]
+                self.android_egui_pointer((position.x, position.y), None);
             }
             WindowEvent::MouseWheel { delta, .. } if !consumed => {
                 if let Phase::World(world) = &mut self.phase {
@@ -21663,11 +22151,22 @@ pub fn run(cfg: Config, drive: Drive) -> Result<()> {
         log::warn!("installing the client copy: {e:#}");
     }
     crate::patch::adopt_old_ffximain(&cfg.ffxi_dir());
+    #[cfg(not(target_os = "android"))]
     let event_loop = EventLoop::new()?;
+    #[cfg(target_os = "android")]
+    let event_loop = android::event_loop()?;
     let mut app = App::new(cfg, drive);
     event_loop.run_app(&mut app)?;
     Ok(())
 }
+
+#[cfg(target_os = "android")]
+mod android;
+#[cfg(target_os = "android")]
+pub(crate) use android::{
+    android_activity_ptr, android_event_loop_running, android_resume_after_activity, android_run_on_ui_thread,
+    set_android_app,
+};
 
 /// The window's egui context: no egui keyboard zoom (Ctrl+0 / Ctrl+Plus / Ctrl+Minus are macro keys), and no quit
 /// shortcut (egui consumes Ctrl+Q, and we never act on its close).

@@ -687,20 +687,38 @@ fn topic_detail(gu: Option<&GameUi>, c: &ConfigUi, v: &Values, all: &[Line], k: 
 
 /// The details column: the setting's name, its help, its facts.
 pub(super) fn details(ui: &mut Ui, m: &super::Modern, d: &Detail) {
+    detail_column(ui, m, d, None);
+}
+
+/// The same column, capped at `max` pixels: a long description scrolls instead of growing the window.
+pub(super) fn details_scrolled(ui: &mut Ui, m: &super::Modern, d: &Detail, max: f32) {
+    detail_column(ui, m, d, Some(max));
+}
+
+fn detail_column(ui: &mut Ui, m: &super::Modern, d: &Detail, max: Option<f32>) {
     ui.vertical(|ui| {
         ui.set_width(DETAIL_W);
         group_head(ui, m, "Details", true);
         ui.add_space(4.0);
-        ui.label(egui::RichText::new(&d.name).size(m.theme.ui).color(m.theme.color("gold")));
-        ui.add_space(4.0);
-        ui.label(egui::RichText::new(&d.text).size(m.theme.small).color(m.theme.color("text")));
-        ui.add_space(8.0);
-        for (k, v) in &d.facts {
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(*k).size(m.theme.small - 1.0).color(m.theme.color("muted")));
-                ui.add_space(6.0);
-                ui.label(egui::RichText::new(v).size(m.theme.small - 1.0).color(m.theme.color("text")));
-            });
+        let body = |ui: &mut Ui| {
+            ui.set_width(DETAIL_W - 12.0);
+            ui.label(egui::RichText::new(&d.name).size(m.theme.ui).color(m.theme.color("gold")));
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(&d.text).size(m.theme.small).color(m.theme.color("text")));
+            ui.add_space(8.0);
+            for (k, v) in &d.facts {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(*k).size(m.theme.small - 1.0).color(m.theme.color("muted")));
+                    ui.add_space(6.0);
+                    ui.label(egui::RichText::new(v).size(m.theme.small - 1.0).color(m.theme.color("text")));
+                });
+            }
+        };
+        match max {
+            Some(max) => {
+                kit::scroll(ui, "details", max, body);
+            }
+            None => body(ui),
         }
     });
 }
@@ -2035,7 +2053,11 @@ fn keys_page(
 }
 
 /// The title's Config list: retail's page (lobycwin) and ours.
+#[cfg(not(target_os = "android"))]
 const LOBBY: [&str; 2] = ["Title Screen", "Settings"];
+/// Android adds where the game files are read from (client/game_data.rs).
+#[cfg(target_os = "android")]
+const LOBBY: [&str; 3] = ["Title Screen", "Settings", "Game data"];
 
 /// lobycwin's settings in retail's order on screen: the title music first.
 fn lobby_shapes() -> Vec<Shape> {
@@ -2145,6 +2167,10 @@ pub fn lobby(p: &mut Panels, c: &mut ConfigUi, v: &mut Values, s: Option<&mut Se
         Some(Click::Entry(k)) => {
             (c.m_entry, c.m_open, c.m_row) = (k, true, 0);
             out.sounds.push(Se::Select);
+            #[cfg(target_os = "android")]
+            if k == 2 {
+                (out.open_game_data, out.closed) = (true, true);
+            }
         }
         Some(Click::Opt(i, x)) => {
             (c.m_open, c.m_row) = (true, i);
@@ -2201,6 +2227,10 @@ pub fn lobby_key(
             (kit::Act::Press(..), _) => {
                 (c.m_open, c.m_row) = (true, 0);
                 out.sounds.push(Se::Select);
+                #[cfg(target_os = "android")]
+                if c.m_entry == 2 {
+                    (out.open_game_data, out.closed) = (true, true);
+                }
             }
             (a, _) => out.sounds.extend(a.sound()),
         }

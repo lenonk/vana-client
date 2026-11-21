@@ -76,6 +76,12 @@ impl TwoFa {
         TwoFa { step: Step::Menu, focus: 0, code: String::new(), new: Default::default(), error: None }
     }
 
+    /// The focused field takes the soft keyboard: true when that field is a password.
+    #[cfg(target_os = "android")]
+    pub fn keyboard(&self) -> Option<bool> {
+        (self.focus < self.fields().len()).then(|| matches!(self.step, Step::Password) && self.focus < 2)
+    }
+
     /// The step's fields: their labels, focus 0.. in order (the new passwords are shown as stars).
     fn fields(&self) -> &'static [&'static str] {
         match self.step {

@@ -379,6 +379,7 @@ const RETRY: Duration = Duration::from_secs(5);
 
 /// One poll of the pad that plays, from gilrs or SDL: the buttons held (VIRTUAL's numbers, sorted) and the sticks and
 /// triggers (lx, ly, rx, ry in -1 ..= 1, up positive; lt, rt in 0 ..= 1).
+#[derive(Clone)]
 pub struct Pad {
     pub buttons: Vec<u8>,
     pub axes: [f32; 6],
@@ -500,6 +501,8 @@ impl Gamepad {
             self.maps =
                 Some((padsin.to_string(), padexsin.to_string(), PadMap::parse(padsin), PadMap::parse(padexsin)));
         }
+        // NativeActivity's focus reports are unreliable: Android takes the pad regardless.
+        let focused = focused || cfg!(target_os = "android");
         let pad = match self.read_pad() {
             Some(p) if focused || set.background => p,
             _ => {
@@ -616,7 +619,8 @@ impl Gamepad {
     /// Starts gilrs, again every RETRY while it fails, and on Linux SDL once when gilrs failed or found no pad.
     fn connect(&mut self) {
         let now = Instant::now();
-        if self.gilrs.is_none() && self.next_try.is_none_or(|t| now >= t) {
+        // gilrs has no Android backend; the patched winit feeds gamepad_android instead.
+        if !cfg!(target_os = "android") && self.gilrs.is_none() && self.next_try.is_none_or(|t| now >= t) {
             self.next_try = Some(now + RETRY);
             match Gilrs::new() {
                 Ok(g) => {
@@ -651,6 +655,10 @@ impl Gamepad {
 
     /// The pad that plays (the last one touched): gilrs's, else SDL's.
     fn read_pad(&mut self) -> Option<Pad> {
+        #[cfg(target_os = "android")]
+        if let Some(p) = super::gamepad_android::state() {
+            return Some(p);
+        }
         #[cfg(target_os = "linux")]
         if let Some(s) = &mut self.sdl {
             s.update();
@@ -698,6 +706,10 @@ impl Gamepad {
 
     /// The connected pads' names (gilrs's, else SDL's), the one that plays first.
     pub fn pads(&self) -> Vec<String> {
+        #[cfg(target_os = "android")]
+        if let Some(name) = super::gamepad_android::name() {
+            return vec![name];
+        }
         let mut v: Vec<(bool, String)> = self
             .gilrs
             .iter()

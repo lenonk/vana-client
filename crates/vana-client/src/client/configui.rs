@@ -307,6 +307,9 @@ pub struct Out {
     /// conf3win closed after Show / Hide was picked (win_conf3win_v08): c2s 0x0DC which 0, set = hidden. Sent even
     /// when the pick matches the flag already held.
     pub anon: Option<bool>,
+    /// Android: Game data was picked in the title's Config list (client/game_data.rs).
+    #[cfg(target_os = "android")]
+    pub open_game_data: bool,
 }
 
 /// Our Settings button under lobycwin and our rows under configwi's list (not retail): virtual children.

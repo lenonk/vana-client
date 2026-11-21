@@ -426,7 +426,24 @@ impl SelectScene {
         alive: Option<Vec<u32>>,
     ) {
         let view = target.0;
+        #[cfg(not(target_os = "android"))]
         let zone = self.zone.get_or_insert_with(|| ZoneRenderer::new(gpu, &self.data.scene, format));
+        #[cfg(target_os = "android")]
+        let zone = self.zone.get_or_insert_with(|| {
+            let geo = std::sync::Arc::new(crate::render::ZoneGeometry::build(&self.data.scene));
+            let textures = std::mem::take(&mut self.data.scene.textures);
+            ZoneRenderer::streamed(gpu, geo, textures, format)
+        });
+        #[cfg(target_os = "android")]
+        {
+            use crate::render::upload::LOADING_MS;
+            gpu.begin_uploads(LOADING_MS * 15.0);
+            zone.upload_step(gpu, encoder);
+            gpu.run_mips(encoder, crate::render::MIP_BUDGET);
+            if !zone.ready(gpu) {
+                return;
+            }
+        }
         zone.lighting = self.data.lighting;
         if self.actors.len() != self.data.models.len() {
             self.actors =

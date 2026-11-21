@@ -19,6 +19,33 @@ pub fn data_dir() -> PathBuf {
     app_dir(dirs::data_dir())
 }
 
+/// Android's shared storage. The game files and the installer volumes live here: app storage (`$HOME`, set by
+/// android_main) goes with the app and has no room for them.
+#[cfg(target_os = "android")]
+const SHARED_STORAGE: &str = "/storage/emulated/0";
+
+/// Where a first start installs the game files.
+pub fn default_game_dir() -> PathBuf {
+    #[cfg(target_os = "android")]
+    return PathBuf::from(SHARED_STORAGE).join("Game").join("FFXI");
+    #[cfg(not(target_os = "android"))]
+    data_dir().join("game")
+}
+
+/// `path` is in Android's app storage.
+#[cfg(target_os = "android")]
+pub fn in_app_storage(path: &std::path::Path) -> bool {
+    dirs::home_dir().is_some_and(|h| path.starts_with(h))
+}
+
+/// The Downloads folder: mod packs, Install from File, and on Android the installer volumes.
+pub fn downloads_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "android")]
+    return Some(PathBuf::from(SHARED_STORAGE).join("Download"));
+    #[cfg(not(target_os = "android"))]
+    dirs::download_dir()
+}
+
 /// The PlayOnline Viewer's files, kept as its update leaves them (never run): its patch.ver gates a PlayOnline log-in.
 pub fn viewer_dir() -> PathBuf {
     data_dir().join("PlayOnlineViewer")
@@ -556,7 +583,7 @@ pub const FRAME_LIMITS: [u32; 14] = [30, 60, 75, 90, 100, 120, 144, 165, 180, 20
 impl Default for Config {
     fn default() -> Self {
         Self {
-            game_dir: data_dir().join("game"),
+            game_dir: default_game_dir(),
             installed: false,
             server: "127.0.0.1".into(),
             username: String::new(),
