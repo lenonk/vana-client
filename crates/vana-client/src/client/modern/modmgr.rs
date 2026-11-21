@@ -1468,6 +1468,7 @@ fn get_mods(ui: &mut Ui, m: &super::Modern, s: &SettingsUi, row: usize, follow: 
     // The archives found (Update All is the Installed tab's).
     let offers: Vec<_> = s.mods_rows().1.into_iter().filter(|o| !o.all).collect();
     let mut hover = None;
+    let tall = ui.ctx().content_rect().height() * 0.45;
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
             ui.set_width(LIST_W + 16.0 + FORMS_W + 60.0);
@@ -1482,7 +1483,6 @@ fn get_mods(ui: &mut Ui, m: &super::Modern, s: &SettingsUi, row: usize, follow: 
                 note(ui, m, &format!("The last install failed: {e}"), "hp");
             }
             ui.add_space(6.0);
-            let tall = ui.ctx().content_rect().height() * 0.45;
             kit::scroll(ui, "get mods", tall, |ui| {
                 ui.add_space(4.0);
                 heading(ui, m, "Standard mods");
@@ -1562,7 +1562,7 @@ fn get_mods(ui: &mut Ui, m: &super::Modern, s: &SettingsUi, row: usize, follow: 
                 facts: Vec::new(),
             }),
         };
-        config::details(ui, m, &d);
+        config::details_scrolled(ui, m, &d, tall);
     });
 }
 

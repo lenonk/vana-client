@@ -398,7 +398,7 @@ fn plan(members: &[(String, u64)]) -> HashMap<String, (String, usize, u64)> {
 /// Where packs are looked for: the mods folder, the Downloads folder and the folders right inside it.
 pub fn pack_dirs() -> Vec<PathBuf> {
     let mut dirs = vec![crate::config::mods_dir()];
-    if let Some(d) = dirs::download_dir()
+    if let Some(d) = crate::config::downloads_dir()
         && let Ok(rd) = std::fs::read_dir(&d)
     {
         let mut subs: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();

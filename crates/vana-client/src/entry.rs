@@ -1133,6 +1133,10 @@ pub fn entry() -> Result<()> {
     unsafe {
         windows_sys::Win32::System::Console::AttachConsole(windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS);
     }
+    // Android passes unpredictable argv; clap can exit the process before logging is ready.
+    #[cfg(target_os = "android")]
+    let cli = Cli { cmd: None };
+    #[cfg(not(target_os = "android"))]
     let cli = Cli::parse();
     // The client also logs to a file (the last run's kept as .prev), its effect lines included for now; Windows logs
     // every command (a GUI exe started without a console loses stderr). The offscreen tools leave the file alone.
@@ -1145,6 +1149,7 @@ pub fn entry() -> Result<()> {
     log.format_timestamp_millis();
     let path = config::log_path();
     if (client || cfg!(windows))
+        && !cfg!(target_os = "android")
         && let Ok(file) = path.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|_| {
             let _ = std::fs::rename(&path, path.with_extension("prev.log"));
             std::fs::File::create(&path)
@@ -1157,6 +1162,7 @@ pub fn entry() -> Result<()> {
             default(info);
         }));
     }
+    #[cfg(not(target_os = "android"))]
     log.init();
     let Some(cmd) = cli.cmd else {
         return client::run(config::Config::load(), client::Drive::default());

@@ -16,6 +16,15 @@ use egui::{Align2, Color32, Context, FontFamily, FontId, Sense, Ui, pos2, vec2};
 
 const W: f32 = 380.0;
 
+/// A login error popup with Trust server (Android certificate mismatch).
+#[cfg(target_os = "android")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LoginErrorAck {
+    None,
+    Ok,
+    Trust,
+}
+
 impl Modern {
     /// egui's zoom for the window height and the Interface Size, as the game's layer sets it.
     fn zoom_to(&mut self, ctx: &Context, window: [u32; 2], scale: u32) {
@@ -610,6 +619,51 @@ impl Modern {
         hover && ctx.input(|i| i.pointer.primary_clicked())
     }
 
+    /// Login certificate mismatch (Android): Trust server and OK; which button was pressed, if any.
+    #[cfg(target_os = "android")]
+    pub fn ok_trust_popup(
+        &mut self,
+        ctx: &Context,
+        window: [u32; 2],
+        scale: u32,
+        ui_k: (f32, f32),
+        frame: [f32; 4],
+        text: &str,
+    ) -> LoginErrorAck {
+        let (p, size, r) = self.popup_frame(ctx, window, scale, ui_k, "ok-trust", frame, text, 52.0);
+        let gap = 14.0;
+        let bw = (size * 6.0).max(112.0);
+        let bh = (size * 1.45).max(30.0);
+        let total = bw * 2.0 + gap;
+        let y = (r.max.y - bh / 2.0 - 10.0).min(r.max.y - 5.0);
+        let trust_b =
+            egui::Rect::from_center_size(pos2(r.center().x - total / 2.0 + bw / 2.0, y), vec2(bw, bh));
+        let ok_b = egui::Rect::from_center_size(pos2(r.center().x + total / 2.0 - bw / 2.0, y), vec2(bw, bh));
+        let hover = ctx.input(|i| i.pointer.hover_pos());
+        let clicked = ctx.input(|i| i.pointer.primary_clicked());
+        self.lobby_button(
+            &p,
+            trust_b,
+            "Trust server",
+            true,
+            true,
+            hover,
+            size,
+        );
+        self.lobby_button(&p, ok_b, "OK", false, true, hover, size);
+        if clicked {
+            if let Some(h) = hover {
+                if trust_b.contains(h) {
+                    return LoginErrorAck::Trust;
+                }
+                if ok_b.contains(h) {
+                    return LoginErrorAck::Ok;
+                }
+            }
+        }
+        LoginErrorAck::None
+    }
+
     /// The select (or delete) screen: what the mouse did, for SelectUi::pointer.
     pub fn select_screen(&mut self, ctx: &Context, gu: &GameUi, window: [u32; 2], scale: u32, v: &View) -> Pointer {
         self.zoom_to(ctx, window, scale);
@@ -769,7 +823,11 @@ fn step_rows(gu: &GameUi, step: usize) -> Vec<String> {
 
 /// A text field: the text (or `empty`, dimmed) and the caret at char `caret` while `caret` is Some and blinking on.
 fn field(ui: &mut Ui, m: &Modern, text: &str, empty: &str, caret: Option<usize>) {
-    let (r, _) = ui.allocate_exact_size(vec2(W - 14.0, 30.0), Sense::hover());
+    let sense = if caret.is_some() { Sense::click() } else { Sense::hover() };
+    #[cfg(target_os = "android")]
+    let (r, resp) = ui.allocate_exact_size(vec2(W - 14.0, 30.0), sense);
+    #[cfg(not(target_os = "android"))]
+    let (r, _) = ui.allocate_exact_size(vec2(W - 14.0, 30.0), sense);
     let face = if caret.is_some() { "controls/input_focused" } else { "controls/input_normal" };
     if let Some(s) = m.art.sprite(face) {
         ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
@@ -789,6 +847,10 @@ fn field(ui: &mut Ui, m: &Modern, text: &str, empty: &str, caret: Option<usize>)
             [pos2(x, r.min.y + 7.0), pos2(x, r.max.y - 7.0)],
             egui::Stroke::new(1.5, m.theme.color("text")),
         );
+    }
+    #[cfg(target_os = "android")]
+    if caret.is_some() {
+        m.lobby_ime.set(Some(super::super::LobbyImeHint { rect: r, retap: resp.clicked() }));
     }
     ui.ctx().request_repaint();
 }
@@ -1202,6 +1264,9 @@ fn windows(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
         p.panel_at("select rename", None, 460.0, low, |ui| {
             ui.label(egui::RichText::new(&v.help).size(m.theme.small).color(m.theme.color("muted")));
             ui.add_space(6.0);
+            #[cfg(target_os = "android")]
+            let (r, resp) = ui.allocate_exact_size(vec2(400.0, 30.0), Sense::click());
+            #[cfg(not(target_os = "android"))]
             let (r, _) = ui.allocate_exact_size(vec2(400.0, 30.0), Sense::hover());
             if let Some(s) = m.art.sprite("controls/input_focused") {
                 ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
@@ -1214,6 +1279,8 @@ fn windows(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
                 FontId::proportional(m.theme.ui),
                 m.theme.color("text"),
             );
+            #[cfg(target_os = "android")]
+            m.lobby_ime.set(Some(super::super::LobbyImeHint { rect: r, retap: resp.clicked() }));
         });
     }
 }
