@@ -251,6 +251,14 @@ struct TrustReply {
     token: Option<String>,
 }
 
+/// Android: a background `read_game_data` result tagged with the folder and generation that requested it.
+#[cfg(target_os = "android")]
+struct GameDataWarmDone {
+    generation: u64,
+    dir: PathBuf,
+    result: Result<GameDataLoaded>,
+}
+
 enum Task {
     /// The login's lobby and characters, and what came of its trust token (not for PlayOnline).
     LoggedIn(Result<(Lobby, Vec<Character>)>, Option<TrustReply>),
@@ -308,7 +316,7 @@ enum Task {
     Ship(Result<ships::Loaded>),
     /// Android: `DatIndex` and FFXiMain tables off the UI thread (client startup).
     #[cfg(target_os = "android")]
-    GameDataWarm(Result<GameDataLoaded>),
+    GameDataWarm(GameDataWarmDone),
 }
 
 /// What `game_data()` caches after reading the install (may be built on a worker on Android).
@@ -9010,6 +9018,8 @@ pub struct App {
     index: Option<Arc<DatIndex>>,
     #[cfg(target_os = "android")]
     index_warm: LoadState,
+    #[cfg(target_os = "android")]
+    index_warm_gen: u64,
     /// Installed-content mask (ROM2..): title music and lobycwin's tracks (FUN_1023ae80).
     installed: u32,
     keys_table: Option<Arc<zone::Keys>>,
@@ -9328,6 +9338,8 @@ impl App {
             index: None,
             #[cfg(target_os = "android")]
             index_warm: LoadState::Idle,
+            #[cfg(target_os = "android")]
+            index_warm_gen: 0,
             installed,
             keys_table: None,
             knock_table: None,
@@ -10011,14 +10023,17 @@ impl App {
         if !crate::android_fs::has_all_files_access() {
             return;
         }
-        if self.index.is_some() || self.index_warm == LoadState::Loading {
+        if self.index.is_some() {
             return;
         }
+        self.index_warm_gen = self.index_warm_gen.wrapping_add(1);
+        let warm_gen = self.index_warm_gen;
         self.index_warm = LoadState::Loading;
         let dir = self.cfg.ffxi_dir();
         let tx = self.tasks_tx.clone();
         std::thread::spawn(move || {
-            let _ = tx.send(Task::GameDataWarm(read_game_data(&dir)));
+            let result = read_game_data(&dir);
+            let _ = tx.send(Task::GameDataWarm(GameDataWarmDone { generation: warm_gen, dir, result }));
         });
     }
 
@@ -10292,9 +10307,12 @@ impl App {
         }
         match task {
             #[cfg(target_os = "android")]
-            Task::GameDataWarm(r) => {
-                self.index_warm = if r.is_ok() { LoadState::Idle } else { LoadState::Failed };
-                match r {
+            Task::GameDataWarm(done) => {
+                if done.generation != self.index_warm_gen || done.dir != self.cfg.ffxi_dir() {
+                    return;
+                }
+                self.index_warm = if done.result.is_ok() { LoadState::Idle } else { LoadState::Failed };
+                match done.result {
                     Ok(g) => {
                         log::info!("game data ready");
                         self.apply_game_data(g);
@@ -16216,11 +16234,18 @@ impl App {
                             match ack {
                                 modern::LoginErrorAck::Trust => {
                                     let host = self.cfg.server.clone();
-                                    match android::forget_server_tls_pins(&host) {
-                                        Ok(()) => {
-                                            self.login_error = None;
-                                            self.status =
-                                                "The server's certificate was reset. Try logging in again.".into();
+                                    let port = android::tls_trust_port(&text, self.cfg.auth_port);
+                                    match android::forget_server_tls_pins(&host, port) {
+                                        Ok(lines) => {
+                                            let forgot = lines.iter().any(|l| l.contains("forgotten"));
+                                            let kept = lines.iter().any(|l| l.contains("kept (a fixed fingerprint"));
+                                            let summary = lines.join("\n");
+                                            if kept && !forgot {
+                                                self.login_error = Some(summary);
+                                            } else {
+                                                self.login_error = None;
+                                                self.status = summary;
+                                            }
                                         }
                                         Err(err) => {
                                             self.login_error = Some(format!("Could not trust the server: {err:#}"));

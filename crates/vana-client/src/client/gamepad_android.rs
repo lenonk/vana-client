@@ -78,6 +78,10 @@ fn map_keycode(code: i32) -> Option<u8> {
 }
 
 fn apply_hat(hat_x: f32, hat_y: f32) {
+    // Stick motion often delivers hat 0,0; do not clear D-pad bits set by KEYCODE_DPAD_*.
+    if hat_x.abs() < 0.01 && hat_y.abs() < 0.01 {
+        return;
+    }
     set_button(5, hat_x < -0.5); // left
     set_button(4, hat_x > 0.5); // right
     set_button(6, hat_y < -0.5); // up (Android hat Y up-negative)

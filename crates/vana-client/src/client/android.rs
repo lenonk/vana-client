@@ -136,7 +136,6 @@ impl App {
         self.search_words = None;
         self.blu_data = None;
         self.cnq_tables = None;
-        self.index_warm = LoadState::Idle;
         self.game_ui_state = LoadState::Idle;
         self.flyover_state = LoadState::Idle;
         self.start_index_warm();
@@ -220,11 +219,20 @@ pub(crate) fn tls_pin_mismatch_message(message: &str) -> bool {
     message.contains("the certificate changed") || message.contains("sent another certificate than the login server")
 }
 
-/// Trust-server for the login form's server host: forgets its pins so the next connection learns the certificate.
-pub(crate) fn forget_server_tls_pins(host: &str) -> anyhow::Result<()> {
+/// Which TLS port to forget for this certificate error (`auth_port` is the login port).
+pub(crate) fn tls_trust_port(message: &str, auth_port: u16) -> Option<u16> {
+    if message.contains("the certificate changed") {
+        return Some(auth_port);
+    }
+    let rest = message.strip_prefix("port ")?;
+    let port: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    port.parse().ok()
+}
+
+/// Trust-server: forgets pins the way `vana-client trust-server` does and returns its status lines.
+pub(crate) fn forget_server_tls_pins(host: &str, port: Option<u16>) -> anyhow::Result<Vec<String>> {
     let store = crate::config::known_servers_path();
-    crate::net::tls::trust(&store, host.trim(), None, None)?;
-    Ok(())
+    Ok(crate::net::tls::trust(&store, host.trim(), port, None)?)
 }
 
 /// Trust server / OK on the classic yes-no error window (menu ptc6yesn).
