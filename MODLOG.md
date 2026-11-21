@@ -24848,3 +24848,19 @@ modern/search.rs (the "roe" list).
 - Tests: items::order_tests::kept_order_survives_a_resend, changed_item_goes_last, view_change_sorts.
 - Seen live (Lnxcsfix, slots pearlsack / wind crystal / cotton cloth / cipher), before the 0x52 reset: sorted at
   login, still sorted after zoning to Northern San d'Oria and back.
+
+## An attack that ends a ride: the motions read the held status (2026-11-19)
+
+- LSB takes an attack (c2s 0x01A category 2) while mounted: DelStatusEffectSilent(Mounted), then Engage, so our status
+  goes 5 -> 1 in one update with no 0 between.
+- The ride machine (FUN_1008b460) holds the applied status +0x170 at the riding one through the stand (state 0xf) and
+  `coff` (0x10), and the status motion picker FUN_100c8bb0 reads its status through FUN_10084390, which returns that
+  +0x170. Ours read the raw status in actmotion (status_motion_posed and status()): with the walk held for the stand
+  (ride::dismounting), an engaged rider picked battle motions and loaded the battle files, so the riding stand `?hi`
+  could be late or never come. The user's run (a gear-swapping DRK holding forward) swapped riding and battle files
+  back and forth for the whole fight: the chocobo stayed and the walk stayed held.
+- Now both take ride::applied: the riding stand plays the frame the input stops, `coff` runs, and the engage (battle
+  files, the draw "in N") starts once the ride has ended *(inferred: retail's engage states of the same machine wait
+  the same way)*. Seen live (Lnxcsfix on a chocobo in West Ronfaure, numpad 8 held, Ctrl+A on a Forest Hare): `chi`
+  and `coff` in the same frame, battle files 3.1 s later when `coff` ended, walking and hitting the hare after the
+  draw.

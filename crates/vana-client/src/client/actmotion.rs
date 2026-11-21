@@ -694,9 +694,9 @@ fn status_motion_posed(w: &World, id: u32, ch: &Character, posed: Option<f32>) -
     let (status, ratio) = if let Some(r) = posed {
         (0, r)
     } else if id == w.my_id {
-        (w.my_motion.status, if w.moving || w.turn_in_place { 1.0 } else { 0.0 })
+        (super::ride::applied(w, id, w.my_motion.status), if w.moving || w.turn_in_place { 1.0 } else { 0.0 })
     } else {
-        w.entities.get(&id).map_or((0, 0.0), |e| (e.motion.status, e.ratio))
+        w.entities.get(&id).map_or((0, 0.0), |e| (super::ride::applied(w, id, e.motion.status), e.ratio))
     };
     // FUN_1008c6c0 blanks the status motion (+0x7d8) when a death's scheduler starts, and FUN_100c8bb0 online picks
     // that blank for 2 / 3 rather than "cor" (unless vtable +0x200). The death scheduler's motions lay a body
@@ -716,11 +716,14 @@ pub(super) fn sdep_stand(status: u8, ratio: f32, sdep: bool) -> (u8, f32) {
     if sdep && matches!(status, 2 | 3) { (0, 0.0) } else { (status, ratio) }
 }
 
+/// The applied status (+0x170, FUN_10084390): held at the riding one while a ride comes to a stand and  runs, so
+/// an engage that ends a ride waits for it.
 fn status(w: &World, id: u32) -> u8 {
     if super::event::pose(w, id).is_some() {
         return 0;
     }
-    if id == w.my_id { w.my_motion.status } else { w.entities.get(&id).map_or(0, |e| e.motion.status) }
+    let raw = if id == w.my_id { w.my_motion.status } else { w.entities.get(&id).map_or(0, |e| e.motion.status) };
+    super::ride::applied(w, id, raw)
 }
 
 /// An event motion whose files are all in: they join the actor's files and the motion starts. The event VM calls it
