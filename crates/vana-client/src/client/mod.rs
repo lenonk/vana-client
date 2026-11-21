@@ -329,8 +329,7 @@ fn read_game_data(ffxi_dir: &std::path::Path) -> Result<GameDataLoaded> {
     let ffximain = std::fs::read(crate::dat::ffximain(ffxi_dir))?;
     let keys_table = Arc::new(zone::Keys::from_ffximain(&ffximain)?);
     let knock_table = crate::dat::tables::knockback(&ffximain).ok();
-    let search_words =
-        crate::dat::tables::search_words(&ffximain).map_err(|e| log::warn!("{e:#}")).ok().map(Arc::new);
+    let search_words = crate::dat::tables::search_words(&ffximain).map_err(|e| log::warn!("{e:#}")).ok().map(Arc::new);
     let blu_desc = crate::dat::msg::current_slot_file(&ffximain, 1, 0x1a);
     let blu_data = Arc::new(crate::dat::blumagic::BluData::load(&index, blu_desc));
     let cnq_tables = crate::dat::tables::conquest(&ffximain).map_err(|e| log::warn!("{e:#}")).ok().map(Arc::new);
@@ -16183,61 +16182,59 @@ impl App {
                         if android::tls_pin_mismatch_message(&text) {
                             login_err_ok = true;
                             let ack = if modern_ui {
-                                    let r = lu.popup_rects("menu    ok", sw, sh);
-                                    let frame = r.as_ref().map_or([0.0; 4], |r| lift(r.frame));
-                                    self.modern
-                                        .get_or_insert_with(|| modern::Modern::new(ctx))
-                                        .ok_trust_popup(ctx, window, self.cfg.modern_scale, self.ui_k, frame, &text)
-                                } else {
-                                    match android::cert_trust_dialog(lu, &text, &input, sw, sh) {
-                                        android::CertTrustAction::Trust => {
-                                            modern::LoginErrorAck::Trust
-                                        }
-                                        android::CertTrustAction::Dismiss => modern::LoginErrorAck::Ok,
-                                        _ => modern::LoginErrorAck::None,
-                                    }
-                                };
-                                let key_dismiss = input.events.iter().any(|ev| {
-                                    matches!(
-                                        ev,
-                                        egui::Event::Key {
-                                            key: egui::Key::Enter | egui::Key::Escape,
-                                            pressed: true,
-                                            ..
-                                        }
-                                    )
-                                });
-                                let ack = if key_dismiss && ack == modern::LoginErrorAck::None {
-                                    modern::LoginErrorAck::Ok
-                                } else {
-                                    ack
-                                };
-                                match ack {
-                                    modern::LoginErrorAck::Trust => {
-                                        let host = self.cfg.server.clone();
-                                        match android::forget_server_tls_pins(&host) {
-                                            Ok(()) => {
-                                                self.login_error = None;
-                                                self.status =
-                                                    "The server's certificate was reset. Try logging in again.".into();
-                                            }
-                                            Err(err) => {
-                                                self.login_error =
-                                                    Some(format!("Could not trust the server: {err:#}"));
-                                            }
-                                        }
-                                        if let Some(a) = self.audio.as_mut() {
-                                            a.ui(crate::audio::Ui::Select);
-                                        }
-                                    }
-                                    modern::LoginErrorAck::Ok => {
-                                        self.login_error = None;
-                                        if let Some(a) = self.audio.as_mut() {
-                                            a.ui(crate::audio::Ui::Select);
-                                        }
-                                    }
-                                    modern::LoginErrorAck::None => {}
+                                let r = lu.popup_rects("menu    ok", sw, sh);
+                                let frame = r.as_ref().map_or([0.0; 4], |r| lift(r.frame));
+                                self.modern.get_or_insert_with(|| modern::Modern::new(ctx)).ok_trust_popup(
+                                    ctx,
+                                    window,
+                                    self.cfg.modern_scale,
+                                    self.ui_k,
+                                    frame,
+                                    &text,
+                                )
+                            } else {
+                                match android::cert_trust_dialog(lu, &text, &input, sw, sh) {
+                                    android::CertTrustAction::Trust => modern::LoginErrorAck::Trust,
+                                    android::CertTrustAction::Dismiss => modern::LoginErrorAck::Ok,
+                                    _ => modern::LoginErrorAck::None,
                                 }
+                            };
+                            let key_dismiss = input.events.iter().any(|ev| {
+                                matches!(
+                                    ev,
+                                    egui::Event::Key { key: egui::Key::Enter | egui::Key::Escape, pressed: true, .. }
+                                )
+                            });
+                            let ack = if key_dismiss && ack == modern::LoginErrorAck::None {
+                                modern::LoginErrorAck::Ok
+                            } else {
+                                ack
+                            };
+                            match ack {
+                                modern::LoginErrorAck::Trust => {
+                                    let host = self.cfg.server.clone();
+                                    match android::forget_server_tls_pins(&host) {
+                                        Ok(()) => {
+                                            self.login_error = None;
+                                            self.status =
+                                                "The server's certificate was reset. Try logging in again.".into();
+                                        }
+                                        Err(err) => {
+                                            self.login_error = Some(format!("Could not trust the server: {err:#}"));
+                                        }
+                                    }
+                                    if let Some(a) = self.audio.as_mut() {
+                                        a.ui(crate::audio::Ui::Select);
+                                    }
+                                }
+                                modern::LoginErrorAck::Ok => {
+                                    self.login_error = None;
+                                    if let Some(a) = self.audio.as_mut() {
+                                        a.ui(crate::audio::Ui::Select);
+                                    }
+                                }
+                                modern::LoginErrorAck::None => {}
+                            }
                         }
                         if !login_err_ok {
                             let key = input.events.iter().any(|ev| {
@@ -16818,21 +16815,15 @@ impl App {
                             out.moved = more.moved.or(out.moved);
                             out.input |= more.input;
                             #[cfg(target_os = "android")]
-                            if !busy && matches!(self.select_ui.focus, select::Focus::Rename(_))
+                            if !busy
+                                && matches!(self.select_ui.focus, select::Focus::Rename(_))
                                 && let Some(h) = m.lobby_ime.take()
                             {
-                                self.lobby_ime.set(Some(lobby_ime_from_hint(
-                                    h,
-                                    ctx.pixels_per_point(),
-                                    self.ui_k,
-                                )));
+                                self.lobby_ime.set(Some(lobby_ime_from_hint(h, ctx.pixels_per_point(), self.ui_k)));
                             }
                         }
                         #[cfg(target_os = "android")]
-                        if !modern_ui
-                            && !busy
-                            && matches!(self.select_ui.focus, select::Focus::Rename(_))
-                        {
+                        if !modern_ui && !busy && matches!(self.select_ui.focus, select::Focus::Rename(_)) {
                             let r = gu.chmkname_field_rect(sw, sh);
                             self.lobby_ime.set(Some(LobbyIme {
                                 rect: r,
@@ -17088,11 +17079,7 @@ impl App {
                                 if let Some(m) = self.modern.as_ref()
                                     && let Some(h) = m.lobby_ime.take()
                                 {
-                                    self.lobby_ime.set(Some(lobby_ime_from_hint(
-                                        h,
-                                        ctx.pixels_per_point(),
-                                        self.ui_k,
-                                    )));
+                                    self.lobby_ime.set(Some(lobby_ime_from_hint(h, ctx.pixels_per_point(), self.ui_k)));
                                 }
                             } else {
                                 let r = gu.chmkname_field_rect(sw, sh);
@@ -18099,47 +18086,47 @@ impl App {
         let movie = self.movie.get_or_insert_with(|| crate::render::movie::Movie::new(&gfx.gpu, gfx.config.format));
         match gfx.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
-        let Some(o) = self.opening.as_mut() else {
-            drop(frame);
-            self.gfx = Some(gfx);
-            return;
-        };
-            if let Some(f) = o.fresh.take() {
-                movie.upload(&gfx.gpu, &f);
-            }
-            let view = frame.texture.create_view(&Default::default());
-            let mut encoder = gfx.gpu.device.create_command_encoder(&Default::default());
-            movie.draw(&gfx.gpu, &mut encoder, &view, size, opening::picture_rect(size, o.rows), o.showing());
-            let row = (size[0] * 4).div_ceil(256) * 256;
-            let capture = shot.filter(|_| gfx.config.usage.contains(wgpu::TextureUsages::COPY_SRC)).map(|path| {
-                let buf = gfx.gpu.device.create_buffer(&wgpu::BufferDescriptor {
-                    label: Some("screenshot"),
-                    size: (row * size[1]) as u64,
-                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                    mapped_at_creation: false,
-                });
-                encoder.copy_texture_to_buffer(
-                    frame.texture.as_image_copy(),
-                    wgpu::TexelCopyBufferInfo {
-                        buffer: &buf,
-                        layout: wgpu::TexelCopyBufferLayout {
-                            offset: 0,
-                            bytes_per_row: Some(row),
-                            rows_per_image: Some(size[1]),
-                        },
-                    },
-                    wgpu::Extent3d { width: size[0], height: size[1], depth_or_array_layers: 1 },
-                );
-                (buf, path)
-            });
-            gfx.gpu.queue.submit([encoder.finish()]);
-            if let Some((buf, path)) = capture {
-                match save_capture(&gfx.gpu, &buf, size, row, gfx.config.format, &path, None, None) {
-                    Err(e) => log::error!("screenshot failed: {e:#}"),
-                    Ok(()) => log::info!("screenshot written to {}", path.display()),
+                let Some(o) = self.opening.as_mut() else {
+                    drop(frame);
+                    self.gfx = Some(gfx);
+                    return;
+                };
+                if let Some(f) = o.fresh.take() {
+                    movie.upload(&gfx.gpu, &f);
                 }
-            }
-            gfx.gpu.queue.present(frame);
+                let view = frame.texture.create_view(&Default::default());
+                let mut encoder = gfx.gpu.device.create_command_encoder(&Default::default());
+                movie.draw(&gfx.gpu, &mut encoder, &view, size, opening::picture_rect(size, o.rows), o.showing());
+                let row = (size[0] * 4).div_ceil(256) * 256;
+                let capture = shot.filter(|_| gfx.config.usage.contains(wgpu::TextureUsages::COPY_SRC)).map(|path| {
+                    let buf = gfx.gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some("screenshot"),
+                        size: (row * size[1]) as u64,
+                        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                        mapped_at_creation: false,
+                    });
+                    encoder.copy_texture_to_buffer(
+                        frame.texture.as_image_copy(),
+                        wgpu::TexelCopyBufferInfo {
+                            buffer: &buf,
+                            layout: wgpu::TexelCopyBufferLayout {
+                                offset: 0,
+                                bytes_per_row: Some(row),
+                                rows_per_image: Some(size[1]),
+                            },
+                        },
+                        wgpu::Extent3d { width: size[0], height: size[1], depth_or_array_layers: 1 },
+                    );
+                    (buf, path)
+                });
+                gfx.gpu.queue.submit([encoder.finish()]);
+                if let Some((buf, path)) = capture {
+                    match save_capture(&gfx.gpu, &buf, size, row, gfx.config.format, &path, None, None) {
+                        Err(e) => log::error!("screenshot failed: {e:#}"),
+                        Ok(()) => log::info!("screenshot written to {}", path.display()),
+                    }
+                }
+                gfx.gpu.queue.present(frame);
             }
             wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
                 gfx.surface.configure(&gfx.gpu.device, &gfx.config);

@@ -17,11 +17,7 @@ pub fn start_dir(hint: &Path) -> PathBuf {
     if !p.is_dir() {
         p = p.parent().map(Path::to_path_buf).unwrap_or_else(storage_root);
     }
-    if !p.starts_with("/storage") {
-        storage_root()
-    } else {
-        p
-    }
+    if !p.starts_with("/storage") { storage_root() } else { p }
 }
 
 pub enum BrowserAction {
@@ -47,30 +43,21 @@ pub fn browser(ui: &mut egui::Ui, cwd: &Path) -> BrowserAction {
             action = BrowserAction::Cancel;
         }
     });
-    let mut kids: Vec<PathBuf> = std::fs::read_dir(cwd)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.is_dir())
-        .collect();
+    let mut kids: Vec<PathBuf> =
+        std::fs::read_dir(cwd).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
     kids.sort();
     let list_h = (ui.ctx().content_rect().height() * 0.45).clamp(140.0, 420.0);
-    egui::ScrollArea::vertical()
-        .id_salt("folder list")
-        .max_height(list_h)
-        .auto_shrink([false; 2])
-        .show(ui, |ui| {
-            if kids.is_empty() {
-                ui.label(egui::RichText::new("No subfolders (or this folder is not readable).").weak().size(12.0));
+    egui::ScrollArea::vertical().id_salt("folder list").max_height(list_h).auto_shrink([false; 2]).show(ui, |ui| {
+        if kids.is_empty() {
+            ui.label(egui::RichText::new("No subfolders (or this folder is not readable).").weak().size(12.0));
+        }
+        for dir in kids {
+            let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            if ui.button(format!("{name}/")).clicked() {
+                action = BrowserAction::Enter(dir);
             }
-            for dir in kids {
-                let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                if ui.button(format!("{name}/")).clicked() {
-                    action = BrowserAction::Enter(dir);
-                }
-            }
-        });
+        }
+    });
     action
 }
 

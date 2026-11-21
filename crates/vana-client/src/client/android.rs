@@ -113,10 +113,7 @@ impl App {
         if self.index_warm == LoadState::Failed {
             self.index_warm = LoadState::Idle;
         }
-        if self.game_ui.is_none()
-            && self.first_run.is_none()
-            && self.game_ui_state == LoadState::Failed
-        {
+        if self.game_ui.is_none() && self.first_run.is_none() && self.game_ui_state == LoadState::Failed {
             self.game_ui_state = LoadState::Idle;
         }
         if self.flyover.is_none() && self.flyover_state == LoadState::Failed {
@@ -220,8 +217,7 @@ impl App {
 
 /// A pinned certificate no longer matches what the server sent (login or lobby TLS).
 pub(crate) fn tls_pin_mismatch_message(message: &str) -> bool {
-    message.contains("the certificate changed")
-        || message.contains("sent another certificate than the login server")
+    message.contains("the certificate changed") || message.contains("sent another certificate than the login server")
 }
 
 /// Trust-server for the login form's server host: forgets its pins so the next connection learns the certificate.
@@ -278,16 +274,11 @@ pub(crate) fn cert_trust_dialog(
             }
         }
     }
-    if input.events.iter().any(|ev| {
-        matches!(
-            ev,
-            egui::Event::Key {
-                key: egui::Key::Escape | egui::Key::Enter,
-                pressed: true,
-                ..
-            }
-        )
-    }) {
+    if input
+        .events
+        .iter()
+        .any(|ev| matches!(ev, egui::Event::Key { key: egui::Key::Escape | egui::Key::Enter, pressed: true, .. }))
+    {
         return CertTrustAction::Dismiss;
     }
     CertTrustAction::None

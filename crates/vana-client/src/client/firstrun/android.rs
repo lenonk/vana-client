@@ -204,7 +204,10 @@ impl FirstRun {
                 self.note = if n == VOLUMES {
                     format!("Installer: {VOLUMES}/{VOLUMES} in {}", short_path(dir))
                 } else {
-                    format!("Found {n}/{VOLUMES} installer parts in {}. Pick the folder that has all five.", short_path(dir))
+                    format!(
+                        "Found {n}/{VOLUMES} installer parts in {}. Pick the folder that has all five.",
+                        short_path(dir)
+                    )
                 };
             }
             Browse::InstallTo => {
@@ -375,9 +378,7 @@ impl FirstRun {
         }
         ui.add_space(8.0);
         ui.label(egui::RichText::new("Install to").size(14.0));
-        ui.label(
-            egui::RichText::new(short_path(&install_parent)).size(13.0).font(egui::FontId::monospace(13.0)),
-        );
+        ui.label(egui::RichText::new(short_path(&install_parent)).size(13.0).font(egui::FontId::monospace(13.0)));
         if ui.button("Browse install folder").clicked() {
             self.note.clear();
             self.open_browser(Browse::InstallTo, &install_parent);

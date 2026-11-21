@@ -38,12 +38,7 @@ pub struct Editor {
 
 impl Editor {
     pub fn new(game_dir: PathBuf) -> Self {
-        Self {
-            path_input: game_dir.display().to_string(),
-            game_dir,
-            browser_at: None,
-            note: String::new(),
-        }
+        Self { path_input: game_dir.display().to_string(), game_dir, browser_at: None, note: String::new() }
     }
 
     pub fn ui(&mut self, ctx: &egui::Context) -> Action {
@@ -86,17 +81,13 @@ impl Editor {
                                 format!("Installed to: {}", g.join("FINAL FANTASY XI").display()),
                                 egui::Color32::from_rgb(0x90, 0xc8, 0x90),
                             ),
-                            Err(_) => (
-                                format!("Picked: {}", typed.display()),
-                                egui::Color32::from_rgb(0xe0, 0xa0, 0x70),
-                            ),
+                            Err(_) => {
+                                (format!("Picked: {}", typed.display()), egui::Color32::from_rgb(0xe0, 0xa0, 0x70))
+                            }
                         }
                     } else {
                         (
-                            format!(
-                                "Installed to: {}",
-                                self.game_dir.join("FINAL FANTASY XI").display()
-                            ),
+                            format!("Installed to: {}", self.game_dir.join("FINAL FANTASY XI").display()),
                             egui::Color32::from_rgb(0xc0, 0xc0, 0xc0),
                         )
                     };

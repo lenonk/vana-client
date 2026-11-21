@@ -636,20 +636,11 @@ impl Modern {
         let bh = (size * 1.45).max(30.0);
         let total = bw * 2.0 + gap;
         let y = (r.max.y - bh / 2.0 - 10.0).min(r.max.y - 5.0);
-        let trust_b =
-            egui::Rect::from_center_size(pos2(r.center().x - total / 2.0 + bw / 2.0, y), vec2(bw, bh));
+        let trust_b = egui::Rect::from_center_size(pos2(r.center().x - total / 2.0 + bw / 2.0, y), vec2(bw, bh));
         let ok_b = egui::Rect::from_center_size(pos2(r.center().x + total / 2.0 - bw / 2.0, y), vec2(bw, bh));
         let hover = ctx.input(|i| i.pointer.hover_pos());
         let clicked = ctx.input(|i| i.pointer.primary_clicked());
-        self.lobby_button(
-            &p,
-            trust_b,
-            "Trust server",
-            true,
-            true,
-            hover,
-            size,
-        );
+        self.lobby_button(&p, trust_b, "Trust server", true, true, hover, size);
         self.lobby_button(&p, ok_b, "OK", false, true, hover, size);
         if clicked {
             if let Some(h) = hover {
