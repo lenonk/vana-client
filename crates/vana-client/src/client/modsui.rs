@@ -485,7 +485,7 @@ pub enum Pick {
 impl Browse {
     /// At the Downloads folder (else home); `mods`: a Lua mod's folder is a pick too.
     pub fn open(mods: bool) -> Self {
-        let dir = dirs::download_dir().or_else(dirs::home_dir).unwrap_or_else(|| PathBuf::from("/"));
+        let dir = crate::config::downloads_dir().or_else(dirs::home_dir).unwrap_or_else(|| PathBuf::from("/"));
         let mut b = Self { dir, entries: Vec::new(), cursor: 0, mods };
         b.read();
         b

@@ -335,9 +335,13 @@ pub fn connect_pinned(store: &Path, host: &str, port: u16) -> Result<TlsStream> 
                     got.authority
                 );
                 // The caller names the server.
+                #[cfg(target_os = "android")]
+                let reinstall = "Tap Trust server in the dialog and log in again.";
+                #[cfg(not(target_os = "android"))]
+                let reinstall =
+                    format!("If the server was reinstalled, run `vana-client trust-server {host}` and log in again.");
                 bail!(
-                    "the certificate changed: expected {}, sent {}. Someone may be intercepting the connection. If the \
-                     server was reinstalled, run `vana-client trust-server {host}` and log in again.",
+                    "the certificate changed: expected {}, sent {}. Someone may be intercepting the connection. {reinstall}",
                     describe(want),
                     describe(&sent)
                 );

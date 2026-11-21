@@ -1,2 +1,16 @@
 /target
 /CLAUDE.md
+
+# Android Gradle / APK build outputs (sources under android/ are tracked)
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/*.keystore
+android/**/*.jks
+android/app/src/main/jniLibs/**/*.so
+release/android-link-stubs/*.o
+release/android-link-stubs/libpthread.a
+release/*.apk
+patches/winit/.cargo-ok
+patches/winit/.cargo_vcs_info.json

@@ -30,6 +30,8 @@ mod keyboard;
 mod kit;
 mod lists;
 mod lobby;
+#[cfg(target_os = "android")]
+pub(crate) use lobby::LoginErrorAck;
 mod loot;
 mod macros;
 mod maze;
@@ -107,6 +109,8 @@ pub struct Modern {
     chat_seen: std::cell::RefCell<[Option<usize>; 11]>,
     /// The login form's text size (lobby.rs), for the lobby's popups.
     lobby_text: std::cell::Cell<f32>,
+    #[cfg(target_os = "android")]
+    pub(crate) lobby_ime: std::cell::Cell<Option<super::LobbyImeHint>>,
     /// The windows' background opacity (config `modern_opacity`).
     opacity: std::cell::Cell<f32>,
     /// The panel a drag has really moved (show): a press alone moves nothing.
@@ -212,6 +216,8 @@ impl Modern {
             chat_seen: Default::default(),
             dragging: Default::default(),
             lobby_text: Default::default(),
+            #[cfg(target_os = "android")]
+            lobby_ime: Default::default(),
             opacity: std::cell::Cell::new(0.85),
             row_style: Default::default(),
             border_style: Default::default(),

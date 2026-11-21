@@ -2,6 +2,8 @@
 //! drawn from the DATs, so until they exist a small window of ours asks to download the free retail client from
 //! Square Enix, installs its game files, brings them up to date and deletes what it downloaded, or to point at game
 //! files already on disk.
+// Android draws its own window (android.rs) over the same install steps; the download path is desktop's.
+#![cfg_attr(target_os = "android", allow(dead_code, unused_imports))]
 
 use crate::install::Progress;
 use anyhow::{Context, Result};
@@ -85,6 +87,7 @@ pub enum Action {
     Ready,
 }
 
+#[cfg(not(target_os = "android"))]
 pub struct FirstRun {
     game_dir: PathBuf,
     stage: Arc<Mutex<Stage>>,
@@ -101,6 +104,7 @@ pub struct FirstRun {
     note: String,
 }
 
+#[cfg(not(target_os = "android"))]
 #[derive(Clone, Copy)]
 enum Pick {
     /// Where to download and install.
@@ -109,6 +113,7 @@ enum Pick {
     Existing,
 }
 
+#[cfg(not(target_os = "android"))]
 impl FirstRun {
     pub fn new(game_dir: PathBuf) -> Self {
         Self {
@@ -360,6 +365,11 @@ fn run(game_dir: &Path, p: &Arc<Progress>) -> Result<()> {
     std::fs::remove_file(game_dir.join(MARKER))?;
     Ok(())
 }
+
+#[cfg(target_os = "android")]
+mod android;
+#[cfg(target_os = "android")]
+pub use android::FirstRun;
 
 #[cfg(test)]
 mod tests {

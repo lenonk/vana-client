@@ -1,0 +1,10 @@
+# Copy to android/local.properties (gitignored) or run android/gen-signing-key.sh.
+# sdk.dir is usually set by Android Studio; Gradle needs it for the SDK path when not using ANDROID_HOME alone.
+
+# vana.keystore=/home/you/.config/vana-client-android/release.keystore
+# vana.key.alias=vana-client
+# vana.keystore.password=
+# vana.key.password=
+
+# CI: set VANA_ANDROID_KEYSTORE, VANA_ANDROID_KEYSTORE_PASSWORD,
+# VANA_ANDROID_KEY_ALIAS, VANA_ANDROID_KEY_PASSWORD instead of this file.

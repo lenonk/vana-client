@@ -1,0 +1,64 @@
+# The Android APK (arm64) for every push to master and every pull request: release/build-android-apk.sh cross-compiles
+# libvana_client.so with the SDK's NDK 27 and packages it with Gradle. The APK is the run's artifact.
+# The setup-ndk action's r27 has no clang wrappers, so the NDK comes from the runner's SDK manager.
+name: Android
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  apk:
+    name: APK
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      # AGP 8.7 needs Gradle 8.9 or newer.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - name: NDK
+        run: |
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK" "ndk;27.1.12297006" >/dev/null
+          echo "ANDROID_HOME=$SDK" >>"$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$SDK/ndk/27.1.12297006" >>"$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - name: cargo-ndk
+        run: cargo install cargo-ndk --locked
+      # With the keystore in the repository's secrets (android/README.md) the APK is release-signed; without them, as in
+      # pull requests from forks, debug-signed.
+      - name: Build the APK
+        env:
+          GRADLE: gradle
+          KEYSTORE_BASE64: ${{ secrets.VANA_ANDROID_KEYSTORE_BASE64 }}
+          VANA_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.VANA_ANDROID_KEYSTORE_PASSWORD }}
+          VANA_ANDROID_KEY_ALIAS: ${{ secrets.VANA_ANDROID_KEY_ALIAS }}
+          VANA_ANDROID_KEY_PASSWORD: ${{ secrets.VANA_ANDROID_KEY_PASSWORD }}
+        run: |
+          if [[ -n "$KEYSTORE_BASE64" ]]; then
+            export VANA_ANDROID_KEYSTORE="$RUNNER_TEMP/release.keystore"
+            base64 -d <<<"$KEYSTORE_BASE64" >"$VANA_ANDROID_KEYSTORE"
+            export VANA_ANDROID_APK_VARIANT=release
+          fi
+          bash release/build-android-apk.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vana-client-android-aarch64.apk
+          path: target/assets/vana-client-android-aarch64.apk
+          if-no-files-found: error
