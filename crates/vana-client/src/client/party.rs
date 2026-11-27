@@ -123,6 +123,11 @@ impl Roster {
     pub fn table(&mut self, entries: &[TableEntry]) {
         self.seen_table = true;
         let t = self.tick();
+        // A table without us (we left, or the trusts went: an empty one) takes our party bits too.
+        let me = self.recs[0].id;
+        if me != 0 && !entries.iter().any(|e| e.0 == me) {
+            self.own_flags &= !0xff;
+        }
         for &(id, index, flags, zone) in entries.iter().filter(|e| e.0 != 0) {
             let i = match self.find(id) {
                 Some(i) => {
@@ -140,6 +145,11 @@ impl Roster {
             let r = &mut self.recs[i];
             (r.id, r.index, r.time) = (id, index, t);
             r.flags = (r.flags & !0xff) | flags as u32;
+            // Our record's flags are also the ones the window reads for us (slot 0's party number and leader bit):
+            // a server that sends only the table (LSB on calling trusts: no 0x0DD) still makes us the leader.
+            if i == 0 {
+                self.own_flags = (self.own_flags & !0xff) | flags as u32;
+            }
         }
         for r in self.recs.iter_mut() {
             if !entries.iter().any(|e| e.0 != 0 && e.0 == r.id) {
@@ -455,6 +465,23 @@ mod tests {
         r.list(&listed(ME, 0x400, 0, 0, "Me"), ME, false);
         assert_eq!(r.members().count(), 1);
         assert_eq!(r.slots().window(), "menu    ptw0");
+    }
+
+    /// Calling trusts: LSB sends a 0x0C8 per trust (us flagged leader) and no 0x0DD. The window is the party's, led
+    /// by us, not the solo one.
+    #[test]
+    fn trusts_from_the_table_alone() {
+        let mut r = Roster::default();
+        r.refresh_self(ME, 0x400, "Me", 289);
+        r.table(&[(ME, 0x400, 4, 289), (0x112187b, 0x77b, 0, 289), (0x112187c, 0x77c, 0, 289)]);
+        let s = r.slots();
+        assert_eq!((s.window().as_str(), s.leaders[0], s.counts[0]), ("menu    ptw3", ME, 3));
+        assert_eq!(s.state(), 4);
+        // The trusts go (an empty table, no 0x0DD): solo again.
+        r.table(&[]);
+        r.refresh_self(ME, 0x400, "Me", 289);
+        let s = r.slots();
+        assert_eq!((s.window().as_str(), s.leaders[0]), ("menu    ptw0", 0));
     }
 
     /// Event op 0xc2: members in their Mog House (MoghouseFlg) by record bit and by display slot; ours never counts.
