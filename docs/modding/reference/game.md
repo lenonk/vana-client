@@ -799,7 +799,7 @@ The entity a target tag names, as text commands understand them, or a player fou
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `tag` | `string` | yes | One of: a tag `t` (your target), `st` (the sub-target cursor's pick, while a sub-target prompt is up), `me`, `bt` (your party's battle target), `pet`, `ht` (the call-for-help target), `scan` (the Wide Scan tracked entity), with or without `<>`; a party slot `p0` to `p5` or alliance slot `a10` to `a15`, `a20` to `a25` (with or without `<>`); a player's name (any case); or a server id written as a number (decimal, or hex as `0x1A2B`). |
+| `tag` | `string` | yes | One of: a tag `t` (your target), `st` (the sub-target cursor's pick, while a sub-target prompt is up), `stpc`, `stnpc`, `stpt` or `stal` (the same pick, while the prompt up is the one that tag opens: players only, NPCs and monsters only, the party list's cursor, the alliance list's cursor), `me`, `bt` (your party's battle target), `pet`, `ht` (the call-for-help target), `scan` (the Wide Scan tracked entity), with or without `<>`; a party slot `p0` to `p5` or alliance slot `a10` to `a15`, `a20` to `a25` (with or without `<>`); a player's name (any case); or a server id written as a number (decimal, or hex as `0x1A2B`). |
 
 **Returns** `Entity?`: see [Entity](types.md#entity). nil when the tag names nobody, or the entity is not in range. A name finds players (and yours or your party's pets and trusts), not NPCs or monsters.
 

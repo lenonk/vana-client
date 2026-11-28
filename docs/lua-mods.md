@@ -31,11 +31,11 @@ Built (client/lua/, modern/modwin.rs), each checked live:
 - **State:**
   - `game.player`, `entity` / `entities` / `target` (ourselves included; race, model, look, party flags), `party`,
     `items`, `bag_size`, `equipment`, `buffs`, `recasts`, `time`, `weather`, `key_items`
-  - `game.entity_by_tag` (t, st, bt, pet, ht, scan, p0..p5, a10..a25, names), `skills`, `jobs` (levels, master
-    levels), `stats` (base and bonus, attack, defense, resists, item level, rank, nation, experience, merit and limit
-    points), `merits`, `job_points`, `gil`, `spells` (learned), `abilities` (usable), `job_data` (BLU spells, PUP head,
-    frame, attachments, raw), `info` (server, Mog House, chat / menu open, combat, lock, autorun, follow, pet, map
-    grid), `camera`, `npc_names` (the zone list); checked live
+  - `game.entity_by_tag` (t, st, stpc, stnpc, stpt, stal, bt, pet, ht, scan, p0..p5, a10..a25, names), `skills`, `jobs`
+    (levels, master levels), `stats` (base and bonus, attack, defense, resists, item level, rank, nation, experience,
+    merit and limit points), `merits`, `job_points`, `gil`, `spells` (learned), `abilities` (usable), `job_data` (BLU
+    spells, PUP head, frame, attachments, raw), `info` (server, Mog House, chat / menu open, combat, lock, autorun,
+    follow, pet, map grid), `camera`, `npc_names` (the zone list); checked live
   - an entity's `target_index` / `target_id` (its face target from 0x00D / 0x00E; ours our target; LSB fills it for
     players only, never a monster's battle target), our pet's `mpp` / `tp` (s2c 0x068), `game.cast` (our cast bar:
     spell, total, left, progress); checked live (our target, a Cure's bar)

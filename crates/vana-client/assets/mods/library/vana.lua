@@ -1045,7 +1045,7 @@ function game.treasure() end
 ---@return table?
 function game.event() end
 
---- The entity a target tag names (t, st, bt, pet, me, ht, scan, p0..p5, a10..a25, with or without <>), a player's name or a server id; nil when none.
+--- The entity a target tag names (t, st, stpc, stnpc, stpt, stal, bt, pet, me, ht, scan, p0..p5, a10..a25, with or without <>), a player's name or a server id; nil when none.
 ---@param tag string 
 ---@return vana.Entity?
 function game.entity_by_tag(tag) end

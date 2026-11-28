@@ -1149,7 +1149,7 @@ pub const FUNCS: &[Func] = &[
     Func {
         ns: "game",
         name: "entity_by_tag",
-        doc: "The entity a target tag names (t, st, bt, pet, me, ht, scan, p0..p5, a10..a25, with or without <>), a player's name or a server id; nil when none.",
+        doc: "The entity a target tag names (t, st, stpc, stnpc, stpt, stal, bt, pet, me, ht, scan, p0..p5, a10..a25, with or without <>), a player's name or a server id; nil when none.",
         params: &[("tag", "string", "")],
         ret: "vana.Entity?",
     },
