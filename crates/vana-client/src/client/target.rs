@@ -112,6 +112,59 @@ pub fn last_subtarget(w: &World) -> Option<(u32, u16)> {
     last_subtarget_index(id, w.my_id, w.my_index, entity_index)
 }
 
+/// Ours (mods): the sub-target cursor's pick while a prompt is up. The party-list cursor's member (the fellow on its
+/// row; a member in another zone resolves, with no entity here), else the 3D prompt's pick, which is the target for
+/// as long as the prompt is open.
+pub fn subtarget(w: &World) -> Option<(u32, u16)> {
+    if let Some(pc) = &w.party_cursor {
+        if pc.fellow {
+            return super::petrow::fellow(w).and_then(|(id, _)| w.entities.get(&id).map(|e| (id, e.index)));
+        }
+        if pc.index == 0 {
+            return Some((w.my_id, w.my_index));
+        }
+        return w.party.slots().slots.get(pc.index).cloned().flatten().map(|m| (m.id, m.index));
+    }
+    let t = w.target.filter(|_| w.prompt.is_some())?;
+    if t == w.my_id {
+        return Some((w.my_id, w.my_index));
+    }
+    w.entities.get(&t).map(|e| (t, e.index))
+}
+
+/// Ours (mods): `subtarget` for one of the sub-target tags. "st" is whichever cursor is up; the others only the
+/// cursor their own tag opens (`subtarget_tag_up`).
+pub fn subtarget_tagged(w: &World, tag: &str) -> Option<(u32, u16)> {
+    let prompt = w.prompt.as_ref().map(|s| (s.inc, s.exc));
+    let cursor = w.party_cursor.as_ref().map(|c| c.count);
+    subtarget_tag_up(tag, prompt, cursor).then(|| subtarget(w)).flatten()
+}
+
+/// Whether the cursor that is up is the tag's (textcmd's `sub_tag` and `open_prompt`): `<stpt>` / `<stal>` open the
+/// party-list cursor over 6 / 18 slots, `<stpc>` / `<stnpc>` the 3D prompt for target flags 0x1d / 0xa0. A prompt
+/// does not record what opened it, so one a menu opened with the same slots or kinds counts as the tag's.
+fn subtarget_tag_up(tag: &str, prompt: Option<(u32, u32)>, cursor: Option<usize>) -> bool {
+    match tag {
+        "st" => prompt.is_some() || cursor.is_some(),
+        "stpt" => cursor == Some(6),
+        "stal" => cursor == Some(18),
+        "stpc" => cursor.is_none() && prompt == Some(sub_kinds(0x1d)),
+        "stnpc" => cursor.is_none() && prompt == Some(sub_kinds(0xa0)),
+        _ => false,
+    }
+}
+
+/// Ours (mods): the target apart from the sub-target prompt. The 3D prompt moves the target to its pick and gives
+/// the saved one back when it closes (`restore`); this is the saved one meanwhile, while it is still here.
+pub fn main_target(w: &World) -> Option<u32> {
+    let saved = w.prompt.as_ref().map(|s| s.saved.filter(|&t| t == w.my_id || w.entities.contains_key(&t)));
+    main_target_rule(w.target, saved)
+}
+
+fn main_target_rule(target: Option<u32>, prompt_saved: Option<Option<u32>>) -> Option<u32> {
+    prompt_saved.unwrap_or(target)
+}
+
 /// FUN_101593c0 on the focus target: someone other than us in our six slots.
 pub fn focus_member(w: &World) -> Option<u32> {
     w.focus.map(|f| f.0).filter(|&id| id != w.my_id && in_own_six(w, id))
@@ -436,10 +489,15 @@ const SUB_FLAGS: [(u32, u32, u32); 8] = [
     (0x80, 2, 0x1800),
 ];
 
+/// The include / exclude kinds of DAT target `flags`.
+fn sub_kinds(flags: u32) -> (u32, u32) {
+    SUB_FLAGS.iter().filter(|f| flags & f.0 != 0).fold((0, 0), |(i, e), f| (i | f.1, e | f.2))
+}
+
 /// Ours (the action registry): whether DAT target `flags` may take actor `id`, by the prompt's include / exclude
 /// kinds (SUB_FLAGS, Sub::takes).
 pub(super) fn takes(w: &World, flags: u32, id: u32) -> bool {
-    let (inc, exc) = SUB_FLAGS.iter().filter(|f| flags & f.0 != 0).fold((0, 0), |(i, e), f| (i | f.1, e | f.2));
+    let (inc, exc) = sub_kinds(flags);
     let kind = sub_kind(w, id);
     inc & kind != 0 && exc & kind == 0
 }
@@ -471,7 +529,7 @@ fn sub_kind(w: &World, id: u32) -> u32 {
 /// (not an enemy when we may pick ourselves), else us when allowed, else the nearest candidate in front. False when
 /// nothing fits (the caller prints its line).
 pub fn open_sub(w: &mut World, flags: u32, then: SubThen, range: Option<f32>, title: String, help: u16) -> bool {
-    let (inc, exc) = SUB_FLAGS.iter().filter(|f| flags & f.0 != 0).fold((0, 0), |(i, e), f| (i | f.1, e | f.2));
+    let (inc, exc) = sub_kinds(flags);
     let sub = Sub { inc, exc, saved: w.target, saved_lock: w.locked, then, range, title, help, ground: false };
     let current = w.target.filter(|&t| t == w.my_id || w.entities.contains_key(&t));
     let first = match current {
@@ -1653,6 +1711,32 @@ mod tests {
         assert_eq!(last_subtarget_index(7, 1, 0x405, Some(0x406)), Some((7, 0x406)));
         assert_eq!(last_subtarget_index(1, 1, 0x405, None), Some((1, 0x405)));
         assert_eq!(last_subtarget_index(7, 1, 0x405, None), None);
+    }
+
+    /// With no prompt the main target is the target; an open prompt's saved target stands in, also when it saved none.
+    #[test]
+    fn main_target_rule_prompt() {
+        assert_eq!(main_target_rule(Some(7), None), Some(7));
+        assert_eq!(main_target_rule(None, None), None);
+        assert_eq!(main_target_rule(Some(7), Some(Some(9))), Some(9));
+        assert_eq!(main_target_rule(Some(7), Some(None)), None);
+    }
+
+    /// "st" answers under either cursor; the other tags only under the cursor their own tag opens.
+    #[test]
+    fn subtarget_tag_up_by_cursor() {
+        let (pc, npc, any) = (Some(sub_kinds(0x1d)), Some(sub_kinds(0xa0)), Some(sub_kinds(0x7f)));
+        for tag in ["st", "stpc", "stnpc", "stpt", "stal"] {
+            assert!(!subtarget_tag_up(tag, None, None), "{tag}");
+        }
+        assert!(subtarget_tag_up("st", any, None) && subtarget_tag_up("st", None, Some(18)));
+        assert!(subtarget_tag_up("stpc", pc, None) && subtarget_tag_up("stnpc", npc, None));
+        assert!(!subtarget_tag_up("stpc", npc, None) && !subtarget_tag_up("stpc", any, None));
+        assert!(!subtarget_tag_up("stnpc", pc, None) && !subtarget_tag_up("stnpc", any, None));
+        assert!(subtarget_tag_up("stpt", None, Some(6)) && !subtarget_tag_up("stpt", None, Some(18)));
+        assert!(subtarget_tag_up("stal", None, Some(18)) && !subtarget_tag_up("stal", None, Some(6)));
+        assert!(!subtarget_tag_up("stpt", pc, None) && !subtarget_tag_up("stpc", pc, Some(6)));
+        assert!(!subtarget_tag_up("t", any, Some(6)));
     }
 
     /// Side input keeps the radius (circle strafe); forward closes in, stopping at 0.8.

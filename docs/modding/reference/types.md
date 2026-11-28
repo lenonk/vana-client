@@ -26,7 +26,8 @@ Your character, as `game.player()` returns it. Fields that need data from the se
 | `main_level` | `integer?` | Main job level. |
 | `sub_job` | `integer?` | Support job id. |
 | `sub_level` | `integer?` | Support job level. |
-| `target` | `integer?` | Your target's server id; nil without a target. |
+| `target` | `integer?` | Your target's server id; nil without a target. While a sub-target prompt's cursor is in the world (`<st>`, `<stnpc>`...), this is the cursor's pick. |
+| `main_target` | `integer?` | Your target apart from a sub-target prompt: while the prompt's cursor is the target, the one it gives back when it closes; otherwise the same as `target`. |
 | `focus_target` | `integer?` | The focus target's server id (`/focustarget`: a member of your party, not you); nil without one. |
 | `pet` | `integer?` | Your pet's server id (an avatar, wyvern, jug pet, automaton or luopan), as your status names it, while it is here; nil without one. |
 | `last_target` | `integer?` | The target before the current one, while it is here and can be targeted; nil otherwise. |

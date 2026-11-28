@@ -1149,7 +1149,7 @@ pub const FUNCS: &[Func] = &[
     Func {
         ns: "game",
         name: "entity_by_tag",
-        doc: "The entity a target tag names (t, bt, pet, me, ht, scan, p0..p5, a10..a25, with or without <>), a player's name or a server id; nil when none.",
+        doc: "The entity a target tag names (t, st, stpc, stnpc, stpt, stal, bt, pet, me, ht, scan, p0..p5, a10..a25, with or without <>), a player's name or a server id; nil when none.",
         params: &[("tag", "string", "")],
         ret: "vana.Entity?",
     },
@@ -2521,6 +2521,11 @@ pub const CLASSES: &[Class] = &[
             ("sub_job", "integer?", ""),
             ("sub_level", "integer?", ""),
             ("target", "integer?", "our target's server id"),
+            (
+                "main_target",
+                "integer?",
+                "our target as it stands apart from a sub-target prompt: while the prompt's cursor is the target, the one it gives back",
+            ),
             ("focus_target", "integer?", "the focus target's server id (/focustarget: one of our party, not us)"),
             ("last_target", "integer?", "the target before the current one, while it is here and can be targeted"),
             (

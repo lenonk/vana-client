@@ -89,7 +89,8 @@ fn vec3(lua: &Lua, v: glam::Vec3) -> mlua::Result<Table> {
 }
 
 /// A target tag ("t", "<st>", "bt", "pet", "me", "ht", "scan", "lastst", "p0".."p5", "a10".."a25"), a player's name or a server
-/// id: (id, index).
+/// id: (id, index). "st" is the sub-target cursor's pick while a prompt is up, and "stpc", "stnpc", "stpt" and "stal"
+/// the same while the prompt is that tag's (text commands open a prompt for them instead, so they are resolved here).
 pub(super) fn by_tag(w: &World, tag: &str) -> Option<(u32, u16)> {
     let inner = tag.trim().trim_start_matches('<').trim_end_matches('>').to_ascii_lowercase();
     let slot = match inner.as_bytes() {
@@ -100,6 +101,9 @@ pub(super) fn by_tag(w: &World, tag: &str) -> Option<(u32, u16)> {
     if let Some(k) = slot {
         let m = w.party.slots().slots.get(k).cloned().flatten()?;
         return Some((m.id, m.index));
+    }
+    if ["st", "stpc", "stnpc", "stpt", "stal"].contains(&inner.as_str()) {
+        return super::super::target::subtarget_tagged(w, &inner);
     }
     let tagged = format!("<{inner}>");
     let probe = if ["t", "me", "bt", "scan", "pet", "ht", "lastst"].contains(&inner.as_str()) {

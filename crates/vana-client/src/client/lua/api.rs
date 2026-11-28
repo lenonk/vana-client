@@ -2185,6 +2185,8 @@ fn player(lua: &Lua) -> mlua::Result<Table> {
         t.set("sub_level", s.sub.1)?;
     }
     t.set("target", w.target)?;
+    // The target a sub-target prompt gives back when it closes; the target itself otherwise.
+    t.set("main_target", super::super::target::main_target(w))?;
     // The focus target (/focustarget, one of our six) and the target before the current one, while here.
     t.set("focus_target", super::super::target::focus_member(w))?;
     t.set("last_target", super::super::target::last_target(w).map(|t| t.0))?;
