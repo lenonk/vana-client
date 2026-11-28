@@ -18759,7 +18759,7 @@ impl App {
         let phase = &mut self.phase;
         let mut to_mods = |b: &[u8], a: [f32; 6], on: bool| match phase {
             Phase::World(w) => lua::input::pad_filter(w, b, a, on),
-            _ => Vec::new(),
+            _ => gamepad::Taken::default(),
         };
         #[cfg(windows)]
         self.gamepad.set_window(&gfx.window);
@@ -18769,6 +18769,9 @@ impl App {
         self.gamepad.rumble(&self.cfg, gfx.window.has_focus(), sum, dt);
         if let Phase::World(w) = &mut self.phase {
             Self::controller_window(&mut self.cfg, &mut self.gamepad, w, pad.capture.as_ref(), dt);
+        }
+        if let Phase::World(w) = &mut self.phase {
+            lua::input::pad_mapped(w, pad.mapped, pad.slots);
         }
         self.input.set_pad(pad.pad);
         self.input.set_stick(pad.stick);

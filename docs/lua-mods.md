@@ -198,6 +198,10 @@ Built (client/lua/, modern/modwin.rs), each checked live:
   - `input.on_key` / `on_mouse` see every key edge and mouse event before egui and the game, as a chain across
     mods; returning true takes it (needs `input.capture`; a taken press takes its repeats and release). They are the
     player's input, so `actions` may act there.
+  - `input.on_pad` sees the game controller's button edges the same way; `input.pad` tells its buttons, raw sticks
+    and triggers, the movement and camera sticks as the button settings and dead zone give them to the game, and the
+    buttons of confirm, cancel and menu; `input.take_sticks` centres the movement and camera sticks for the game,
+    buttons on their slots too (`input.capture`)
   - `input.held`, `modifiers`, `mouse` (window pixels), `typing`; `input.press` ("ctrl+f1") and `send` (one edge),
     which reach the key functions and the UI as the keyboard's do (`input.capture`)
   - `binds.set` (exact modifiers, Windower's `^!~@` too) to a line run as typed or a function, on press or release,
@@ -384,7 +388,7 @@ and revoke them there.
 | `automation` | game actions on the mod's initiative: cast, target, move, trade, lot, NPC menus | GearSwap, AutoRA, Treasury, HealBot, FastFollow |
 | `packets.read` | raw packet hooks, read only | 58 / 106 add-ons |
 | `packets.write` | modify, block, inject | battlemod, DressUp, organizer, GearSwap |
-| `input.capture` | swallow keys and mouse, synthesise keys | Tab, Yush, autoenterkey |
+| `input.capture` | swallow keys, mouse and the game controller, synthesise keys | Tab, Yush, autoenterkey |
 | `files.shared` | read and write outside the mod's folder, in a shared data area | Logger, findAll, organizer |
 | `files.outside` | read folders the player picks or allows (a game install), read only | Retail Macros |
 | `net` | HTTP(S), UDP and TCP, open URLs | Pricer, CurePlease, Guildwork-style tools |

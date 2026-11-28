@@ -876,9 +876,16 @@ pub const FUNCS: &[Func] = &[
     Func {
         ns: "input",
         name: "pad",
-        doc: "The game controller now: connected (one plays: Settings' gamepad on, the window focused or gamepad_background), buttons {a = true, ...} (held, taken ones too), lx, ly, rx, ry (sticks, -1..1, up positive), lt, rt (triggers, 0..1).",
+        doc: "The game controller now: connected (one plays: Settings' gamepad on, the window focused or gamepad_background), buttons {a = true, ...} (held, taken ones too), lx, ly, rx, ry (sticks, -1..1, up positive), lt, rt (triggers, 0..1); move_x, move_y, cam_x, cam_y (the movement and camera sticks as the player's button settings and dead zone give them to the game, -1..1, up positive, taken ones too), map {confirm, cancel, menu} (the button each is on, absent when on none).",
         params: &[],
-        ret: "{connected: boolean, buttons: table<string, boolean>, lx: number, ly: number, rx: number, ry: number, lt: number, rt: number}",
+        ret: "{connected: boolean, buttons: table<string, boolean>, lx: number, ly: number, rx: number, ry: number, lt: number, rt: number, move_x: number, move_y: number, cam_x: number, cam_y: number, map: {confirm: string?, cancel: string?, menu: string?}}",
+    },
+    Func {
+        ns: "input",
+        name: "take_sticks",
+        doc: "Takes the game controller's movement and camera sticks from the game, or gives them back: a taken stick reads as centred to the game (input.pad still tells it), and buttons the player's button settings put on its directions are taken with it, until it is given back or the mod unloads. Needs input.capture.",
+        params: &[("movement", "boolean", ""), ("camera", "boolean", "")],
+        ret: "",
     },
     Func {
         ns: "input",

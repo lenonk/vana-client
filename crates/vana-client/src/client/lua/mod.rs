@@ -5075,7 +5075,9 @@ fn permission_text(p: &str) -> (&'static str, &'static str) {
         }
         "packets.read" => ("Allow reading packets", "Sees every packet the server sends and the client sends."),
         "packets.write" => ("Allow changing packets", "Changes, blocks and sends packets."),
-        "input.capture" => ("Allow taking input", "Takes keys and the mouse from the game and presses keys."),
+        "input.capture" => {
+            ("Allow taking input", "Takes keys, the mouse and the controller from the game and presses keys.")
+        }
         "files.shared" => ("Allow shared files", "Reads and writes files outside its folder, in the shared mod data."),
         "files.outside" => (
             "Allow reading your folders",

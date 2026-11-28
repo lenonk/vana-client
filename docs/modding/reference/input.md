@@ -1,6 +1,6 @@
 # `input`
 
-The `input` namespace sees the keyboard and the mouse before the game and its windows do, can take an event so the game never sees it, and can press keys for the player. Watching is free: `on_key`, `on_mouse` and the reads (`held`, `modifiers`, `mouse`, `typing`) need no permission. Taking an event (returning `true` from a filter) and pressing keys (`press`, `send`) need the `input.capture` permission. The filters run only while the character is in the world. For a fixed key that runs a command or a function, [`binds`](binds.md) is simpler. Key names are listed under [Key names](#key-names) and combinations such as `"ctrl+f1"` under [Key combinations](#key-combinations).
+The `input` namespace sees the keyboard and the mouse before the game and its windows do, can take an event so the game never sees it, and can press keys for the player. Watching is free: `on_key`, `on_mouse` and the reads (`held`, `modifiers`, `mouse`, `typing`) need no permission. Taking an event (returning `true` from a filter), taking the controller's sticks (`take_sticks`) and pressing keys (`press`, `send`) need the `input.capture` permission. The filters run only while the character is in the world. For a fixed key that runs a command or a function, [`binds`](binds.md) is simpler. Key names are listed under [Key names](#key-names) and combinations such as `"ctrl+f1"` under [Key combinations](#key-combinations).
 
 ```lua
 -- take Ctrl+M away from the game and use it ourselves
@@ -20,6 +20,7 @@ end)
 | [`input.on_mouse(handler)`](#inputon_mouse) | Sees the mouse's buttons, movement and wheel first, and can take them. |
 | [`input.on_pad(handler)`](#inputon_pad) | Sees the game controller's buttons first, and can take them. |
 | [`input.pad()`](#inputpad) | The game controller's buttons, sticks and triggers now. |
+| [`input.take_sticks(movement, camera)`](#inputtake_sticks) | Takes the controller's sticks from the game, or gives them back. |
 | [`input.off(id)`](#inputoff) | Removes a key, mouse or pad filter. |
 | [`input.held(key)`](#inputheld) | Whether a key is held down. |
 | [`input.modifiers()`](#inputmodifiers) | Which of Ctrl, Alt, Shift and Win are held. |
@@ -168,10 +169,22 @@ It is the player's input: actions may act from the handler, as from key filters.
 input.pad() -> table
 ```
 
-The game controller now: `{connected, buttons, lx, ly, rx, ry, lt, rt}`. `connected` is whether a pad plays (Settings'
-gamepad on, the window focused or background play on); `buttons` maps each button name of
-[`input.on_pad`](#inputon_pad) to whether it is held (taken buttons too); `lx`, `ly`, `rx`, `ry` are the sticks, -1 to
-1 with up positive; `lt` and `rt` the triggers, 0 to 1.
+The game controller now: `{connected, buttons, lx, ly, rx, ry, lt, rt, move_x, move_y, cam_x, cam_y, map}`.
+`connected` is whether a pad plays (Settings' gamepad on, the window focused or background play on); `buttons` maps
+each button name of [`input.on_pad`](#inputon_pad) to whether it is held (taken buttons too); `lx`, `ly`, `rx`, `ry`
+are the sticks, -1 to 1 with up positive; `lt` and `rt` the triggers, 0 to 1.
+
+`move_x`, `move_y`, `cam_x` and `cam_y` are the movement and camera sticks as the game gets them: after the player's
+button settings (which stick moves, which turns the camera, inverted or not) and dead zone, -1 to 1 with right and up
+positive. They are what the game's own map scrolls and zooms with. A stick a mod took
+([`input.take_sticks`](#inputtake_sticks)) is still told here. Use these, not `lx` .. `ry`, for anything that should
+follow the player's own stick layout.
+
+`map` names the button a few of the game's functions are on in the player's button settings: `confirm`, `cancel` and
+`menu`, each a button name of [`input.on_pad`](#inputon_pad), absent when the function is on no button.
+
+A DirectInput controller is not given to mods: `connected` is `false`, the sticks read 0 and `map` is empty. Clients
+released before `take_sticks` have no `move_x` .. `cam_y` and no `map`.
 
 **Returns** `table`.
 
@@ -180,6 +193,58 @@ gamepad on, the window focused or background play on); `buttons` maps each butto
 ```lua
 local p = input.pad()
 if p.connected and p.buttons.lt then print("left trigger held") end
+-- The button that cancels, whatever the player assigned.
+local cancel = p.map and p.map.cancel or "b"
+```
+
+## `input.take_sticks`
+
+```lua
+input.take_sticks(movement, camera)
+```
+
+Takes the game controller's sticks from the game, or gives them back. A taken stick reads as centred to the game, so
+the character does not move (`movement`) and the camera does not turn (`camera`), while
+[`input.pad`](#inputpad) goes on telling where it is. The sticks are the game's movement and camera sticks, as
+`move_x` .. `cam_y` of `input.pad`. They stay taken until the mod gives them back or unloads; several mods may take
+them, and the game gets a stick once none has it.
+
+Movement or a camera the player put on buttons in the button settings counts as the stick: those buttons are taken
+with it, and `move_x` .. `cam_y` go on telling their push. Do not take them with
+[`input.on_pad`](#inputon_pad) as well, since a button taken there no longer reaches `move_x` .. `cam_y`. A movement
+stick the player has switched to the d-pad (the button setting that does so held, or the stick mode that does) is the
+d-pad while it is: it arrives as d-pad presses, which neither `take_sticks` nor `input.on_pad` can take, and
+`move_x` and `move_y` read 0. A DirectInput controller's sticks cannot be taken.
+
+**Needs** the `input.capture` permission.
+
+**Parameters**
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `movement` | `boolean` | yes | `true` to take the movement stick, `false` to give it back. |
+| `camera` | `boolean` | yes | The same for the camera stick. |
+
+**Returns** nothing.
+
+**Example**
+
+```lua
+-- While RB is held, the sticks scroll and zoom our own map and the character stands still.
+local held = false
+input.on_pad(function(e)
+  if e.button ~= "rb" then return end
+  held = e.down
+  input.take_sticks(held, held)
+  return true
+end)
+
+events.on("frame", function(dt)
+  if not held then return end
+  local p = input.pad()
+  scroll(p.move_x * dt, p.move_y * dt)
+  zoom(p.cam_y * dt)
+end)
 ```
 
 ## `input.off`

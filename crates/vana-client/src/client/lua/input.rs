@@ -332,11 +332,15 @@ pub(super) struct State {
     /// The HUD element under the pointer (one with a handler or a tip) and since when.
     pub hud_hover: Option<(String, String, std::time::Instant)>,
     /// The game controller: buttons held (bits by PAD_BUTTONS' order), those a mod took, sticks and triggers
-    /// (lx, ly, rx, ry -1..1 up positive, lt, rt 0..1), and whether one plays.
+    /// (lx, ly, rx, ry -1..1 up positive, lt, rt 0..1), and whether one plays; the sticks as the button settings map
+    /// them (movement X / Y, camera X / Y, the game's sense: down positive) and the buttons of the confirm, cancel
+    /// and menu slots (client/gamepad.rs Frame::mapped, slots).
     pad: u32,
     pad_taken: u32,
     pad_axes: [f32; 6],
     pad_on: bool,
+    pad_mapped: [f32; 4],
+    pad_slots: [Option<u8>; 3],
 }
 
 /// The pad's buttons by the gamepad module's numbers (client/gamepad.rs VIRTUAL): the names mods see.
@@ -675,8 +679,14 @@ fn filter_list(w: &mut World, kind: Filters, mut e: serde_json::Value, taken: bo
 
 /// The game controller this frame, before the game reads it (client/gamepad.rs): `buttons` held (its numbers), the
 /// sticks and triggers. Each button's press and release goes through the mods' pad filters; the buttons a mod took
-/// on their press are returned, for the game not to see until they come up.
-pub(in crate::client) fn pad_filter(w: &mut World, buttons: &[u8], axes: [f32; 6], on: bool) -> Vec<u8> {
+/// on their press are returned, for the game not to see until they come up, with the sticks mods took
+/// (input.take_sticks).
+pub(in crate::client) fn pad_filter(
+    w: &mut World,
+    buttons: &[u8],
+    axes: [f32; 6],
+    on: bool,
+) -> super::super::gamepad::Taken {
     let st = w.lua.input.clone();
     let now = buttons.iter().filter(|&&b| (b as usize) < PAD_BUTTONS.len()).fold(0u32, |m, &b| m | 1 << b);
     let (prev, mut taken) = {
@@ -706,7 +716,26 @@ pub(in crate::client) fn pad_filter(w: &mut World, buttons: &[u8], axes: [f32; 6
     }
     taken &= now;
     st.borrow_mut().pad_taken = taken;
-    (0..PAD_BUTTONS.len() as u8).filter(|&b| taken & 1 << b != 0).collect()
+    let mut sticks = [false; 2];
+    if on {
+        for vm in w.lua.vms.iter().filter(|v| v.suspended.is_none()) {
+            let st = vm.st.borrow();
+            if st.granted.iter().any(|g| g == "input.capture") {
+                sticks = [sticks[0] || st.sticks_taken[0], sticks[1] || st.sticks_taken[1]];
+            }
+        }
+    }
+    super::super::gamepad::Taken {
+        buttons: (0..PAD_BUTTONS.len() as u8).filter(|&b| taken & 1 << b != 0).collect(),
+        sticks,
+    }
+}
+
+/// The frame's sticks as the button settings map them and the buttons of the confirm, cancel and menu slots
+/// (client/gamepad.rs Frame), for input.pad.
+pub(in crate::client) fn pad_mapped(w: &mut World, mapped: [f32; 4], slots: [Option<u8>; 3]) {
+    let mut s = w.lua.input.borrow_mut();
+    (s.pad_mapped, s.pad_slots) = (mapped, slots);
 }
 
 /// The first running mod's bind for this key edge (load order): queued for the mod phase.
@@ -825,7 +854,26 @@ pub(super) fn install(lua: &mlua::Lua, g: &mlua::Table) -> mlua::Result<()> {
             for (k, name) in ["lx", "ly", "rx", "ry", "lt", "rt"].iter().enumerate() {
                 out.set(*name, s.pad_axes[k])?;
             }
+            // The game's Y is down positive: up positive here, as lx .. ry.
+            for (k, name) in ["move_x", "move_y", "cam_x", "cam_y"].iter().enumerate() {
+                out.set(*name, if k % 2 == 1 { -s.pad_mapped[k] } else { s.pad_mapped[k] })?;
+            }
+            let map = lua.create_table()?;
+            for (k, name) in ["confirm", "cancel", "menu"].iter().enumerate() {
+                if let Some(b) = s.pad_slots[k].and_then(|b| PAD_BUTTONS.get(b as usize)) {
+                    map.set(*name, *b)?;
+                }
+            }
+            out.set("map", map)?;
             Ok(out)
+        })?,
+    )?;
+    t.set(
+        "take_sticks",
+        lua.create_function(|lua, (movement, camera): (bool, bool)| {
+            need(lua, "input.capture")?;
+            super::api::state(lua).borrow_mut().sticks_taken = [movement, camera];
+            Ok(())
         })?,
     )?;
     t.set(

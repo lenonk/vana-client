@@ -116,6 +116,8 @@ pub(super) struct ModState {
     pub char_file: Option<String>,
     /// Keys it holds down for the game (input.send), let go when it unloads.
     pub keys_down: Vec<winit::keyboard::KeyCode>,
+    /// The sticks it takes from the game (input.take_sticks: movement, camera), until it unloads.
+    pub sticks_taken: [bool; 2],
     pub handlers: Vec<Handler>,
     pub commands: Vec<(String, RegistryKey)>,
     pub timers: Vec<Timer>,
