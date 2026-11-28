@@ -866,7 +866,7 @@ function input.on_pad(handler) end
 ---@return {connected: boolean, buttons: table<string, boolean>, lx: number, ly: number, rx: number, ry: number, lt: number, rt: number, move_x: number, move_y: number, cam_x: number, cam_y: number, map: {confirm: string?, cancel: string?, menu: string?}}
 function input.pad() end
 
---- Takes the game controller's movement and camera sticks from the game, or gives them back: a taken stick reads as centred to the game (input.pad still tells it), until it is given back or the mod unloads. Needs input.capture.
+--- Takes the game controller's movement and camera sticks from the game, or gives them back: a taken stick reads as centred to the game (input.pad still tells it), and buttons the player's button settings put on its directions are taken with it, until it is given back or the mod unloads. Needs input.capture.
 ---@param movement boolean 
 ---@param camera boolean 
 function input.take_sticks(movement, camera) end

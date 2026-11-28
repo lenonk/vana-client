@@ -303,11 +303,14 @@ pub struct Taken {
     pub sticks: [bool; 2],
 }
 
-/// `read`'s stick values (camera X / Y, movement X / Y) as the game gets them: a stick a mod took (`sticks`:
-/// movement, camera) reads as centred.
-fn untaken(v: [f32; 4], sticks: [bool; 2]) -> [f32; 4] {
+/// The pad word and `read`'s stick values (camera X / Y, movement X / Y) as the game gets them: a stick a mod took
+/// (`sticks`: movement, camera) reads as centred, and the buttons on its slots (21 ..= 24 movement, 17 ..= 20 camera)
+/// as up. The game reads the walk and the camera from those bits as well as from the stick bytes (Input::axis), so
+/// taking a stick takes both.
+fn untaken(pad: u64, v: [f32; 4], sticks: [bool; 2]) -> (u64, [f32; 4]) {
     let (m, c) = (if sticks[0] { 0.0 } else { 1.0 }, if sticks[1] { 0.0 } else { 1.0 });
-    [v[0] * c, v[1] * c, v[2] * m, v[3] * m]
+    let slots = |taken: bool, from: u8| if taken { 0xf << from } else { 0u64 };
+    (pad & !(slots(sticks[0], 21) | slots(sticks[1], 17)), [v[0] * c, v[1] * c, v[2] * m, v[3] * m])
 }
 
 /// The XInput button (VIRTUAL's number) that holds `slot` in a map, the lowest when several do.
@@ -747,11 +750,13 @@ impl Gamepad {
             if keyboard { (Vec::new(), held) } else { keys_of(held, menu, palette || party_cursor, tabs && menu) };
         let mut f = self.step(held, &keys, dt);
         self.prev = held;
+        // A stick a mod took: its bytes and the buttons on its slots stay from the game.
+        let (pad_bits, game) = untaken(pad_bits, v, taken.sticks);
         f.pad = pad_bits;
         f.used = held != 0 || v.iter().any(|&a| a != 0.0);
         let sticks = |v: [f32; 4]| [v[2] / 128.0, v[3] / 128.0, v[0] / 128.0, v[1] / 128.0];
         // Outside the field the sticks do nothing (they never drive menus).
-        f.stick = if field { sticks(untaken(v, taken.sticks)) } else { [0.0; 4] };
+        f.stick = if field { sticks(game) } else { [0.0; 4] };
         // Mods are given an XInput pad only (above).
         if di.is_none() {
             f.mapped = sticks(v);
@@ -1205,10 +1210,32 @@ mod tests {
     #[test]
     fn taken_sticks_are_centred() {
         let v = [10.0, -20.0, 30.0, -40.0];
-        assert_eq!(untaken(v, [false, false]), v);
-        assert_eq!(untaken(v, [true, false]), [10.0, -20.0, 0.0, 0.0]);
-        assert_eq!(untaken(v, [false, true]), [0.0, 0.0, 30.0, -40.0]);
-        assert_eq!(untaken(v, [true, true]), [0.0; 4]);
+        assert_eq!(untaken(0, v, [false, false]).1, v);
+        assert_eq!(untaken(0, v, [true, false]).1, [10.0, -20.0, 0.0, 0.0]);
+        assert_eq!(untaken(0, v, [false, true]).1, [0.0, 0.0, 30.0, -40.0]);
+        assert_eq!(untaken(0, v, [true, true]).1, [0.0; 4]);
+    }
+
+    /// Movement and the camera on buttons (the default padsin with move right, slot 21, on d-pad right and camera
+    /// right, slot 17, on d-pad left): the push is in the pad word as well as the stick bytes, and the game walks by
+    /// the bit (Input::axis 4). A taken stick takes its slots' bits too; other buttons and the other stick stay.
+    #[test]
+    fn taken_sticks_take_their_buttons() {
+        let m =
+            PadMap::parse("8,9,13,12,10,0,1,3,2,15,-1,-1,14,-33,-33,32,4,-36,-36,35,5,6,7,-1,-1,11,-1,-1,-1,-1,-1,-1");
+        let alt = PadMap::parse("");
+        // D-pad right and left, and A (confirm).
+        let (held, v) = read(&m, &alt, &dev(&[4, 5, 3], &|_| 0.0), 0, (false, false), DEAD);
+        assert_eq!(held, bit(21) | bit(17) | bit(slot::CONFIRM));
+        assert_eq!(v, [127.0, 0.0, 127.0, 0.0]);
+        assert_eq!(untaken(held, v, [false, false]), (held, v));
+        assert_eq!(untaken(held, v, [true, false]), (bit(17) | bit(slot::CONFIRM), [127.0, 0.0, 0.0, 0.0]));
+        assert_eq!(untaken(held, v, [false, true]), (bit(21) | bit(slot::CONFIRM), [0.0, 0.0, 127.0, 0.0]));
+        assert_eq!(untaken(held, v, [true, true]), (bit(slot::CONFIRM), [0.0; 4]));
+        // Every slot of a stick: 21 ..= 24 movement, 17 ..= 20 camera.
+        let all = (17..=24).fold(0, |w, s| w | bit(s));
+        assert_eq!(untaken(all, [0.0; 4], [true, false]).0, bit(17) | bit(18) | bit(19) | bit(20));
+        assert_eq!(untaken(all, [0.0; 4], [false, true]).0, bit(21) | bit(22) | bit(23) | bit(24));
     }
 
     /// The default button settings' confirm, cancel and menu, for input.pad().map: A, B and X.

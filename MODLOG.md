@@ -25180,6 +25180,12 @@ Settings > Graphics > Upscaling (config `upscaler` 0 off / 1 FSR / 2 external, `
   (camera X / Y, movement X / Y) before they become the frame's stick bytes, so the character stands and the camera
   holds while a mod's own map scrolls with them. Per mod (ModState::sticks_taken, gone with the VM); pad_filter gives
   the union over running mods with the permission, nothing while no XInput pad plays.
+- A taken stick also loses its slots' bits from the frame's pad word (`untaken`: 21 ..= 24 movement, 17 ..= 20
+  camera). A button on a stick slot sets the slot's bit and ±127 over the axis (FUN_10005a40), and Input::axis reads
+  the walk (4 / 5) and the camera (6 / 7 / 0x7c) from the bit as well as the byte, so with move right on d-pad right
+  the byte alone left the character walking under the mod's map. `move_x` .. `cam_y` are from before the taking and
+  keep the button's push. A movement stick switched to the d-pad (slot 25 held, or stick mode 1) is d-pad bits and
+  zero movement bytes: not taken (test taken_sticks_take_their_buttons).
 - `input.pad()` adds `move_x`, `move_y`, `cam_x`, `cam_y`: those stick values before the taking, as the map window's
   axes 0x79 / 0x7a / 0x7c get them, Y turned up positive as lx .. ry (padsin's default puts -lY on slot 23, so the
   game's is down positive). And `map`: the XInput buttons on slots 0 (confirm), 3 (cancel) and 1 (menu) of padsin,

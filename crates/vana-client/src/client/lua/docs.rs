@@ -883,7 +883,7 @@ pub const FUNCS: &[Func] = &[
     Func {
         ns: "input",
         name: "take_sticks",
-        doc: "Takes the game controller's movement and camera sticks from the game, or gives them back: a taken stick reads as centred to the game (input.pad still tells it), until it is given back or the mod unloads. Needs input.capture.",
+        doc: "Takes the game controller's movement and camera sticks from the game, or gives them back: a taken stick reads as centred to the game (input.pad still tells it), and buttons the player's button settings put on its directions are taken with it, until it is given back or the mod unloads. Needs input.capture.",
         params: &[("movement", "boolean", ""), ("camera", "boolean", "")],
         ret: "",
     },

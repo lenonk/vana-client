@@ -209,8 +209,12 @@ the character does not move (`movement`) and the camera does not turn (`camera`)
 `move_x` .. `cam_y` of `input.pad`. They stay taken until the mod gives them back or unloads; several mods may take
 them, and the game gets a stick once none has it.
 
-Movement or a camera the player put on buttons or the d-pad is not a stick: take those buttons with
-[`input.on_pad`](#inputon_pad). A DirectInput controller's sticks cannot be taken.
+Movement or a camera the player put on buttons in the button settings counts as the stick: those buttons are taken
+with it, and `move_x` .. `cam_y` go on telling their push. Do not take them with
+[`input.on_pad`](#inputon_pad) as well, since a button taken there no longer reaches `move_x` .. `cam_y`. A movement
+stick the player has switched to the d-pad (the button setting that does so held, or the stick mode that does) is the
+d-pad while it is: it arrives as d-pad presses, which neither `take_sticks` nor `input.on_pad` can take, and
+`move_x` and `move_y` read 0. A DirectInput controller's sticks cannot be taken.
 
 **Needs** the `input.capture` permission.
 

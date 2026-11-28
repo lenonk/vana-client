@@ -200,8 +200,8 @@ Built (client/lua/, modern/modwin.rs), each checked live:
     player's input, so `actions` may act there.
   - `input.on_pad` sees the game controller's button edges the same way; `input.pad` tells its buttons, raw sticks
     and triggers, the movement and camera sticks as the button settings and dead zone give them to the game, and the
-    buttons of confirm, cancel and menu; `input.take_sticks` centres the movement and camera sticks for the game
-    (`input.capture`)
+    buttons of confirm, cancel and menu; `input.take_sticks` centres the movement and camera sticks for the game,
+    buttons on their slots too (`input.capture`)
   - `input.held`, `modifiers`, `mouse` (window pixels), `typing`; `input.press` ("ctrl+f1") and `send` (one edge),
     which reach the key functions and the UI as the keyboard's do (`input.capture`)
   - `binds.set` (exact modifiers, Windower's `^!~@` too) to a line run as typed or a function, on press or release,
