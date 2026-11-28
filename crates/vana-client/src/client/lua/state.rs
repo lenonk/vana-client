@@ -472,6 +472,19 @@ pub(super) fn install(lua: &Lua, game: &Table) -> mlua::Result<()> {
         })?,
     )?;
     game.set(
+        "action_ready",
+        lua.create_function(|lua, ()| Ok(super::super::pending::Tracker::action_ready(world(lua)?)))?,
+    )?;
+    game.set(
+        "pending",
+        lua.create_function(|lua, ()| {
+            let w = world(lua)?;
+            let now = std::time::Instant::now();
+            let Some(v) = w.pending_action.view(now) else { return Ok(None) };
+            super::super::pending::pending_to_lua(lua, &v).map(Some)
+        })?,
+    )?;
+    game.set(
         "cast",
         lua.create_function(|lua, ()| {
             let w = world(lua)?;

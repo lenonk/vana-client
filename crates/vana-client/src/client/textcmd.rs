@@ -532,12 +532,13 @@ fn send(w: &World, c: NetCommand) {
 }
 
 /// FUN_100780d0: 0x01A {u32 id, u16 ActIndex, u16 category, u32 param, 3 x f32}.
-pub(super) fn act(w: &World, t: (u32, u16), category: u16, param: u32) {
+pub(super) fn act(w: &mut super::World, t: (u32, u16), category: u16, param: u32) {
     act_at(w, t, category, param, glam::Vec3::ZERO);
 }
 
 /// `act` with the three floats set (packet +0x10 / +0x14 / +0x18).
-fn act_at(w: &World, t: (u32, u16), category: u16, param: u32, at: glam::Vec3) {
+fn act_at(w: &mut super::World, t: (u32, u16), category: u16, param: u32, at: glam::Vec3) {
+    super::pending::on_out_01a(w, t.0, category, param);
     let mut body = super::net::action_body(t.0, t.1, category);
     body[8..12].copy_from_slice(&param.to_le_bytes());
     for (i, v) in at.to_array().into_iter().enumerate() {

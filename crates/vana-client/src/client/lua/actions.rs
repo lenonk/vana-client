@@ -801,6 +801,15 @@ pub(super) fn install(lua: &Lua, g: &Table) -> mlua::Result<()> {
     t.set("walk", lua.create_function(|lua, on: bool| queue(lua, Action::Walk(on)))?)?;
     t.set("stop", lua.create_function(|lua, ()| queue(lua, Action::Stop))?)?;
     t.set("turn", lua.create_function(|lua, heading: f32| queue(lua, Action::Turn(heading)))?)?;
+    t.set(
+        "when_done",
+        lua.create_function(|lua, f: mlua::Function| {
+            super::api::need_action(lua)?;
+            let key = lua.create_registry_value(f)?;
+            super::api::state(lua).borrow_mut().when_done.push(key);
+            Ok(())
+        })?,
+    )?;
     g.set("actions", t)?;
     Ok(())
 }

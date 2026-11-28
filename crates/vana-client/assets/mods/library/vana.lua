@@ -1123,6 +1123,14 @@ function game.raycast(from, to) end
 ---@return number?
 function game.floor(x, z, y) end
 
+--- True when the client is not blocked by an outstanding action ask, a cast bar, an event timer, or a cutscene event — safe to queue another spell, ability, weapon skill or item.
+---@return boolean
+function game.action_ready() end
+
+--- The outstanding spell, weapon skill, job ability or item use the client is waiting on: {kind, id, target, state ('waiting' | 'casting' | 'refused' | 'quiet'), why?, waiting, age}, or nil when none or still inside the short hide-after-ask window.
+---@return table?
+function game.pending() end
+
 --- Our cast bar while it shows: {spell (none for an event's bar), total and left (seconds), progress 0..1, event}.
 ---@return table?
 function game.cast() end
@@ -1396,6 +1404,10 @@ function actions.stop() end
 --- Faces a heading (entity.heading's units).
 ---@param heading number 
 function actions.turn(heading) end
+
+--- Runs the function once after the current `game.pending()` ask completes: answered (finish packet for spells and weapon skills), interrupted, refused, quiet, or replaced. The argument is {state, kind?, id?, target?, why?}: state is answered, interrupted, refused, quiet, replaced, or idle when nothing was pending.
+---@param fn function 
+function actions.when_done(fn) end
 
 --- A zone's dialogue entry by its id in the install, as the file holds it: Shift-JIS bytes with the game's codes (text.from_shift_jis reads it); nil when there is none.
 ---@param zone integer 

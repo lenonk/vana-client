@@ -53,6 +53,8 @@ end)
 | [`game.collision_mesh()`](#gamecollision_mesh) | Every collision triangle of the zone, packed into a string. |
 | [`game.raycast(from, to)`](#gameraycast) | Where a line segment first hits the zone's collision. |
 | [`game.floor(x, z, y?)`](#gamefloor) | The height a character standing at a point would stand on. |
+| [`game.action_ready()`](#gameaction_ready) | Whether you can queue another spell, ability, weapon skill or item. |
+| [`game.pending()`](#gamepending) | The action the client is waiting on the server to answer. |
 | [`game.cast()`](#gamecast) | Your cast bar while it shows. |
 | [`game.info()`](#gameinfo) | Session flags: server, Mog House, chat, menus, combat, lock-on and more. |
 | [`game.camera()`](#gamecamera) | The camera's eye and look points. |
@@ -1304,6 +1306,34 @@ if y then
   print(("The ground 5 yalms east is %.2f yalms %s"):format(math.abs(y - p.pos.y), y < p.pos.y and "higher" or "lower"))
 end
 ```
+
+## `game.action_ready`
+
+```lua
+game.action_ready() -> boolean
+```
+
+True when no outstanding action ask (`game.pending()` waiting), cast bar, event timer, or cutscene event is blocking player commands.
+
+## `game.pending`
+
+```lua
+game.pending() -> table?
+```
+
+The outstanding spell, weapon skill, job ability or item use the client asked for (c2s 0x01A / 0x037), using the same rules as the Pending Actions mod. Nil when nothing is outstanding, or for a short moment right after the ask (like the mod chip).
+
+| Field | Description |
+| --- | --- |
+| `kind` | `"spell"`, `"ws"`, `"ability"`, or `"item"`. |
+| `id` | Spell, ability or item id (abilities use the name-table id). |
+| `target` | Target server id. |
+| `state` | `"waiting"`, `"casting"` (accepted, not finished yet), `"refused"`, or `"quiet"` (no answer within the timeout). |
+| `why` | Refusal line text when `state` is `"refused"` (same as `res.message` for the battle message). Omitted when empty (e.g. system message 225). |
+| `waiting` | Whether the ask is still open. |
+| `age` | Seconds since the ask went out. |
+
+Pair with [`actions.when_done`](actions.md#actionswhen_done) to continue a script when the ask finishes.
 
 ## `game.cast`
 

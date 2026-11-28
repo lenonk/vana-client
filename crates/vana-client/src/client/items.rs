@@ -1302,6 +1302,7 @@ pub fn use_slot(w: &mut World, container: u8, index: u8, target: u32) {
     b[8..10].copy_from_slice(&tindex.to_le_bytes());
     b[10] = index;
     b[12..16].copy_from_slice(&(container as u32).to_le_bytes());
+    super::pending::on_out_item(w, u32::from(id), target);
     send(w, 0x037, b);
 }
 
