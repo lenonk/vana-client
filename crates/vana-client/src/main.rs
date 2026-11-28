@@ -728,6 +728,13 @@ enum Cmd {
         #[arg(long, default_value = "crates/vana-client/assets/mods/skillchain/data/skillchains.txt")]
         out: PathBuf,
     },
+    /// Regenerate XIV-UI party trust job hints from LandSandBoat sql/ (spell_list + mob_pools).
+    TrustGen {
+        #[arg(long)]
+        lsb: PathBuf,
+        #[arg(long, default_value = "crates/vana-client/assets/mods/xiv-ui/modules/party/src/trusts.lua")]
+        out: PathBuf,
+    },
     /// Print item records (name, flags, slots, jobs, level, description); --key: key items.
     ItemDump {
         #[arg(long, default_value = "en")]
@@ -1649,6 +1656,7 @@ fn main() -> Result<()> {
             dat::msgshift::generate(&index, &lsb, &out)
         }
         Cmd::SkillchainGen { lsb, out } => dat::skillchains::generate(&lsb, &out),
+        Cmd::TrustGen { lsb, out } => dat::trusts::generate(&lsb, &out),
         Cmd::MsgshiftMap { zone, ids } => {
             let index = dat::DatIndex::open(&config::Config::load().ffxi_dir())?;
             let shift = dat::msgshift::MsgShift::bundled().verified(&index);

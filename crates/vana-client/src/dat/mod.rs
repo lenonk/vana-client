@@ -288,6 +288,7 @@ pub mod tables;
 pub mod texmip;
 pub mod title;
 pub mod tpoints;
+pub mod trusts;
 pub mod ui;
 pub mod weather;
 pub mod zone;

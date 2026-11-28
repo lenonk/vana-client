@@ -1,0 +1,28 @@
+-- Static facts, bounded compile unit; vana-client game/action export (B20 shard).
+return {
+{[1]="actions",[2]="spell",[3]=119,[4]={[1]={["effect"]=184,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_member"}}},
+{[1]="actions",[2]="spell",[3]=125,[4]={[1]={["effect"]=40,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=126,[4]={[1]={["effect"]=40,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=127,[4]={[1]={["effect"]=40,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=128,[4]={[1]={["effect"]=40,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=129,[4]={[1]={["effect"]=40,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=130,[4]={[1]={["effect"]=41,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=131,[4]={[1]={["effect"]=41,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=132,[4]={[1]={["effect"]=41,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=133,[4]={[1]={["effect"]=41,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=134,[4]={[1]={["effect"]=41,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=135,[4]={[1]={["effect"]=113,["formula"]="FIXED",["landed"]={[0]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=136,[4]={[1]={["effect"]=69,["formula"]="ENH_RANDOM",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_member"}}},
+{[1]="actions",[2]="spell",[3]=137,[4]={[1]={["effect"]=71,["formula"]="ENH_RANDOM",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_member"}}},
+{[1]="actions",[2]="spell",[3]=138,[4]={[1]={["effect"]=70,["formula"]="ENH_RANDOM",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_member"}}},
+{[1]="actions",[2]="spell",[3]=141,[4]={[1]={["effect"]=113,["formula"]="FIXED",["landed"]={[0]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=142,[4]={[1]={["effect"]=113,["formula"]="FIXED",["landed"]={[0]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=216,[4]={[1]={["effect"]=12,["formula"]="ENF",["landed"]={[236]=true,[271]=true,[277]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=217,[4]={[1]={["effect"]=12,["formula"]="ENF",["landed"]={[236]=true,[271]=true,[277]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=220,[4]={[1]={["effect"]=3,["formula"]="ENF",["landed"]={[236]=true,[271]=true,[277]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=221,[4]={[1]={["effect"]=3,["formula"]="ENF",["landed"]={[236]=true,[271]=true,[277]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=225,[4]={[1]={["effect"]=3,["formula"]="ENF",["landed"]={[236]=true,[271]=true,[277]=true},["param"]="E",["target"]="enemy_aoe"}}},
+{[1]="actions",[2]="spell",[3]=226,[4]={[1]={["effect"]=3,["formula"]="ENF",["landed"]={[236]=true,[271]=true,[277]=true},["param"]="E",["target"]="enemy_aoe"}}},
+{[1]="actions",[2]="spell",[3]=230,[4]={[1]={["effect"]=135,["formula"]="DIA_BIO",["landed"]={[2]=true,[7]=true,[85]=true,[252]=true,[264]=true,[284]=true,[367]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=231,[4]={[1]={["effect"]=135,["formula"]="DIA_BIO",["landed"]={[2]=true,[7]=true,[85]=true,[252]=true,[264]=true,[284]=true,[367]=true},["param"]="D",["target"]="enemy"}}}
+}

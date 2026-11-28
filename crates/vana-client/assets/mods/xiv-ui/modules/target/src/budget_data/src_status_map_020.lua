@@ -1,0 +1,28 @@
+-- Static facts, bounded compile unit; vana-client game/action export (B20 shard).
+return {
+{[1]="actions",[2]="spell",[3]=378,[4]={[1]={["effect"]=195,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=379,[4]={[1]={["effect"]=195,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=380,[4]={[1]={["effect"]=195,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=381,[4]={[1]={["effect"]=195,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=382,[4]={[1]={["effect"]=195,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=383,[4]={[1]={["effect"]=195,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=386,[4]={[1]={["effect"]=196,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=387,[4]={[1]={["effect"]=196,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=388,[4]={[1]={["effect"]=196,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=389,[4]={[1]={["effect"]=197,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=390,[4]={[1]={["effect"]=197,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=391,[4]={[1]={["effect"]=197,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=392,[4]={[1]={["effect"]=197,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=393,[4]={[1]={["effect"]=197,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=394,[4]={[1]={["effect"]=198,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=395,[4]={[1]={["effect"]=198,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=396,[4]={[1]={["effect"]=198,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=397,[4]={[1]={["effect"]=198,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=398,[4]={[1]={["effect"]=198,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=399,[4]={[1]={["effect"]=199,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=400,[4]={[1]={["effect"]=199,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=401,[4]={[1]={["effect"]=200,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=402,[4]={[1]={["effect"]=200,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=403,[4]={[1]={["effect"]=201,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=404,[4]={[1]={["effect"]=201,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}}
+}

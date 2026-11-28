@@ -1,0 +1,28 @@
+-- Static facts, bounded compile unit; vana-client game/action export (B20 shard).
+return {
+{[1]="actions",[2]="spell",[3]=469,[4]={[1]={["effect"]=221,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=470,[4]={[1]={["effect"]=222,["formula"]="ENH_SONG_SVD",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=471,[4]={[1]={["effect"]=2,["formula"]="ENF_SONG",["landed"]={[236]=true,[268]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=472,[4]={[1]={["effect"]=223,["formula"]="ENF_SONG",["landed"]={[237]=true,[268]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=473,[4]={[1]={["effect"]=43,["formula"]="ENH",["landed"]={[0]=true},["param"]="E",["target"]="party_member"}}},
+{[1]="actions",[2]="spell",[3]=476,[4]={[1]={["effect"]=289,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=477,[4]={[1]={["effect"]=42,["formula"]="ENH_REGEN",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_member"}}},
+{[1]="actions",[2]="spell",[3]=478,[4]={[1]={["effect"]=228,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="any_pc"}}},
+{[1]="actions",[2]="spell",[3]=479,[4]={[1]={["effect"]=80,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=480,[4]={[1]={["effect"]=81,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=481,[4]={[1]={["effect"]=82,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=482,[4]={[1]={["effect"]=83,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=483,[4]={[1]={["effect"]=84,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=484,[4]={[1]={["effect"]=85,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=485,[4]={[1]={["effect"]=86,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=486,[4]={[1]={["effect"]=80,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=487,[4]={[1]={["effect"]=81,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=488,[4]={[1]={["effect"]=82,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=489,[4]={[1]={["effect"]=83,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=490,[4]={[1]={["effect"]=84,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=491,[4]={[1]={["effect"]=85,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=492,[4]={[1]={["effect"]=86,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=493,[4]={[1]={["effect"]=432,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=494,[4]={[1]={["effect"]=113,["formula"]="ARISE_RR",["landed"]={},["param"]="0",["target"]="any_pc"}}},
+{[1]="actions",[2]="spell",[3]=502,[4]={[1]={["effect"]=23,["formula"]="KAUSTRA",["landed"]={[2]=true,[252]=true,[264]=true},["param"]="D",["target"]="enemy"}}}
+}

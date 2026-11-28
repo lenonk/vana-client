@@ -1,0 +1,26 @@
+-- Static facts, bounded compile unit; vana-client game/action export (B20 shard).
+return {
+{[1]="actions",[2]="spell",[3]=270,[4]={[1]={["effect"]=84,["formula"]="ABSORB_SELF",["landed"]={[333]=true},["param"]="A",["target"]="self"},[2]={["effect"]=140,["formula"]="ABSORB_STAT",["landed"]={[333]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=271,[4]={[1]={["effect"]=85,["formula"]="ABSORB_SELF",["landed"]={[334]=true},["param"]="A",["target"]="self"},[2]={["effect"]=141,["formula"]="ABSORB_STAT",["landed"]={[334]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=272,[4]={[1]={["effect"]=86,["formula"]="ABSORB_SELF",["landed"]={[335]=true},["param"]="A",["target"]="self"},[2]={["effect"]=142,["formula"]="ABSORB_STAT",["landed"]={[335]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=273,[4]={[1]={["effect"]=2,["formula"]="ENF",["landed"]={[236]=true,[271]=true,[277]=true},["param"]="E",["target"]="enemy_aoe"}}},
+{[1]="actions",[2]="spell",[3]=274,[4]={[1]={["effect"]=2,["formula"]="ENF",["landed"]={[236]=true,[271]=true,[277]=true},["param"]="E",["target"]="enemy_aoe"}}},
+{[1]="actions",[2]="spell",[3]=276,[4]={[1]={["effect"]=5,["formula"]="ENF",["landed"]={[236]=true,[271]=true,[277]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=277,[4]={[1]={["effect"]=173,["formula"]="ENH",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=278,[4]={[1]={["effect"]=186,["formula"]="HELIX",["landed"]={[2]=true,[7]=true,[252]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=279,[4]={[1]={["effect"]=186,["formula"]="HELIX",["landed"]={[2]=true,[7]=true,[252]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=280,[4]={[1]={["effect"]=186,["formula"]="HELIX",["landed"]={[2]=true,[7]=true,[252]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=281,[4]={[1]={["effect"]=186,["formula"]="HELIX",["landed"]={[2]=true,[7]=true,[252]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=282,[4]={[1]={["effect"]=186,["formula"]="HELIX",["landed"]={[2]=true,[7]=true,[252]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=283,[4]={[1]={["effect"]=186,["formula"]="HELIX",["landed"]={[2]=true,[7]=true,[252]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=284,[4]={[1]={["effect"]=186,["formula"]="HELIX",["landed"]={[2]=true,[7]=true,[252]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=285,[4]={[1]={["effect"]=186,["formula"]="HELIX",["landed"]={[2]=true,[7]=true,[252]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=286,[4]={[1]={["effect"]=21,["formula"]="ENF",["landed"]={[236]=true,[271]=true,[277]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=287,[4]={[1]={["effect"]=407,["formula"]="FIXED",["landed"]={[0]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=310,[4]={[1]={["effect"]=274,["formula"]="FIXED",["landed"]={[75]=true,[230]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=311,[4]={[1]={["effect"]=288,["formula"]="FIXED",["landed"]={[75]=true,[230]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=312,[4]={[1]={["effect"]=277,["formula"]="ENH_EN",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=313,[4]={[1]={["effect"]=278,["formula"]="ENH_EN",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=314,[4]={[1]={["effect"]=279,["formula"]="ENH_EN",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=315,[4]={[1]={["effect"]=280,["formula"]="ENH_EN",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self"}}}
+}

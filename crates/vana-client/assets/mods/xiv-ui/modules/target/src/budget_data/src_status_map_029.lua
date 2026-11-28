@@ -1,0 +1,25 @@
+-- Static facts, bounded compile unit; vana-client game/action export (B20 shard).
+return {
+{[1]="actions",[2]="ws",[3]=28,[4]={[1]={["effect"]=12,["formula"]="WS_CHANCE_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"},[2]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=29,[4]={[1]={["effect"]=148,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"},[2]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=31,[4]={[1]={["effect"]=12,["formula"]="WS_FIXED",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"},[2]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=35,[4]={[1]={["effect"]=10,["formula"]="WS_CHANCE_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=43,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=44,[4]={[1]={["effect"]=404,["formula"]="WS_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"},[2]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=45,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=46,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=52,[4]={[1]={["effect"]=2,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=57,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=58,[4]={[1]={["effect"]=4,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=59,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=61,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=65,[4]={[1]={["effect"]=10,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=66,[4]={[1]={["effect"]=130,["formula"]="WS_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=73,[4]={[1]={["effect"]=146,["formula"]="WS_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"},[2]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=74,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=75,[4]={[1]={["effect"]=11,["formula"]="WS_CHANCE_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=76,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=80,[4]={[1]={["effect"]=148,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=83,[4]={[1]={["effect"]=149,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=85,[4]={[1]={["effect"]=147,["formula"]="WS_TP_PART_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}}
+}

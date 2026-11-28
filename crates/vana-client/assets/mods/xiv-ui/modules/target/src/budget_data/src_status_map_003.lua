@@ -1,0 +1,28 @@
+-- Static facts, bounded compile unit; vana-client game/action export (B20 shard).
+return {
+{[1]="actions",[2]="ability",[3]=131,[4]={[1]={["effect"]=2,["formula"]="QD_SLEEP",["landed"]={[127]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="ability",[3]=135,[4]={[1]={["effect"]=166,["formula"]="PLUS_MOD",["landed"]={[100]=true},["param"]="E",["target"]="pet"},[2]={["effect"]=166,["formula"]="PLUS_MOD",["landed"]={[100]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="ability",[3]=137,[4]={[1]={["effect"]=42,["formula"]="JA_REPAIR",["landed"]={[102]=true},["param"]="H",["target"]="pet"}}},
+{[1]="actions",[2]="ability",[3]=141,[4]={[1]={["effect"]=300,["formula"]="JA_MANEUVER",["landed"]={[798]=true},["param"]="0",["target"]="self"},[2]={["effect"]=299,["formula"]="JA_OVERLOAD",["landed"]={[799]=true},["param"]="0",["target"]="self"}}},
+{[1]="actions",[2]="ability",[3]=142,[4]={[1]={["effect"]=301,["formula"]="JA_MANEUVER",["landed"]={[798]=true},["param"]="0",["target"]="self"}}},
+{[1]="actions",[2]="ability",[3]=143,[4]={[1]={["effect"]=302,["formula"]="JA_MANEUVER",["landed"]={[798]=true},["param"]="0",["target"]="self"}}},
+{[1]="actions",[2]="ability",[3]=144,[4]={[1]={["effect"]=303,["formula"]="JA_MANEUVER",["landed"]={[798]=true},["param"]="0",["target"]="self"}}},
+{[1]="actions",[2]="ability",[3]=145,[4]={[1]={["effect"]=304,["formula"]="JA_MANEUVER",["landed"]={[798]=true},["param"]="0",["target"]="self"}}},
+{[1]="actions",[2]="ability",[3]=146,[4]={[1]={["effect"]=305,["formula"]="JA_MANEUVER",["landed"]={[798]=true},["param"]="0",["target"]="self"}}},
+{[1]="actions",[2]="ability",[3]=147,[4]={[1]={["effect"]=306,["formula"]="JA_MANEUVER",["landed"]={[798]=true},["param"]="0",["target"]="self"}}},
+{[1]="actions",[2]="ability",[3]=148,[4]={[1]={["effect"]=307,["formula"]="JA_MANEUVER",["landed"]={[798]=true},["param"]="0",["target"]="self"}}},
+{[1]="actions",[2]="ability",[3]=149,[4]={[1]={["effect"]=340,["formula"]="FIXED",["landed"]={[100]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="ability",[3]=150,[4]={[1]={["effect"]=805,["formula"]="JA_TOMAHAWK",["landed"]={[100]=true},["param"]="0",["target"]="enemy"}}},
+{[1]="actions",[2]="ability",[3]=151,[4]={[1]={["effect"]=88,["formula"]="FIXED",["landed"]={[421]=true,[441]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="ability",[3]=152,[4]={[1]={["effect"]=341,["formula"]="FIXED",["landed"]={[100]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="ability",[3]=155,[4]={[1]={["effect"]=342,["formula"]="FIXED",["landed"]={[100]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="ability",[3]=156,[4]={[1]={["effect"]=343,["formula"]="FIXED",["landed"]={[100]=true},["param"]="0",["target"]="self"},[2]={["effect"]=148,["formula"]="FIXED",["landed"]={},["param"]="0",["target"]="enemy"}}},
+{[1]="actions",[2]="ability",[3]=157,[4]={[1]={["effect"]=344,["formula"]="JA_FEALTY",["landed"]={[100]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="ability",[3]=159,[4]={[1]={["effect"]=345,["formula"]="FIXED",["landed"]={[100]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="ability",[3]=160,[4]={[1]={["effect"]=346,["formula"]="JA_DIABOLIC_EYE",["landed"]={[100]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="ability",[3]=161,[4]={[1]={["effect"]=28,["formula"]="JA_FERAL_HOWL",["landed"]={[100]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="ability",[3]=162,[4]={[1]={["effect"]=349,["formula"]="JA_KILLER_INSTINCT",["landed"]={[0]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="ability",[3]=163,[4]={[1]={["effect"]=347,["formula"]="FIXED",["landed"]={[100]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="ability",[3]=164,[4]={[1]={["effect"]=348,["formula"]="FIXED",["landed"]={[100]=true},["param"]="E",["target"]="self"}}},
+{[1]="actions",[2]="ability",[3]=165,[4]={[1]={["effect"]=350,["formula"]="FIXED",["landed"]={[100]=true},["param"]="E",["target"]="self"}}}
+}

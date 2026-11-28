@@ -1,0 +1,28 @@
+-- Static facts, bounded compile unit; vana-client game/action export (B20 shard).
+return {
+{[1]="actions",[2]="spell",[3]=405,[4]={[1]={["effect"]=202,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=406,[4]={[1]={["effect"]=203,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=408,[4]={[1]={["effect"]=205,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=409,[4]={[1]={["effect"]=206,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=410,[4]={[1]={["effect"]=206,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=412,[4]={[1]={["effect"]=207,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=414,[4]={[1]={["effect"]=209,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=415,[4]={[1]={["effect"]=210,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=417,[4]={[1]={["effect"]=214,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=419,[4]={[1]={["effect"]=214,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=420,[4]={[1]={["effect"]=214,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=421,[4]={[1]={["effect"]=194,["formula"]="ENF_SONG",["landed"]={[237]=true,[268]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=422,[4]={[1]={["effect"]=194,["formula"]="ENF_SONG",["landed"]={[237]=true,[268]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=423,[4]={[1]={["effect"]=194,["formula"]="ENF_SONG",["landed"]={[237]=true,[268]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="spell",[3]=424,[4]={[1]={["effect"]=215,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=425,[4]={[1]={["effect"]=215,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=426,[4]={[1]={["effect"]=215,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=427,[4]={[1]={["effect"]=215,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=428,[4]={[1]={["effect"]=215,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=429,[4]={[1]={["effect"]=215,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=430,[4]={[1]={["effect"]=215,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=431,[4]={[1]={["effect"]=215,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=432,[4]={[1]={["effect"]=215,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=433,[4]={[1]={["effect"]=215,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}},
+{[1]="actions",[2]="spell",[3]=434,[4]={[1]={["effect"]=215,["formula"]="ENH_SONG",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="party_aoe"}}}
+}

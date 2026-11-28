@@ -1,0 +1,28 @@
+-- Static facts, bounded compile unit; vana-client game/action export (B20 shard).
+return {
+{[1]="actions",[2]="ws",[3]=152,[4]={[1]={["effect"]=4,["formula"]="WS_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=153,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=154,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=155,[4]={[1]={["effect"]=149,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=156,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=162,[4]={[1]={["effect"]=10,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=165,[4]={[1]={["effect"]=140,["formula"]="WS_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=170,[4]={[1]={["effect"]=148,["formula"]="WS_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"},[2]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=171,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=173,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=181,[4]={[1]={["effect"]=149,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=185,[4]={[1]={["effect"]=147,["formula"]="WS_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"},[2]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=186,[4]={[1]={["effect"]=167,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"},[2]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=187,[4]={[1]={["effect"]=149,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"},[2]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=188,[4]={[1]={["effect"]=175,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"},[2]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=190,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=191,[4]={[1]={["effect"]=167,["formula"]="WS_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=200,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=202,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=210,[4]={[1]={["effect"]=140,["formula"]="WS_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=216,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=217,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=218,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=219,[4]={[1]={["effect"]=4,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=220,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}}
+}

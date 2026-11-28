@@ -1,0 +1,28 @@
+-- Static facts, bounded compile unit; vana-client game/action export (B20 shard).
+return {
+{[1]="actions",[2]="spell",[3]=647,[4]={[1]={["effect"]=36,["formula"]="BLU_BUFF",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self_and_party"}}},
+{[1]="actions",[2]="spell",[3]=655,[4]={[1]={["effect"]=91,["formula"]="BLU_BUFF",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self_and_party"}}},
+{[1]="actions",[2]="spell",[3]=658,[4]={[1]={["effect"]=91,["formula"]="FIXED",["landed"]={[7]=true},["param"]="H",["target"]="self"},[2]={["effect"]=190,["formula"]="FIXED",["landed"]={[7]=true},["param"]="H",["target"]="self"}}},
+{[1]="actions",[2]="spell",[3]=660,[4]={[1]={["effect"]=13,["formula"]="BLU_ENF",["landed"]={[236]=true,[271]=true,[277]=true},["param"]="E",["target"]="enemy_aoe"}}},
+{[1]="actions",[2]="spell",[3]=661,[4]={[1]={["effect"]=33,["formula"]="BLU_BUFF",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self_and_party"}}},
+{[1]="actions",[2]="spell",[3]=662,[4]={[1]={["effect"]=43,["formula"]="BLU_BUFF",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self_and_party"}}},
+{[1]="actions",[2]="spell",[3]=664,[4]={[1]={["effect"]=42,["formula"]="BLU_BUFF_DIFF2",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self_and_party"}}},
+{[1]="actions",[2]="spell",[3]=671,[4]={[1]={["effect"]=6,["formula"]="BLU_ENF",["landed"]={[236]=true,[271]=true,[277]=true},["param"]="E",["target"]="enemy_aoe"}}},
+{[1]="actions",[2]="spell",[3]=678,[4]={[1]={["effect"]=2,["formula"]="BLU_ENF",["landed"]={[236]=true,[271]=true,[277]=true},["param"]="E",["target"]="enemy_aoe"}}},
+{[1]="actions",[2]="spell",[3]=679,[4]={[1]={["effect"]=36,["formula"]="BLU_BUFF_DIFF2",["landed"]={[230]=true,[266]=true},["param"]="E",["target"]="self_and_party"}}},
+{[1]="actions",[2]="spell",[3]=768,[4]={[1]={["effect"]=612,["formula"]="INDI",["landed"]={[0]=true},["param"]="G",["target"]="self_entrust"}}},
+{[1]="actions",[2]="spell",[3]=769,[4]={[1]={["effect"]=612,["formula"]="INDI",["landed"]={[0]=true},["param"]="G",["target"]="self_entrust"}}},
+{[1]="actions",[2]="spell",[3]=770,[4]={[1]={["effect"]=612,["formula"]="INDI",["landed"]={[0]=true},["param"]="G",["target"]="self_entrust"}}},
+{[1]="actions",[2]="spell",[3]=771,[4]={[1]={["effect"]=612,["formula"]="INDI",["landed"]={[0]=true},["param"]="G",["target"]="self_entrust"}}},
+{[1]="actions",[2]="spell",[3]=772,[4]={[1]={["effect"]=612,["formula"]="INDI",["landed"]={[0]=true},["param"]="G",["target"]="self_entrust"}}},
+{[1]="actions",[2]="spell",[3]=773,[4]={[1]={["effect"]=612,["formula"]="INDI",["landed"]={[0]=true},["param"]="G",["target"]="self_entrust"}}},
+{[1]="actions",[2]="spell",[3]=774,[4]={[1]={["effect"]=612,["formula"]="INDI",["landed"]={[0]=true},["param"]="G",["target"]="self_entrust"}}},
+{[1]="actions",[2]="spell",[3]=775,[4]={[1]={["effect"]=612,["formula"]="INDI",["landed"]={[0]=true},["param"]="G",["target"]="self_entrust"}}},
+{[1]="actions",[2]="spell",[3]=776,[4]={[1]={["effect"]=612,["formula"]="INDI",["landed"]={[0]=true},["param"]="G",["target"]="self_entrust"}}},
+{[1]="actions",[2]="spell",[3]=777,[4]={[1]={["effect"]=612,["formula"]="INDI",["landed"]={[0]=true},["param"]="G",["target"]="self_entrust"}}},
+{[1]="actions",[2]="spell",[3]=778,[4]={[1]={["effect"]=612,["formula"]="INDI",["landed"]={[0]=true},["param"]="G",["target"]="self_entrust"}}},
+{[1]="actions",[2]="spell",[3]=779,[4]={[1]={["effect"]=612,["formula"]="INDI",["landed"]={[0]=true},["param"]="G",["target"]="self_entrust"}}},
+{[1]="actions",[2]="spell",[3]=780,[4]={[1]={["effect"]=612,["formula"]="INDI",["landed"]={[0]=true},["param"]="G",["target"]="self_entrust"}}},
+{[1]="actions",[2]="spell",[3]=781,[4]={[1]={["effect"]=612,["formula"]="INDI",["landed"]={[0]=true},["param"]="G",["target"]="self_entrust"}}},
+{[1]="actions",[2]="spell",[3]=782,[4]={[1]={["effect"]=612,["formula"]="INDI",["landed"]={[0]=true},["param"]="G",["target"]="self_entrust"}}}
+}

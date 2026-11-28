@@ -1,0 +1,26 @@
+-- Static facts, bounded compile unit; vana-client game/action export (B20 shard).
+return {
+{[1]="actions",[2]="ws",[3]=87,[4]={[1]={["effect"]=147,["formula"]="WS_TP_PART_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"},[2]={["effect"]=149,["formula"]="WS_TP_PART_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"},[3]={["effect"]=146,["formula"]="WS_TP_PART_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"},[4]={["effect"]=148,["formula"]="WS_TP_PART_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=89,[4]={[1]={["effect"]=149,["formula"]="WS_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"},[2]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=90,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=92,[4]={[1]={["effect"]=13,["formula"]="WS_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"},[2]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=99,[4]={[1]={["effect"]=5,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=102,[4]={[1]={["effect"]=6,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=105,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=106,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=107,[4]={[1]={["effect"]=147,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=108,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=115,[4]={[1]={["effect"]=10,["formula"]="WS_CHANCE_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=121,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=122,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=124,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=125,[4]={[1]={["effect"]=298,["formula"]="WS_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=129,[4]={[1]={["effect"]=4,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=137,[4]={[1]={["effect"]=4,["formula"]="WS_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"},[2]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=138,[4]={[1]={["effect"]=146,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"},[2]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=139,[4]={[1]={["effect"]=3,["formula"]="WS_TPR",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=140,[4]={[1]={["effect"]=273,["formula"]="SELF_EXACT",["landed"]={},["param"]="D",["target"]="self"}}},
+{[1]="actions",[2]="ws",[3]=145,[4]={[1]={["effect"]=10,["formula"]="WS_CHANCE",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=150,[4]={[1]={["effect"]=5,["formula"]="WS_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}},
+{[1]="actions",[2]="ws",[3]=151,[4]={[1]={["effect"]=6,["formula"]="WS_R",["landed"]={[185]=true,[264]=true},["param"]="D",["target"]="enemy"}}}
+}

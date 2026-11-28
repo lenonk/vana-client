@@ -1,0 +1,28 @@
+-- Static facts, bounded compile unit; vana-client game/action export (B20 shard).
+return {
+{[1]="actions",[2]="pet",[3]=3883,[4]={[1]={["effect"]=11,["formula"]="MOB_STATUS",["landed"]={[242]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="pet",[3]=3884,[4]={[1]={["effect"]=3,["formula"]="MOB_STATUS",["landed"]={[242]=true,[277]=true},["param"]="E",["target"]="enemy_aoe"}}},
+{[1]="actions",[2]="pet",[3]=3886,[4]={[1]={["effect"]=2,["formula"]="MOB_STATUS",["landed"]={[242]=true,[277]=true},["param"]="E",["target"]="enemy_aoe"}}},
+{[1]="actions",[2]="pet",[3]=3887,[4]={[1]={["effect"]=13,["formula"]="MOB_STATUS_EX",["landed"]={[242]=true,[277]=true},["param"]="E",["target"]="enemy_aoe"}}},
+{[1]="actions",[2]="pet",[3]=3888,[4]={[1]={["effect"]=4,["formula"]="MOB_STATUS",["landed"]={[242]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="pet",[3]=3890,[4]={[1]={["effect"]=10,["formula"]="MOB_STATUS",["landed"]={[242]=true,[277]=true},["param"]="E",["target"]="enemy_aoe"}}},
+{[1]="actions",[2]="pet",[3]=3893,[4]={[1]={["effect"]=3,["formula"]="MOB_STATUS",["landed"]={[242]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="pet",[3]=3896,[4]={[1]={["effect"]=13,["formula"]="MOB_STATUS_EX",["landed"]={[242]=true,[277]=true},["param"]="E",["target"]="enemy_aoe"}}},
+{[1]="actions",[2]="pet",[3]=3898,[4]={[1]={["effect"]=6,["formula"]="MOB_GAZE",["landed"]={[242]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="pet",[3]=3899,[4]={[1]={["effect"]=4,["formula"]="MOB_STATUS",["landed"]={[242]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="pet",[3]=3906,[4]={[1]={["effect"]=147,["formula"]="MOB_STATUS",["landed"]={[242]=true,[277]=true},["param"]="E",["target"]="enemy_aoe"}}},
+{[1]="actions",[2]="pet",[3]=3916,[4]={[1]={["effect"]=28,["formula"]="MOB_GAZE",["landed"]={[242]=true,[277]=true},["param"]="E",["target"]="enemy_aoe"}}},
+{[1]="actions",[2]="pet",[3]=3918,[4]={[1]={["effect"]=45,["formula"]="FIXED",["landed"]={[186]=true},["param"]="E",["target"]="pet"}}},
+{[1]="actions",[2]="pet",[3]=3920,[4]={[1]={["effect"]=93,["formula"]="RANDOM",["landed"]={[186]=true,[266]=true},["param"]="E",["target"]="pet+master"}}},
+{[1]="actions",[2]="pet",[3]=3924,[4]={[1]={["effect"]=13,["formula"]="MOB_GAZE",["landed"]={[242]=true},["param"]="E",["target"]="enemy"}}},
+{[1]="actions",[2]="pet",[3]=3926,[4]={[1]={["effect"]=93,["formula"]="FIXED",["landed"]={[186]=true,[266]=true},["param"]="E",["target"]="pet+master"}}},
+{[1]="actions",[2]="pet",[3]=3954,[4]={[1]={["effect"]=91,["formula"]="FIXED",["landed"]={[186]=true},["param"]="E",["target"]="pet"}}},
+{[1]="actions",[2]="pet",[3]=3960,[4]={[1]={["effect"]=10,["formula"]="MOB_STATUS",["landed"]={[242]=true,[277]=true},["param"]="E",["target"]="enemy_aoe"}}},
+{[1]="actions",[2]="spell",[3]=1,[4]={[1]={["effect"]=37,["formula"]="SOLACE_SS",["landed"]={[7]=true,[367]=true},["param"]="H",["target"]="any_pc"}}},
+{[1]="actions",[2]="spell",[3]=2,[4]={[1]={["effect"]=37,["formula"]="SOLACE_SS",["landed"]={[7]=true,[367]=true},["param"]="H",["target"]="any_pc"}}},
+{[1]="actions",[2]="spell",[3]=3,[4]={[1]={["effect"]=37,["formula"]="SOLACE_SS",["landed"]={[7]=true,[367]=true},["param"]="H",["target"]="any_pc"}}},
+{[1]="actions",[2]="spell",[3]=4,[4]={[1]={["effect"]=37,["formula"]="SOLACE_SS",["landed"]={[7]=true,[367]=true},["param"]="H",["target"]="any_pc"}}},
+{[1]="actions",[2]="spell",[3]=5,[4]={[1]={["effect"]=37,["formula"]="SOLACE_SS",["landed"]={[7]=true,[367]=true},["param"]="H",["target"]="any_pc"}}},
+{[1]="actions",[2]="spell",[3]=6,[4]={[1]={["effect"]=37,["formula"]="SOLACE_SS",["landed"]={[7]=true,[367]=true},["param"]="H",["target"]="any_pc"}}},
+{[1]="actions",[2]="spell",[3]=22,[4]={[1]={["effect"]=16,["formula"]="HOLY2_AMNESIA",["landed"]={[2]=true,[7]=true,[85]=true,[252]=true},["param"]="D",["target"]="enemy"}}}
+}

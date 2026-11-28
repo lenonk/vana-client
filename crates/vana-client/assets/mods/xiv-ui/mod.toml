@@ -1,0 +1,347 @@
+name = "XIV-UI"
+version = "0.4.31"
+description = "Compact modern HUD suite (target, focus, cast, player, buff, XP, party, notify). Enable per-panel mod_* toggles, then /lua reload xiv-ui when needed."
+authors = ["Nitsu"]
+permissions = ["ui.native", "actions"]
+
+[settings.on]
+type = "bool"
+default = false
+label = "XIV-UI"
+help = "Optional kill switch (off by default is fine). Turning a panel on only takes effect after /lua reload xiv-ui if that panel was off when the mod last loaded; turning a panel off hides it without reload. Master off does not block panels that stay enabled below. //xtb, //xft only hide until reload—they do not change panel toggles."
+
+# Panel toggles and settings are grouped by panel; each label is prefixed with the panel name.
+
+# --- Target ---
+[settings.mod_target]
+type = "bool"
+default = false
+label = "Target: Enable panel"
+help = "HP, weaknesses, cast strip. Required for party cast/status integration. If this was off at last reload, turn on then /lua reload xiv-ui before it appears. Drag the bar to move it (//xtb)."
+[settings.target_scale]
+type = "int"
+default = 100
+min = 50
+max = 200
+step = 10
+label = "Target: Scale (%)"
+[settings.target_status_count]
+type = "int"
+default = 12
+min = 1
+max = 32
+step = 1
+label = "Target: Visible statuses"
+[settings.target_width]
+type = "int"
+default = 420
+min = 200
+max = 900
+step = 20
+label = "Target: Width"
+# --- Focus ---
+[settings.mod_focus]
+type = "bool"
+default = false
+label = "Focus: Enable panel"
+help = "Loads focus/last HUD (required for Show last target). Last appears only after you switch away from a mob. If this was off at last reload, turn on then /lua reload xiv-ui. Drag each bar to move it."
+[settings.focus_scale]
+type = "int"
+default = 100
+min = 50
+max = 200
+step = 10
+label = "Focus: Scale (%)"
+[settings.focus_show_focus]
+type = "bool"
+default = true
+label = "Focus: Show focus target"
+[settings.focus_show_last]
+type = "bool"
+default = true
+label = "Focus: Show last target"
+[settings.focus_width]
+type = "int"
+default = 300
+min = 160
+max = 600
+step = 20
+label = "Focus: Width"
+# --- Cast Bar ---
+[settings.mod_cast]
+type = "bool"
+default = false
+label = "Cast Bar: Enable panel"
+help = "Cast and swing timing bar. If this was off at last reload, turn on then /lua reload xiv-ui. Drag the bar to move it."
+[settings.cast_cast]
+type = "bool"
+default = true
+label = "Cast Bar: Show Casting"
+[settings.cast_ranged]
+type = "bool"
+default = true
+label = "Cast Bar: Show Estimated Ranged Timing"
+[settings.cast_swing]
+type = "bool"
+default = true
+label = "Cast Bar: Show Estimated Melee Timing"
+[settings.cast_swing_text]
+type = "bool"
+default = false
+label = "Cast Bar: Show Interval/Hit Labels"
+[settings.cast_width]
+type = "int"
+default = 180
+min = 100
+max = 500
+step = 10
+label = "Cast Bar: Width"
+help = "Width of the cast track in UI units. 180 matches the approved mockup."
+# --- Player Bar ---
+[settings.mod_player]
+type = "bool"
+default = false
+label = "Player Bar: Enable panel"
+help = "Player HP/MP bars. If this was off at last reload, turn on then /lua reload xiv-ui. Drag the vitals bars to move them."
+[settings.player_avoid_cast]
+type = "bool"
+default = true
+label = "Player Bar: Avoid Cast/Attack Gauge Space"
+help = "Uses the cast mod's actual reserved layout when available; no guessed behind-window geometry."
+[settings.player_compact]
+type = "bool"
+default = false
+label = "Player Bar: Compact Artwork"
+[settings.player_scale]
+type = "int"
+default = 100
+min = 50
+max = 200
+step = 10
+label = "Player Bar: Scale"
+help = "Scales the whole bar group. 100 matches the approved mockup."
+# --- Buffs ---
+[settings.mod_buff]
+type = "bool"
+default = false
+label = "Buffs: Enable panel"
+help = "Replaces the native status icon row. If this was off at last reload, turn on then /lua reload xiv-ui."
+[settings.buff_blink]
+type = "bool"
+default = true
+label = "Buffs: Blink Under 15 Seconds"
+help = "Blink an effect in its last fifteen seconds, as the game's icons do."
+[settings.buff_cancel_click]
+type = "bool"
+default = true
+label = "Buffs: Click to Cancel"
+help = "A left click on a cancellable effect cancels it. Drag anywhere on the bar to move it; //xbb resetpos puts it back at the default top-left."
+[settings.buff_columns]
+type = "int"
+default = 9
+min = 1
+max = 18
+step = 1
+label = "Buffs: Icons Per Row"
+help = "The game's own bar is nine to a row."
+[settings.buff_gap]
+type = "int"
+default = 4
+min = 0
+max = 20
+step = 1
+label = "Buffs: Gap"
+help = "Space between icons, and between rows."
+[settings.buff_size]
+type = "int"
+default = 32
+min = 16
+max = 72
+step = 1
+label = "Buffs: Icon Size"
+help = "The height (and width) of one native status icon slot in UI units. Applies at once."
+[settings.buff_timers]
+type = "bool"
+default = true
+label = "Buffs: Show Countdowns"
+help = "A time under each timed effect, as the game's bar shows it (none at 5 seconds or less)."
+# --- XP Bar ---
+[settings.mod_exp]
+type = "bool"
+default = false
+label = "XP Bar: Enable panel"
+help = "Experience bar. If this was off at last reload, turn on then /lua reload xiv-ui. Drag to move when detached from player bars."
+[settings.exp_attach_below]
+type = "bool"
+default = true
+label = "XP Bar: Attach Below Player Bars (off = above)"
+help = "Only used when attached."
+[settings.exp_attach_vitals]
+type = "bool"
+default = false
+label = "XP Bar: Attach To Player Bars"
+help = "On: XP follows player bars (use Attach below/above). Off: drag the XP strip by itself."
+[settings.exp_dark_thin]
+type = "bool"
+default = true
+label = "XP Bar: Thin Dark/Glow Artwork"
+[settings.exp_mode]
+type = "int"
+default = 1
+min = 1
+max = 4
+step = 1
+label = "XP Bar: Display Mode: 1 Auto, 2 EXP, 3 Limit, 4 Capacity"
+help = "Display only. Auto uses level/available data; the game's allocation switch is not exposed."
+[settings.exp_scale]
+type = "int"
+default = 100
+min = 50
+max = 200
+step = 10
+label = "XP Bar: Strip Scale"
+[settings.exp_stats_text]
+type = "bool"
+default = false
+label = "XP Bar: Observed Rate / Estimated Time Text"
+# --- Party ---
+[settings.mod_party]
+type = "bool"
+default = false
+label = "Party: Enable panel"
+help = "Party, alliance, pets. Keep target enabled for casts and debuff icons. If this was off at last reload, turn on then /lua reload xiv-ui; turning off hides without reload. Drag the list to move it."
+[settings.party_align_bottom]
+type = "bool"
+default = false
+label = "Party: Bottom-align Rows"
+[settings.party_buff_count]
+type = "int"
+default = 6
+min = 1
+max = 32
+step = 1
+label = "Party: Visible Main Statuses"
+[settings.party_filter_whitelist]
+type = "bool"
+default = false
+label = "Party: Only Prioritised Statuses"
+[settings.party_hide_cutscene]
+type = "bool"
+default = true
+label = "Party: Hide During Events"
+[settings.party_hide_solo]
+type = "bool"
+default = false
+label = "Party: Hide Solo"
+[settings.party_pets]
+type = "bool"
+default = true
+label = "Party: Show Observed Pets"
+[settings.party_range]
+type = "int"
+default = 21
+min = 5
+max = 30
+step = 1
+label = "Party: Range Marker (yalms)"
+[settings.party_range_numbers]
+type = "bool"
+default = false
+label = "Party: Numeric Range"
+[settings.party_scale]
+type = "int"
+default = 100
+min = 50
+max = 150
+step = 10
+label = "Party: Scale"
+[settings.party_single_alliance]
+type = "bool"
+default = false
+label = "Party: Full-width Single Alliance"
+# --- Notify ---
+[settings.mod_notify]
+type = "bool"
+default = false
+label = "Notify: Enable panel"
+help = "Toasts and party invite reminders. If this was off at last reload, turn on then /lua reload xiv-ui."
+[settings.notify_invite_reminders]
+type = "bool"
+default = true
+label = "Notify: Recent Invite Reminder"
+help = "Observed party/alliance invites. Actual pending state and responses stay in the native Party menu. Opening that menu from the reminder needs actions; no auto-accept."
+[settings.notify_party_notices]
+type = "bool"
+default = false
+label = "Notify: Observed Party Join/Leave Notices"
+[settings.notify_request_offset_x]
+type = "int"
+default = 0
+min = -800
+max = 800
+step = 10
+label = "Notify: Invite Reminder Horizontal Offset"
+[settings.notify_request_offset_y]
+type = "int"
+default = 0
+min = -500
+max = 500
+step = 10
+label = "Notify: Invite Reminder Vertical Offset"
+[settings.notify_scale]
+type = "int"
+default = 100
+min = 50
+max = 200
+step = 10
+label = "Notify: Scale"
+[settings.notify_seconds]
+type = "int"
+default = 3
+min = 1
+max = 10
+step = 1
+label = "Notify: Toast Seconds"
+
+# --- Commands (separate tab in Mods window) ---
+
+[commands.xtb]
+help = "XIV target display, status details and preview."
+args = "[on|off|details|preview|status]"
+
+[commands.xft]
+help = "XIV focus/last bars: on/off/status, focus, target, last."
+args = "[on|off|status|focus|target|last]"
+forms = [
+  { args = "on", help = "Show the bars." },
+  { args = "off", help = "Hide the bars." },
+  { args = "status", help = "Report whether the bars are on." },
+  { args = "focus", help = "Set the focus target to your current target (a party member)." },
+  { args = "target", help = "Target your focus target." },
+  { args = "last", help = "Target your last target." },
+]
+
+[commands.xcb]
+help = "Turns the XIV cast bar on or off."
+args = "[on|off|preview|reset|status]"
+
+[commands.xpb]
+help = "Player vitals display, safe sample mode and native details."
+args = "[on|off|preview|details|status]"
+
+[commands.xbb]
+help = "Reports the XIV Buff Bar; 'lock' toggles dragging, 'refresh' rebuilds it, 'resetpos' moves it back to the default spot."
+args = "[lock|refresh|resetpos]"
+
+[commands.xxp]
+help = "Real points strip, clearly labelled samples, native job/time/point details and confirmed volatile-rate reset."
+args = "[on|off|preview|details|status]"
+
+[commands.xpl]
+help = "Turns the XIV party list on or off."
+args = "[on|off|details|preview|status|probe]"
+
+[commands.xn]
+help = "Inventory-increase notifications, display toggle, status and clearly labelled sample mode. No automatic actions."
+args = "[on|off|preview|requests|status]"
+
